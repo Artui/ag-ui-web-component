@@ -9,6 +9,16 @@ export {
   type ExecuteTool,
   type ToolExecution,
 } from "./agui_client.js";
+export {
+  type FlashOptions,
+  focusWithFlash,
+  type HighlightClickOptions,
+  highlightThenClick,
+  scrollIntoCenterView,
+  type TextLikeElement,
+  type TypeOptions,
+  typeInto,
+} from "./animations.js";
 export { type ClientTool, ClientToolRegistry } from "./client_tool_registry.js";
 export { type ConfirmationRequest, requestConfirmation } from "./confirmation_modal.js";
 export {
@@ -24,5 +34,11 @@ export {
   type HttpAgentOptions,
 } from "./create_http_agent.js";
 export { defineAgUiChat } from "./define_ag_ui_chat.js";
+export {
+  clickElement,
+  type FillFieldOptions,
+  fillField,
+  setControlValue,
+} from "./dom_driver.js";
 export { isDestructive } from "./is_destructive.js";
 export { VERSION } from "./version.js";
