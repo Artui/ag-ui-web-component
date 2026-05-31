@@ -1,7 +1,40 @@
+import type { Context, Tool } from "@ag-ui/core";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgUiChat, SubmitDetail } from "../src/ag_ui_chat.js";
 import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT } from "../src/constants.js";
 import { defineAgUiChat } from "../src/define_ag_ui_chat.js";
+import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
+
+/** Mount the element with a fake agent factory and an optional run script. */
+function mountWithAgent(
+  script: (emit: Emit) => void | Promise<void>,
+  extra: { tools?: Tool[]; context?: Context[] } = {},
+): { el: AgUiChat; handle: ReturnType<typeof makeFakeAgent> } {
+  const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+  el.setAttribute("endpoint", "/agent/");
+  const handle = makeFakeAgent({ script });
+  el.agentFactory = () => handle.agent;
+  if (extra.tools !== undefined) {
+    el.getTools = () => extra.tools as Tool[];
+  }
+  if (extra.context !== undefined) {
+    el.getContext = () => extra.context as Context[];
+  }
+  document.body.appendChild(el);
+  return { el, handle };
+}
+
+async function send(el: AgUiChat, text: string): Promise<void> {
+  const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
+  if (input === null) {
+    throw new Error("expected an input");
+  }
+  input.value = text;
+  shadow(el).querySelector<HTMLButtonElement>(".send")?.click();
+  // Let the microtask queue drain the async submit + fake run.
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 function mount(attrs: Record<string, string> = {}): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
@@ -67,7 +100,9 @@ describe("AgUiChat", () => {
   });
 
   it("submits on send-button click: appends a user bubble and emits the event", () => {
-    const el = mount({ endpoint: "/agent/" });
+    // No endpoint here: this asserts the submit-event + user-bubble seam in
+    // isolation, without engaging the AG-UI client / network path.
+    const el = mount();
     const onSubmit = vi.fn();
     el.addEventListener(SUBMIT_EVENT, (e) => onSubmit((e as CustomEvent<SubmitDetail>).detail));
 
@@ -119,5 +154,116 @@ describe("AgUiChat", () => {
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "a", shiftKey: false }));
 
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("submits via Enter and drives the client (covers keydown path)", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.text("hi");
+      emit.textEnd("hi");
+    });
+    const input = inputOf(el);
+    input.value = "hello";
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", shiftKey: false, cancelable: true }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(shadow(el).querySelector(".message--assistant")?.textContent).toBe("hi");
+  });
+
+  it("streams assistant text into a single growing bubble", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.text("Pa");
+      emit.text("Paris");
+      emit.textEnd("Paris");
+      emit.runEnd();
+    });
+    await send(el, "capital of France?");
+
+    const assistantBubbles = shadow(el).querySelectorAll(".message--assistant");
+    expect(assistantBubbles).toHaveLength(1);
+    expect(assistantBubbles[0]?.textContent).toBe("Paris");
+  });
+
+  it("toggles the send button disabled state across a run", async () => {
+    let sawDisabled = false;
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      sawDisabled = shadow(el).querySelector<HTMLButtonElement>(".send")?.disabled === true;
+      emit.runEnd();
+    });
+    await send(el, "go");
+    expect(sawDisabled).toBe(true);
+    expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.disabled).toBe(false);
+  });
+
+  it("renders a tool-call card", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.toolCall("tc1", "fill_field", { name: "city" });
+    });
+    await send(el, "fill the city");
+    const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+    expect(card?.textContent).toBe("🔧 fill_field");
+    expect(card?.dataset["toolName"]).toBe("fill_field");
+  });
+
+  it("renders an error bubble and re-enables send", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.error("model exploded");
+    });
+    await send(el, "boom");
+    const bubble = shadow(el).querySelector(".message--assistant");
+    expect(bubble?.textContent).toContain("model exploded");
+    expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.disabled).toBe(false);
+  });
+
+  it("forwards the current tools and context to the run", async () => {
+    const tools: Tool[] = [
+      { name: "fill_field", description: "d", parameters: { type: "object" } },
+    ];
+    const context: Context[] = [{ description: "route", value: "changeform" }];
+    const { el, handle } = mountWithAgent(() => {}, { tools, context });
+    await send(el, "x");
+    expect(handle.lastRunParams).toEqual({ tools, context });
+  });
+
+  it("does not build a client when no endpoint is set", async () => {
+    const el = mount(); // no endpoint attribute
+    let factoryCalled = false;
+    el.agentFactory = () => {
+      factoryCalled = true;
+      return makeFakeAgent().agent;
+    };
+    inputOf(el).value = "hello";
+    shadow(el).querySelector<HTMLButtonElement>(".send")?.click();
+    await Promise.resolve();
+    expect(factoryCalled).toBe(false);
+    // The user bubble still renders; only the network path is skipped.
+    expect(shadow(el).querySelectorAll(".message--user")).toHaveLength(1);
+  });
+
+  it("reuses a single client across multiple sends", async () => {
+    let factoryCalls = 0;
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.text("ok");
+        emit.textEnd("ok");
+      },
+    });
+    el.agentFactory = () => {
+      factoryCalls += 1;
+      return handle.agent;
+    };
+    document.body.appendChild(el);
+
+    await send(el, "first");
+    await send(el, "second");
+
+    expect(factoryCalls).toBe(1);
+    expect(handle.messages.map((m) => m.content)).toEqual(["first", "second"]);
   });
 });

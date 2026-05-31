@@ -1,4 +1,7 @@
+import type { Context, Tool } from "@ag-ui/core";
+import { AgUiClient, type AgUiClientHandlers, type AgUiToolCall } from "./agui_client.js";
 import { MESSAGE_ROLE, SUBMIT_EVENT } from "./constants.js";
+import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import { STYLES } from "./styles.js";
 
 /** The role a rendered chat message takes. */
@@ -10,21 +13,37 @@ export interface SubmitDetail {
 }
 
 /**
- * `<ag-ui-chat>` — a framework-free chat sidebar Web Component.
+ * `<ag-ui-chat>` — a framework-free chat sidebar Web Component over AG-UI.
  *
- * This skeleton owns the Shadow DOM shell (header, scrolling message list,
- * input row) and emits a {@link SUBMIT_EVENT} when the user sends a message.
- * Later phases attach the AG-UI client, a pluggable tool registry, a DOM
- * driver, and a confirmation modal — all behind this same element.
+ * Owns the Shadow DOM shell (header, scrolling message list, input row),
+ * builds an {@link AgUiClient} on first send (via the overridable
+ * {@link agentFactory}), and renders streaming assistant text plus tool-call
+ * activity. Emits a {@link SUBMIT_EVENT} for host visibility.
  *
- * The DOM is built imperatively (no `innerHTML` + `querySelector`) so the
- * element holds direct, always-present references to its parts.
+ * The per-run frontend tool catalog and context are supplied by
+ * {@link getTools} / {@link getContext}, which later phases (the tool
+ * registry, DOM driver) populate.
  */
 export class AgUiChat extends HTMLElement {
+  /** Agent factory; override to inject a custom or fake agent (tests). */
+  agentFactory: AgentFactory = createHttpAgent;
+
+  /** Extra HTTP headers for the AG-UI endpoint (e.g. CSRF). */
+  headers: Record<string, string> = {};
+
+  /** Per-run frontend tool catalog provider. */
+  getTools: () => Tool[] = () => [];
+
+  /** Per-run context provider. */
+  getContext: () => Context[] = () => [];
+
   readonly #root: ShadowRoot;
   readonly #messages: HTMLDivElement;
   readonly #input: HTMLTextAreaElement;
   readonly #send: HTMLButtonElement;
+
+  #client: AgUiClient | null = null;
+  #streamingBubble: HTMLDivElement | null = null;
 
   constructor() {
     super();
@@ -77,7 +96,9 @@ export class AgUiChat extends HTMLElement {
     this.#send.className = "send";
     this.#send.type = "button";
     this.#send.textContent = "Send";
-    this.#send.addEventListener("click", () => this.#submit());
+    this.#send.addEventListener("click", () => {
+      void this.#submit();
+    });
 
     inputRow.append(this.#input, this.#send);
     chat.append(header, this.#messages, inputRow);
@@ -87,11 +108,11 @@ export class AgUiChat extends HTMLElement {
   #onKeydown(event: KeyboardEvent): void {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      this.#submit();
+      void this.#submit();
     }
   }
 
-  #submit(): void {
+  async #submit(): Promise<void> {
     const content = this.#input.value.trim();
     if (content === "") {
       return;
@@ -105,5 +126,70 @@ export class AgUiChat extends HTMLElement {
         composed: true,
       }),
     );
+    await this.#client_send(content);
+  }
+
+  async #client_send(content: string): Promise<void> {
+    if (this.endpoint === "") {
+      return;
+    }
+    await this.#ensureClient().send(content);
+  }
+
+  #ensureClient(): AgUiClient {
+    if (this.#client === null) {
+      const agent = this.agentFactory({ endpoint: this.endpoint, headers: this.headers });
+      this.#client = new AgUiClient({
+        agent,
+        handlers: this.#handlers(),
+        getTools: () => this.getTools(),
+        getContext: () => this.getContext(),
+      });
+    }
+    return this.#client;
+  }
+
+  #handlers(): AgUiClientHandlers {
+    return {
+      onRunStart: () => {
+        this.#send.disabled = true;
+      },
+      onTextDelta: (buffer) => {
+        this.#streamInto(buffer);
+      },
+      onTextEnd: (buffer) => {
+        this.#streamInto(buffer);
+        this.#streamingBubble = null;
+      },
+      onToolCall: (call) => {
+        this.#appendToolCall(call);
+      },
+      onRunEnd: () => {
+        this.#send.disabled = false;
+        this.#streamingBubble = null;
+      },
+      onError: (message) => {
+        this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`);
+        this.#send.disabled = false;
+        this.#streamingBubble = null;
+      },
+    };
+  }
+
+  #streamInto(buffer: string): void {
+    if (this.#streamingBubble === null) {
+      this.#streamingBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, "");
+    }
+    this.#streamingBubble.textContent = buffer;
+    this.#messages.scrollTop = this.#messages.scrollHeight;
+  }
+
+  #appendToolCall(call: AgUiToolCall): void {
+    const card = document.createElement("div");
+    card.className = "tool-call";
+    card.dataset["toolName"] = call.name;
+    card.textContent = `🔧 ${call.name}`;
+    this.#messages.appendChild(card);
+    this.#messages.scrollTop = this.#messages.scrollHeight;
   }
 }

@@ -77,6 +77,17 @@ export const STYLES = `
   border-bottom-left-radius: 4px;
 }
 
+.tool-call {
+  align-self: flex-start;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #eef2ff;
+  border: 1px solid var(--ag-ui-border);
+  color: var(--ag-ui-accent);
+}
+
 .input-row {
   display: flex;
   gap: 8px;
