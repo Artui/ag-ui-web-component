@@ -53,5 +53,3 @@ pnpm-debug.log*
 # AI-specific items
 .ai/
 .claude/
-
-# pnpm lockfile is tracked (see below) but local store is not
