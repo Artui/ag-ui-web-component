@@ -17,4 +17,24 @@ describe("createHttpAgent", () => {
     const agent = createHttpAgent({ endpoint: "/agent/" });
     expect((agent as HttpAgent).headers).toEqual({});
   });
+
+  it("provides a fetch wrapper that calls the global fetch as a free function", async () => {
+    const agent = createHttpAgent({ endpoint: "/agent/" });
+    const wrapped = (agent as HttpAgent).fetch;
+    const original = globalThis.fetch;
+    const calls: Array<[string, RequestInit]> = [];
+    // Replace the global fetch with a recorder; the wrapper must reach it
+    // without an illegal-invocation receiver error.
+    globalThis.fetch = ((url: string, init: RequestInit) => {
+      calls.push([url, init]);
+      return Promise.resolve(new Response("ok"));
+    }) as typeof fetch;
+    try {
+      const res = await wrapped("/agent/", { method: "POST" });
+      expect(await res.text()).toBe("ok");
+      expect(calls).toEqual([["/agent/", { method: "POST" }]]);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });

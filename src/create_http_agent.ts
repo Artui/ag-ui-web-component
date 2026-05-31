@@ -17,6 +17,11 @@ export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
   return new HttpAgent({
     url: options.endpoint,
     headers: options.headers ?? {},
+    // HttpAgent invokes its configured fetch as a method (`this.fetch(...)`),
+    // which would rebind the global `fetch` to the agent instance and trigger
+    // "Illegal invocation" in browsers. Wrap it so `fetch` is always called as
+    // a free function with the correct receiver.
+    fetch: (url, init) => fetch(url, init),
   });
 }
 
