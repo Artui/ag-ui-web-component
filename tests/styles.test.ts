@@ -43,4 +43,11 @@ describe("STYLES", () => {
     expect(STYLES).toContain("max-width: var(--ag-ui-max-width);");
     expect(STYLES).toContain("max-height: var(--ag-ui-max-height);");
   });
+
+  it("themes the input and tool-call surfaces (so dark themes work)", () => {
+    expect(STYLES).toContain("--ag-ui-input-bg:");
+    expect(STYLES).toContain("--ag-ui-tool-bg:");
+    expect(STYLES).toContain("background: var(--ag-ui-input-bg);");
+    expect(STYLES).toContain("background: var(--ag-ui-tool-bg);");
+  });
 });

@@ -11,6 +11,8 @@ export const STYLES = `
   --ag-ui-user-bg: #4f46e5;
   --ag-ui-user-fg: #ffffff;
   --ag-ui-assistant-bg: #f1f1f6;
+  --ag-ui-input-bg: var(--ag-ui-bg);
+  --ag-ui-tool-bg: var(--ag-ui-assistant-bg);
   --ag-ui-border: #e2e2ec;
   --ag-ui-radius: 12px;
 
@@ -91,7 +93,7 @@ export const STYLES = `
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   padding: 6px 10px;
   border-radius: 8px;
-  background: #eef2ff;
+  background: var(--ag-ui-tool-bg);
   border: 1px solid var(--ag-ui-border);
   color: var(--ag-ui-accent);
 }
@@ -106,6 +108,7 @@ export const STYLES = `
 .input {
   flex: 1;
   resize: none;
+  background: var(--ag-ui-input-bg);
   border: 1px solid var(--ag-ui-border);
   border-radius: 8px;
   padding: 8px 10px;
