@@ -1,6 +1,7 @@
 import type { Context, Tool } from "@ag-ui/core";
 import { describe, expect, it } from "vitest";
 import { AgUiClient, type AgUiClientHandlers } from "../src/agui_client.js";
+import { MAX_TOOL_ROUNDS } from "../src/constants.js";
 import { makeFakeAgent } from "./helpers/fake_agent.js";
 
 function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {
@@ -102,5 +103,78 @@ describe("AgUiClient", () => {
     const fake = makeFakeAgent();
     await new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() }).send("x");
     expect(fake.lastRunParams).toEqual({ tools: [], context: [] });
+  });
+
+  it("executes a frontend tool, posts the result, and re-runs", async () => {
+    let round = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        if (round === 0) {
+          emit.toolCall("tc1", "fill_field", { value: "Paris" });
+        } else {
+          emit.text("done");
+          emit.textEnd("done");
+        }
+        round += 1;
+      },
+    });
+    const executed: string[] = [];
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      executeTool: async (call) => {
+        executed.push(call.name);
+        return { content: "ok" };
+      },
+    }).send("fill it");
+
+    expect(executed).toEqual(["fill_field"]);
+    // user message + tool-result message both appended.
+    const tool = fake.messages.find((m) => m.role === "tool");
+    expect(tool).toMatchObject({ role: "tool", content: "ok" });
+  });
+
+  it("does not re-run when the only tool calls are server-side (null result)", async () => {
+    let runs = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        runs += 1;
+        emit.toolCall("tc1", "server_tool", {});
+      },
+    });
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      executeTool: async () => null, // not ours
+    }).send("x");
+    expect(runs).toBe(1);
+  });
+
+  it("does not loop when no executeTool is configured", async () => {
+    let runs = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        runs += 1;
+        emit.toolCall("tc1", "fill_field", {});
+      },
+    });
+    await new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() }).send("x");
+    expect(runs).toBe(1);
+  });
+
+  it("stops re-running at MAX_TOOL_ROUNDS", async () => {
+    let runs = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        runs += 1;
+        emit.toolCall(`tc${runs}`, "fill_field", {}); // always calls a tool
+      },
+    });
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      executeTool: async () => ({ content: "ok" }), // always executes
+    }).send("x");
+    expect(runs).toBe(MAX_TOOL_ROUNDS);
   });
 });

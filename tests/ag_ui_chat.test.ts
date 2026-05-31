@@ -24,16 +24,31 @@ function mountWithAgent(
   return { el, handle };
 }
 
+/** Drain pending microtasks a few times so async submit + fake run settle. */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 5; i += 1) {
+    await Promise.resolve();
+  }
+}
+
 async function send(el: AgUiChat, text: string): Promise<void> {
+  sendNoWait(el, text);
+  await flush();
+}
+
+/**
+ * Click Send without awaiting the run. Used by modal tests that must interact
+ * mid-run (the run blocks on the confirmation modal until a button is clicked):
+ * call this, ``await flush()`` to reach the modal, click, then ``await flush()``
+ * again to let the tool execute and the run settle.
+ */
+function sendNoWait(el: AgUiChat, text: string): void {
   const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
   if (input === null) {
     throw new Error("expected an input");
   }
   input.value = text;
   shadow(el).querySelector<HTMLButtonElement>(".send")?.click();
-  // Let the microtask queue drain the async submit + fake run.
-  await Promise.resolve();
-  await Promise.resolve();
 }
 
 function mount(attrs: Record<string, string> = {}): AgUiChat {
@@ -205,7 +220,7 @@ describe("AgUiChat", () => {
     await send(el, "fill the city");
     const card = shadow(el).querySelector<HTMLElement>(".tool-call");
     expect(card?.textContent).toBe("🔧 fill_field");
-    expect(card?.dataset["toolName"]).toBe("fill_field");
+    expect(card?.getAttribute("data-tool-name")).toBe("fill_field");
   });
 
   it("renders an error bubble and re-enables send", async () => {
@@ -265,5 +280,194 @@ describe("AgUiChat", () => {
 
     expect(factoryCalls).toBe(1);
     expect(handle.messages.map((m) => m.content)).toEqual(["first", "second"]);
+  });
+
+  it("exposes registered tools to the run via getTools", async () => {
+    let round = 0;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.text("listing");
+        emit.textEnd("listing");
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "count_users",
+      description: "count users",
+      parameters: { type: "object" },
+      handler: () => 42,
+    });
+    await send(el, "how many?");
+    expect(handle.lastRunParams?.tools).toEqual([
+      { name: "count_users", description: "count users", parameters: { type: "object" } },
+    ]);
+  });
+
+  it("executes a non-destructive tool without a modal and posts the result", async () => {
+    let round = 0;
+    let received: Record<string, unknown> | null = null;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "count_users", { active: true });
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "count_users",
+      description: "count",
+      parameters: { type: "object" },
+      handler: (args) => {
+        received = args;
+        return 42;
+      },
+    });
+    await send(el, "count active users");
+
+    expect(received).toEqual({ active: true });
+    expect(shadow(el).querySelector(".modal-overlay")).toBeNull();
+    const toolMsg = handle.messages.find((m) => m.role === "tool");
+    expect(toolMsg?.content).toBe("42");
+  });
+
+  it("shows a modal for a destructive tool and runs it on confirm", async () => {
+    let round = 0;
+    let ran = false;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "delete_user", { id: 7 });
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "delete_user",
+      description: "delete",
+      parameters: { type: "object", "x-destructive": true },
+      handler: () => {
+        ran = true;
+        return "deleted";
+      },
+    });
+
+    sendNoWait(el, "delete user 7");
+    await flush();
+    const modal = shadow(el).querySelector<HTMLButtonElement>(".modal-btn--confirm");
+    expect(modal).not.toBeNull();
+    modal?.click();
+    await flush();
+
+    expect(ran).toBe(true);
+    expect(handle.messages.find((m) => m.role === "tool")?.content).toBe('"deleted"');
+  });
+
+  it("declines a destructive tool on cancel and posts a decline message", async () => {
+    let round = 0;
+    let ran = false;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "delete_user", { id: 7 });
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "delete_user",
+      description: "delete",
+      parameters: { type: "object", "x-destructive": true },
+      handler: () => {
+        ran = true;
+        return "deleted";
+      },
+    });
+
+    sendNoWait(el, "delete user 7");
+    await flush();
+    shadow(el).querySelector<HTMLButtonElement>(".modal-btn--cancel")?.click();
+    await flush();
+
+    expect(ran).toBe(false);
+    expect(handle.messages.find((m) => m.role === "tool")?.content).toBe(
+      "User declined the action.",
+    );
+  });
+
+  it("skips the modal for a destructive tool when autoConfirm is set", async () => {
+    let round = 0;
+    let ran = false;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "delete_user", { id: 7 });
+      }
+      round += 1;
+    });
+    el.autoConfirm = true;
+    el.registerTool({
+      name: "delete_user",
+      description: "delete",
+      parameters: { type: "object", "x-destructive": true },
+      handler: () => {
+        ran = true;
+        return "deleted";
+      },
+    });
+    await send(el, "delete user 7");
+    expect(ran).toBe(true);
+    expect(shadow(el).querySelector(".modal-overlay")).toBeNull();
+  });
+
+  it("captures a tool handler error into the result message", async () => {
+    let round = 0;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "boom", {});
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "boom",
+      description: "explodes",
+      parameters: { type: "object" },
+      handler: () => {
+        throw new Error("kaboom");
+      },
+    });
+    await send(el, "trigger boom");
+    expect(handle.messages.find((m) => m.role === "tool")?.content).toContain("kaboom");
+  });
+
+  it("stringifies a non-Error throw from a tool handler", async () => {
+    let round = 0;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "boom", {});
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "boom",
+      description: "explodes",
+      parameters: { type: "object" },
+      handler: () => {
+        throw "string failure";
+      },
+    });
+    await send(el, "trigger boom");
+    expect(handle.messages.find((m) => m.role === "tool")?.content).toContain("string failure");
+  });
+
+  it("serialises a nullish tool result as null", async () => {
+    let round = 0;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "noop", {});
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "noop",
+      description: "returns nothing",
+      parameters: { type: "object" },
+      handler: () => undefined,
+    });
+    await send(el, "do nothing");
+    expect(handle.messages.find((m) => m.role === "tool")?.content).toBe("null");
   });
 });

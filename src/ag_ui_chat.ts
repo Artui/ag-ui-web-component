@@ -1,7 +1,15 @@
 import type { Context, Tool } from "@ag-ui/core";
-import { AgUiClient, type AgUiClientHandlers, type AgUiToolCall } from "./agui_client.js";
+import {
+  AgUiClient,
+  type AgUiClientHandlers,
+  type AgUiToolCall,
+  type ToolExecution,
+} from "./agui_client.js";
+import { type ClientTool, ClientToolRegistry } from "./client_tool_registry.js";
+import { requestConfirmation } from "./confirmation_modal.js";
 import { MESSAGE_ROLE, SUBMIT_EVENT } from "./constants.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
+import { isDestructive } from "./is_destructive.js";
 import { STYLES } from "./styles.js";
 
 /** The role a rendered chat message takes. */
@@ -31,13 +39,21 @@ export class AgUiChat extends HTMLElement {
   /** Extra HTTP headers for the AG-UI endpoint (e.g. CSRF). */
   headers: Record<string, string> = {};
 
-  /** Per-run frontend tool catalog provider. */
-  getTools: () => Tool[] = () => [];
+  /** When true, destructive tools execute without a confirmation modal. */
+  autoConfirm = false;
+
+  /**
+   * Per-run frontend tool catalog provider. Defaults to the tools registered
+   * via {@link registerTool}; override to supply a fully custom catalog.
+   */
+  getTools: () => Tool[] = () => this.#toolRegistry.tools();
 
   /** Per-run context provider. */
   getContext: () => Context[] = () => [];
 
+  readonly #toolRegistry = new ClientToolRegistry();
   readonly #root: ShadowRoot;
+  readonly #chat: HTMLDivElement;
   readonly #messages: HTMLDivElement;
   readonly #input: HTMLTextAreaElement;
   readonly #send: HTMLButtonElement;
@@ -48,9 +64,15 @@ export class AgUiChat extends HTMLElement {
   constructor() {
     super();
     this.#root = this.attachShadow({ mode: "open" });
+    this.#chat = document.createElement("div");
     this.#messages = document.createElement("div");
     this.#input = document.createElement("textarea");
     this.#send = document.createElement("button");
+  }
+
+  /** Declare a frontend tool the agent may call. */
+  registerTool(tool: ClientTool): void {
+    this.#toolRegistry.register(tool);
   }
 
   /** The AG-UI endpoint URL, read from the `endpoint` attribute. */
@@ -76,8 +98,7 @@ export class AgUiChat extends HTMLElement {
     const style = document.createElement("style");
     style.textContent = STYLES;
 
-    const chat = document.createElement("div");
-    chat.className = "chat";
+    this.#chat.className = "chat";
 
     const header = document.createElement("div");
     header.className = "header";
@@ -101,8 +122,8 @@ export class AgUiChat extends HTMLElement {
     });
 
     inputRow.append(this.#input, this.#send);
-    chat.append(header, this.#messages, inputRow);
-    this.#root.append(style, chat);
+    this.#chat.append(header, this.#messages, inputRow);
+    this.#root.append(style, this.#chat);
   }
 
   #onKeydown(event: KeyboardEvent): void {
@@ -144,9 +165,34 @@ export class AgUiChat extends HTMLElement {
         handlers: this.#handlers(),
         getTools: () => this.getTools(),
         getContext: () => this.getContext(),
+        executeTool: (call) => this.#executeTool(call),
       });
     }
     return this.#client;
+  }
+
+  async #executeTool(call: AgUiToolCall): Promise<ToolExecution | null> {
+    if (!this.#toolRegistry.has(call.name)) {
+      // A server-side tool the server already executed — not ours to re-run.
+      return null;
+    }
+    const tool = this.#toolRegistry.get(call.name);
+    if (isDestructive(tool.parameters) && !this.autoConfirm) {
+      const accepted = await requestConfirmation(this.#chat, {
+        toolName: call.name,
+        args: call.args,
+      });
+      if (!accepted) {
+        return { content: "User declined the action." };
+      }
+    }
+    try {
+      const result = await tool.handler(call.args);
+      return { content: JSON.stringify(result ?? null) };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { content: `Error: ${message}`, error: message };
+    }
   }
 
   #handlers(): AgUiClientHandlers {
@@ -187,7 +233,7 @@ export class AgUiChat extends HTMLElement {
   #appendToolCall(call: AgUiToolCall): void {
     const card = document.createElement("div");
     card.className = "tool-call";
-    card.dataset["toolName"] = call.name;
+    card.setAttribute("data-tool-name", call.name);
     card.textContent = `🔧 ${call.name}`;
     this.#messages.appendChild(card);
     this.#messages.scrollTop = this.#messages.scrollHeight;

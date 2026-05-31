@@ -16,3 +16,14 @@ export const MESSAGE_ROLE = {
   USER: "user",
   ASSISTANT: "assistant",
 } as const;
+
+/**
+ * JSON-Schema extension key marking a tool as destructive. Mirrors the
+ * `django-ag-ui` server side. When a tool's `parameters` carries
+ * `{ "x-destructive": true }`, the element gates its execution behind the
+ * confirmation modal (unless `autoConfirm` is set).
+ */
+export const X_DESTRUCTIVE_KEY = "x-destructive";
+
+/** Upper bound on frontend tool-call → re-run rounds within one send. */
+export const MAX_TOOL_ROUNDS = 10;

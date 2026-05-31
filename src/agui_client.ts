@@ -1,5 +1,6 @@
 import { type AbstractAgent, type AgentSubscriber, randomUUID } from "@ag-ui/client";
 import type { Context, Tool } from "@ag-ui/core";
+import { MAX_TOOL_ROUNDS } from "./constants.js";
 
 /** A tool call surfaced to the host by {@link AgUiClient}. */
 export interface AgUiToolCall {
@@ -7,6 +8,23 @@ export interface AgUiToolCall {
   readonly name: string;
   readonly args: Record<string, unknown>;
 }
+
+/** The result of executing a frontend tool, destined for a tool-result message. */
+export interface ToolExecution {
+  /** String content for the AG-UI tool-result message. */
+  content: string;
+  /** Present when the handler failed; surfaced for logging. */
+  error?: string;
+}
+
+/**
+ * Executes a frontend tool call.
+ *
+ * Returns the {@link ToolExecution} to post back to the agent, or ``null`` when
+ * the call is not a frontend tool the host owns (a server-side tool the server
+ * already executed — the client must not re-run for it).
+ */
+export type ExecuteTool = (call: AgUiToolCall) => Promise<ToolExecution | null>;
 
 /**
  * Callbacks the {@link AgUiClient} invokes as a run progresses. The host
@@ -39,6 +57,8 @@ export interface AgUiClientConfig extends AgUiRunInputs {
   /** The AG-UI agent to drive. Injected so it can be faked in tests. */
   agent: AbstractAgent;
   handlers: AgUiClientHandlers;
+  /** Executes frontend tool calls. Omit for server-only tool sets. */
+  executeTool?: ExecuteTool;
 }
 
 /**
@@ -53,12 +73,14 @@ export class AgUiClient {
   readonly #handlers: AgUiClientHandlers;
   readonly #getTools: () => Tool[];
   readonly #getContext: () => Context[];
+  readonly #executeTool: ExecuteTool | null;
 
   constructor(config: AgUiClientConfig) {
     this.#agent = config.agent;
     this.#handlers = config.handlers;
     this.#getTools = config.getTools ?? (() => []);
     this.#getContext = config.getContext ?? (() => []);
+    this.#executeTool = config.executeTool ?? null;
   }
 
   /** Whether a run is currently in flight. */
@@ -66,20 +88,53 @@ export class AgUiClient {
     return this.#agent.isRunning;
   }
 
-  /** Append a user message and run the agent, streaming results to handlers. */
+  /**
+   * Append a user message and run the agent to completion.
+   *
+   * When the agent calls frontend tools, this executes them and re-runs the
+   * agent with the results, looping until the agent stops calling frontend
+   * tools (bounded by {@link MAX_TOOL_ROUNDS}).
+   */
   async send(content: string): Promise<void> {
     this.#agent.addMessage({ id: randomUUID(), role: "user", content });
     try {
-      await this.#agent.runAgent(
-        { tools: this.#getTools(), context: this.#getContext() },
-        this.#buildSubscriber(),
-      );
+      await this.#runLoop();
     } catch (error) {
       this.#handlers.onError(error instanceof Error ? error.message : String(error));
     }
   }
 
-  #buildSubscriber(): AgentSubscriber {
+  async #runLoop(): Promise<void> {
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+      const pending: AgUiToolCall[] = [];
+      await this.#agent.runAgent(
+        { tools: this.#getTools(), context: this.#getContext() },
+        this.#buildSubscriber(pending),
+      );
+      if (this.#executeTool === null || pending.length === 0) {
+        return;
+      }
+      let executed = false;
+      for (const call of pending) {
+        const result = await this.#executeTool(call);
+        if (result === null) {
+          continue;
+        }
+        this.#agent.addMessage({
+          id: randomUUID(),
+          role: "tool",
+          content: result.content,
+          toolCallId: call.id,
+        });
+        executed = true;
+      }
+      if (!executed) {
+        return;
+      }
+    }
+  }
+
+  #buildSubscriber(pending: AgUiToolCall[]): AgentSubscriber {
     const h = this.#handlers;
     return {
       onRunInitialized() {
@@ -92,7 +147,13 @@ export class AgUiClient {
         h.onTextEnd(textMessageBuffer);
       },
       onToolCallEndEvent({ event, toolCallName, toolCallArgs }) {
-        h.onToolCall({ id: event.toolCallId, name: toolCallName, args: toolCallArgs });
+        const call: AgUiToolCall = {
+          id: event.toolCallId,
+          name: toolCallName,
+          args: toolCallArgs,
+        };
+        pending.push(call);
+        h.onToolCall(call);
       },
       onRunErrorEvent({ event }) {
         h.onError(event.message);

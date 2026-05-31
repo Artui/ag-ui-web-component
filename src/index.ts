@@ -6,12 +6,23 @@ export {
   type AgUiClientHandlers,
   type AgUiRunInputs,
   type AgUiToolCall,
+  type ExecuteTool,
+  type ToolExecution,
 } from "./agui_client.js";
-export { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT } from "./constants.js";
+export { type ClientTool, ClientToolRegistry } from "./client_tool_registry.js";
+export { type ConfirmationRequest, requestConfirmation } from "./confirmation_modal.js";
+export {
+  ELEMENT_TAG,
+  MAX_TOOL_ROUNDS,
+  MESSAGE_ROLE,
+  SUBMIT_EVENT,
+  X_DESTRUCTIVE_KEY,
+} from "./constants.js";
 export {
   type AgentFactory,
   createHttpAgent,
   type HttpAgentOptions,
 } from "./create_http_agent.js";
 export { defineAgUiChat } from "./define_ag_ui_chat.js";
+export { isDestructive } from "./is_destructive.js";
 export { VERSION } from "./version.js";
