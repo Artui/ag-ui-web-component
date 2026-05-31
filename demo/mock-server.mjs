@@ -22,6 +22,7 @@ const THEME_ASSETS = new Map([
   ["/themes/default.html", { path: "themes/default.html", contentType: HTML }],
   ["/themes/dark.html", { path: "themes/dark.html", contentType: HTML }],
   ["/themes/claude.html", { path: "themes/claude.html", contentType: HTML }],
+  ["/themes/embedded.html", { path: "themes/embedded.html", contentType: HTML }],
   ["/themes/form.css", { path: "themes/form.css", contentType: "text/css; charset=utf-8" }],
   ["/themes/demo.js", { path: "themes/demo.js", contentType: "text/javascript" }],
 ]);

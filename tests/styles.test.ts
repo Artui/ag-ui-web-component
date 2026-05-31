@@ -50,4 +50,21 @@ describe("STYLES", () => {
     expect(STYLES).toContain("background: var(--ag-ui-input-bg);");
     expect(STYLES).toContain("background: var(--ag-ui-tool-bg);");
   });
+
+  it("exposes the surface + embed knobs that make it feel native", () => {
+    // Header matches the host surface instead of an accent titlebar.
+    expect(STYLES).toContain("--ag-ui-header-bg:");
+    expect(STYLES).toContain("--ag-ui-header-fg:");
+    expect(STYLES).toContain("background: var(--ag-ui-header-bg);");
+    expect(STYLES).toContain("color: var(--ag-ui-header-fg);");
+    // Shadow can be dropped for a flush panel.
+    expect(STYLES).toContain("--ag-ui-shadow:");
+    expect(STYLES).toContain("box-shadow: var(--ag-ui-shadow);");
+    // Typography inherits the host by default.
+    expect(STYLES).toContain("--ag-ui-font: inherit;");
+    expect(STYLES).toContain("font-family: var(--ag-ui-font);");
+    // Positioning can switch from floating overlay to in-flow embed.
+    expect(STYLES).toContain("--ag-ui-position: fixed;");
+    expect(STYLES).toContain("position: var(--ag-ui-position);");
+  });
 });

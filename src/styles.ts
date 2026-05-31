@@ -13,26 +13,37 @@ export const STYLES = `
   --ag-ui-assistant-bg: #f1f1f6;
   --ag-ui-input-bg: var(--ag-ui-bg);
   --ag-ui-tool-bg: var(--ag-ui-assistant-bg);
+  --ag-ui-header-bg: var(--ag-ui-accent);
+  --ag-ui-header-fg: #ffffff;
   --ag-ui-border: #e2e2ec;
   --ag-ui-radius: 12px;
 
-  /* Layout — override from outside to dock the widget anywhere. */
+  /* Surface — set --ag-ui-shadow: none for a flush, embedded panel. */
+  --ag-ui-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
+  --ag-ui-font: inherit;
+  --ag-ui-font-size: 14px;
+
+  /* Layout — override from outside to dock the widget anywhere.
+     Set --ag-ui-position: static (and place this element in your own
+     grid/flex layout) to embed it in the page flow instead of floating. */
+  --ag-ui-position: fixed;
+  --ag-ui-z-index: 2147483000;
   --ag-ui-width: 380px;
   --ag-ui-height: 560px;
   --ag-ui-inset: auto 24px 24px auto;
   --ag-ui-max-width: calc(100vw - 48px);
   --ag-ui-max-height: calc(100vh - 48px);
 
-  position: fixed;
+  position: var(--ag-ui-position);
   inset: var(--ag-ui-inset);
-  z-index: 2147483000;
+  z-index: var(--ag-ui-z-index);
   width: var(--ag-ui-width);
   max-width: var(--ag-ui-max-width);
   height: var(--ag-ui-height);
   max-height: var(--ag-ui-max-height);
   display: flex;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-size: 14px;
+  font-family: var(--ag-ui-font);
+  font-size: var(--ag-ui-font-size);
   color: var(--ag-ui-fg);
 }
 
@@ -41,10 +52,11 @@ export const STYLES = `
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-height: 0;
   background: var(--ag-ui-bg);
   border: 1px solid var(--ag-ui-border);
   border-radius: var(--ag-ui-radius);
-  box-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
+  box-shadow: var(--ag-ui-shadow);
   overflow: hidden;
 }
 
@@ -52,8 +64,8 @@ export const STYLES = `
   padding: 12px 16px;
   font-weight: 600;
   border-bottom: 1px solid var(--ag-ui-border);
-  background: var(--ag-ui-accent);
-  color: #ffffff;
+  background: var(--ag-ui-header-bg);
+  color: var(--ag-ui-header-fg);
 }
 
 .messages {
