@@ -4,6 +4,7 @@
 
 export const STYLES = `
 :host {
+  /* Colors */
   --ag-ui-bg: #ffffff;
   --ag-ui-fg: #1a1a2e;
   --ag-ui-accent: #4f46e5;
@@ -13,14 +14,20 @@ export const STYLES = `
   --ag-ui-border: #e2e2ec;
   --ag-ui-radius: 12px;
 
+  /* Layout — override from outside to dock the widget anywhere. */
+  --ag-ui-width: 380px;
+  --ag-ui-height: 560px;
+  --ag-ui-inset: auto 24px 24px auto;
+  --ag-ui-max-width: calc(100vw - 48px);
+  --ag-ui-max-height: calc(100vh - 48px);
+
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  inset: var(--ag-ui-inset);
   z-index: 2147483000;
-  width: 380px;
-  max-width: calc(100vw - 48px);
-  height: 560px;
-  max-height: calc(100vh - 48px);
+  width: var(--ag-ui-width);
+  max-width: var(--ag-ui-max-width);
+  height: var(--ag-ui-height);
+  max-height: var(--ag-ui-max-height);
   display: flex;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;

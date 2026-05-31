@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ag-ui-web-component — theme gallery</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        color: #1a1a2e;
+        background: #f7f7fb;
+      }
+      main {
+        max-width: 720px;
+        margin: 48px auto;
+        padding: 0 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 26px;
+      }
+      p.lead {
+        margin: 0 0 32px;
+        color: #6b7280;
+      }
+      .themes {
+        display: grid;
+        gap: 16px;
+      }
+      a.theme {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+        border: 1px solid #e2e2ec;
+        border-radius: 14px;
+        padding: 20px 24px;
+        background: #fff;
+        box-shadow: 0 6px 20px rgba(20, 20, 50, 0.05);
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
+      }
+      a.theme:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 28px rgba(20, 20, 50, 0.1);
+      }
+      .theme h2 {
+        margin: 0 0 4px;
+        font-size: 18px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .theme p {
+        margin: 0;
+        color: #6b7280;
+        font-size: 14px;
+      }
+      .swatch {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Theme gallery</h1>
+      <p class="lead">
+        Each page docks <code>&lt;ag-ui-chat&gt;</code> as a full-height side window
+        (right third of the screen) by overriding only CSS custom properties.
+      </p>
+      <div class="themes">
+        <a class="theme" href="/themes/default.html">
+          <h2><span class="swatch" style="background: #4f46e5"></span> Default</h2>
+          <p>The original indigo palette on a light admin form.</p>
+        </a>
+        <a class="theme" href="/themes/dark.html">
+          <h2><span class="swatch" style="background: #38bdf8"></span> Dark</h2>
+          <p>Dark slate surfaces, light text, a sky-blue accent.</p>
+        </a>
+        <a class="theme" href="/themes/claude.html">
+          <h2><span class="swatch" style="background: #d97757"></span> Claude</h2>
+          <p>Warm cream/paper surfaces with the signature coral accent.</p>
+        </a>
+      </div>
+    </main>
+  </body>
+</html>

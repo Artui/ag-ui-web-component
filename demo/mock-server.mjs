@@ -13,7 +13,18 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
-const PORT = 5173;
+const PORT = Number(process.env.PORT ?? 5173);
+
+const HTML = "text/html; charset=utf-8";
+const THEME_ASSETS = new Map([
+  ["/themes/", { path: "themes/index.html", contentType: HTML }],
+  ["/themes/index.html", { path: "themes/index.html", contentType: HTML }],
+  ["/themes/default.html", { path: "themes/default.html", contentType: HTML }],
+  ["/themes/dark.html", { path: "themes/dark.html", contentType: HTML }],
+  ["/themes/claude.html", { path: "themes/claude.html", contentType: HTML }],
+  ["/themes/form.css", { path: "themes/form.css", contentType: "text/css; charset=utf-8" }],
+  ["/themes/demo.js", { path: "themes/demo.js", contentType: "text/javascript" }],
+]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -105,6 +116,11 @@ const server = createServer((req, res) => {
   }
   if (req.method === "GET" && req.url === "/bundle.js") {
     serveFile(res, join(ROOT, "dist", "ag-ui-web-component.bundle.js"), "text/javascript");
+    return;
+  }
+  const theme = req.method === "GET" && THEME_ASSETS.get(req.url);
+  if (theme) {
+    serveFile(res, join(HERE, theme.path), theme.contentType);
     return;
   }
   res.writeHead(404);
