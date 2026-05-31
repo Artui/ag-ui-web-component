@@ -1,0 +1,80 @@
+{
+  "name": "@artooi/ag-ui-web-component",
+  "version": "0.1.0",
+  "description": "Framework-free <ag-ui-chat> Web Component over the AG-UI protocol. Drop-in chat sidebar with a pluggable client-side tool registry, DOM driver primitives, animations, and destructive-action confirmation modal.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./bundle": {
+      "import": "./dist/ag-ui-web-component.bundle.js"
+    },
+    "./style.css": "./dist/ag-ui-web-component.bundle.css"
+  },
+  "files": [
+    "dist/",
+    "src/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "node esbuild.config.mjs && tsc -p tsconfig.build.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --coverage"
+  },
+  "keywords": [
+    "ag-ui",
+    "agent",
+    "web-component",
+    "custom-element",
+    "shadow-dom",
+    "ai",
+    "llm",
+    "pydantic-ai",
+    "chat"
+  ],
+  "author": {
+    "name": "Artur Veres",
+    "email": "artur8118@gmail.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/Artui/ag-ui-web-component",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Artui/ag-ui-web-component.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Artui/ag-ui-web-component/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@ag-ui/client": ">=0.0.54 <0.1",
+    "@ag-ui/core": ">=0.0.54 <0.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "esbuild": "^0.25.0",
+    "happy-dom": "^16.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "packageManager": "pnpm@11.2.2"
+}

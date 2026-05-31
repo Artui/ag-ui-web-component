@@ -1,0 +1,33 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ["--maxkb=2000"]
+
+  - repo: local
+    hooks:
+      - id: biome-check
+        name: "biome check --write"
+        entry: make lint-fix
+        pass_filenames: false
+        language: system
+        stages: [pre-commit]
+
+      - id: biome-format
+        name: "biome format --write"
+        entry: make format
+        pass_filenames: false
+        language: system
+        stages: [pre-commit]
+
+      - id: type-check
+        name: "type check (tsc)"
+        entry: make type-check
+        pass_filenames: false
+        language: system
+        stages: [pre-commit]

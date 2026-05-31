@@ -1,0 +1,51 @@
+name: release
+
+# Main-triggered: every merge to `main` runs `release-publish-prepare`, which
+# short-circuits to a no-op unless the version in src/version.ts has been
+# bumped past the most recent `vX.Y.Z` tag.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@artooi/ag-ui-web-component
+    permissions:
+      id-token: write   # npm OIDC trusted publishing + provenance
+      contents: write   # tag push + gh release create
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare release (version check, test, build dist)
+        id: prepare
+        run: make release-publish-prepare
+
+      - name: Publish to npm
+        if: steps.prepare.outputs.released == 'true'
+        run: pnpm publish --no-git-checks --access public
+
+      - name: Tag + GitHub Release
+        if: steps.prepare.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make release-publish-finalize

@@ -1,0 +1,5 @@
+# pnpm 11 reads build-script allowlists from here (no longer the "pnpm" field
+# in package.json). esbuild ships a postinstall that fetches its platform
+# binary; it's a trusted build dependency.
+allowBuilds:
+  esbuild: true
