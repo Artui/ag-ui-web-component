@@ -28,7 +28,13 @@ export {
   SUBMIT_EVENT,
   TOOL_CALL_STATUS,
   X_DESTRUCTIVE_KEY,
+  X_NAVIGATES_KEY,
 } from "./constants.js";
+export {
+  type ClientConversationStore,
+  type NavigationCheckpoint,
+  SessionStorageStore,
+} from "./conversation_store.js";
 export {
   type AgentFactory,
   createHttpAgent,
@@ -42,6 +48,7 @@ export {
   setControlValue,
 } from "./dom_driver.js";
 export { isDestructive } from "./is_destructive.js";
+export { isNavigates } from "./is_navigates.js";
 export {
   type SettledStatus,
   ToolCallCard,

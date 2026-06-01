@@ -177,4 +177,76 @@ describe("AgUiClient", () => {
     }).send("x");
     expect(runs).toBe(MAX_TOOL_ROUNDS);
   });
+
+  it("exposes the agent's message history", async () => {
+    const fake = makeFakeAgent();
+    const client = new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() });
+    await client.send("hi");
+    expect(client.messages).toBe(fake.messages);
+    expect(client.messages.map((m) => m.content)).toEqual(["hi"]);
+  });
+
+  it("invokes onPersist with the latest history as it changes", async () => {
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.text("ok");
+        emit.textEnd("ok");
+      },
+    });
+    const lengths: number[] = [];
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      onPersist: (messages) => lengths.push(messages.length),
+    }).send("hello");
+    // Once after the user message, once after the (tool-free) run settles.
+    expect(lengths).toEqual([1, 1]);
+  });
+
+  it("halts the loop on a navigating tool result without appending a message", async () => {
+    let runs = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        runs += 1;
+        emit.toolCall(`tc${runs}`, "open_changelist", {});
+      },
+    });
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      executeTool: async () => ({ content: "", halt: true }),
+    }).send("navigate");
+    expect(runs).toBe(1); // did not re-run into a dead page context
+    expect(fake.messages.find((m) => m.role === "tool")).toBeUndefined();
+  });
+
+  it("resume runs the loop without adding a user message", async () => {
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.text("resumed");
+        emit.textEnd("resumed");
+      },
+    });
+    const handlers = recordingHandlers();
+    await new AgUiClient({ agent: fake.agent, handlers }).resume();
+    expect(fake.messages).toHaveLength(0);
+    expect(handlers.calls).toContain("end:resumed");
+  });
+
+  it("addToolResult appends a tool message and persists", () => {
+    const fake = makeFakeAgent();
+    let persisted = 0;
+    const client = new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      onPersist: () => {
+        persisted += 1;
+      },
+    });
+    client.addToolResult("tc1", '{"navigated":true}');
+    expect(fake.messages).toEqual([
+      expect.objectContaining({ role: "tool", toolCallId: "tc1", content: '{"navigated":true}' }),
+    ]);
+    expect(persisted).toBe(1);
+  });
 });

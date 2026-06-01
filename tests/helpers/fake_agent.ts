@@ -37,13 +37,13 @@ export interface FakeAgentOptions {
 
 export interface FakeAgentHandle {
   agent: AbstractAgent;
-  messages: ReadonlyArray<{ id: string; role: string; content: string }>;
+  messages: ReadonlyArray<{ id: string; role: string; content: string; toolCallId?: string }>;
   lastRunParams: { tools?: unknown; context?: unknown } | null;
 }
 
 /** Build a minimal fake AG-UI agent that drives the client's subscriber. */
 export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
-  const messages: Array<{ id: string; role: string; content: string }> = [];
+  const messages: Array<{ id: string; role: string; content: string; toolCallId?: string }> = [];
   const handle: FakeAgentHandle = {
     messages,
     lastRunParams: null,
@@ -51,7 +51,8 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
   };
   const agent = {
     isRunning: opts.isRunning ?? false,
-    addMessage(message: { id: string; role: string; content: string }): void {
+    messages,
+    addMessage(message: { id: string; role: string; content: string; toolCallId?: string }): void {
       messages.push(message);
     },
     async runAgent(

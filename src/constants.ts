@@ -25,6 +25,14 @@ export const MESSAGE_ROLE = {
  */
 export const X_DESTRUCTIVE_KEY = "x-destructive";
 
+/**
+ * JSON-Schema extension key marking a tool as navigating — its handler triggers
+ * a full page reload (an MPA navigation). When a tool's `parameters` carries
+ * `{ "x-navigates": true }`, the element checkpoints the call before the reload
+ * and resumes the run loop once the next page mounts. Mirrors `x-destructive`.
+ */
+export const X_NAVIGATES_KEY = "x-navigates";
+
 /** Upper bound on frontend tool-call → re-run rounds within one send. */
 export const MAX_TOOL_ROUNDS = 10;
 

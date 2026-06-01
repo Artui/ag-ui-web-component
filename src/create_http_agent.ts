@@ -1,9 +1,14 @@
 import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
+import type { Message } from "@ag-ui/core";
 
 /** Config for {@link createHttpAgent}. */
 export interface HttpAgentOptions {
   endpoint: string;
   headers?: Record<string, string>;
+  /** Stable conversation id, so the agent's runs share a thread. */
+  threadId?: string;
+  /** Rehydrated history to seed the agent with (durable conversation). */
+  initialMessages?: readonly Message[];
 }
 
 /**
@@ -22,6 +27,12 @@ export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
     // "Illegal invocation" in browsers. Wrap it so `fetch` is always called as
     // a free function with the correct receiver.
     fetch: (url, init) => fetch(url, init),
+    // Spread conditionally: under `exactOptionalPropertyTypes` an explicit
+    // `undefined` is not assignable to these optional config fields.
+    ...(options.threadId !== undefined ? { threadId: options.threadId } : {}),
+    ...(options.initialMessages !== undefined
+      ? { initialMessages: [...options.initialMessages] }
+      : {}),
   });
 }
 

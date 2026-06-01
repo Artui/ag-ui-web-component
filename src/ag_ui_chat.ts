@@ -1,4 +1,4 @@
-import type { Context, Tool } from "@ag-ui/core";
+import type { Context, Message, Tool } from "@ag-ui/core";
 import {
   AgUiClient,
   type AgUiClientHandlers,
@@ -8,8 +8,14 @@ import {
 import { type ClientTool, ClientToolRegistry } from "./client_tool_registry.js";
 import { requestConfirmation } from "./confirmation_modal.js";
 import { MESSAGE_ROLE, SUBMIT_EVENT, TOOL_CALL_STATUS } from "./constants.js";
+import {
+  type ClientConversationStore,
+  type NavigationCheckpoint,
+  SessionStorageStore,
+} from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import { isDestructive } from "./is_destructive.js";
+import { isNavigates } from "./is_navigates.js";
 import { STYLES } from "./styles.js";
 import { ToolCallCard } from "./tool_call_card.js";
 
@@ -52,6 +58,23 @@ export class AgUiChat extends HTMLElement {
   /** Per-run context provider. */
   getContext: () => Context[] = () => [];
 
+  /**
+   * Persistence for the conversation + navigation checkpoint. Defaults to
+   * per-tab `sessionStorage` so the chat survives full page reloads; inject a
+   * server-backed store for cross-tab/device durability.
+   */
+  conversationStore: ClientConversationStore = new SessionStorageStore();
+
+  /**
+   * Builds the tool result a navigating tool resumes with after the page
+   * reloads. Defaults to the landed URL; a host (e.g. the admin package) can
+   * override to include a page snapshot or post-reload validation errors.
+   */
+  navigationResult: (checkpoint: NavigationCheckpoint) => unknown = () => ({
+    navigated: true,
+    url: window.location.href,
+  });
+
   readonly #toolRegistry = new ClientToolRegistry();
   /** Tool-call cards awaiting execution, keyed by call id. */
   readonly #toolCards = new Map<string, ToolCallCard>();
@@ -63,6 +86,8 @@ export class AgUiChat extends HTMLElement {
 
   #client: AgUiClient | null = null;
   #streamingBubble: HTMLDivElement | null = null;
+  #threadId = "";
+  #initialMessages: readonly Message[] = [];
 
   constructor() {
     super();
@@ -85,6 +110,47 @@ export class AgUiChat extends HTMLElement {
 
   connectedCallback(): void {
     this.#render();
+    this.#threadId = this.conversationStore.threadId();
+    void this.#rehydrate();
+  }
+
+  /**
+   * Restore the conversation from the store on mount, then — if a navigating
+   * tool reloaded the page mid-run — resume the loop by supplying that tool's
+   * result from the page we landed on.
+   */
+  async #rehydrate(): Promise<void> {
+    const messages = await this.conversationStore.loadMessages(this.#threadId);
+    if (messages !== null) {
+      this.#initialMessages = messages;
+      for (const message of messages) {
+        this.#renderHistoricMessage(message);
+      }
+    }
+    const checkpoint = this.conversationStore.loadCheckpoint(this.#threadId);
+    if (checkpoint !== null) {
+      await this.#resumeFrom(checkpoint);
+    }
+  }
+
+  /** Render a restored message as a chat bubble (text turns only). */
+  #renderHistoricMessage(message: Message): void {
+    if (typeof message.content !== "string" || message.content === "") {
+      return;
+    }
+    if (message.role === MESSAGE_ROLE.USER) {
+      this.appendMessage(MESSAGE_ROLE.USER, message.content);
+    } else if (message.role === MESSAGE_ROLE.ASSISTANT) {
+      this.appendMessage(MESSAGE_ROLE.ASSISTANT, message.content);
+    }
+  }
+
+  /** Complete the checkpointed navigating tool call and continue the run. */
+  async #resumeFrom(checkpoint: NavigationCheckpoint): Promise<void> {
+    this.conversationStore.saveCheckpoint(this.#threadId, null);
+    const client = this.#ensureClient();
+    client.addToolResult(checkpoint.toolCallId, JSON.stringify(this.navigationResult(checkpoint)));
+    await client.resume();
   }
 
   /** Append a message bubble and return it. */
@@ -162,13 +228,19 @@ export class AgUiChat extends HTMLElement {
 
   #ensureClient(): AgUiClient {
     if (this.#client === null) {
-      const agent = this.agentFactory({ endpoint: this.endpoint, headers: this.headers });
+      const agent = this.agentFactory({
+        endpoint: this.endpoint,
+        headers: this.headers,
+        threadId: this.#threadId,
+        initialMessages: this.#initialMessages,
+      });
       this.#client = new AgUiClient({
         agent,
         handlers: this.#handlers(),
         getTools: () => this.getTools(),
         getContext: () => this.getContext(),
         executeTool: (call) => this.#executeTool(call),
+        onPersist: (messages) => this.conversationStore.saveMessages(this.#threadId, messages),
       });
     }
     return this.#client;
@@ -194,12 +266,27 @@ export class AgUiChat extends HTMLElement {
         return { content: message };
       }
     }
+    const navigates = isNavigates(tool.parameters);
+    if (navigates) {
+      // Checkpoint before the handler reloads the page; the history (incl.
+      // this tool call) was already persisted when the run that produced it
+      // settled. The result is supplied on the next mount via the resume path.
+      this.conversationStore.saveCheckpoint(this.#threadId, { toolCallId: call.id });
+    }
     try {
       const result = await tool.handler(call.args);
+      if (navigates) {
+        card.settle(TOOL_CALL_STATUS.DONE, "Navigating…");
+        return { content: "", halt: true };
+      }
       const content = JSON.stringify(result ?? null);
       card.settle(TOOL_CALL_STATUS.DONE, content);
       return { content };
     } catch (error) {
+      if (navigates) {
+        // The navigation never happened; drop the dangling checkpoint.
+        this.conversationStore.saveCheckpoint(this.#threadId, null);
+      }
       const message = error instanceof Error ? error.message : String(error);
       card.settle(TOOL_CALL_STATUS.ERROR, message);
       return { content: `Error: ${message}`, error: message };

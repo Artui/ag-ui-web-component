@@ -2,6 +2,7 @@ import type { Context, Tool } from "@ag-ui/core";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgUiChat, SubmitDetail } from "../src/ag_ui_chat.js";
 import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT } from "../src/constants.js";
+import { SessionStorageStore } from "../src/conversation_store.js";
 import { defineAgUiChat } from "../src/define_ag_ui_chat.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
@@ -83,6 +84,7 @@ describe("AgUiChat", () => {
 
   beforeEach(() => {
     document.body.innerHTML = "";
+    sessionStorage.clear();
   });
 
   it("renders the shell into an open shadow root", () => {
@@ -539,5 +541,108 @@ describe("AgUiChat", () => {
     });
     await send(el, "do nothing");
     expect(handle.messages.find((m) => m.role === "tool")?.content).toBe("null");
+  });
+
+  it("rehydrates persisted text messages into bubbles on mount", async () => {
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [
+      { id: "1", role: "user", content: "hi" },
+      { id: "2", role: "assistant", content: "hello" },
+      { id: "3", role: "assistant", content: "" }, // empty → skipped
+      { id: "4", role: "tool", content: "tool out", toolCallId: "x" }, // non-text role → skipped
+      { id: "5", role: "assistant" }, // no content → skipped
+    ] as never);
+
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.conversationStore = store;
+    document.body.appendChild(el);
+    await flush();
+
+    const bubbles = shadow(el).querySelectorAll(".message");
+    expect([...bubbles].map((b) => b.textContent)).toEqual(["hi", "hello"]);
+  });
+
+  it("resumes a checkpointed navigating tool call on mount", async () => {
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [{ id: "1", role: "user", content: "go to books" }] as never);
+    store.saveCheckpoint(tid, { toolCallId: "nav-1" });
+
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.text("here are the books");
+        emit.textEnd("here are the books");
+      },
+    });
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.conversationStore = store;
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    await flush();
+
+    expect(store.loadCheckpoint(tid)).toBeNull();
+    const toolMsg = handle.messages.find((m) => m.role === "tool");
+    expect(toolMsg?.toolCallId).toBe("nav-1");
+    expect(JSON.parse(toolMsg?.content ?? "{}").navigated).toBe(true);
+    expect(shadow(el).querySelector(".message--assistant")?.textContent).toBe("here are the books");
+  });
+
+  it("checkpoints and halts on a navigating tool, then marks the card", async () => {
+    let round = 0;
+    let ran = false;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("nav-1", "open_changelist", { model: "Book" });
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "open_changelist",
+      description: "navigate",
+      parameters: { type: "object", "x-navigates": true },
+      handler: () => {
+        ran = true;
+        return { ok: true };
+      },
+    });
+
+    await send(el, "open the books");
+
+    expect(ran).toBe(true);
+    const tid = el.conversationStore.threadId();
+    expect(el.conversationStore.loadCheckpoint(tid)).toEqual({ toolCallId: "nav-1" });
+    expect(handle.messages.find((m) => m.role === "tool")).toBeUndefined();
+    expect(shadow(el).querySelector<HTMLElement>(".tool-call")?.getAttribute("data-status")).toBe(
+      "done",
+    );
+  });
+
+  it("clears the checkpoint when a navigating tool handler throws", async () => {
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("nav-1", "open_changelist", {});
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "open_changelist",
+      description: "navigate",
+      parameters: { type: "object", "x-navigates": true },
+      handler: () => {
+        throw new Error("nav failed");
+      },
+    });
+
+    await send(el, "open");
+
+    const tid = el.conversationStore.threadId();
+    expect(el.conversationStore.loadCheckpoint(tid)).toBeNull();
+    expect(shadow(el).querySelector<HTMLElement>(".tool-call")?.getAttribute("data-status")).toBe(
+      "error",
+    );
   });
 });

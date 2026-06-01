@@ -1,5 +1,5 @@
 import { type AbstractAgent, type AgentSubscriber, randomUUID } from "@ag-ui/client";
-import type { Context, Tool } from "@ag-ui/core";
+import type { Context, Message, Tool } from "@ag-ui/core";
 import { MAX_TOOL_ROUNDS } from "./constants.js";
 
 /** A tool call surfaced to the host by {@link AgUiClient}. */
@@ -15,6 +15,12 @@ export interface ToolExecution {
   content: string;
   /** Present when the handler failed; surfaced for logging. */
   error?: string;
+  /**
+   * When `true`, a navigating tool triggered a page reload. The loop stops
+   * without appending a result — the result is supplied after the next mount
+   * (see the resume path). Mutually exclusive with a usable `content`.
+   */
+  halt?: boolean;
 }
 
 /**
@@ -59,6 +65,12 @@ export interface AgUiClientConfig extends AgUiRunInputs {
   handlers: AgUiClientHandlers;
   /** Executes frontend tool calls. Omit for server-only tool sets. */
   executeTool?: ExecuteTool;
+  /**
+   * Invoked with the latest history whenever it changes, so the host can
+   * persist it for durability across page reloads. Omit to keep the
+   * conversation in-memory only.
+   */
+  onPersist?: (messages: readonly Message[]) => void;
 }
 
 /**
@@ -74,6 +86,7 @@ export class AgUiClient {
   readonly #getTools: () => Tool[];
   readonly #getContext: () => Context[];
   readonly #executeTool: ExecuteTool | null;
+  readonly #onPersist: (messages: readonly Message[]) => void;
 
   constructor(config: AgUiClientConfig) {
     this.#agent = config.agent;
@@ -81,11 +94,17 @@ export class AgUiClient {
     this.#getTools = config.getTools ?? (() => []);
     this.#getContext = config.getContext ?? (() => []);
     this.#executeTool = config.executeTool ?? null;
+    this.#onPersist = config.onPersist ?? (() => {});
   }
 
   /** Whether a run is currently in flight. */
   get running(): boolean {
     return this.#agent.isRunning;
+  }
+
+  /** The current conversation history (for persistence / rehydration). */
+  get messages(): readonly Message[] {
+    return this.#agent.messages;
   }
 
   /**
@@ -97,6 +116,26 @@ export class AgUiClient {
    */
   async send(content: string): Promise<void> {
     this.#agent.addMessage({ id: randomUUID(), role: "user", content });
+    this.#onPersist(this.#agent.messages);
+    await this.#run();
+  }
+
+  /**
+   * Resume the run loop after a navigating tool's result was supplied
+   * post-reload (via {@link addToolResult}). Unlike {@link send}, adds no user
+   * message — it simply continues the conversation already in history.
+   */
+  async resume(): Promise<void> {
+    await this.#run();
+  }
+
+  /** Append a frontend tool result to history (used by the resume path). */
+  addToolResult(toolCallId: string, content: string): void {
+    this.#agent.addMessage({ id: randomUUID(), role: "tool", content, toolCallId });
+    this.#onPersist(this.#agent.messages);
+  }
+
+  async #run(): Promise<void> {
     try {
       await this.#runLoop();
     } catch (error) {
@@ -111,6 +150,7 @@ export class AgUiClient {
         { tools: this.#getTools(), context: this.#getContext() },
         this.#buildSubscriber(pending),
       );
+      this.#onPersist(this.#agent.messages);
       if (this.#executeTool === null || pending.length === 0) {
         return;
       }
@@ -120,12 +160,18 @@ export class AgUiClient {
         if (result === null) {
           continue;
         }
+        if (result.halt === true) {
+          // A navigating tool reloaded the page; the result arrives on the
+          // next mount. Stop here rather than re-running into a dead context.
+          return;
+        }
         this.#agent.addMessage({
           id: randomUUID(),
           role: "tool",
           content: result.content,
           toolCallId: call.id,
         });
+        this.#onPersist(this.#agent.messages);
         executed = true;
       }
       if (!executed) {

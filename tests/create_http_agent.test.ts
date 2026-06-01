@@ -18,6 +18,16 @@ describe("createHttpAgent", () => {
     expect((agent as HttpAgent).headers).toEqual({});
   });
 
+  it("threads a thread id and seeds initial messages when supplied", () => {
+    const agent = createHttpAgent({
+      endpoint: "/agent/",
+      threadId: "t-123",
+      initialMessages: [{ id: "m1", role: "user", content: "hi" } as never],
+    });
+    expect((agent as HttpAgent).threadId).toBe("t-123");
+    expect((agent as HttpAgent).messages).toEqual([{ id: "m1", role: "user", content: "hi" }]);
+  });
+
   it("provides a fetch wrapper that calls the global fetch as a free function", async () => {
     const agent = createHttpAgent({ endpoint: "/agent/" });
     const wrapped = (agent as HttpAgent).fetch;
