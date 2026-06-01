@@ -26,6 +26,7 @@ export {
   MAX_TOOL_ROUNDS,
   MESSAGE_ROLE,
   SUBMIT_EVENT,
+  TOOL_CALL_STATUS,
   X_DESTRUCTIVE_KEY,
 } from "./constants.js";
 export {
@@ -41,4 +42,9 @@ export {
   setControlValue,
 } from "./dom_driver.js";
 export { isDestructive } from "./is_destructive.js";
+export {
+  type SettledStatus,
+  ToolCallCard,
+  type ToolCallStatus,
+} from "./tool_call_card.js";
 export { VERSION } from "./version.js";

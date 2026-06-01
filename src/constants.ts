@@ -27,3 +27,14 @@ export const X_DESTRUCTIVE_KEY = "x-destructive";
 
 /** Upper bound on frontend tool-call → re-run rounds within one send. */
 export const MAX_TOOL_ROUNDS = 10;
+
+/**
+ * Lifecycle status of a rendered tool-call card. A card opens as `PENDING`
+ * while the call runs, then settles to `DONE`, `ERROR`, or `DECLINED`.
+ */
+export const TOOL_CALL_STATUS = {
+  PENDING: "pending",
+  DONE: "done",
+  ERROR: "error",
+  DECLINED: "declined",
+} as const;

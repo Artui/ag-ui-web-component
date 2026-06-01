@@ -7,10 +7,11 @@ import {
 } from "./agui_client.js";
 import { type ClientTool, ClientToolRegistry } from "./client_tool_registry.js";
 import { requestConfirmation } from "./confirmation_modal.js";
-import { MESSAGE_ROLE, SUBMIT_EVENT } from "./constants.js";
+import { MESSAGE_ROLE, SUBMIT_EVENT, TOOL_CALL_STATUS } from "./constants.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import { isDestructive } from "./is_destructive.js";
 import { STYLES } from "./styles.js";
+import { ToolCallCard } from "./tool_call_card.js";
 
 /** The role a rendered chat message takes. */
 export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
@@ -52,6 +53,8 @@ export class AgUiChat extends HTMLElement {
   getContext: () => Context[] = () => [];
 
   readonly #toolRegistry = new ClientToolRegistry();
+  /** Tool-call cards awaiting execution, keyed by call id. */
+  readonly #toolCards = new Map<string, ToolCallCard>();
   readonly #root: ShadowRoot;
   readonly #chat: HTMLDivElement;
   readonly #messages: HTMLDivElement;
@@ -172,8 +175,11 @@ export class AgUiChat extends HTMLElement {
   }
 
   async #executeTool(call: AgUiToolCall): Promise<ToolExecution | null> {
+    const card = this.#cardFor(call);
+    this.#toolCards.delete(call.id);
     if (!this.#toolRegistry.has(call.name)) {
       // A server-side tool the server already executed — not ours to re-run.
+      card.settle(TOOL_CALL_STATUS.DONE, "Executed on the server.");
       return null;
     }
     const tool = this.#toolRegistry.get(call.name);
@@ -183,14 +189,19 @@ export class AgUiChat extends HTMLElement {
         args: call.args,
       });
       if (!accepted) {
-        return { content: "User declined the action." };
+        const message = "User declined the action.";
+        card.settle(TOOL_CALL_STATUS.DECLINED, message);
+        return { content: message };
       }
     }
     try {
       const result = await tool.handler(call.args);
-      return { content: JSON.stringify(result ?? null) };
+      const content = JSON.stringify(result ?? null);
+      card.settle(TOOL_CALL_STATUS.DONE, content);
+      return { content };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      card.settle(TOOL_CALL_STATUS.ERROR, message);
       return { content: `Error: ${message}`, error: message };
     }
   }
@@ -208,7 +219,7 @@ export class AgUiChat extends HTMLElement {
         this.#streamingBubble = null;
       },
       onToolCall: (call) => {
-        this.#appendToolCall(call);
+        this.#cardFor(call);
       },
       onRunEnd: () => {
         this.#send.disabled = false;
@@ -230,12 +241,21 @@ export class AgUiChat extends HTMLElement {
     this.#messages.scrollTop = this.#messages.scrollHeight;
   }
 
-  #appendToolCall(call: AgUiToolCall): void {
-    const card = document.createElement("div");
-    card.className = "tool-call";
-    card.setAttribute("data-tool-name", call.name);
-    card.textContent = `🔧 ${call.name}`;
-    this.#messages.appendChild(card);
+  /**
+   * The card for ``call``, creating and appending it on first sight.
+   *
+   * {@link AgUiClientHandlers.onToolCall} creates the card (pending) during the
+   * run; {@link #executeTool} later retrieves the same card to settle it.
+   */
+  #cardFor(call: AgUiToolCall): ToolCallCard {
+    const existing = this.#toolCards.get(call.id);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const card = new ToolCallCard(call.name, call.args);
+    this.#toolCards.set(call.id, card);
+    this.#messages.appendChild(card.element);
     this.#messages.scrollTop = this.#messages.scrollHeight;
+    return card;
   }
 }

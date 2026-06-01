@@ -51,6 +51,18 @@ describe("STYLES", () => {
     expect(STYLES).toContain("background: var(--ag-ui-tool-bg);");
   });
 
+  it("themes the tool-call card status accents", () => {
+    for (const name of ["--ag-ui-tool-fg", "--ag-ui-success", "--ag-ui-danger", "--ag-ui-muted"]) {
+      expect(STYLES).toContain(`${name}:`);
+    }
+    // Status pill colour keys off the card's data-status attribute.
+    expect(STYLES).toContain('.tool-call[data-status="done"] .tool-call-status');
+    expect(STYLES).toContain('.tool-call[data-status="error"] .tool-call-status');
+    // Collapsible result body and its disclosure toggle exist.
+    expect(STYLES).toContain(".tool-call-result");
+    expect(STYLES).toContain(".tool-call-toggle");
+  });
+
   it("exposes the surface + embed knobs that make it feel native", () => {
     // Header matches the host surface instead of an accent titlebar.
     expect(STYLES).toContain("--ag-ui-header-bg:");

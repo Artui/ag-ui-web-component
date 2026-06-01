@@ -213,14 +213,84 @@ describe("AgUiChat", () => {
     expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.disabled).toBe(false);
   });
 
-  it("renders a tool-call card", async () => {
+  it("renders a tool-call card with name, args, and a status", async () => {
     const { el } = mountWithAgent((emit) => {
       emit.toolCall("tc1", "fill_field", { name: "city" });
     });
     await send(el, "fill the city");
     const card = shadow(el).querySelector<HTMLElement>(".tool-call");
-    expect(card?.textContent).toBe("🔧 fill_field");
     expect(card?.getAttribute("data-tool-name")).toBe("fill_field");
+    expect(card?.querySelector(".tool-call-name")?.textContent).toBe("🔧 fill_field");
+    expect(card?.querySelector(".tool-call-args")?.textContent).toContain('"name": "city"');
+    // fill_field isn't registered here, so it's treated as server-executed.
+    expect(card?.getAttribute("data-status")).toBe("done");
+  });
+
+  it("settles the tool-call card to done with the result body", async () => {
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "count_users", { active: true });
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "count_users",
+      description: "count",
+      parameters: { type: "object" },
+      handler: () => 42,
+    });
+    await send(el, "count active users");
+    const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("done");
+    expect(card?.querySelector(".tool-call-result")?.textContent).toBe("42");
+  });
+
+  it("settles the tool-call card to error when the handler throws", async () => {
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "boom", {});
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "boom",
+      description: "explodes",
+      parameters: { type: "object" },
+      handler: () => {
+        throw new Error("kaboom");
+      },
+    });
+    await send(el, "trigger boom");
+    const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("error");
+    expect(card?.querySelector(".tool-call-result")?.textContent).toBe("kaboom");
+  });
+
+  it("settles the tool-call card to declined on cancel", async () => {
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "delete_user", { id: 7 });
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "delete_user",
+      description: "delete",
+      parameters: { type: "object", "x-destructive": true },
+      handler: () => "deleted",
+    });
+
+    sendNoWait(el, "delete user 7");
+    await flush();
+    shadow(el).querySelector<HTMLButtonElement>(".modal-btn--cancel")?.click();
+    await flush();
+
+    const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("declined");
+    expect(card?.querySelector(".tool-call-result")?.textContent).toBe("User declined the action.");
   });
 
   it("renders an error bubble and re-enables send", async () => {

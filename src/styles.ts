@@ -13,10 +13,16 @@ export const STYLES = `
   --ag-ui-assistant-bg: #f1f1f6;
   --ag-ui-input-bg: var(--ag-ui-bg);
   --ag-ui-tool-bg: var(--ag-ui-assistant-bg);
+  --ag-ui-tool-fg: var(--ag-ui-accent);
   --ag-ui-header-bg: var(--ag-ui-accent);
   --ag-ui-header-fg: #ffffff;
   --ag-ui-border: #e2e2ec;
   --ag-ui-radius: 12px;
+
+  /* Status accents for tool-call cards. */
+  --ag-ui-success: #15803d;
+  --ag-ui-danger: #b91c1c;
+  --ag-ui-muted: #6b7280;
 
   /* Surface — set --ag-ui-shadow: none for a flush, embedded panel. */
   --ag-ui-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
@@ -101,13 +107,85 @@ export const STYLES = `
 
 .tool-call {
   align-self: flex-start;
+  max-width: 80%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   font-size: 12px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  padding: 6px 10px;
+  padding: 8px 10px;
   border-radius: 8px;
   background: var(--ag-ui-tool-bg);
   border: 1px solid var(--ag-ui-border);
+  color: var(--ag-ui-tool-fg);
+}
+
+.tool-call-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tool-call-name {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.tool-call-status {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(127, 127, 127, 0.16);
+  color: var(--ag-ui-muted);
+}
+
+.tool-call[data-status="done"] .tool-call-status {
+  color: var(--ag-ui-success);
+}
+
+.tool-call[data-status="error"] .tool-call-status {
+  color: var(--ag-ui-danger);
+}
+
+.tool-call[data-status="declined"] .tool-call-status {
+  color: var(--ag-ui-muted);
+}
+
+.tool-call-args,
+.tool-call-result {
+  margin: 0;
+  padding: 6px 8px;
+  max-height: 160px;
+  overflow: auto;
+  background: var(--ag-ui-bg);
+  border: 1px solid var(--ag-ui-border);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ag-ui-fg);
+}
+
+.tool-call-toggle {
+  align-self: flex-start;
+  border: none;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
   color: var(--ag-ui-accent);
+  cursor: pointer;
+}
+
+.tool-call-toggle::before {
+  content: "▸ ";
+}
+
+.tool-call-toggle[aria-expanded="true"]::before {
+  content: "▾ ";
 }
 
 .input-row {
