@@ -16,6 +16,9 @@ import {
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import { isDestructive } from "./is_destructive.js";
 import { isNavigates } from "./is_navigates.js";
+import { createPageMapContext, type PageMap } from "./page_map.js";
+import { createRouteTools, type RouteMap } from "./route_map.js";
+import { createStateHookTools, type StateHook } from "./state_hook.js";
 import { STYLES } from "./styles.js";
 import { ToolCallCard } from "./tool_call_card.js";
 
@@ -50,13 +53,44 @@ export class AgUiChat extends HTMLElement {
   autoConfirm = false;
 
   /**
-   * Per-run frontend tool catalog provider. Defaults to the tools registered
-   * via {@link registerTool}; override to supply a fully custom catalog.
+   * Per-run frontend tool catalog provider. Defaults to the built-in
+   * `route.*` tools (when a {@link routeMap} is set) plus the tools registered
+   * via {@link registerTool} / {@link registerStateHook}; override to supply a
+   * fully custom catalog.
    */
-  getTools: () => Tool[] = () => this.#toolRegistry.tools();
+  getTools: () => Tool[] = () => [
+    ...this.#routeTools().map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    })),
+    ...this.#toolRegistry.tools(),
+  ];
 
-  /** Per-run context provider. */
-  getContext: () => Context[] = () => [];
+  /**
+   * Per-run context provider. Defaults to the compact page map (when a
+   * {@link getPageMap} provider is set and {@link autoInjectPageMap} is on).
+   */
+  getContext: () => Context[] = () => createPageMapContext(this.getPageMap, this.autoInjectPageMap);
+
+  /**
+   * Navigable routes the agent can jump to via the built-in `route.*` tools.
+   * A compact summary also rides in each run's context.
+   */
+  routeMap: RouteMap = [];
+
+  /**
+   * Optional client-side router. When set (an SPA), `navigate_to_route` routes
+   * in-page and the run loop continues; when unset (an MPA like the admin), it
+   * falls back to `window.location` and the resumable-loop machinery applies.
+   */
+  navigate: ((path: string) => void) | null = null;
+
+  /** Provider for the per-run page map; see {@link getContext}. */
+  getPageMap: (() => PageMap) | null = null;
+
+  /** Whether to auto-inject the page map into context each run. */
+  autoInjectPageMap = true;
 
   /**
    * Persistence for the conversation + navigation checkpoint. Defaults to
@@ -101,6 +135,33 @@ export class AgUiChat extends HTMLElement {
   /** Declare a frontend tool the agent may call. */
   registerTool(tool: ClientTool): void {
     this.#toolRegistry.register(tool);
+  }
+
+  /** Bind a piece of host state to `read_<name>` / `set_<name>` tools. */
+  registerStateHook(hook: StateHook): void {
+    for (const tool of createStateHookTools(hook)) {
+      this.#toolRegistry.register(tool);
+    }
+  }
+
+  /** The built-in `route.*` tools, present only when a route map is set. */
+  #routeTools(): ClientTool[] {
+    if (this.routeMap.length === 0) {
+      return [];
+    }
+    return createRouteTools(
+      () => this.routeMap,
+      () => this.navigate,
+    );
+  }
+
+  /** Resolve a tool by name: built-in route tools first, then the registry. */
+  #resolveTool(name: string): ClientTool | null {
+    const route = this.#routeTools().find((t) => t.name === name);
+    if (route !== undefined) {
+      return route;
+    }
+    return this.#toolRegistry.has(name) ? this.#toolRegistry.get(name) : null;
   }
 
   /** The AG-UI endpoint URL, read from the `endpoint` attribute. */
@@ -249,12 +310,12 @@ export class AgUiChat extends HTMLElement {
   async #executeTool(call: AgUiToolCall): Promise<ToolExecution | null> {
     const card = this.#cardFor(call);
     this.#toolCards.delete(call.id);
-    if (!this.#toolRegistry.has(call.name)) {
+    const tool = this.#resolveTool(call.name);
+    if (tool === null) {
       // A server-side tool the server already executed — not ours to re-run.
       card.settle(TOOL_CALL_STATUS.DONE, "Executed on the server.");
       return null;
     }
-    const tool = this.#toolRegistry.get(call.name);
     if (isDestructive(tool.parameters) && !this.autoConfirm) {
       const accepted = await requestConfirmation(this.#chat, {
         toolName: call.name,
@@ -266,7 +327,9 @@ export class AgUiChat extends HTMLElement {
         return { content: message };
       }
     }
-    const navigates = isNavigates(tool.parameters);
+    // A navigating tool reloads only without a client-side router; with a
+    // host `navigate()` (SPA) it routes in-page and the loop just continues.
+    const navigates = isNavigates(tool.parameters) && this.navigate === null;
     if (navigates) {
       // Checkpoint before the handler reloads the page; the history (incl.
       // this tool call) was already persisted when the run that produced it

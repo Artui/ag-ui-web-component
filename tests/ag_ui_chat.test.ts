@@ -645,4 +645,82 @@ describe("AgUiChat", () => {
       "error",
     );
   });
+
+  it("exposes route.* tools in the catalog when a routeMap is set", () => {
+    const el = mount({ endpoint: "/agent/" });
+    expect(el.getTools().map((t) => t.name)).not.toContain("navigate_to_route");
+    el.routeMap = [{ id: "users", path: "/admin/auth/user/" }];
+    const names = el.getTools().map((t) => t.name);
+    expect(names).toContain("list_routes");
+    expect(names).toContain("navigate_to_route");
+  });
+
+  it("navigate_to_route routes in-page (SPA) without checkpointing", async () => {
+    let round = 0;
+    const navPaths: string[] = [];
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("r1", "navigate_to_route", { route_id: "users" });
+      }
+      round += 1;
+    });
+    el.routeMap = [{ id: "users", path: "/admin/auth/user/" }];
+    el.navigate = (p) => navPaths.push(p);
+
+    await send(el, "go to users");
+
+    expect(navPaths).toEqual(["/admin/auth/user/"]);
+    const tid = el.conversationStore.threadId();
+    expect(el.conversationStore.loadCheckpoint(tid)).toBeNull();
+    // In-page: the loop continued and posted the tool result.
+    expect(handle.messages.find((m) => m.role === "tool")?.content).toContain("/admin/auth/user/");
+  });
+
+  it("navigate_to_route checkpoints + halts without a navigate callback (MPA)", async () => {
+    const spy = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("r1", "navigate_to_route", { route_id: "users" });
+      }
+      round += 1;
+    });
+    el.routeMap = [{ id: "users", path: "/admin/auth/user/" }];
+
+    await send(el, "go");
+
+    const tid = el.conversationStore.threadId();
+    expect(el.conversationStore.loadCheckpoint(tid)).toEqual({ toolCallId: "r1" });
+    expect(spy).toHaveBeenCalledWith("/admin/auth/user/");
+    spy.mockRestore();
+  });
+
+  it("registerStateHook exposes read/write tools the agent can call", async () => {
+    let round = 0;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("s1", "read_cart", {});
+      }
+      round += 1;
+    });
+    el.registerStateHook({ name: "cart", read: () => ({ items: 3 }) });
+    expect(el.getTools().map((t) => t.name)).toContain("read_cart");
+
+    await send(el, "read the cart");
+
+    expect(handle.messages.find((m) => m.role === "tool")?.content).toBe(
+      JSON.stringify({ items: 3 }),
+    );
+  });
+
+  it("injects the compact page map into the run context", async () => {
+    const { el, handle } = mountWithAgent(() => {});
+    el.getPageMap = () => ({ fields: ["title"] });
+
+    await send(el, "x");
+
+    expect(handle.lastRunParams?.context).toEqual([
+      { description: "page_map", value: JSON.stringify({ fields: ["title"] }) },
+    ]);
+  });
 });

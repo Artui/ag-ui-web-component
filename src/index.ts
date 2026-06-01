@@ -49,6 +49,9 @@ export {
 } from "./dom_driver.js";
 export { isDestructive } from "./is_destructive.js";
 export { isNavigates } from "./is_navigates.js";
+export { createPageMapContext, type PageMap } from "./page_map.js";
+export { createRouteTools, type Route, type RouteMap } from "./route_map.js";
+export { createStateHookTools, type StateHook } from "./state_hook.js";
 export {
   type SettledStatus,
   ToolCallCard,
