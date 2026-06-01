@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-06-01
+
+### Changed
+- CI: resolve the pnpm version from `package.json`'s `packageManager` only
+  (dropped the conflicting `version` input in the release/test workflows).
+
+### Notes
+- First fully-automated release via the npm OIDC publish pipeline — 0.1.0 was
+  the manual bootstrap publish that created the package.
+
 ## [0.1.0] — 2026-06-01
 
 ### Added
@@ -23,5 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Artui/ag-ui-web-component/releases/tag/v0.1.0
