@@ -61,7 +61,7 @@
     "provenance": true
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "@ag-ui/client": ">=0.0.54 <0.1",
