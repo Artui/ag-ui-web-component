@@ -1,0 +1,142 @@
+/* Shared admin-form skin for the theme demos. Colors come from page-level
+   custom properties each theme sets; the side-window chat occupies the right
+   third, so the form lives in a left rail sized to the remaining two thirds. */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--page-fg);
+  background: var(--page-bg);
+}
+
+/* Leave room for the 33vw side-window so content never sits under it. */
+.page {
+  width: 67vw;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  background: var(--page-header-bg);
+  color: var(--page-header-fg);
+  padding: 14px 28px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+header small {
+  color: var(--page-muted);
+  font-weight: 400;
+  margin-left: 8px;
+}
+
+main {
+  width: 100%;
+  max-width: 640px;
+  margin: 32px auto;
+  padding: 0 24px;
+}
+
+.card {
+  background: var(--page-card-bg);
+  border: 1px solid var(--page-border);
+  border-radius: 14px;
+  padding: 24px 28px 28px;
+  box-shadow: 0 6px 20px var(--page-shadow);
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.subtitle {
+  margin: 0 0 24px;
+  color: var(--page-muted);
+}
+
+.field {
+  margin-bottom: 18px;
+}
+
+.field label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.field input[type="text"],
+.field select {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--page-fg);
+  background: var(--page-input-bg);
+  border: 1px solid var(--page-border);
+  border-radius: 8px;
+  outline: none;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: var(--page-accent);
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox label {
+  margin: 0;
+  font-weight: 500;
+}
+
+.actions {
+  margin-top: 24px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+button.save {
+  background: var(--page-accent);
+  color: var(--page-accent-fg);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.banner {
+  display: none;
+  color: var(--page-success);
+  font-weight: 600;
+}
+
+.banner.show {
+  display: inline;
+}
+
+.hint {
+  margin: 22px auto 0;
+  max-width: 640px;
+  padding: 0 24px;
+  color: var(--page-muted);
+  font-size: 14px;
+}
+
+code {
+  background: var(--page-code-bg);
+  color: var(--page-accent);
+  padding: 1px 6px;
+  border-radius: 5px;
+}

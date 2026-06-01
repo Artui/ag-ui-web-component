@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ag-ui-web-component — claude theme (side window)</title>
+    <link rel="stylesheet" href="/themes/form.css" />
+    <style>
+      :root {
+        --page-bg: #faf9f5;
+        --page-fg: #2d2a26;
+        --page-muted: #8a8378;
+        --page-header-bg: #262624;
+        --page-header-fg: #f5f3ee;
+        --page-card-bg: #ffffff;
+        --page-input-bg: #faf9f5;
+        --page-border: #e8e4da;
+        --page-shadow: rgba(60, 50, 40, 0.06);
+        --page-accent: #d97757;
+        --page-accent-fg: #ffffff;
+        --page-success: #6b8e5a;
+        --page-code-bg: #f0eee6;
+      }
+
+      /* Anthropic's warm cream/paper palette + coral accent, soft rounding. */
+      ag-ui-chat {
+        --ag-ui-bg: #faf9f5;
+        --ag-ui-fg: #2d2a26;
+        --ag-ui-accent: #d97757;
+        --ag-ui-user-bg: #d97757;
+        --ag-ui-user-fg: #ffffff;
+        --ag-ui-assistant-bg: #f0eee6;
+        --ag-ui-border: #e8e4da;
+        --ag-ui-radius: 0;
+
+        --ag-ui-width: 33vw;
+        --ag-ui-height: 100vh;
+        --ag-ui-inset: 0 0 0 auto;
+        --ag-ui-max-width: none;
+        --ag-ui-max-height: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>Demo Admin <small>· claude theme</small></header>
+
+      <main>
+        <div class="card">
+          <h1>Create Article</h1>
+          <p class="subtitle">Ask the assistant (right panel) to fill this in for you.</p>
+
+          <form id="article-form">
+            <div class="field">
+              <label for="title">Title</label>
+              <input type="text" id="title" name="title" placeholder="Article title" />
+            </div>
+            <div class="field">
+              <label for="slug">Slug</label>
+              <input type="text" id="slug" name="slug" placeholder="article-slug" />
+            </div>
+            <div class="field">
+              <label for="status">Status</label>
+              <select id="status" name="status">
+                <option value="draft">Draft</option>
+                <option value="review">In review</option>
+                <option value="published">Published</option>
+              </select>
+            </div>
+            <div class="field checkbox">
+              <input type="checkbox" id="featured" name="featured" />
+              <label for="featured">Featured on homepage</label>
+            </div>
+            <div class="actions">
+              <button type="button" class="save" id="save">Save</button>
+              <span class="banner" id="banner">✓ Article saved</span>
+            </div>
+          </form>
+        </div>
+
+        <p class="hint">
+          Try: <code>Create an article titled "Hello, AG-UI", slug hello-ag-ui, published and featured, then save</code>
+        </p>
+      </main>
+    </div>
+
+    <ag-ui-chat endpoint="/agent/" title-text="Claude Copilot"></ag-ui-chat>
+
+    <script type="module" src="/themes/demo.js"></script>
+  </body>
+</html>

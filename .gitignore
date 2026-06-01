@@ -53,3 +53,9 @@ pnpm-debug.log*
 # AI-specific items
 .ai/
 .claude/
+
+# Demo screenshots (generated)
+demo/shot-*.png
+demo/*.png
+demo/themes/*.png
+.playwright-mcp/
