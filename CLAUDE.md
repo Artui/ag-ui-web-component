@@ -109,7 +109,7 @@ not interfere.
 
 | Component | Floor | Tested |
 | --- | --- | --- |
-| Node (tooling/tests) | 20 | 20, 22, 24 |
+| Node (tooling/tests) | 22 | 22, 24 |
 | Browsers (runtime target) | ES2022 / evergreen | Chrome/Firefox/Safari 17+ |
 | `@ag-ui/client` | latest 0.x | — |
 
