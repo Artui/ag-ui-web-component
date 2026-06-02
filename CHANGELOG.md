@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Word text-animation no longer replays the whole message at end of stream.**
+  `data-text-animation="word"` wrapped the finished assistant message into
+  staggered `.word` spans on `TEXT_MESSAGE_END`, so a response that had already
+  streamed in progressively re-animated itself one word at a time — awkward. The
+  word reveal now runs only when the message arrived **at once** (a single text
+  delta, history replay, or an error bubble); a message that streamed across
+  multiple deltas keeps its progressive reveal and isn't re-wrapped.
+
 ## [0.2.1] — 2026-06-02
 
 ### Added

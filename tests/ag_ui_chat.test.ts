@@ -252,14 +252,14 @@ describe("AgUiChat", () => {
     expect(shadow(el).querySelector(".message--assistant")?.textContent).toBe("hi");
   });
 
-  it("reveals streamed assistant text word-by-word when data-text-animation=word", async () => {
+  it("reveals an at-once assistant message word-by-word when data-text-animation=word", async () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
     el.setAttribute("endpoint", "/agent/");
     el.setAttribute("data-text-animation", "word");
     const handle = makeFakeAgent({
       script: (emit) => {
         emit.runStart();
-        emit.text("hello world");
+        emit.text("hello world"); // single delta → message arrived at once
         emit.textEnd("hello world");
         emit.runEnd();
       },
@@ -270,6 +270,30 @@ describe("AgUiChat", () => {
 
     const words = shadow(el).querySelectorAll(".message--assistant .word");
     expect([...words].map((w) => w.textContent)).toEqual(["hello", "world"]);
+  });
+
+  it("does NOT re-animate a multi-delta streamed message in word mode", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-text-animation", "word");
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.text("hello"); // streamed progressively across several deltas…
+        emit.text("hello world");
+        emit.text("hello world foo");
+        emit.textEnd("hello world foo");
+        emit.runEnd();
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    await send(el, "hi");
+
+    // It already revealed as it streamed, so the finished message must not be
+    // re-wrapped into staggered .word spans (the jarring replay bug).
+    expect(shadow(el).querySelectorAll(".message--assistant .word")).toHaveLength(0);
+    expect(shadow(el).querySelector(".message--assistant")?.textContent).toBe("hello world foo");
   });
 
   it("streams assistant text into a single growing bubble", async () => {

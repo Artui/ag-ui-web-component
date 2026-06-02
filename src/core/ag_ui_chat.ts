@@ -169,6 +169,10 @@ export class AgUiChat extends HTMLElement {
 
   #client: AgUiClient | null = null;
   #streamingBubble: HTMLDivElement | null = null;
+  // Text deltas applied to the current streaming bubble. >1 ⇒ the message
+  // revealed progressively as it streamed, so the word reveal must not re-animate
+  // it; ≤1 ⇒ it arrived at once and the word reveal is appropriate.
+  #streamDeltas = 0;
   #pending: HTMLDivElement | null = null;
   #threadId = "";
   #initialMessages: readonly Message[] = [];
@@ -750,9 +754,17 @@ export class AgUiChat extends HTMLElement {
       onTextDelta: (buffer) => {
         this.#hidePending();
         this.#streamInto(buffer);
+        this.#streamDeltas += 1;
       },
       onTextEnd: (buffer) => {
-        this.#revealWords(this.#streamInto(buffer));
+        const bubble = this.#streamInto(buffer);
+        // Only reveal word-by-word when the message arrived at once. If it
+        // streamed across multiple deltas it already revealed progressively, so
+        // wrapping it now would re-animate the whole message — the awkward
+        // "finished response replays one word at a time" bug.
+        if (this.#streamDeltas <= 1) {
+          this.#revealWords(bubble);
+        }
         this.#streamingBubble = null;
       },
       onToolCall: (call) => {
@@ -819,6 +831,7 @@ export class AgUiChat extends HTMLElement {
   #streamInto(buffer: string): HTMLDivElement {
     if (this.#streamingBubble === null) {
       this.#streamingBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, "");
+      this.#streamDeltas = 0;
     }
     this.#streamingBubble.innerHTML = renderMarkdown(buffer);
     this.#messages.scrollTop = this.#messages.scrollHeight;
