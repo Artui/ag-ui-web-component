@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-06-02
+
+### Added
+- **Server-side tool results in the card.** The element now subscribes to
+  AG-UI's `TOOL_CALL_RESULT` event and settles the matching tool-call card with
+  the real server output (honouring the `data-tool-display` mode), instead of
+  the generic "Executed on the server." placeholder — which remains only as a
+  fallback when no result event is streamed.
+- **Tool calls and results survive a page refresh.** History replay now
+  reconstructs tool-call cards (from assistant `toolCalls`) and settles them
+  from the persisted `tool` result messages, so a rehydrated transcript shows
+  the full tool activity, not just the prose. Applies to every conversation
+  store (the data was already persisted; only the replay was incomplete).
+
+### Fixed
+- **Pending indicator could hang after a server-only round.** A round whose
+  tool calls were all server-side re-showed the "thinking" indicator after the
+  run had already finished, leaving it stuck. The indicator is no longer shown
+  speculatively for server tools, and a terminal `onSettled` guarantee clears
+  it (and re-enables input) on every run-loop exit — including the
+  `MAX_TOOL_ROUNDS` ceiling and errors.
+
 ## [0.2.0] — 2026-06-02
 
 ### Added
@@ -107,7 +129,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Artui/ag-ui-web-component/releases/tag/v0.1.0

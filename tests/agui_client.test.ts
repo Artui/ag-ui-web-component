@@ -12,8 +12,10 @@ function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {
     onTextDelta: (b) => calls.push(`delta:${b}`),
     onTextEnd: (b) => calls.push(`end:${b}`),
     onToolCall: (c) => calls.push(`tool:${c.name}:${c.id}:${JSON.stringify(c.args)}`),
+    onToolResult: (id, content) => calls.push(`result:${id}:${content}`),
     onRunEnd: () => calls.push("done"),
     onError: (m) => calls.push(`err:${m}`),
+    onSettled: () => calls.push("settled"),
   };
 }
 
@@ -38,6 +40,7 @@ describe("AgUiClient", () => {
         emit.text("paris");
         emit.textEnd("paris");
         emit.toolCall("tc1", "fill_field", { name: "city", value: "Paris" });
+        emit.toolResult("tc1", "filled");
         emit.runEnd();
       },
     });
@@ -50,7 +53,9 @@ describe("AgUiClient", () => {
       "delta:paris",
       "end:paris",
       'tool:fill_field:tc1:{"name":"city","value":"Paris"}',
+      "result:tc1:filled",
       "done",
+      "settled",
     ]);
   });
 
@@ -65,7 +70,7 @@ describe("AgUiClient", () => {
     const fake = makeFakeAgent({ throwOnRun: new Error("connection refused") });
     const handlers = recordingHandlers();
     await new AgUiClient({ agent: fake.agent, handlers }).send("x");
-    expect(handlers.calls).toEqual(["err:connection refused"]);
+    expect(handlers.calls).toEqual(["err:connection refused", "settled"]);
   });
 
   it("stringifies a non-Error thrown value", async () => {
@@ -75,7 +80,7 @@ describe("AgUiClient", () => {
       Promise.reject("boom");
     const handlers = recordingHandlers();
     await new AgUiClient({ agent: fake.agent, handlers }).send("x");
-    expect(handlers.calls).toEqual(["err:boom"]);
+    expect(handlers.calls).toEqual(["err:boom", "settled"]);
   });
 
   it("reflects the agent's running state", () => {
@@ -132,6 +137,43 @@ describe("AgUiClient", () => {
     // user message + tool-result message both appended.
     const tool = fake.messages.find((m) => m.role === "tool");
     expect(tool).toMatchObject({ role: "tool", content: "ok" });
+  });
+
+  it("runs the frontend tool in a round that also has a server tool, then re-runs", async () => {
+    // A server→UI chain in one turn: the server tool's result is streamed
+    // (executeTool returns null for it), while the frontend tool executes
+    // locally, posts its result, and drives another round.
+    let round = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        if (round === 0) {
+          emit.toolCall("srv1", "server_tool", {});
+          emit.toolResult("srv1", '{"ok":true}');
+          emit.toolCall("ui1", "fill_field", { value: "Paris" });
+        } else {
+          emit.text("done");
+          emit.textEnd("done");
+        }
+        round += 1;
+      },
+    });
+    const executed: string[] = [];
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      executeTool: async (call) => {
+        executed.push(call.name);
+        return call.name === "fill_field" ? { content: "filled" } : null;
+      },
+    }).send("do both");
+
+    // Both tools were offered to executeTool, but only the frontend tool posted
+    // a result — and that triggered a second round.
+    expect(executed).toEqual(["server_tool", "fill_field"]);
+    expect(fake.messages.filter((m) => m.role === "tool").map((m) => m.content)).toEqual([
+      "filled",
+    ]);
+    expect(round).toBe(2);
   });
 
   it("does not re-run when the only tool calls are server-side (null result)", async () => {

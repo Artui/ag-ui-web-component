@@ -185,8 +185,10 @@ an AG-UI `AbstractAgent`. On the first send the element builds a client (via the
 4. This repeats until the agent stops calling frontend tools, bounded by `MAX_TOOL_ROUNDS`.
 
 Tool calls the client doesn't own (server-side tools the server already executed) are left alone —
-the loop doesn't re-run them. The current tool catalog and context are read **fresh on every run**
-(`getTools()` / `getContext()`), so they always reflect the current page state.
+the loop doesn't re-run them, but their streamed `TOOL_CALL_RESULT` is rendered into the tool-call
+card (honouring `data-tool-display`), so server-side output is visible too. The current tool catalog
+and context are read **fresh on every run** (`getTools()` / `getContext()`), so they always reflect
+the current page state.
 
 ### Registering tools
 
@@ -406,7 +408,9 @@ history endpoint) for cross-tab/device durability:
 chat.conversationStore = new MyServerBackedStore();
 ```
 
-On mount the element rehydrates the transcript from the store, so the chat looks continuous.
+On mount the element rehydrates the transcript from the store, so the chat looks continuous —
+including tool-call cards and their results (reconstructed from the persisted `toolCalls` and `tool`
+messages), not just the text turns.
 
 **3. Resumable loop (`x-navigates` + `navigationResult`).** A tool whose schema carries
 `x-navigates: true` (use `X_NAVIGATES_KEY`; read back by [`isNavigates`](src/tools/is_navigates.ts))
