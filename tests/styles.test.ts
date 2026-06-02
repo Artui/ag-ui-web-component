@@ -113,6 +113,8 @@ describe("STYLES", () => {
     expect(STYLES).toContain(".message--assistant .word");
     expect(STYLES).toContain("--ag-ui-word-index");
     expect(STYLES).toContain("prefers-reduced-motion: reduce");
+    // Rehydrated history is excluded from the fade entrance animation.
+    expect(STYLES).toContain(".message--assistant:not(.message--restored)");
   });
 
   it("offers placement presets, with embedded dropping the stacking context", () => {

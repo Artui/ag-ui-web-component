@@ -241,7 +241,10 @@ export const STYLES = `
 }
 
 /* ── Incoming-text animations (data-text-animation) ─────────────────────── */
-:host([data-text-animation="fade"]) .message--assistant {
+/* .message--restored (rehydrated history) is excluded: entrance animations are
+   for freshly-arriving messages, not the whole transcript replaying on reload.
+   Word mode is excluded implicitly — restored bubbles aren't wrapped. */
+:host([data-text-animation="fade"]) .message--assistant:not(.message--restored) {
   animation: ag-ui-msg-fade 0.25s ease both;
 }
 

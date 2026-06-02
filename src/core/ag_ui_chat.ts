@@ -462,7 +462,12 @@ export class AgUiChat extends HTMLElement {
     }
     if (message.role === MESSAGE_ROLE.ASSISTANT) {
       if (text !== "") {
-        this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, text));
+        // Restored history must appear statically — entrance animations
+        // (fade / word) are for freshly-arriving messages. On reload the whole
+        // transcript mounts at once, so animating every bubble's text in
+        // parallel looks wrong. Mark it so the fade CSS skips it, and don't
+        // wrap words.
+        this.appendMessage(MESSAGE_ROLE.ASSISTANT, text).classList.add("message--restored");
       }
       const toolCalls = message.toolCalls;
       if (toolCalls !== undefined) {

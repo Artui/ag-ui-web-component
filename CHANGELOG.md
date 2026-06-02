@@ -8,13 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Word text-animation no longer replays the whole message at end of stream.**
-  `data-text-animation="word"` wrapped the finished assistant message into
-  staggered `.word` spans on `TEXT_MESSAGE_END`, so a response that had already
-  streamed in progressively re-animated itself one word at a time — awkward. The
-  word reveal now runs only when the message arrived **at once** (a single text
-  delta, history replay, or an error bubble); a message that streamed across
-  multiple deltas keeps its progressive reveal and isn't re-wrapped.
+- **Incoming-text animations no longer double-fire.** Two distinct cases:
+  - *End of stream:* `data-text-animation="word"` wrapped the finished assistant
+    message into staggered `.word` spans on `TEXT_MESSAGE_END`, so a response
+    that had already streamed in re-animated itself one word at a time. The word
+    reveal now runs only when a message arrives **at once** (single text delta,
+    or an error bubble); a message streamed across multiple deltas keeps its
+    progressive reveal and isn't re-wrapped.
+  - *Reload from memory:* on rehydrate the whole transcript mounts at once, so
+    every restored assistant bubble animated its text in parallel (fade) or
+    re-wrapped word-by-word — wrong, since it's old content, not arriving. Restored
+    bubbles are now marked `message--restored`, excluded from the fade entrance
+    animation and never word-wrapped, so history appears statically.
 
 ## [0.2.1] — 2026-06-02
 

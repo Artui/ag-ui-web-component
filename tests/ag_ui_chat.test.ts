@@ -917,6 +917,29 @@ describe("AgUiChat", () => {
     expect([...bubbles].map((b) => b.textContent)).toEqual(["hi", "hello"]);
   });
 
+  it("restores history statically — no entrance animation on reload (word mode)", async () => {
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [
+      { id: "1", role: "user", content: "hi" },
+      { id: "2", role: "assistant", content: "hello there world" },
+    ] as never);
+
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-text-animation", "word");
+    el.conversationStore = store;
+    document.body.appendChild(el);
+    await flush();
+
+    const assistant = shadow(el).querySelector(".message--assistant");
+    // Marked so the fade CSS skips it, and never wrapped into staggered .word
+    // spans — so the whole transcript doesn't animate in parallel on reload.
+    expect(assistant?.classList.contains("message--restored")).toBe(true);
+    expect(shadow(el).querySelectorAll(".message--assistant .word")).toHaveLength(0);
+    expect(assistant?.textContent).toBe("hello there world");
+  });
+
   it("replays tool-call cards and their results from history on mount", async () => {
     const store = new SessionStorageStore();
     const tid = store.threadId();
