@@ -24,11 +24,13 @@ export interface ClientTool {
 export class ClientToolRegistry {
   readonly #tools = new Map<string, ClientTool>();
 
-  /** Register a tool. Throws if the name is already taken. */
+  /**
+   * Register a tool, replacing any existing one with the same name.
+   *
+   * Idempotent on the name so re-fired host refs / React StrictMode's
+   * double-invoke don't throw — re-registering is a replace, not an error.
+   */
   register(tool: ClientTool): void {
-    if (this.#tools.has(tool.name)) {
-      throw new Error(`tool "${tool.name}" already registered`);
-    }
     this.#tools.set(tool.name, tool);
   }
 

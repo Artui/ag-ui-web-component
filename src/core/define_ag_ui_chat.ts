@@ -1,5 +1,5 @@
+import { ELEMENT_TAG } from "../constants.js";
 import { AgUiChat } from "./ag_ui_chat.js";
-import { ELEMENT_TAG } from "./constants.js";
 
 /**
  * Register the `<ag-ui-chat>` Custom Element.

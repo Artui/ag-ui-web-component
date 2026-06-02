@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPageMapContext } from "../src/page_map.js";
+import { createPageMapContext } from "../src/tools/page_map.js";
 
 describe("createPageMapContext", () => {
   it("returns nothing without a provider", () => {

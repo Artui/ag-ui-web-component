@@ -1,6 +1,6 @@
 import { HttpAgent } from "@ag-ui/client";
 import { describe, expect, it } from "vitest";
-import { createHttpAgent } from "../src/create_http_agent.js";
+import { createHttpAgent } from "../src/core/create_http_agent.js";
 
 describe("createHttpAgent", () => {
   it("builds an HttpAgent pointed at the endpoint with headers", () => {

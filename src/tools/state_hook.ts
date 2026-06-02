@@ -1,5 +1,5 @@
+import { X_DESTRUCTIVE_KEY } from "../constants.js";
 import type { ClientTool } from "./client_tool_registry.js";
-import { X_DESTRUCTIVE_KEY } from "./constants.js";
 
 /**
  * A binding from a named piece of host application state to agent tools.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ToolCallCard } from "../src/tool_call_card.js";
+import { ToolCallCard } from "../src/ui/tool_call_card.js";
 
 describe("ToolCallCard", () => {
   it("renders the tool name, args, and a pending status", () => {
@@ -58,5 +58,37 @@ describe("ToolCallCard", () => {
     expect(card.element.getAttribute("data-status")).toBe("declined");
     expect(card.element.querySelector(".tool-call-status")?.textContent).toContain("declined");
     expect(card.element.querySelector(".tool-call-toggle")?.textContent).toBe("Declined");
+  });
+
+  it("shows the x-summary label instead of the tool name when given", () => {
+    const card = new ToolCallCard("query_model", { model: "Order" }, "full", "Query orders");
+    expect(card.element.querySelector(".tool-call-name")?.textContent).toBe("🔧 Query orders");
+    // The raw name is still on the data attribute for selectors.
+    expect(card.element.getAttribute("data-tool-name")).toBe("query_model");
+  });
+
+  it("minimal mode shows only the name + pill, no args or result body", () => {
+    const card = new ToolCallCard("count_users", { active: true }, "minimal");
+    expect(card.element.getAttribute("data-display")).toBe("minimal");
+    expect(card.element.querySelector(".tool-call-args")).toBeNull();
+    card.settle("done", "42");
+    expect(card.element.getAttribute("data-status")).toBe("done");
+    expect(card.element.querySelector(".tool-call-toggle")).toBeNull();
+    expect(card.element.querySelector(".tool-call-result")).toBeNull();
+  });
+
+  it("compact mode hides args until a single Details toggle reveals args + result", () => {
+    const card = new ToolCallCard("count_users", { active: true }, "compact");
+    expect(card.element.getAttribute("data-display")).toBe("compact");
+    expect(card.element.querySelector(".tool-call-args")).toBeNull();
+    card.settle("done", "42");
+    const toggle = card.element.querySelector<HTMLButtonElement>(".tool-call-toggle");
+    const output = card.element.querySelector<HTMLElement>(".tool-call-result");
+    expect(toggle?.textContent).toBe("Details");
+    expect(output?.hidden).toBe(true);
+    expect(output?.textContent).toContain('args: {"active":true}');
+    expect(output?.textContent).toContain("42");
+    toggle?.click();
+    expect(output?.hidden).toBe(false);
   });
 });

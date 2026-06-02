@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isNavigates } from "../src/is_navigates.js";
+import { isNavigates } from "../src/tools/is_navigates.js";
 
 describe("isNavigates", () => {
   it("is true only when x-navigates is exactly true", () => {

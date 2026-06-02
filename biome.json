@@ -27,6 +27,9 @@
     "enabled": true,
     "rules": {
       "recommended": true,
+      "complexity": {
+        "useLiteralKeys": "off"
+      },
       "style": {
         "useImportType": "error",
         "noNonNullAssertion": "warn"

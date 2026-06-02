@@ -2,14 +2,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   focusWithFlash,
   highlightThenClick,
+  prefersReducedMotion,
+  pressThenClick,
   scrollIntoCenterView,
+  selectOption,
+  toggleControl,
   typeInto,
-} from "../src/animations.js";
+} from "../src/dom/animations.js";
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   document.body.innerHTML = "";
 });
+
+/** Force `prefers-reduced-motion` to ``reduce`` for the duration of a test. */
+function mockReducedMotion(reduce: boolean): void {
+  vi.spyOn(window, "matchMedia").mockReturnValue({ matches: reduce } as MediaQueryList);
+}
 
 function input(): HTMLInputElement {
   const el = document.createElement("input");
@@ -121,5 +131,141 @@ describe("focusWithFlash", () => {
     await vi.runAllTimersAsync();
     await done;
     expect(el.style.boxShadow).toBe("");
+  });
+});
+
+describe("prefersReducedMotion", () => {
+  it("is false by default", () => {
+    expect(prefersReducedMotion()).toBe(false);
+  });
+
+  it("reflects the media query when reduce is requested", () => {
+    mockReducedMotion(true);
+    expect(prefersReducedMotion()).toBe(true);
+  });
+});
+
+describe("pressThenClick", () => {
+  it("applies a pressed state, waits, restores, and clicks", async () => {
+    vi.useFakeTimers();
+    const button = document.createElement("button");
+    button.style.transform = "none";
+    document.body.appendChild(button);
+    const original = button.style.transform;
+    let clicked = false;
+    button.addEventListener("click", () => {
+      clicked = true;
+    });
+
+    const done = pressThenClick(button, { pressMs: 10 });
+    expect(button.style.transform).toBe("scale(0.96)");
+    expect(button.style.boxShadow).toContain("rgba");
+    await vi.runAllTimersAsync();
+    await done;
+
+    expect(clicked).toBe(true);
+    expect(button.style.transform).toBe(original);
+  });
+
+  it("uses the default press duration when unspecified", async () => {
+    vi.useFakeTimers();
+    const button = document.createElement("button");
+    document.body.appendChild(button);
+    const done = pressThenClick(button);
+    await vi.runAllTimersAsync();
+    await done;
+    expect(button.style.transform).toBe("");
+  });
+
+  it("skips the hold under reduced motion but still clicks", async () => {
+    mockReducedMotion(true);
+    const button = document.createElement("button");
+    document.body.appendChild(button);
+    let clicked = false;
+    button.addEventListener("click", () => {
+      clicked = true;
+    });
+    await pressThenClick(button, { pressMs: 100000 });
+    expect(clicked).toBe(true);
+    expect(button.style.transform).toBe("");
+  });
+});
+
+describe("selectOption", () => {
+  function select(): HTMLSelectElement {
+    const el = document.createElement("select");
+    el.innerHTML = '<option value="d">Draft</option><option value="p">Published</option>';
+    document.body.appendChild(el);
+    return el;
+  }
+
+  it("highlights, picks by option value, fires input + change, restores", async () => {
+    vi.useFakeTimers();
+    const el = select();
+    let changes = 0;
+    el.addEventListener("change", () => {
+      changes += 1;
+    });
+    const done = selectOption(el, "p", { highlightMs: 10 });
+    expect(el.style.outline).toContain("#4f46e5");
+    await vi.runAllTimersAsync();
+    await done;
+    expect(el.value).toBe("p");
+    expect(changes).toBe(1);
+    expect(el.style.outline).toBe("");
+  });
+
+  it("matches by visible option text", async () => {
+    const el = select();
+    await selectOption(el, "Published", { highlightMs: 0 });
+    expect(el.value).toBe("p");
+  });
+
+  it("uses the default highlight duration when unspecified", async () => {
+    vi.useFakeTimers();
+    const el = select();
+    const done = selectOption(el, "d");
+    await vi.runAllTimersAsync();
+    await done;
+    expect(el.value).toBe("d");
+  });
+
+  it("throws when no option matches", async () => {
+    const el = select();
+    await expect(selectOption(el, "nope", { highlightMs: 0 })).rejects.toThrow(
+      'no <option> matching "nope"',
+    );
+  });
+});
+
+describe("toggleControl", () => {
+  it("flashes, sets checked, fires input + change, restores", async () => {
+    vi.useFakeTimers();
+    const el = document.createElement("input");
+    el.type = "checkbox";
+    document.body.appendChild(el);
+    let changes = 0;
+    el.addEventListener("change", () => {
+      changes += 1;
+    });
+    const done = toggleControl(el, true, { flashMs: 10 });
+    expect(el.style.boxShadow).toContain("rgba");
+    await vi.runAllTimersAsync();
+    await done;
+    expect(el.checked).toBe(true);
+    expect(changes).toBe(1);
+    expect(el.style.boxShadow).toBe("");
+  });
+
+  it("uses the default flash duration when unspecified", async () => {
+    vi.useFakeTimers();
+    const el = document.createElement("input");
+    el.type = "checkbox";
+    el.checked = true;
+    document.body.appendChild(el);
+    const done = toggleControl(el, false);
+    await vi.runAllTimersAsync();
+    await done;
+    expect(el.checked).toBe(false);
   });
 });

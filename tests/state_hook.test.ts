@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createStateHookTools } from "../src/state_hook.js";
+import { createStateHookTools } from "../src/tools/state_hook.js";
 
 describe("createStateHookTools", () => {
   it("creates a read-only tool when no write is given", () => {

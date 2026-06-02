@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ag-ui-web-component — theme gallery</title>
+    <title>ag-ui-web-component — playground</title>
     <style>
       * {
         box-sizing: border-box;
@@ -14,83 +14,261 @@
         color: #1a1a2e;
         background: #f7f7fb;
       }
+
+      /* Sticky config header — switch every option live, no page reload. */
+      header.bar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px 22px;
+        padding: 12px 24px;
+        background: #15151f;
+        color: #fff;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+      }
+      header.bar .brand {
+        font-weight: 700;
+        margin-right: 6px;
+      }
+      header.bar .brand small {
+        color: #b6b6d8;
+        font-weight: 400;
+      }
+      header.bar label {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 3px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #b6b6d8;
+      }
+      header.bar select {
+        font: inherit;
+        font-size: 13px;
+        text-transform: none;
+        letter-spacing: 0;
+        color: #15151f;
+        background: #fff;
+        border: 1px solid #33334a;
+        border-radius: 7px;
+        padding: 5px 8px;
+      }
+
       main {
-        max-width: 720px;
-        margin: 48px auto;
+        max-width: 760px;
+        margin: 32px auto;
         padding: 0 24px;
       }
-      h1 {
-        margin: 0 0 8px;
-        font-size: 26px;
-      }
-      p.lead {
-        margin: 0 0 32px;
-        color: #6b7280;
-      }
-      .themes {
-        display: grid;
-        gap: 16px;
-      }
-      a.theme {
-        display: block;
-        text-decoration: none;
-        color: inherit;
+      .card {
+        background: #fff;
         border: 1px solid #e2e2ec;
         border-radius: 14px;
-        padding: 20px 24px;
-        background: #fff;
+        padding: 24px 28px 28px;
         box-shadow: 0 6px 20px rgba(20, 20, 50, 0.05);
-        transition: transform 0.12s ease, box-shadow 0.12s ease;
       }
-      a.theme:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 28px rgba(20, 20, 50, 0.1);
-      }
-      .theme h2 {
+      h1 {
         margin: 0 0 4px;
-        font-size: 18px;
+        font-size: 22px;
+      }
+      .subtitle {
+        margin: 0 0 20px;
+        color: #6b7280;
+      }
+      .field {
+        margin-bottom: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .field.checkbox {
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+      }
+      label.lbl {
+        font-size: 13px;
+        font-weight: 600;
+        color: #374151;
+      }
+      input[type="text"],
+      select.form {
+        font: inherit;
+        padding: 8px 10px;
+        border: 1px solid #e2e2ec;
+        border-radius: 8px;
+      }
+      .actions {
+        margin-top: 18px;
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
       }
-      .theme p {
-        margin: 0;
+      button.save {
+        border: none;
+        border-radius: 8px;
+        padding: 9px 18px;
+        background: #4f46e5;
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .banner {
+        color: #047857;
+        font-weight: 600;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+      .banner.show {
+        opacity: 1;
+      }
+      .hint {
         color: #6b7280;
         font-size: 14px;
       }
-      .swatch {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        border: 1px solid rgba(0, 0, 0, 0.1);
+      .hint code {
+        background: #eef2ff;
+        padding: 1px 6px;
+        border-radius: 5px;
+      }
+
+      /* Where the widget renders when placement="embedded"; floating/side/full
+         placements position themselves and overlay, leaving this slot as a
+         labelled drop-target. */
+      .embed-slot {
+        position: relative;
+        height: 68vh;
+        min-height: 420px;
+        margin-top: 28px;
+        border: 1px dashed #c7c7d6;
+        border-radius: 14px;
+        display: flex;
+      }
+      .embed-slot::before {
+        content: 'embedded render target (placement="embedded")';
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #b0b0c4;
+        font-size: 13px;
+      }
+      ag-ui-chat {
+        flex: 1;
+      }
+      /* When embedded + collapsed, shrink to the header instead of filling the slot. */
+      ag-ui-chat[collapsed] {
+        flex: 0 0 auto;
+        align-self: flex-start;
       }
     </style>
   </head>
   <body>
+    <header class="bar">
+      <span class="brand">ag-ui playground <small>· flip a control to reconfigure live</small></span>
+      <label
+        >Theme
+        <select id="cfg-theme">
+          <option value="light">light</option>
+          <option value="dark">dark</option>
+          <option value="auto">auto (OS)</option>
+          <option value="code">code</option>
+        </select>
+      </label>
+      <label
+        >Density
+        <select id="cfg-density">
+          <option value="comfortable">comfortable</option>
+          <option value="compact">compact</option>
+        </select>
+      </label>
+      <label
+        >Placement
+        <select id="cfg-placement">
+          <option value="floating">floating</option>
+          <option value="bottom-left">bottom-left</option>
+          <option value="side">side</option>
+          <option value="full">full</option>
+          <option value="embedded">embedded</option>
+        </select>
+      </label>
+      <label
+        >Text animation
+        <select id="cfg-text">
+          <option value="none">none</option>
+          <option value="fade" selected>fade</option>
+          <option value="word">word-by-word</option>
+        </select>
+      </label>
+      <label
+        >Tool cards
+        <select id="cfg-tools">
+          <option value="full">full</option>
+          <option value="compact" selected>compact</option>
+          <option value="minimal">minimal</option>
+        </select>
+      </label>
+    </header>
+
     <main>
-      <h1>Theme gallery</h1>
-      <p class="lead">
-        Each page docks <code>&lt;ag-ui-chat&gt;</code> as a full-height side window
-        (right third of the screen) by overriding only CSS custom properties.
+      <div class="card">
+        <h1>Create Article</h1>
+        <p class="subtitle">
+          Ask the assistant to fill this in — or run a skill (type <code>/</code> or click a chip).
+        </p>
+
+        <form id="article-form">
+          <div class="field">
+            <label class="lbl" for="title">Title</label>
+            <input type="text" id="title" name="title" placeholder="Article title" />
+          </div>
+          <div class="field">
+            <label class="lbl" for="slug">Slug</label>
+            <input type="text" id="slug" name="slug" placeholder="article-slug" />
+          </div>
+          <div class="field">
+            <label class="lbl" for="status">Status</label>
+            <select class="form" id="status" name="status">
+              <option value="draft">Draft</option>
+              <option value="review">In review</option>
+              <option value="published">Published</option>
+            </select>
+          </div>
+          <div class="field checkbox">
+            <input type="checkbox" id="featured" name="featured" />
+            <label class="lbl" for="featured">Featured on homepage</label>
+          </div>
+          <div class="actions">
+            <button type="button" class="save" id="save">Save</button>
+            <span class="banner" id="banner">✓ Article saved</span>
+          </div>
+        </form>
+      </div>
+
+      <p class="hint">
+        Try:
+        <code>Create an article titled "Hello, AG-UI", slug hello-ag-ui, published and featured, then save</code>
+        — or pick a skill from the chips / <code>/</code> palette.
       </p>
-      <div class="themes">
-        <a class="theme" href="/themes/default.html">
-          <h2><span class="swatch" style="background: #4f46e5"></span> Default</h2>
-          <p>The original indigo palette on a light admin form.</p>
-        </a>
-        <a class="theme" href="/themes/dark.html">
-          <h2><span class="swatch" style="background: #38bdf8"></span> Dark</h2>
-          <p>Dark slate surfaces, light text, a sky-blue accent.</p>
-        </a>
-        <a class="theme" href="/themes/claude.html">
-          <h2><span class="swatch" style="background: #d97757"></span> Claude</h2>
-          <p>Warm cream/paper surfaces with the signature coral accent.</p>
-        </a>
-        <a class="theme" href="/themes/embedded.html">
-          <h2><span class="swatch" style="background: #1f2430"></span> Embedded</h2>
-          <p>In-flow continuation: a bordered panel that's part of the page layout, not a floating popup — host font, quiet header, flush border.</p>
-        </a>
+
+      <div class="embed-slot">
+        <ag-ui-chat
+          id="chat"
+          endpoint="/agent/"
+          title-text="Admin Copilot"
+          data-text-animation="fade"
+          data-tool-display="compact"
+          data-slash-commands="true"
+          data-prompt-chips="true"
+        ></ag-ui-chat>
       </div>
     </main>
+
+    <script type="module" src="/themes/demo.js"></script>
   </body>
 </html>

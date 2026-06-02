@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STYLES } from "../src/styles.js";
+import { STYLES } from "../src/ui/styles.js";
 
 describe("STYLES", () => {
   it("defines the color custom properties on :host", () => {
@@ -78,5 +78,50 @@ describe("STYLES", () => {
     // Positioning can switch from floating overlay to in-flow embed.
     expect(STYLES).toContain("--ag-ui-position: fixed;");
     expect(STYLES).toContain("position: var(--ag-ui-position);");
+  });
+
+  it("ships dark / auto / code themes that re-set the colour variables", () => {
+    expect(STYLES).toContain(':host([theme="dark"])');
+    expect(STYLES).toContain("@media (prefers-color-scheme: dark)");
+    expect(STYLES).toContain(':host([theme="auto"])');
+    expect(STYLES).toContain(':host([theme="code"])');
+    // The code theme switches to the monospace font stack.
+    expect(STYLES).toContain("--ag-ui-code-font:");
+    expect(STYLES).toContain("--ag-ui-font: var(--ag-ui-code-font);");
+  });
+
+  it("drives spacing from variables a density preset overrides", () => {
+    expect(STYLES).toContain("--ag-ui-space:");
+    expect(STYLES).toContain("--ag-ui-pad:");
+    expect(STYLES).toContain("--ag-ui-msg-pad:");
+    expect(STYLES).toContain("padding: var(--ag-ui-pad);");
+    expect(STYLES).toContain("gap: var(--ag-ui-space);");
+    expect(STYLES).toContain("padding: var(--ag-ui-msg-pad);");
+    expect(STYLES).toContain(':host([density="compact"])');
+  });
+
+  it("collapses to just the header — hiding the body incl. skill surfaces", () => {
+    expect(STYLES).toContain(":host([collapsed]) .skill-chips");
+    expect(STYLES).toContain(":host([collapsed]) .skill-palette");
+    expect(STYLES).toContain(":host([collapsed]) .input-row");
+    // Edge-docked placements unpin the bottom so they shrink when collapsed.
+    expect(STYLES).toContain(':host([collapsed][placement="side"])');
+  });
+
+  it("animates incoming text (fade + word) and respects reduced motion", () => {
+    expect(STYLES).toContain(':host([data-text-animation="fade"]) .message--assistant');
+    expect(STYLES).toContain(".message--assistant .word");
+    expect(STYLES).toContain("--ag-ui-word-index");
+    expect(STYLES).toContain("prefers-reduced-motion: reduce");
+  });
+
+  it("offers placement presets, with embedded dropping the stacking context", () => {
+    expect(STYLES).toContain(':host([placement="bottom-left"])');
+    expect(STYLES).toContain(':host([placement="side"])');
+    expect(STYLES).toContain(':host([placement="full"])');
+    expect(STYLES).toContain(':host([placement="embedded"])');
+    // Embedded fixes the z-index overlay clash.
+    expect(STYLES).toContain("--ag-ui-z-index: auto;");
+    expect(STYLES).toContain("--ag-ui-position: static;");
   });
 });

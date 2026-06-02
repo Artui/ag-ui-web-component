@@ -65,7 +65,9 @@
   },
   "dependencies": {
     "@ag-ui/client": ">=0.0.54 <0.1",
-    "@ag-ui/core": ">=0.0.54 <0.1"
+    "@ag-ui/core": ">=0.0.54 <0.1",
+    "dompurify": "^3.4.7",
+    "marked": "^18.0.4"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.0",

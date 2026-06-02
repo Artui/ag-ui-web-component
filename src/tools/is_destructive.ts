@@ -1,4 +1,4 @@
-import { X_DESTRUCTIVE_KEY } from "./constants.js";
+import { X_DESTRUCTIVE_KEY } from "../constants.js";
 
 /**
  * Whether a tool's JSON-Schema `parameters` marks it destructive.

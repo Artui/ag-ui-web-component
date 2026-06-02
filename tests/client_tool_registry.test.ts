@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type ClientTool, ClientToolRegistry } from "../src/client_tool_registry.js";
+import { type ClientTool, ClientToolRegistry } from "../src/tools/client_tool_registry.js";
 
 function tool(name: string, parameters: Record<string, unknown> = { type: "object" }): ClientTool {
   return { name, description: `does ${name}`, parameters, handler: () => name };
@@ -14,10 +14,18 @@ describe("ClientToolRegistry", () => {
     expect(reg.get("fill_field").description).toBe("does fill_field");
   });
 
-  it("rejects duplicate registration", () => {
+  it("replaces a tool registered again under the same name (idempotent)", () => {
     const reg = new ClientToolRegistry();
     reg.register(tool("x"));
-    expect(() => reg.register(tool("x"))).toThrow(/already registered/);
+    const replacement: ClientTool = {
+      name: "x",
+      description: "replaced",
+      parameters: { type: "object" },
+      handler: () => "new",
+    };
+    expect(() => reg.register(replacement)).not.toThrow();
+    expect(reg.get("x").description).toBe("replaced");
+    expect(reg.tools()).toHaveLength(1);
   });
 
   it("throws when getting an unknown tool", () => {
