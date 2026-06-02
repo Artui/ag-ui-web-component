@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-06-02
+
 ### Added
 - **Markdown + HTML rendering** in assistant message bubbles (`renderMarkdown`),
   sanitised with DOMPurify (scripts, event handlers, and `javascript:` URLs
@@ -105,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Artui/ag-ui-web-component/releases/tag/v0.1.0
