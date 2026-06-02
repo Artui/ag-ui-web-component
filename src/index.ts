@@ -1,5 +1,24 @@
 // Public surface re-exports. Per CLAUDE.md, this is the only re-export point.
-export { AgUiChat, type MessageRole, type SubmitDetail } from "./ag_ui_chat.js";
+
+export {
+  ELEMENT_TAG,
+  MAX_TOOL_ROUNDS,
+  MESSAGE_ROLE,
+  SUBMIT_EVENT,
+  TOGGLE_EVENT,
+  TOOL_CALL_STATUS,
+  TOOL_DISPLAY,
+  X_CONFIRM_KEY,
+  X_DESTRUCTIVE_KEY,
+  X_NAVIGATES_KEY,
+  X_SUMMARY_KEY,
+} from "./constants.js";
+export {
+  AgUiChat,
+  type MessageRole,
+  type SubmitDetail,
+  type ToggleDetail,
+} from "./core/ag_ui_chat.js";
 export {
   AgUiClient,
   type AgUiClientConfig,
@@ -8,53 +27,63 @@ export {
   type AgUiToolCall,
   type ExecuteTool,
   type ToolExecution,
-} from "./agui_client.js";
+} from "./core/agui_client.js";
+export {
+  type ClientConversationStore,
+  type NavigationCheckpoint,
+  SessionStorageStore,
+} from "./core/conversation_store.js";
+export {
+  type AgentFactory,
+  createHttpAgent,
+  type HttpAgentOptions,
+} from "./core/create_http_agent.js";
+export { defineAgUiChat } from "./core/define_ag_ui_chat.js";
 export {
   type FlashOptions,
   focusWithFlash,
   type HighlightClickOptions,
   highlightThenClick,
+  type PressOptions,
+  prefersReducedMotion,
+  pressThenClick,
+  type SelectOptions,
   scrollIntoCenterView,
+  selectOption,
   type TextLikeElement,
+  type ToggleOptions,
   type TypeOptions,
+  toggleControl,
   typeInto,
-} from "./animations.js";
-export { type ClientTool, ClientToolRegistry } from "./client_tool_registry.js";
-export { type ConfirmationRequest, requestConfirmation } from "./confirmation_modal.js";
-export {
-  ELEMENT_TAG,
-  MAX_TOOL_ROUNDS,
-  MESSAGE_ROLE,
-  SUBMIT_EVENT,
-  TOOL_CALL_STATUS,
-  X_DESTRUCTIVE_KEY,
-  X_NAVIGATES_KEY,
-} from "./constants.js";
-export {
-  type ClientConversationStore,
-  type NavigationCheckpoint,
-  SessionStorageStore,
-} from "./conversation_store.js";
-export {
-  type AgentFactory,
-  createHttpAgent,
-  type HttpAgentOptions,
-} from "./create_http_agent.js";
-export { defineAgUiChat } from "./define_ag_ui_chat.js";
+} from "./dom/animations.js";
 export {
   clickElement,
   type FillFieldOptions,
   fillField,
+  pressButton,
+  selectControl,
   setControlValue,
-} from "./dom_driver.js";
-export { isDestructive } from "./is_destructive.js";
-export { isNavigates } from "./is_navigates.js";
-export { createPageMapContext, type PageMap } from "./page_map.js";
-export { createRouteTools, type Route, type RouteMap } from "./route_map.js";
-export { createStateHookTools, type StateHook } from "./state_hook.js";
+  toggleCheckbox,
+} from "./dom/dom_driver.js";
+export { setNativeChecked, setNativeValue } from "./dom/native_setter.js";
+export type { Skill } from "./skills/skill.js";
+export { type ClientTool, ClientToolRegistry } from "./tools/client_tool_registry.js";
+export { isDestructive } from "./tools/is_destructive.js";
+export { isNavigates } from "./tools/is_navigates.js";
+export { createPageMapContext, type PageMap } from "./tools/page_map.js";
+export {
+  createRouteTools,
+  type Route,
+  type RouteMap,
+  type RouteWithParams,
+} from "./tools/route_map.js";
+export { createStateHookTools, type StateHook } from "./tools/state_hook.js";
+export { type ConfirmationRequest, requestConfirmation } from "./ui/confirmation_card.js";
+export { renderMarkdown } from "./ui/render_markdown.js";
 export {
   type SettledStatus,
   ToolCallCard,
   type ToolCallStatus,
-} from "./tool_call_card.js";
+  type ToolDisplayMode,
+} from "./ui/tool_call_card.js";
 export { VERSION } from "./version.js";

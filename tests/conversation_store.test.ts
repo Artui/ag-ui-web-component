@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { SessionStorageStore } from "../src/conversation_store.js";
+import { SessionStorageStore } from "../src/core/conversation_store.js";
 
 describe("SessionStorageStore", () => {
   beforeEach(() => sessionStorage.clear());

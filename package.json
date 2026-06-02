@@ -1,6 +1,6 @@
 {
   "name": "@artooi/ag-ui-web-component",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Framework-free <ag-ui-chat> Web Component over the AG-UI protocol. Drop-in chat sidebar with a pluggable client-side tool registry, DOM driver primitives, animations, and destructive-action confirmation modal.",
   "type": "module",
   "main": "./dist/index.js",
@@ -65,7 +65,9 @@
   },
   "dependencies": {
     "@ag-ui/client": ">=0.0.54 <0.1",
-    "@ag-ui/core": ">=0.0.54 <0.1"
+    "@ag-ui/core": ">=0.0.54 <0.1",
+    "dompurify": "^3.4.7",
+    "marked": "^18.0.4"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.0",

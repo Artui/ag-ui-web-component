@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDestructive } from "../src/is_destructive.js";
+import { isDestructive } from "../src/tools/is_destructive.js";
 
 describe("isDestructive", () => {
   it("is true only when x-destructive is exactly true", () => {

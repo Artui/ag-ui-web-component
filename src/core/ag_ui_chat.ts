@@ -1,0 +1,786 @@
+import type { Context, Message, Tool } from "@ag-ui/core";
+import {
+  MESSAGE_ROLE,
+  SUBMIT_EVENT,
+  TOGGLE_EVENT,
+  TOOL_CALL_STATUS,
+  TOOL_DISPLAY,
+  X_CONFIRM_KEY,
+  X_SUMMARY_KEY,
+} from "../constants.js";
+import { fillTemplate } from "../skills/fill_template.js";
+import { parseSkills } from "../skills/parse_skills.js";
+import type { Skill } from "../skills/skill.js";
+import { type ClientTool, ClientToolRegistry } from "../tools/client_tool_registry.js";
+import { isDestructive } from "../tools/is_destructive.js";
+import { isNavigates } from "../tools/is_navigates.js";
+import { createPageMapContext, type PageMap } from "../tools/page_map.js";
+import { createRouteTools, type RouteMap } from "../tools/route_map.js";
+import { createStateHookTools, type StateHook } from "../tools/state_hook.js";
+import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
+import { renderMarkdown } from "../ui/render_markdown.js";
+import { wrapWords } from "../ui/reveal_words.js";
+import { SkillsMenu } from "../ui/skills_menu.js";
+import { STYLES } from "../ui/styles.js";
+import { ToolCallCard, type ToolDisplayMode } from "../ui/tool_call_card.js";
+import {
+  AgUiClient,
+  type AgUiClientHandlers,
+  type AgUiToolCall,
+  type ToolExecution,
+} from "./agui_client.js";
+import {
+  type ClientConversationStore,
+  type NavigationCheckpoint,
+  SessionStorageStore,
+} from "./conversation_store.js";
+import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
+
+/** The role a rendered chat message takes. */
+export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
+
+/** `detail` shape of the {@link SUBMIT_EVENT} CustomEvent. */
+export interface SubmitDetail {
+  readonly content: string;
+}
+
+/** `detail` shape of the {@link TOGGLE_EVENT} CustomEvent. */
+export interface ToggleDetail {
+  readonly collapsed: boolean;
+}
+
+/** Per-tab persistence key for the collapsed state (survives MPA reloads). */
+const COLLAPSED_KEY = "ag-ui-chat:collapsed";
+
+/**
+ * `<ag-ui-chat>` — a framework-free chat sidebar Web Component over AG-UI.
+ *
+ * Owns the Shadow DOM shell (header, scrolling message list, input row),
+ * builds an {@link AgUiClient} on first send (via the overridable
+ * {@link agentFactory}), and renders streaming assistant text plus tool-call
+ * activity. Emits a {@link SUBMIT_EVENT} for host visibility.
+ *
+ * The per-run frontend tool catalog and context are supplied by
+ * {@link getTools} / {@link getContext}, which later phases (the tool
+ * registry, DOM driver) populate.
+ */
+export class AgUiChat extends HTMLElement {
+  /** Agent factory; override to inject a custom or fake agent (tests). */
+  agentFactory: AgentFactory = createHttpAgent;
+
+  /** Extra HTTP headers for the AG-UI endpoint (e.g. CSRF). */
+  headers: Record<string, string> = {};
+
+  /** When true, destructive tools execute without a confirmation modal. */
+  autoConfirm = false;
+
+  /**
+   * Optional per-call confirmation predicate. When set, it is authoritative:
+   * given a tool name + args it decides whether *this* call needs confirmation
+   * (so one tool can be instant for some args and confirmed for others — what a
+   * static `x-destructive` flag can't express). When unset, the `x-destructive`
+   * schema flag is used. `autoConfirm` short-circuits both.
+   */
+  confirmPredicate:
+    | ((toolName: string, args: Record<string, unknown>) => boolean | Promise<boolean>)
+    | null = null;
+
+  /**
+   * Per-run frontend tool catalog provider. Defaults to the built-in
+   * `route.*` tools (when a {@link routeMap} is set) plus the tools registered
+   * via {@link registerTool} / {@link registerStateHook}; override to supply a
+   * fully custom catalog.
+   */
+  getTools: () => Tool[] = () => [
+    ...this.#builtinTools().map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    })),
+    ...this.#toolRegistry.tools(),
+  ];
+
+  /**
+   * Per-run context provider. Defaults to the compact page map (when a
+   * {@link getPageMap} provider is set and {@link autoInjectPageMap} is on).
+   */
+  getContext: () => Context[] = () => createPageMapContext(this.getPageMap, this.autoInjectPageMap);
+
+  /**
+   * Navigable routes the agent can jump to via the built-in `route.*` tools.
+   * A compact summary also rides in each run's context.
+   */
+  routeMap: RouteMap = [];
+
+  /**
+   * Optional client-side router. When set (an SPA), `navigate_to_route` routes
+   * in-page and the run loop continues; when unset (an MPA like the admin), it
+   * falls back to `window.location` and the resumable-loop machinery applies.
+   */
+  navigate: ((path: string) => void) | null = null;
+
+  /** Provider for the per-run page map; see {@link getContext}. */
+  getPageMap: (() => PageMap) | null = null;
+
+  /** Whether to auto-inject the page map into context each run. */
+  autoInjectPageMap = true;
+
+  /**
+   * Persistence for the conversation + navigation checkpoint. Defaults to
+   * per-tab `sessionStorage` so the chat survives full page reloads; inject a
+   * server-backed store for cross-tab/device durability.
+   */
+  conversationStore: ClientConversationStore = new SessionStorageStore();
+
+  /**
+   * Builds the tool result a navigating tool resumes with after the page
+   * reloads. Defaults to the landed URL; a host (e.g. the admin package) can
+   * override to include a page snapshot or post-reload validation errors.
+   */
+  navigationResult: (checkpoint: NavigationCheckpoint) => unknown = () => ({
+    navigated: true,
+    url: window.location.href,
+  });
+
+  /**
+   * Named values used to fill a skill prompt's `{placeholder}`s before send
+   * (e.g. `{ model: "Order", selected_ids: "1,2" }`). A host (the admin) sets
+   * this from the current page; a missing placeholder blocks the send.
+   */
+  skillContext: () => Record<string, unknown> = () => ({});
+
+  readonly #toolRegistry = new ClientToolRegistry();
+  /** Tool-call cards awaiting execution, keyed by call id. */
+  readonly #toolCards = new Map<string, ToolCallCard>();
+  readonly #root: ShadowRoot;
+  readonly #chat: HTMLDivElement;
+  readonly #messages: HTMLDivElement;
+  readonly #input: HTMLTextAreaElement;
+  readonly #send: HTMLButtonElement;
+  readonly #title: HTMLSpanElement;
+  readonly #skillsMenu: SkillsMenu;
+  readonly #skillHint: HTMLDivElement;
+
+  #client: AgUiClient | null = null;
+  #streamingBubble: HTMLDivElement | null = null;
+  #pending: HTMLDivElement | null = null;
+  #threadId = "";
+  #initialMessages: readonly Message[] = [];
+  // Skill catalog by source; merged backend → embed → client (later wins).
+  #backendSkills: readonly Skill[] = [];
+  #embedSkills: readonly Skill[] = [];
+  #clientSkills: readonly Skill[] = [];
+
+  constructor() {
+    super();
+    this.#root = this.attachShadow({ mode: "open" });
+    this.#chat = document.createElement("div");
+    this.#messages = document.createElement("div");
+    this.#input = document.createElement("textarea");
+    this.#send = document.createElement("button");
+    this.#title = document.createElement("span");
+    this.#skillHint = document.createElement("div");
+    this.#skillsMenu = new SkillsMenu((skill) => this.#applySkill(skill));
+  }
+
+  /** Attributes whose late changes must reflect in already-rendered chrome. */
+  static get observedAttributes(): string[] {
+    return ["title-text"];
+  }
+
+  attributeChangedCallback(_name: string, _previous: string | null, value: string | null): void {
+    // Only `title-text` is observed (other attributes are read at use-time or
+    // are CSS-reactive), so update the header title directly.
+    this.#title.textContent = value ?? "Assistant";
+  }
+
+  /** Declare a frontend tool the agent may call. */
+  registerTool(tool: ClientTool): void {
+    this.#toolRegistry.register(tool);
+  }
+
+  /** Bind a piece of host state to `read_<name>` / `set_<name>` tools. */
+  registerStateHook(hook: StateHook): void {
+    for (const tool of createStateHookTools(hook)) {
+      this.#toolRegistry.register(tool);
+    }
+  }
+
+  /** The built-in `route.*` tools, present only when a route map is set. */
+  #routeTools(): ClientTool[] {
+    if (this.routeMap.length === 0) {
+      return [];
+    }
+    return createRouteTools(
+      () => this.routeMap,
+      () => this.navigate,
+    );
+  }
+
+  /**
+   * The built-in `read_page` tool, present only when a {@link getPageMap}
+   * provider is set. A *pull* the agent can call mid-turn to see the page after
+   * it has acted (the auto-injected context is a send-time snapshot).
+   */
+  #pageTools(): ClientTool[] {
+    const getPageMap = this.getPageMap;
+    if (getPageMap === null) {
+      return [];
+    }
+    return [
+      {
+        name: "read_page",
+        description:
+          "Read the current page's structure (fields, buttons, route). Call after " +
+          "acting to observe the result within the same turn.",
+        parameters: { type: "object", properties: {}, required: [] },
+        handler: () => getPageMap(),
+      },
+    ];
+  }
+
+  /** All built-in (route + page) frontend tools. */
+  #builtinTools(): ClientTool[] {
+    return [...this.#routeTools(), ...this.#pageTools()];
+  }
+
+  /** Resolve a tool by name: built-in tools first, then the registry. */
+  #resolveTool(name: string): ClientTool | null {
+    const builtin = this.#builtinTools().find((t) => t.name === name);
+    if (builtin !== undefined) {
+      return builtin;
+    }
+    return this.#toolRegistry.has(name) ? this.#toolRegistry.get(name) : null;
+  }
+
+  /** The AG-UI endpoint URL, read from the `endpoint` attribute. */
+  get endpoint(): string {
+    return this.getAttribute("endpoint") ?? "";
+  }
+
+  // Reflecting setter so frameworks (e.g. React 19) that assign matching
+  // props as element *properties* don't hit a read-only property. Read at
+  // use-time, so a runtime change applies to the next run.
+  set endpoint(value: string) {
+    this.setAttribute("endpoint", value);
+  }
+
+  /**
+   * How much detail tool-call cards show, from the `data-tool-display`
+   * attribute (`minimal` / `compact` / `full`). Defaults to `full`.
+   */
+  get toolDisplay(): ToolDisplayMode {
+    const attr = this.getAttribute("data-tool-display");
+    if (attr === TOOL_DISPLAY.MINIMAL || attr === TOOL_DISPLAY.COMPACT) {
+      return attr;
+    }
+    return TOOL_DISPLAY.FULL;
+  }
+
+  set toolDisplay(value: ToolDisplayMode) {
+    this.setAttribute("data-tool-display", value);
+  }
+
+  connectedCallback(): void {
+    this.#render();
+    if (sessionStorage.getItem(COLLAPSED_KEY) === "1") {
+      this.setAttribute("collapsed", "");
+    }
+    this.#initSkills();
+    this.#threadId = this.conversationStore.threadId();
+    void this.#rehydrate();
+  }
+
+  /**
+   * Replace the host-supplied (client) skill catalog. Merged after the embedded
+   * and fetched skills (so a client skill overrides a same-named server one).
+   */
+  setSkills(skills: readonly Skill[]): void {
+    this.#clientSkills = skills;
+    this.#recomputeSkills();
+  }
+
+  /** Wire the skill surfaces: opt-in flags, embedded catalog, optional fetch. */
+  #initSkills(): void {
+    this.#skillsMenu.enableChips(this.getAttribute("data-prompt-chips") === "true");
+    this.#skillsMenu.enableSlash(this.getAttribute("data-slash-commands") === "true");
+    this.#embedSkills = this.#readEmbeddedSkills();
+    this.#recomputeSkills();
+    void this.#fetchSkills();
+  }
+
+  /** Parse the inline `data-skills` JSON catalog (empty when absent/malformed). */
+  #readEmbeddedSkills(): readonly Skill[] {
+    const raw = this.getAttribute("data-skills");
+    if (raw === null) {
+      return [];
+    }
+    try {
+      return parseSkills(JSON.parse(raw));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Fetch the backend skills catalog from `data-skills-url`, if set. */
+  async #fetchSkills(): Promise<void> {
+    const url = this.getAttribute("data-skills-url");
+    if (url === null) {
+      return;
+    }
+    try {
+      const response = await fetch(url, { headers: this.headers });
+      this.#backendSkills = parseSkills(await response.json());
+      this.#recomputeSkills();
+    } catch {
+      // Network/parse failure: skills just stay as the embedded/client set.
+    }
+  }
+
+  /** Merge the three sources (backend → embed → client; later wins by name). */
+  #recomputeSkills(): void {
+    const merged = new Map<string, Skill>();
+    for (const skill of [...this.#backendSkills, ...this.#embedSkills, ...this.#clientSkills]) {
+      merged.set(skill.name, skill);
+    }
+    this.#skillsMenu.setSkills([...merged.values()]);
+  }
+
+  /** Pre-fill (or send) a picked skill's prompt, filling its placeholders. */
+  #applySkill(skill: Skill): void {
+    const { text, missing } = fillTemplate(skill.prompt, this.skillContext());
+    if (missing.length > 0) {
+      this.#skillHint.textContent = `“${skill.title}” needs: ${missing.join(", ")}`;
+      this.#skillHint.hidden = false;
+      return;
+    }
+    this.#skillHint.hidden = true;
+    this.#input.value = text;
+    if (skill.sendImmediately === true) {
+      void this.#submit();
+    } else {
+      this.#input.focus();
+    }
+  }
+
+  /** Whether the widget is collapsed (reflected as the `collapsed` attribute). */
+  get collapsed(): boolean {
+    return this.hasAttribute("collapsed");
+  }
+
+  // Property setter (framework interop) — delegates to setCollapsed so a
+  // `collapsed` prop assignment persists + emits the toggle event.
+  set collapsed(value: boolean) {
+    this.setCollapsed(value);
+  }
+
+  /**
+   * Set the collapsed state: reflect the `collapsed` attribute, persist it
+   * per-tab, and emit a {@link TOGGLE_EVENT} so a host can mirror the state in
+   * its own chrome.
+   */
+  setCollapsed(collapsed: boolean): void {
+    if (collapsed) {
+      this.setAttribute("collapsed", "");
+    } else {
+      this.removeAttribute("collapsed");
+    }
+    sessionStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
+    this.dispatchEvent(
+      new CustomEvent<ToggleDetail>(TOGGLE_EVENT, {
+        detail: { collapsed },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /** Flip the collapsed state. Bound to the built-in header toggle. */
+  toggleCollapsed(): void {
+    this.setCollapsed(!this.collapsed);
+  }
+
+  /**
+   * Start a fresh conversation: forget the persisted history, drop the
+   * in-memory run state, clear the transcript, and mint a new thread id.
+   */
+  newChat(): void {
+    this.conversationStore.clear(this.#threadId);
+    this.#client = null;
+    this.#streamingBubble = null;
+    this.#hidePending();
+    this.#toolCards.clear();
+    this.#initialMessages = [];
+    this.#messages.replaceChildren();
+    this.#threadId = this.conversationStore.threadId();
+    this.#send.disabled = false;
+  }
+
+  /**
+   * Restore the conversation from the store on mount, then — if a navigating
+   * tool reloaded the page mid-run — resume the loop by supplying that tool's
+   * result from the page we landed on.
+   */
+  async #rehydrate(): Promise<void> {
+    const messages = await this.conversationStore.loadMessages(this.#threadId);
+    if (messages !== null) {
+      this.#initialMessages = messages;
+      for (const message of messages) {
+        this.#renderHistoricMessage(message);
+      }
+    }
+    const checkpoint = this.conversationStore.loadCheckpoint(this.#threadId);
+    if (checkpoint !== null) {
+      await this.#resumeFrom(checkpoint);
+    }
+  }
+
+  /** Render a restored message as a chat bubble (text turns only). */
+  #renderHistoricMessage(message: Message): void {
+    if (typeof message.content !== "string" || message.content === "") {
+      return;
+    }
+    if (message.role === MESSAGE_ROLE.USER) {
+      this.appendMessage(MESSAGE_ROLE.USER, message.content);
+    } else if (message.role === MESSAGE_ROLE.ASSISTANT) {
+      this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, message.content));
+    }
+  }
+
+  /**
+   * Word-by-word reveal for the `word` text-animation mode, applied to a
+   * completed assistant bubble. `fade` is pure CSS (no JS); `none` is a no-op.
+   */
+  #revealWords(bubble: HTMLDivElement): void {
+    if (this.getAttribute("data-text-animation") === "word") {
+      wrapWords(bubble);
+    }
+  }
+
+  /** Complete the checkpointed navigating tool call and continue the run. */
+  async #resumeFrom(checkpoint: NavigationCheckpoint): Promise<void> {
+    this.conversationStore.saveCheckpoint(this.#threadId, null);
+    const client = this.#ensureClient();
+    client.addToolResult(checkpoint.toolCallId, JSON.stringify(this.navigationResult(checkpoint)));
+    await client.resume();
+  }
+
+  /**
+   * Append a message bubble and return it.
+   *
+   * Assistant content is rendered as sanitised markdown/HTML; user content
+   * stays literal text (no need to parse what the user typed, and it avoids
+   * rendering user-authored markup).
+   */
+  appendMessage(role: MessageRole, content: string): HTMLDivElement {
+    const bubble = document.createElement("div");
+    bubble.className = `message message--${role}`;
+    if (role === MESSAGE_ROLE.ASSISTANT) {
+      bubble.innerHTML = renderMarkdown(content);
+    } else {
+      bubble.textContent = content;
+    }
+    this.#messages.appendChild(bubble);
+    this.#messages.scrollTop = this.#messages.scrollHeight;
+    return bubble;
+  }
+
+  #render(): void {
+    const style = document.createElement("style");
+    style.textContent = STYLES;
+
+    this.#chat.className = "chat";
+
+    const header = document.createElement("div");
+    header.className = "header";
+
+    const title = this.#title;
+    title.className = "header-title";
+    title.textContent = this.getAttribute("title-text") ?? "Assistant";
+
+    const controls = document.createElement("div");
+    controls.className = "header-controls";
+
+    const newChat = document.createElement("button");
+    newChat.type = "button";
+    newChat.className = "header-btn header-btn--new";
+    newChat.title = "New chat";
+    newChat.setAttribute("aria-label", "New chat");
+    newChat.textContent = "✚";
+    newChat.addEventListener("click", () => this.newChat());
+
+    const collapse = document.createElement("button");
+    collapse.type = "button";
+    collapse.className = "header-btn header-btn--collapse";
+    collapse.title = "Collapse";
+    collapse.setAttribute("aria-label", "Collapse");
+    collapse.textContent = "—";
+    collapse.addEventListener("click", () => this.toggleCollapsed());
+
+    controls.append(newChat, collapse);
+    header.append(title, controls);
+
+    this.#messages.className = "messages";
+    // Screen readers announce streamed messages as they arrive.
+    this.#messages.setAttribute("role", "log");
+    this.#messages.setAttribute("aria-live", "polite");
+    this.#messages.setAttribute("aria-label", "Conversation");
+
+    const inputRow = document.createElement("div");
+    inputRow.className = "input-row";
+
+    this.#input.className = "input";
+    this.#input.setAttribute("aria-label", "Message");
+    this.#input.rows = 2;
+    this.#input.placeholder = "Ask anything…";
+    this.#input.addEventListener("keydown", (event) => this.#onKeydown(event));
+    this.#input.addEventListener("input", () => this.#onInput());
+
+    this.#send.className = "send";
+    this.#send.type = "button";
+    this.#send.textContent = "Send";
+    this.#send.addEventListener("click", () => {
+      void this.#submit();
+    });
+
+    this.#skillHint.className = "skill-hint";
+    this.#skillHint.hidden = true;
+
+    inputRow.append(this.#input, this.#send);
+    // Skill surfaces sit just above the input: palette (opens on `/`), chips,
+    // and the missing-placeholder hint.
+    this.#chat.append(
+      header,
+      this.#messages,
+      this.#skillsMenu.palette,
+      this.#skillsMenu.chips,
+      this.#skillHint,
+      inputRow,
+    );
+    this.#root.append(style, this.#chat);
+  }
+
+  /** Forward input changes to the skills palette and clear any stale hint. */
+  #onInput(): void {
+    this.#skillsMenu.onInput(this.#input.value);
+    this.#skillHint.hidden = true;
+  }
+
+  #onKeydown(event: KeyboardEvent): void {
+    // The skills palette consumes arrows/enter/escape while open.
+    if (this.#skillsMenu.onKeydown(event)) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void this.#submit();
+    }
+  }
+
+  async #submit(): Promise<void> {
+    const content = this.#input.value.trim();
+    if (content === "") {
+      return;
+    }
+    this.appendMessage(MESSAGE_ROLE.USER, content);
+    this.#input.value = "";
+    this.dispatchEvent(
+      new CustomEvent<SubmitDetail>(SUBMIT_EVENT, {
+        detail: { content },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    await this.#client_send(content);
+  }
+
+  async #client_send(content: string): Promise<void> {
+    if (this.endpoint === "") {
+      return;
+    }
+    await this.#ensureClient().send(content);
+  }
+
+  #ensureClient(): AgUiClient {
+    if (this.#client === null) {
+      const agent = this.agentFactory({
+        endpoint: this.endpoint,
+        headers: this.headers,
+        threadId: this.#threadId,
+        initialMessages: this.#initialMessages,
+      });
+      this.#client = new AgUiClient({
+        agent,
+        handlers: this.#handlers(),
+        getTools: () => this.getTools(),
+        getContext: () => this.getContext(),
+        executeTool: (call) => this.#executeTool(call),
+        onPersist: (messages) => this.conversationStore.saveMessages(this.#threadId, messages),
+      });
+    }
+    return this.#client;
+  }
+
+  /** Whether ``call`` should be gated behind the confirmation card. */
+  async #needsConfirmation(call: AgUiToolCall, tool: ClientTool): Promise<boolean> {
+    if (this.autoConfirm) {
+      return false;
+    }
+    if (this.confirmPredicate !== null) {
+      return (await this.confirmPredicate(call.name, call.args)) === true;
+    }
+    return isDestructive(tool.parameters);
+  }
+
+  async #executeTool(call: AgUiToolCall): Promise<ToolExecution | null> {
+    const card = this.#cardFor(call);
+    this.#toolCards.delete(call.id);
+    const tool = this.#resolveTool(call.name);
+    if (tool === null) {
+      // A server-side tool the server already executed — not ours to re-run.
+      card.settle(TOOL_CALL_STATUS.DONE, "Executed on the server.");
+      this.#showPending();
+      return null;
+    }
+    if (await this.#needsConfirmation(call, tool)) {
+      const request: ConfirmationRequest = { toolName: call.name, args: call.args };
+      const confirmText = tool.parameters[X_CONFIRM_KEY];
+      if (typeof confirmText === "string") {
+        request.message = confirmText;
+      }
+      const decision = requestConfirmation(this.#messages, request);
+      this.#messages.scrollTop = this.#messages.scrollHeight;
+      const accepted = await decision;
+      if (!accepted) {
+        const message = "User declined the action.";
+        card.settle(TOOL_CALL_STATUS.DECLINED, message);
+        this.#showPending();
+        return { content: message };
+      }
+    }
+    // A navigating tool reloads only without a client-side router; with a
+    // host `navigate()` (SPA) it routes in-page and the loop just continues.
+    const navigates = isNavigates(tool.parameters) && this.navigate === null;
+    if (navigates) {
+      // Checkpoint before the handler reloads the page; the history (incl.
+      // this tool call) was already persisted when the run that produced it
+      // settled. The result is supplied on the next mount via the resume path.
+      this.conversationStore.saveCheckpoint(this.#threadId, { toolCallId: call.id });
+    }
+    try {
+      const result = await tool.handler(call.args);
+      if (navigates) {
+        card.settle(TOOL_CALL_STATUS.DONE, "Navigating…");
+        return { content: "", halt: true };
+      }
+      const content = JSON.stringify(result ?? null);
+      card.settle(TOOL_CALL_STATUS.DONE, content);
+      this.#showPending();
+      return { content };
+    } catch (error) {
+      if (navigates) {
+        // The navigation never happened; drop the dangling checkpoint.
+        this.conversationStore.saveCheckpoint(this.#threadId, null);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      card.settle(TOOL_CALL_STATUS.ERROR, message);
+      this.#showPending();
+      return { content: `Error: ${message}`, error: message };
+    }
+  }
+
+  #handlers(): AgUiClientHandlers {
+    return {
+      onRunStart: () => {
+        this.#send.disabled = true;
+        this.#showPending();
+      },
+      onTextDelta: (buffer) => {
+        this.#hidePending();
+        this.#streamInto(buffer);
+      },
+      onTextEnd: (buffer) => {
+        this.#revealWords(this.#streamInto(buffer));
+        this.#streamingBubble = null;
+      },
+      onToolCall: (call) => {
+        this.#hidePending();
+        this.#cardFor(call);
+      },
+      onRunEnd: () => {
+        this.#hidePending();
+        this.#send.disabled = false;
+        this.#streamingBubble = null;
+      },
+      onError: (message) => {
+        this.#hidePending();
+        this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`));
+        this.#send.disabled = false;
+        this.#streamingBubble = null;
+      },
+    };
+  }
+
+  /**
+   * Show a "thinking" indicator while the agent is being awaited — both the
+   * silent stretch before the first token and the gap after a tool result
+   * while the next round is requested. Idempotent.
+   */
+  #showPending(): void {
+    if (this.#pending !== null) {
+      return;
+    }
+    const pending = document.createElement("div");
+    pending.className = "pending";
+    pending.setAttribute("role", "status");
+    pending.setAttribute("aria-label", "Assistant is thinking…");
+    for (let i = 0; i < 3; i += 1) {
+      const dot = document.createElement("span");
+      dot.className = "pending-dot";
+      pending.appendChild(dot);
+    }
+    this.#pending = pending;
+    this.#messages.appendChild(pending);
+    this.#messages.scrollTop = this.#messages.scrollHeight;
+  }
+
+  /** Remove the pending indicator if shown. */
+  #hidePending(): void {
+    this.#pending?.remove();
+    this.#pending = null;
+  }
+
+  #streamInto(buffer: string): HTMLDivElement {
+    if (this.#streamingBubble === null) {
+      this.#streamingBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, "");
+    }
+    this.#streamingBubble.innerHTML = renderMarkdown(buffer);
+    this.#messages.scrollTop = this.#messages.scrollHeight;
+    return this.#streamingBubble;
+  }
+
+  /**
+   * The card for ``call``, creating and appending it on first sight.
+   *
+   * {@link AgUiClientHandlers.onToolCall} creates the card (pending) during the
+   * run; {@link #executeTool} later retrieves the same card to settle it.
+   */
+  #cardFor(call: AgUiToolCall): ToolCallCard {
+    const existing = this.#toolCards.get(call.id);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const summary = this.#resolveTool(call.name)?.parameters[X_SUMMARY_KEY];
+    const card = new ToolCallCard(
+      call.name,
+      call.args,
+      this.toolDisplay,
+      typeof summary === "string" ? summary : undefined,
+    );
+    this.#toolCards.set(call.id, card);
+    this.#messages.appendChild(card.element);
+    this.#messages.scrollTop = this.#messages.scrollHeight;
+    return card;
+  }
+}

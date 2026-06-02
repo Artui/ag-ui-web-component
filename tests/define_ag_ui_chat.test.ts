@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { AgUiChat } from "../src/ag_ui_chat.js";
 import { ELEMENT_TAG } from "../src/constants.js";
-import { defineAgUiChat } from "../src/define_ag_ui_chat.js";
+import { AgUiChat } from "../src/core/ag_ui_chat.js";
+import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 
 describe("defineAgUiChat", () => {
   beforeEach(() => {

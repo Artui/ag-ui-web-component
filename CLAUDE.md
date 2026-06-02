@@ -23,11 +23,12 @@ The Makefile target names are identical across all packages (`init`/`test`/`lint
 A framework-free `<ag-ui-chat>` Web Component over the [AG-UI](https://docs.ag-ui.com)
 protocol. Wraps `@ag-ui/client`'s `HttpAgent`. Ships:
 - The Custom Element with a Shadow DOM chat UI.
-- A pluggable client-side tool registry (`registerTool(name, schema, handler)`); registered
-  tools are added to every `RunAgentInput.tools`.
+- A pluggable client-side tool registry (`registerTool({ name, description, parameters,
+  handler })`); registered tools are added to every `RunAgentInput.tools`.
 - Generic DOM driver primitives (`fillField`, `clickElement`, `typeInto`, …) and animations.
-- A confirmation modal that intercepts `TOOL_CALL_END` for tools whose JSON Schema carries
-  `x-destructive: true`.
+- An inline confirmation card that intercepts tool calls needing confirmation — driven by the
+  `x-destructive: true` JSON-Schema flag (or per-call `confirmPredicate`), with prompt text from
+  `x-confirm`.
 
 Downstream consumers (e.g. `django-admin-agent`) register their own admin-aware tool handlers
 on top via the pluggable registry. **No Django/admin specifics live here.**
@@ -69,8 +70,13 @@ The design is at `/Users/arturveres/code/opensource/docs/plans/django-ag-ui-plan
    types without needing `allowImportingTsExtensions`. Never use bare extensionless imports or
    `.ts` extensions (the latter forces the flag onto every downstream consumer).
 8. **`import type` for type-only imports** (Biome enforces `useImportType`).
-9. **No relative-parent reaching beyond a sibling** without a documented reason. Prefer flat
-   `src/` with leaf files over deep nesting.
+9. **`src/` is grouped one level deep by concern** — `core/` (the element, AG-UI client,
+   conversation store), `ui/` (rendered widgets + styles + markdown/word rendering), `dom/`
+   (host-page driving: animations, dom driver, native setter), `tools/` (client tool registry,
+   route/page maps, state hook, schema predicates), and `skills/` (skill type, templating,
+   parsing). `index.ts`, `constants.ts`, and `version.ts` stay at the `src/` root. One level
+   only — no deeper nesting. Cross-group imports use relative `../<group>/x.js` paths; same-group
+   imports use `./x.js`. Tests stay flat under `tests/` (named after the source symbol).
 
 ## API style rules
 
@@ -78,7 +84,7 @@ The design is at `/Users/arturveres/code/opensource/docs/plans/django-ag-ui-plan
     interfaces or `as const` objects with explicit field types — never untyped object
     literals passed across module boundaries.
 11. **Tool schemas are JSON Schema.** The `x-destructive` flag lives at the schema root. The
-    confirmation modal reads it; the registry forwards it verbatim to `RunAgentInput.tools`.
+    inline confirmation card reads it; the registry forwards it verbatim to `RunAgentInput.tools`.
     Don't invent a parallel metadata channel.
 
 ## No module-level mutable state

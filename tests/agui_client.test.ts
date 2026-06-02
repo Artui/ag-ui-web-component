@@ -1,7 +1,7 @@
 import type { Context, Tool } from "@ag-ui/core";
 import { describe, expect, it } from "vitest";
-import { AgUiClient, type AgUiClientHandlers } from "../src/agui_client.js";
 import { MAX_TOOL_ROUNDS } from "../src/constants.js";
+import { AgUiClient, type AgUiClientHandlers } from "../src/core/agui_client.js";
 import { makeFakeAgent } from "./helpers/fake_agent.js";
 
 function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {

@@ -1,9 +1,9 @@
 import type { Context, Tool } from "@ag-ui/core";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgUiChat, SubmitDetail } from "../src/ag_ui_chat.js";
 import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT } from "../src/constants.js";
-import { SessionStorageStore } from "../src/conversation_store.js";
-import { defineAgUiChat } from "../src/define_ag_ui_chat.js";
+import type { AgUiChat, SubmitDetail } from "../src/core/ag_ui_chat.js";
+import { SessionStorageStore } from "../src/core/conversation_store.js";
+import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 /** Mount the element with a fake agent factory and an optional run script. */
@@ -38,10 +38,10 @@ async function send(el: AgUiChat, text: string): Promise<void> {
 }
 
 /**
- * Click Send without awaiting the run. Used by modal tests that must interact
- * mid-run (the run blocks on the confirmation modal until a button is clicked):
- * call this, ``await flush()`` to reach the modal, click, then ``await flush()``
- * again to let the tool execute and the run settle.
+ * Click Send without awaiting the run. Used by confirmation tests that must
+ * interact mid-run (the run blocks on the inline confirmation card until a
+ * button is clicked): call this, ``await flush()`` to reach the card, click,
+ * then ``await flush()`` again to let the tool execute and the run settle.
  */
 function sendNoWait(el: AgUiChat, text: string): void {
   const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
@@ -97,15 +97,63 @@ describe("AgUiChat", () => {
   });
 
   it("defaults the header to 'Assistant' and honours title-text", () => {
-    expect(shadow(mount()).querySelector(".header")?.textContent).toBe("Assistant");
+    expect(shadow(mount()).querySelector(".header-title")?.textContent).toBe("Assistant");
     expect(
-      shadow(mount({ "title-text": "Admin Copilot" })).querySelector(".header")?.textContent,
+      shadow(mount({ "title-text": "Admin Copilot" })).querySelector(".header-title")?.textContent,
     ).toBe("Admin Copilot");
+  });
+
+  it("new-chat clears the transcript", () => {
+    const el = mount();
+    el.appendMessage(MESSAGE_ROLE.USER, "hi");
+    el.appendMessage(MESSAGE_ROLE.ASSISTANT, "hello");
+    expect(shadow(el).querySelectorAll(".message")).toHaveLength(2);
+    shadow(el).querySelector<HTMLButtonElement>(".header-btn--new")?.click();
+    expect(shadow(el).querySelectorAll(".message")).toHaveLength(0);
+  });
+
+  it("toggles collapsed: reflects the attribute, persists, and emits a toggle event", () => {
+    const el = mount();
+    const events: boolean[] = [];
+    el.addEventListener("ag-ui-toggle", (e) => {
+      events.push((e as CustomEvent<{ collapsed: boolean }>).detail.collapsed);
+    });
+    expect(el.collapsed).toBe(false);
+
+    shadow(el).querySelector<HTMLButtonElement>(".header-btn--collapse")?.click();
+    expect(el.collapsed).toBe(true);
+    expect(el.hasAttribute("collapsed")).toBe(true);
+    expect(sessionStorage.getItem("ag-ui-chat:collapsed")).toBe("1");
+
+    el.toggleCollapsed();
+    expect(el.collapsed).toBe(false);
+    expect(sessionStorage.getItem("ag-ui-chat:collapsed")).toBe("0");
+    expect(events).toEqual([true, false]);
+  });
+
+  it("restores the collapsed state from session storage on mount", () => {
+    sessionStorage.setItem("ag-ui-chat:collapsed", "1");
+    expect(mount().collapsed).toBe(true);
   });
 
   it("exposes the endpoint attribute, defaulting to empty string", () => {
     expect(mount().endpoint).toBe("");
     expect(mount({ endpoint: "/agent/" }).endpoint).toBe("/agent/");
+  });
+
+  it("reflects property setters to attributes (framework interop)", () => {
+    const el = mount();
+    el.endpoint = "/api/agent/";
+    expect(el.getAttribute("endpoint")).toBe("/api/agent/");
+    expect(el.endpoint).toBe("/api/agent/");
+
+    el.toolDisplay = "minimal";
+    expect(el.getAttribute("data-tool-display")).toBe("minimal");
+    expect(el.toolDisplay).toBe("minimal");
+
+    el.collapsed = true;
+    expect(el.hasAttribute("collapsed")).toBe(true);
+    expect(el.collapsed).toBe(true);
   });
 
   it("appendMessage renders a role-tagged bubble", () => {
@@ -114,6 +162,22 @@ describe("AgUiChat", () => {
     expect(bubble.className).toBe("message message--assistant");
     expect(bubble.textContent).toBe("hello");
     expect(shadow(el).querySelectorAll(".message")).toHaveLength(1);
+  });
+
+  it("reads the tool-display mode from the data-tool-display attribute", () => {
+    expect(mount().toolDisplay).toBe("full");
+    expect(mount({ "data-tool-display": "minimal" }).toolDisplay).toBe("minimal");
+    expect(mount({ "data-tool-display": "compact" }).toolDisplay).toBe("compact");
+    expect(mount({ "data-tool-display": "bogus" }).toolDisplay).toBe("full");
+  });
+
+  it("renders assistant content as markdown but keeps user content literal", () => {
+    const el = mount();
+    const assistant = el.appendMessage(MESSAGE_ROLE.ASSISTANT, "**bold**");
+    expect(assistant.querySelector("strong")?.textContent).toBe("bold");
+    const user = el.appendMessage(MESSAGE_ROLE.USER, "**bold**");
+    expect(user.querySelector("strong")).toBeNull();
+    expect(user.textContent).toBe("**bold**");
   });
 
   it("submits on send-button click: appends a user bubble and emits the event", () => {
@@ -186,6 +250,26 @@ describe("AgUiChat", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(shadow(el).querySelector(".message--assistant")?.textContent).toBe("hi");
+  });
+
+  it("reveals streamed assistant text word-by-word when data-text-animation=word", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-text-animation", "word");
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.text("hello world");
+        emit.textEnd("hello world");
+        emit.runEnd();
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    await send(el, "hi");
+
+    const words = shadow(el).querySelectorAll(".message--assistant .word");
+    expect([...words].map((w) => w.textContent)).toEqual(["hello", "world"]);
   });
 
   it("streams assistant text into a single growing bubble", async () => {
@@ -287,7 +371,7 @@ describe("AgUiChat", () => {
 
     sendNoWait(el, "delete user 7");
     await flush();
-    shadow(el).querySelector<HTMLButtonElement>(".modal-btn--cancel")?.click();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
     await flush();
 
     const card = shadow(el).querySelector<HTMLElement>(".tool-call");
@@ -304,6 +388,156 @@ describe("AgUiChat", () => {
     const bubble = shadow(el).querySelector(".message--assistant");
     expect(bubble?.textContent).toContain("model exploded");
     expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.disabled).toBe(false);
+  });
+
+  it("shows a pending indicator after run start and hides it once text streams", async () => {
+    let pendingWhileThinking = 0;
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      pendingWhileThinking = shadow(el).querySelectorAll(".pending").length;
+      emit.text("hi");
+      emit.textEnd("hi");
+      emit.runEnd();
+    });
+    await send(el, "q");
+    expect(pendingWhileThinking).toBe(1);
+    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
+  });
+
+  it("keeps a single pending indicator if run start fires twice", async () => {
+    let count = 0;
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.runStart();
+      count = shadow(el).querySelectorAll(".pending").length;
+      emit.runEnd();
+    });
+    await send(el, "q");
+    expect(count).toBe(1);
+    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
+  });
+
+  it("clears the pending indicator on error", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.error("boom");
+    });
+    await send(el, "q");
+    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
+  });
+
+  it("re-shows the pending indicator while awaiting the agent after a tool result", async () => {
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.runStart();
+        emit.toolCall("tc1", "server_only", {});
+      }
+      round += 1;
+    });
+    await send(el, "do server thing");
+    // server_only isn't registered → executed on the server; the indicator
+    // returns while the next round is awaited.
+    expect(shadow(el).querySelector(".tool-call")?.getAttribute("data-status")).toBe("done");
+    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(1);
+  });
+
+  it("updates the header title when the title-text attribute changes", () => {
+    const el = mount({ "title-text": "First" });
+    expect(shadow(el).querySelector(".header-title")?.textContent).toBe("First");
+    el.setAttribute("title-text", "Second");
+    expect(shadow(el).querySelector(".header-title")?.textContent).toBe("Second");
+    el.removeAttribute("title-text");
+    expect(shadow(el).querySelector(".header-title")?.textContent).toBe("Assistant");
+  });
+
+  it("exposes a read_page tool only when a page-map provider is set", () => {
+    const el = mount();
+    expect(el.getTools().some((t) => t.name === "read_page")).toBe(false);
+    el.getPageMap = () => ({ path: "/x" });
+    expect(el.getTools().some((t) => t.name === "read_page")).toBe(true);
+  });
+
+  it("executes the built-in read_page tool, returning the page map", async () => {
+    let round = 0;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "read_page", {});
+      }
+      round += 1;
+    });
+    el.getPageMap = () => ({ path: "/here" });
+    await send(el, "where am i");
+    expect(handle.messages.find((m) => m.role === "tool")?.content).toContain("/here");
+  });
+
+  it("confirmPredicate forces confirmation for a non-destructive tool", async () => {
+    let round = 0;
+    let ran = false;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "noop", {});
+      }
+      round += 1;
+    });
+    el.confirmPredicate = () => true;
+    el.registerTool({
+      name: "noop",
+      description: "d",
+      parameters: { type: "object" },
+      handler: () => {
+        ran = true;
+        return "ok";
+      },
+    });
+    sendNoWait(el, "go");
+    await flush();
+    expect(shadow(el).querySelector(".confirm-btn--confirm")).not.toBeNull();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
+    await flush();
+    expect(ran).toBe(false);
+  });
+
+  it("confirmPredicate skips confirmation for a destructive tool when it returns false", async () => {
+    let round = 0;
+    let ran = false;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "del", {});
+      }
+      round += 1;
+    });
+    el.confirmPredicate = () => false;
+    el.registerTool({
+      name: "del",
+      description: "d",
+      parameters: { type: "object", "x-destructive": true },
+      handler: () => {
+        ran = true;
+        return "ok";
+      },
+    });
+    await send(el, "go");
+    expect(ran).toBe(true);
+    expect(shadow(el).querySelector(".confirm")).toBeNull();
+  });
+
+  it("renders a tool-call card with the frontend tool's x-summary label", async () => {
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "query", {});
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "query",
+      description: "d",
+      parameters: { type: "object", "x-summary": "Query orders" },
+      handler: () => "ok",
+    });
+    await send(el, "go");
+    expect(shadow(el).querySelector(".tool-call-name")?.textContent).toBe("🔧 Query orders");
   });
 
   it("forwards the current tools and context to the run", async () => {
@@ -375,7 +609,7 @@ describe("AgUiChat", () => {
     ]);
   });
 
-  it("executes a non-destructive tool without a modal and posts the result", async () => {
+  it("executes a non-destructive tool without confirmation and posts the result", async () => {
     let round = 0;
     let received: Record<string, unknown> | null = null;
     const { el, handle } = mountWithAgent((emit) => {
@@ -396,12 +630,12 @@ describe("AgUiChat", () => {
     await send(el, "count active users");
 
     expect(received).toEqual({ active: true });
-    expect(shadow(el).querySelector(".modal-overlay")).toBeNull();
+    expect(shadow(el).querySelector(".confirm")).toBeNull();
     const toolMsg = handle.messages.find((m) => m.role === "tool");
     expect(toolMsg?.content).toBe("42");
   });
 
-  it("shows a modal for a destructive tool and runs it on confirm", async () => {
+  it("shows an inline confirmation card for a destructive tool and runs it on confirm", async () => {
     let round = 0;
     let ran = false;
     const { el, handle } = mountWithAgent((emit) => {
@@ -422,9 +656,9 @@ describe("AgUiChat", () => {
 
     sendNoWait(el, "delete user 7");
     await flush();
-    const modal = shadow(el).querySelector<HTMLButtonElement>(".modal-btn--confirm");
-    expect(modal).not.toBeNull();
-    modal?.click();
+    const confirmBtn = shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--confirm");
+    expect(confirmBtn).not.toBeNull();
+    confirmBtn?.click();
     await flush();
 
     expect(ran).toBe(true);
@@ -452,7 +686,7 @@ describe("AgUiChat", () => {
 
     sendNoWait(el, "delete user 7");
     await flush();
-    shadow(el).querySelector<HTMLButtonElement>(".modal-btn--cancel")?.click();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
     await flush();
 
     expect(ran).toBe(false);
@@ -461,7 +695,7 @@ describe("AgUiChat", () => {
     );
   });
 
-  it("skips the modal for a destructive tool when autoConfirm is set", async () => {
+  it("skips confirmation for a destructive tool when autoConfirm is set", async () => {
     let round = 0;
     let ran = false;
     const { el } = mountWithAgent((emit) => {
@@ -482,7 +716,29 @@ describe("AgUiChat", () => {
     });
     await send(el, "delete user 7");
     expect(ran).toBe(true);
-    expect(shadow(el).querySelector(".modal-overlay")).toBeNull();
+    expect(shadow(el).querySelector(".confirm")).toBeNull();
+  });
+
+  it("shows the x-confirm message inline for a destructive tool", async () => {
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "set_status", { active: true });
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "set_status",
+      description: "set status",
+      parameters: { type: "object", "x-destructive": true, "x-confirm": "Activate this project?" },
+      handler: () => "ok",
+    });
+
+    sendNoWait(el, "activate it");
+    await flush();
+    expect(shadow(el).querySelector(".confirm-body")?.textContent).toBe("Activate this project?");
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
+    await flush();
   });
 
   it("captures a tool handler error into the result message", async () => {

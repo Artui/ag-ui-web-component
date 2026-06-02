@@ -1,6 +1,6 @@
 import { type AbstractAgent, type AgentSubscriber, randomUUID } from "@ag-ui/client";
 import type { Context, Message, Tool } from "@ag-ui/core";
-import { MAX_TOOL_ROUNDS } from "./constants.js";
+import { MAX_TOOL_ROUNDS } from "../constants.js";
 
 /** A tool call surfaced to the host by {@link AgUiClient}. */
 export interface AgUiToolCall {

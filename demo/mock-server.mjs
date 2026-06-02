@@ -1,11 +1,12 @@
 // Self-contained demo server. No build step beyond `pnpm build` (which emits
-// the vendored bundle this page loads). Run: `node demo/mock-server.mjs`,
-// then open http://localhost:5173.
+// the vendored bundle the page loads). Run: `node demo/mock-server.mjs`, then
+// open http://localhost:5173 — the playground (themes/index.html) lets you flip
+// theme / density / placement / text-animation / tool-display live.
 //
 // Speaks just enough of the AG-UI wire protocol for @ag-ui/client's HttpAgent:
 // a POST of RunAgentInput is answered with an SSE stream of AG-UI events. The
 // scripted agent fills an article form via frontend tools, pausing on the
-// destructive "save" for the confirmation modal.
+// destructive "save" for the inline confirmation card.
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
@@ -16,14 +17,11 @@ const ROOT = join(HERE, "..");
 const PORT = Number(process.env.PORT ?? 5173);
 
 const HTML = "text/html; charset=utf-8";
+// The playground: a single page that flips every option live (see
+// themes/index.html). Replaces the old per-theme pages.
 const THEME_ASSETS = new Map([
   ["/themes/", { path: "themes/index.html", contentType: HTML }],
   ["/themes/index.html", { path: "themes/index.html", contentType: HTML }],
-  ["/themes/default.html", { path: "themes/default.html", contentType: HTML }],
-  ["/themes/dark.html", { path: "themes/dark.html", contentType: HTML }],
-  ["/themes/claude.html", { path: "themes/claude.html", contentType: HTML }],
-  ["/themes/embedded.html", { path: "themes/embedded.html", contentType: HTML }],
-  ["/themes/form.css", { path: "themes/form.css", contentType: "text/css; charset=utf-8" }],
   ["/themes/demo.js", { path: "themes/demo.js", contentType: "text/javascript" }],
 ]);
 
@@ -112,7 +110,7 @@ const server = createServer((req, res) => {
     return;
   }
   if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
-    serveFile(res, join(HERE, "index.html"), "text/html; charset=utf-8");
+    serveFile(res, join(HERE, "themes", "index.html"), "text/html; charset=utf-8");
     return;
   }
   if (req.method === "GET" && req.url === "/bundle.js") {
