@@ -6,6 +6,7 @@ describe("createStateHookTools", () => {
     const tools = createStateHookTools({ name: "cart", read: () => ({ items: 2 }) });
     expect(tools).toHaveLength(1);
     expect(tools[0]?.name).toBe("read_cart");
+    expect(tools[0]?.parameters?.["x-summary"]).toBe("Read cart");
     expect(tools[0]?.handler({})).toEqual({ items: 2 });
   });
 
@@ -22,6 +23,7 @@ describe("createStateHookTools", () => {
     });
     expect(tools.map((t) => t.name)).toEqual(["read_cart", "set_cart"]);
     expect(tools[1]?.parameters?.["x-destructive"]).toBe(true);
+    expect(tools[1]?.parameters?.["x-summary"]).toBe("Update cart");
     expect(tools[1]?.parameters?.["properties"]).toEqual({ qty: { type: "number" } });
     expect(tools[1]?.handler({ qty: 3 })).toBe("ok");
     expect(writes).toEqual([{ qty: 3 }]);
@@ -29,6 +31,10 @@ describe("createStateHookTools", () => {
 
   it("defaults the set-tool schema to an open object", () => {
     const tools = createStateHookTools({ name: "x", read: () => 1, write: () => 2 });
-    expect(tools[1]?.parameters).toEqual({ type: "object", "x-destructive": true });
+    expect(tools[1]?.parameters).toEqual({
+      type: "object",
+      "x-destructive": true,
+      "x-summary": "Update x",
+    });
   });
 });

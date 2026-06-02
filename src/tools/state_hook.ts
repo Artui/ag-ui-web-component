@@ -1,4 +1,4 @@
-import { X_DESTRUCTIVE_KEY } from "../constants.js";
+import { X_DESTRUCTIVE_KEY, X_SUMMARY_KEY } from "../constants.js";
 import type { ClientTool } from "./client_tool_registry.js";
 
 /**
@@ -27,7 +27,12 @@ export function createStateHookTools(hook: StateHook): ClientTool[] {
     {
       name: `read_${hook.name}`,
       description: `Read the "${hook.name}" state.`,
-      parameters: { type: "object", properties: {}, required: [] },
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+        [X_SUMMARY_KEY]: `Read ${hook.name}`,
+      },
       handler: () => hook.read(),
     },
   ];
@@ -36,7 +41,11 @@ export function createStateHookTools(hook: StateHook): ClientTool[] {
     tools.push({
       name: `set_${hook.name}`,
       description: `Update the "${hook.name}" state.`,
-      parameters: { ...(hook.schema ?? { type: "object" }), [X_DESTRUCTIVE_KEY]: true },
+      parameters: {
+        ...(hook.schema ?? { type: "object" }),
+        [X_DESTRUCTIVE_KEY]: true,
+        [X_SUMMARY_KEY]: `Update ${hook.name}`,
+      },
       handler: (args) => write(args),
     });
   }

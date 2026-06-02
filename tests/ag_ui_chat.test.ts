@@ -252,14 +252,14 @@ describe("AgUiChat", () => {
     expect(shadow(el).querySelector(".message--assistant")?.textContent).toBe("hi");
   });
 
-  it("reveals streamed assistant text word-by-word when data-text-animation=word", async () => {
+  it("reveals an at-once assistant message word-by-word when data-text-animation=word", async () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
     el.setAttribute("endpoint", "/agent/");
     el.setAttribute("data-text-animation", "word");
     const handle = makeFakeAgent({
       script: (emit) => {
         emit.runStart();
-        emit.text("hello world");
+        emit.text("hello world"); // single delta → message arrived at once
         emit.textEnd("hello world");
         emit.runEnd();
       },
@@ -270,6 +270,30 @@ describe("AgUiChat", () => {
 
     const words = shadow(el).querySelectorAll(".message--assistant .word");
     expect([...words].map((w) => w.textContent)).toEqual(["hello", "world"]);
+  });
+
+  it("does NOT re-animate a multi-delta streamed message in word mode", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-text-animation", "word");
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.text("hello"); // streamed progressively across several deltas…
+        emit.text("hello world");
+        emit.text("hello world foo");
+        emit.textEnd("hello world foo");
+        emit.runEnd();
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    await send(el, "hi");
+
+    // It already revealed as it streamed, so the finished message must not be
+    // re-wrapped into staggered .word spans (the jarring replay bug).
+    expect(shadow(el).querySelectorAll(".message--assistant .word")).toHaveLength(0);
+    expect(shadow(el).querySelector(".message--assistant")?.textContent).toBe("hello world foo");
   });
 
   it("streams assistant text into a single growing bubble", async () => {
@@ -433,14 +457,13 @@ describe("AgUiChat", () => {
       emit.runEnd();
     });
     await send(el, "do server thing");
-    // server_only isn't registered → settled with the generic fallback. The
-    // indicator must NOT linger: a server tool never triggers another client
-    // round, so re-showing it would leave it stuck after the run finished.
+    // server_only isn't registered and no TOOL_CALL_RESULT arrived → settled
+    // with the honest "no result" fallback (not a false "executed on the
+    // server"). The indicator must NOT linger: a server tool never triggers
+    // another client round, so re-showing it would leave it stuck.
     const card = shadow(el).querySelector(".tool-call");
     expect(card?.getAttribute("data-status")).toBe("done");
-    expect(card?.querySelector(".tool-call-result")?.textContent).toContain(
-      "Executed on the server.",
-    );
+    expect(card?.querySelector(".tool-call-result")?.textContent).toContain("No result returned.");
     expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
   });
 
@@ -457,8 +480,8 @@ describe("AgUiChat", () => {
     const result = card?.querySelector(".tool-call-result")?.textContent;
     expect(result).toContain('{"projects":3}');
     // The streamed result already settled it, so the executeTool sweep must
-    // not overwrite with the generic fallback.
-    expect(result).not.toContain("Executed on the server.");
+    // not overwrite with the fallback.
+    expect(result).not.toContain("No result returned.");
     expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
   });
 
@@ -470,6 +493,21 @@ describe("AgUiChat", () => {
     });
     await send(el, "x");
     expect(shadow(el).querySelectorAll(".tool-call")).toHaveLength(0);
+  });
+
+  it("labels a server tool's card from the toolSummaries map", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.toolCall("tc1", "list_projects", {});
+      emit.runEnd();
+    });
+    // Server tool: no schema reaches the browser, so the friendly label comes
+    // from the host-supplied map.
+    el.toolSummaries = { list_projects: "Search projects" };
+    await send(el, "find projects");
+    const label = shadow(el).querySelector(".tool-call .tool-call-name")?.textContent;
+    expect(label).toContain("Search projects");
+    expect(label).not.toContain("list_projects");
   });
 
   it("chains a server tool and a client tool in one round: both cards, then continues", async () => {
@@ -505,7 +543,7 @@ describe("AgUiChat", () => {
     const srv = shadow(el).querySelector<HTMLElement>('.tool-call[data-tool-name="server_tool"]');
     const srvResult = srv?.querySelector(".tool-call-result")?.textContent;
     expect(srvResult).toContain('{"found":1}');
-    expect(srvResult).not.toContain("Executed on the server.");
+    expect(srvResult).not.toContain("No result returned.");
     const ui = shadow(el).querySelector<HTMLElement>('.tool-call[data-tool-name="fill_field"]');
     expect(ui?.querySelector(".tool-call-result")?.textContent).toContain("filled-ok");
     // The frontend tool drove a second round, which finished cleanly.
@@ -891,6 +929,29 @@ describe("AgUiChat", () => {
 
     const bubbles = shadow(el).querySelectorAll(".message");
     expect([...bubbles].map((b) => b.textContent)).toEqual(["hi", "hello"]);
+  });
+
+  it("restores history statically — no entrance animation on reload (word mode)", async () => {
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [
+      { id: "1", role: "user", content: "hi" },
+      { id: "2", role: "assistant", content: "hello there world" },
+    ] as never);
+
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-text-animation", "word");
+    el.conversationStore = store;
+    document.body.appendChild(el);
+    await flush();
+
+    const assistant = shadow(el).querySelector(".message--assistant");
+    // Marked so the fade CSS skips it, and never wrapped into staggered .word
+    // spans — so the whole transcript doesn't animate in parallel on reload.
+    expect(assistant?.classList.contains("message--restored")).toBe(true);
+    expect(shadow(el).querySelectorAll(".message--assistant .word")).toHaveLength(0);
+    expect(assistant?.textContent).toBe("hello there world");
   });
 
   it("replays tool-call cards and their results from history on mount", async () => {

@@ -1,4 +1,4 @@
-import { X_NAVIGATES_KEY } from "../constants.js";
+import { X_NAVIGATES_KEY, X_SUMMARY_KEY } from "../constants.js";
 import type { ClientTool } from "./client_tool_registry.js";
 
 /** A single navigable route the host declares for the agent. */
@@ -100,7 +100,7 @@ export function createRouteTools(
       description:
         "List the routes the app can navigate to. Each route's `pathParams` " +
         "names the dynamic segments to pass as `params` to `navigate_to_route`.",
-      parameters: { type: "object", properties: {}, required: [] },
+      parameters: { type: "object", properties: {}, required: [], [X_SUMMARY_KEY]: "List pages" },
       handler: (): RouteWithParams[] =>
         getRouteMap().map((route) => ({ ...route, pathParams: pathParamNames(route.path) })),
     },
@@ -117,6 +117,7 @@ export function createRouteTools(
         },
         required: ["route_id"],
         [X_NAVIGATES_KEY]: true,
+        [X_SUMMARY_KEY]: "Navigate",
       },
       handler: (args) => {
         const routeId = args["route_id"];

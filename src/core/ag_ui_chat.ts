@@ -149,6 +149,16 @@ export class AgUiChat extends HTMLElement {
    */
   skillContext: () => Record<string, unknown> = () => ({});
 
+  /**
+   * Friendly display labels for tool-call cards, keyed by tool name (e.g.
+   * `{ list_projects: "Search projects" }`). Used as a fallback when a tool has
+   * no `x-summary` in its own schema — chiefly **server-side tools** (drf-mcp,
+   * `@tool` registry), whose schema never reaches the browser (AG-UI streams
+   * only the tool-call name). Client tools should prefer `x-summary` on their
+   * schema; this map is the seam for everything else.
+   */
+  toolSummaries: Record<string, string> = {};
+
   readonly #toolRegistry = new ClientToolRegistry();
   /** Tool-call cards awaiting execution, keyed by call id. */
   readonly #toolCards = new Map<string, ToolCallCard>();
@@ -169,6 +179,10 @@ export class AgUiChat extends HTMLElement {
 
   #client: AgUiClient | null = null;
   #streamingBubble: HTMLDivElement | null = null;
+  // Text deltas applied to the current streaming bubble. >1 ⇒ the message
+  // revealed progressively as it streamed, so the word reveal must not re-animate
+  // it; ≤1 ⇒ it arrived at once and the word reveal is appropriate.
+  #streamDeltas = 0;
   #pending: HTMLDivElement | null = null;
   #threadId = "";
   #initialMessages: readonly Message[] = [];
@@ -239,7 +253,12 @@ export class AgUiChat extends HTMLElement {
         description:
           "Read the current page's structure (fields, buttons, route). Call after " +
           "acting to observe the result within the same turn.",
-        parameters: { type: "object", properties: {}, required: [] },
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+          [X_SUMMARY_KEY]: "Read the page",
+        },
         handler: () => getPageMap(),
       },
     ];
@@ -458,7 +477,12 @@ export class AgUiChat extends HTMLElement {
     }
     if (message.role === MESSAGE_ROLE.ASSISTANT) {
       if (text !== "") {
-        this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, text));
+        // Restored history must appear statically — entrance animations
+        // (fade / word) are for freshly-arriving messages. On reload the whole
+        // transcript mounts at once, so animating every bubble's text in
+        // parallel looks wrong. Mark it so the fade CSS skips it, and don't
+        // wrap words.
+        this.appendMessage(MESSAGE_ROLE.ASSISTANT, text).classList.add("message--restored");
       }
       const toolCalls = message.toolCalls;
       if (toolCalls !== undefined) {
@@ -684,13 +708,15 @@ export class AgUiChat extends HTMLElement {
     this.#toolCards.delete(call.id);
     const tool = this.#resolveTool(call.name);
     if (tool === null) {
-      // A server-side tool the server already executed — not ours to re-run.
-      // Its real output usually arrived via `onToolResult` (TOOL_CALL_RESULT)
-      // and already settled the card; only fall back when it didn't. We do NOT
-      // show the pending indicator here: a server tool never triggers another
-      // client round, so showing it would leave it stuck after the run ended.
+      // Not a client tool. A server-side tool's real output arrives via
+      // `onToolResult` (TOOL_CALL_RESULT) and already settled the card — only
+      // fall back when it didn't. When no result ever arrived, the call wasn't
+      // executed by either side (no handler, no server result), so say so
+      // honestly rather than claiming server execution. We do NOT show the
+      // pending indicator: nothing here triggers another client round, so it
+      // would hang after the run ended.
       if (!this.#serverSettled.has(call.id)) {
-        card.settle(TOOL_CALL_STATUS.DONE, "Executed on the server.");
+        card.settle(TOOL_CALL_STATUS.DONE, "No result returned.");
       }
       return null;
     }
@@ -750,9 +776,17 @@ export class AgUiChat extends HTMLElement {
       onTextDelta: (buffer) => {
         this.#hidePending();
         this.#streamInto(buffer);
+        this.#streamDeltas += 1;
       },
       onTextEnd: (buffer) => {
-        this.#revealWords(this.#streamInto(buffer));
+        const bubble = this.#streamInto(buffer);
+        // Only reveal word-by-word when the message arrived at once. If it
+        // streamed across multiple deltas it already revealed progressively, so
+        // wrapping it now would re-animate the whole message — the awkward
+        // "finished response replays one word at a time" bug.
+        if (this.#streamDeltas <= 1) {
+          this.#revealWords(bubble);
+        }
         this.#streamingBubble = null;
       },
       onToolCall: (call) => {
@@ -819,6 +853,7 @@ export class AgUiChat extends HTMLElement {
   #streamInto(buffer: string): HTMLDivElement {
     if (this.#streamingBubble === null) {
       this.#streamingBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, "");
+      this.#streamDeltas = 0;
     }
     this.#streamingBubble.innerHTML = renderMarkdown(buffer);
     this.#messages.scrollTop = this.#messages.scrollHeight;
@@ -836,13 +871,11 @@ export class AgUiChat extends HTMLElement {
     if (existing !== undefined) {
       return existing;
     }
-    const summary = this.#resolveTool(call.name)?.parameters[X_SUMMARY_KEY];
-    const card = new ToolCallCard(
-      call.name,
-      call.args,
-      this.toolDisplay,
-      typeof summary === "string" ? summary : undefined,
-    );
+    // Prefer the tool's own `x-summary`; fall back to the `toolSummaries` map
+    // for server-side tools whose schema never reached the browser.
+    const labelled = this.#resolveTool(call.name)?.parameters[X_SUMMARY_KEY];
+    const summary = typeof labelled === "string" ? labelled : this.toolSummaries[call.name];
+    const card = new ToolCallCard(call.name, call.args, this.toolDisplay, summary);
     this.#toolCards.set(call.id, card);
     this.#messages.appendChild(card.element);
     this.#messages.scrollTop = this.#messages.scrollHeight;
