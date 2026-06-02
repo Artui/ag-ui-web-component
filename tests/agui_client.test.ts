@@ -12,8 +12,10 @@ function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {
     onTextDelta: (b) => calls.push(`delta:${b}`),
     onTextEnd: (b) => calls.push(`end:${b}`),
     onToolCall: (c) => calls.push(`tool:${c.name}:${c.id}:${JSON.stringify(c.args)}`),
+    onToolResult: (id, content) => calls.push(`result:${id}:${content}`),
     onRunEnd: () => calls.push("done"),
     onError: (m) => calls.push(`err:${m}`),
+    onSettled: () => calls.push("settled"),
   };
 }
 
@@ -38,6 +40,7 @@ describe("AgUiClient", () => {
         emit.text("paris");
         emit.textEnd("paris");
         emit.toolCall("tc1", "fill_field", { name: "city", value: "Paris" });
+        emit.toolResult("tc1", "filled");
         emit.runEnd();
       },
     });
@@ -50,7 +53,9 @@ describe("AgUiClient", () => {
       "delta:paris",
       "end:paris",
       'tool:fill_field:tc1:{"name":"city","value":"Paris"}',
+      "result:tc1:filled",
       "done",
+      "settled",
     ]);
   });
 
@@ -65,7 +70,7 @@ describe("AgUiClient", () => {
     const fake = makeFakeAgent({ throwOnRun: new Error("connection refused") });
     const handlers = recordingHandlers();
     await new AgUiClient({ agent: fake.agent, handlers }).send("x");
-    expect(handlers.calls).toEqual(["err:connection refused"]);
+    expect(handlers.calls).toEqual(["err:connection refused", "settled"]);
   });
 
   it("stringifies a non-Error thrown value", async () => {
@@ -75,7 +80,7 @@ describe("AgUiClient", () => {
       Promise.reject("boom");
     const handlers = recordingHandlers();
     await new AgUiClient({ agent: fake.agent, handlers }).send("x");
-    expect(handlers.calls).toEqual(["err:boom"]);
+    expect(handlers.calls).toEqual(["err:boom", "settled"]);
   });
 
   it("reflects the agent's running state", () => {

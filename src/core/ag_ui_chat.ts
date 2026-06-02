@@ -152,6 +152,12 @@ export class AgUiChat extends HTMLElement {
   readonly #toolRegistry = new ClientToolRegistry();
   /** Tool-call cards awaiting execution, keyed by call id. */
   readonly #toolCards = new Map<string, ToolCallCard>();
+  /**
+   * Call ids whose card was already settled from a streamed server-side result
+   * (`TOOL_CALL_RESULT`), so the post-run executeTool sweep doesn't overwrite
+   * the real output with the generic "executed on the server" fallback.
+   */
+  readonly #serverSettled = new Set<string>();
   readonly #root: ShadowRoot;
   readonly #chat: HTMLDivElement;
   readonly #messages: HTMLDivElement;
@@ -410,6 +416,7 @@ export class AgUiChat extends HTMLElement {
     this.#streamingBubble = null;
     this.#hidePending();
     this.#toolCards.clear();
+    this.#serverSettled.clear();
     this.#initialMessages = [];
     this.#messages.replaceChildren();
     this.#threadId = this.conversationStore.threadId();
@@ -435,16 +442,55 @@ export class AgUiChat extends HTMLElement {
     }
   }
 
-  /** Render a restored message as a chat bubble (text turns only). */
+  /**
+   * Replay a restored message: text bubbles *and* tool activity. An assistant
+   * turn may carry `toolCalls` (rendered as cards) and/or text; a `tool` turn
+   * carries a result that settles the matching card. So a refreshed page shows
+   * the full transcript — tool calls and their results — not just the prose.
+   */
   #renderHistoricMessage(message: Message): void {
-    if (typeof message.content !== "string" || message.content === "") {
+    const text = typeof message.content === "string" ? message.content : "";
+    if (message.role === MESSAGE_ROLE.USER) {
+      if (text !== "") {
+        this.appendMessage(MESSAGE_ROLE.USER, text);
+      }
       return;
     }
-    if (message.role === MESSAGE_ROLE.USER) {
-      this.appendMessage(MESSAGE_ROLE.USER, message.content);
-    } else if (message.role === MESSAGE_ROLE.ASSISTANT) {
-      this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, message.content));
+    if (message.role === MESSAGE_ROLE.ASSISTANT) {
+      if (text !== "") {
+        this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, text));
+      }
+      const toolCalls = message.toolCalls;
+      if (toolCalls !== undefined) {
+        for (const call of toolCalls) {
+          this.#cardFor({
+            id: call.id,
+            name: call.function.name,
+            args: this.#parseArgs(call.function.arguments),
+          });
+        }
+      }
+      return;
     }
+    if (message.role === "tool") {
+      const card = this.#toolCards.get(message.toolCallId);
+      if (card !== undefined) {
+        card.settle(TOOL_CALL_STATUS.DONE, message.content);
+      }
+    }
+  }
+
+  /** Parse a tool call's JSON `arguments` string from history into an object. */
+  #parseArgs(raw: string): Record<string, unknown> {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed === "object" && parsed !== null) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Malformed history — fall back to empty args rather than failing replay.
+    }
+    return {};
   }
 
   /**
@@ -639,8 +685,13 @@ export class AgUiChat extends HTMLElement {
     const tool = this.#resolveTool(call.name);
     if (tool === null) {
       // A server-side tool the server already executed — not ours to re-run.
-      card.settle(TOOL_CALL_STATUS.DONE, "Executed on the server.");
-      this.#showPending();
+      // Its real output usually arrived via `onToolResult` (TOOL_CALL_RESULT)
+      // and already settled the card; only fall back when it didn't. We do NOT
+      // show the pending indicator here: a server tool never triggers another
+      // client round, so showing it would leave it stuck after the run ended.
+      if (!this.#serverSettled.has(call.id)) {
+        card.settle(TOOL_CALL_STATUS.DONE, "Executed on the server.");
+      }
       return null;
     }
     if (await this.#needsConfirmation(call, tool)) {
@@ -708,6 +759,14 @@ export class AgUiChat extends HTMLElement {
         this.#hidePending();
         this.#cardFor(call);
       },
+      onToolResult: (toolCallId, content) => {
+        const card = this.#toolCards.get(toolCallId);
+        if (card === undefined) {
+          return;
+        }
+        card.settle(TOOL_CALL_STATUS.DONE, content);
+        this.#serverSettled.add(toolCallId);
+      },
       onRunEnd: () => {
         this.#hidePending();
         this.#send.disabled = false;
@@ -716,6 +775,12 @@ export class AgUiChat extends HTMLElement {
       onError: (message) => {
         this.#hidePending();
         this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`));
+        this.#send.disabled = false;
+        this.#streamingBubble = null;
+      },
+      onSettled: () => {
+        // Terminal guarantee: whatever path ended the run, return to rest.
+        this.#hidePending();
         this.#send.disabled = false;
         this.#streamingBubble = null;
       },

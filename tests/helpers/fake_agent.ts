@@ -6,6 +6,7 @@ export interface Emit {
   text(buffer: string): void;
   textEnd(buffer: string): void;
   toolCall(id: string, name: string, args: Record<string, unknown>): void;
+  toolResult(toolCallId: string, content: string): void;
   error(message: string): void;
   runEnd(): void;
 }
@@ -24,6 +25,8 @@ function emitter(s: AgentSubscriber): Emit {
         toolCallName,
         toolCallArgs,
       } as never),
+    toolResult: (toolCallId, content) =>
+      void s.onToolCallResultEvent?.({ event: { toolCallId, content } } as never),
     error: (message) => void s.onRunErrorEvent?.({ event: { message } } as never),
     runEnd: () => void s.onRunFinalized?.({} as never),
   };

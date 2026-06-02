@@ -45,8 +45,21 @@ export interface AgUiClientHandlers {
   onTextEnd(buffer: string): void;
   /** Fired when the agent finishes calling a tool (server- or frontend-side). */
   onToolCall(call: AgUiToolCall): void;
+  /**
+   * Fired when a server-side tool's result streams back (AG-UI's
+   * `TOOL_CALL_RESULT`). Frontend tools don't emit this — the client supplies
+   * their result itself — so this is the channel for server-executed output.
+   */
+  onToolResult(toolCallId: string, content: string): void;
   onRunEnd(): void;
   onError(message: string): void;
+  /**
+   * Fired exactly once when the whole interaction settles — after the run loop
+   * ends for any reason (a server-only round, frontend-tool rounds exhausted,
+   * or an error). The terminal guarantee that the UI returns to rest (pending
+   * indicator cleared, input re-enabled) no matter how the run finished.
+   */
+  onSettled(): void;
 }
 
 /**
@@ -140,6 +153,8 @@ export class AgUiClient {
       await this.#runLoop();
     } catch (error) {
       this.#handlers.onError(error instanceof Error ? error.message : String(error));
+    } finally {
+      this.#handlers.onSettled();
     }
   }
 
@@ -200,6 +215,9 @@ export class AgUiClient {
         };
         pending.push(call);
         h.onToolCall(call);
+      },
+      onToolCallResultEvent({ event }) {
+        h.onToolResult(event.toolCallId, event.content);
       },
       onRunErrorEvent({ event }) {
         h.onError(event.message);

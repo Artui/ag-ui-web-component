@@ -426,20 +426,50 @@ describe("AgUiChat", () => {
     expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
   });
 
-  it("re-shows the pending indicator while awaiting the agent after a tool result", async () => {
-    let round = 0;
+  it("clears the pending indicator after a server-only tool round (no client re-run)", async () => {
     const { el } = mountWithAgent((emit) => {
-      if (round === 0) {
-        emit.runStart();
-        emit.toolCall("tc1", "server_only", {});
-      }
-      round += 1;
+      emit.runStart();
+      emit.toolCall("tc1", "server_only", {});
+      emit.runEnd();
     });
     await send(el, "do server thing");
-    // server_only isn't registered → executed on the server; the indicator
-    // returns while the next round is awaited.
-    expect(shadow(el).querySelector(".tool-call")?.getAttribute("data-status")).toBe("done");
-    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(1);
+    // server_only isn't registered → settled with the generic fallback. The
+    // indicator must NOT linger: a server tool never triggers another client
+    // round, so re-showing it would leave it stuck after the run finished.
+    const card = shadow(el).querySelector(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("done");
+    expect(card?.querySelector(".tool-call-result")?.textContent).toContain(
+      "Executed on the server.",
+    );
+    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
+  });
+
+  it("renders a server-side tool's streamed result in its card", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.toolCall("tc1", "server_only", {});
+      emit.toolResult("tc1", '{"projects":3}');
+      emit.runEnd();
+    });
+    await send(el, "list projects");
+    const card = shadow(el).querySelector(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("done");
+    const result = card?.querySelector(".tool-call-result")?.textContent;
+    expect(result).toContain('{"projects":3}');
+    // The streamed result already settled it, so the executeTool sweep must
+    // not overwrite with the generic fallback.
+    expect(result).not.toContain("Executed on the server.");
+    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
+  });
+
+  it("ignores a tool result for an unknown call id", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.toolResult("ghost", "orphan");
+      emit.runEnd();
+    });
+    await send(el, "x");
+    expect(shadow(el).querySelectorAll(".tool-call")).toHaveLength(0);
   });
 
   it("updates the header title when the title-text attribute changes", () => {
@@ -803,10 +833,11 @@ describe("AgUiChat", () => {
     const store = new SessionStorageStore();
     const tid = store.threadId();
     store.saveMessages(tid, [
+      { id: "0", role: "user", content: "" }, // empty user → skipped
       { id: "1", role: "user", content: "hi" },
       { id: "2", role: "assistant", content: "hello" },
       { id: "3", role: "assistant", content: "" }, // empty → skipped
-      { id: "4", role: "tool", content: "tool out", toolCallId: "x" }, // non-text role → skipped
+      { id: "4", role: "tool", content: "tool out", toolCallId: "x" }, // no matching card → skipped
       { id: "5", role: "assistant" }, // no content → skipped
     ] as never);
 
@@ -818,6 +849,75 @@ describe("AgUiChat", () => {
 
     const bubbles = shadow(el).querySelectorAll(".message");
     expect([...bubbles].map((b) => b.textContent)).toEqual(["hi", "hello"]);
+  });
+
+  it("replays tool-call cards and their results from history on mount", async () => {
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [
+      { id: "1", role: "user", content: "fill the city" },
+      {
+        id: "2",
+        role: "assistant",
+        toolCalls: [
+          {
+            id: "tc1",
+            type: "function",
+            function: { name: "fill_field", arguments: '{"name":"city","value":"Paris"}' },
+          },
+        ],
+      },
+      { id: "3", role: "tool", toolCallId: "tc1", content: '"filled"' },
+      { id: "4", role: "assistant", content: "Done." },
+    ] as never);
+
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-tool-display", "full");
+    el.conversationStore = store;
+    document.body.appendChild(el);
+    await flush();
+
+    const card = shadow(el).querySelector(".tool-call");
+    expect(card?.getAttribute("data-tool-name")).toBe("fill_field");
+    expect(card?.getAttribute("data-status")).toBe("done");
+    expect(card?.querySelector(".tool-call-args")?.textContent).toContain('"city"');
+    expect(card?.querySelector(".tool-call-result")?.textContent).toContain('"filled"');
+    // Text turns still render, in order, around the card.
+    expect([...shadow(el).querySelectorAll(".message")].map((b) => b.textContent)).toEqual([
+      "fill the city",
+      "Done.",
+    ]);
+  });
+
+  it("replays tool cards with malformed or non-object arguments safely", async () => {
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [
+      {
+        id: "1",
+        role: "assistant",
+        toolCalls: [
+          { id: "a", type: "function", function: { name: "t1", arguments: "{bad json" } }, // throws → {}
+          { id: "b", type: "function", function: { name: "t2", arguments: "null" } }, // null → {}
+          { id: "c", type: "function", function: { name: "t3", arguments: "42" } }, // non-object → {}
+        ],
+      },
+    ] as never);
+
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-tool-display", "full");
+    el.conversationStore = store;
+    document.body.appendChild(el);
+    await flush();
+
+    const cards = shadow(el).querySelectorAll(".tool-call");
+    expect(cards).toHaveLength(3);
+    // FULL mode pretty-prints args; all three fell back to an empty object.
+    for (const card of cards) {
+      expect(card.querySelector(".tool-call-args")?.textContent).toBe("{}");
+    }
   });
 
   it("resumes a checkpointed navigating tool call on mount", async () => {
