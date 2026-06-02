@@ -139,6 +139,43 @@ describe("AgUiClient", () => {
     expect(tool).toMatchObject({ role: "tool", content: "ok" });
   });
 
+  it("runs the frontend tool in a round that also has a server tool, then re-runs", async () => {
+    // A server→UI chain in one turn: the server tool's result is streamed
+    // (executeTool returns null for it), while the frontend tool executes
+    // locally, posts its result, and drives another round.
+    let round = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        if (round === 0) {
+          emit.toolCall("srv1", "server_tool", {});
+          emit.toolResult("srv1", '{"ok":true}');
+          emit.toolCall("ui1", "fill_field", { value: "Paris" });
+        } else {
+          emit.text("done");
+          emit.textEnd("done");
+        }
+        round += 1;
+      },
+    });
+    const executed: string[] = [];
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      executeTool: async (call) => {
+        executed.push(call.name);
+        return call.name === "fill_field" ? { content: "filled" } : null;
+      },
+    }).send("do both");
+
+    // Both tools were offered to executeTool, but only the frontend tool posted
+    // a result — and that triggered a second round.
+    expect(executed).toEqual(["server_tool", "fill_field"]);
+    expect(fake.messages.filter((m) => m.role === "tool").map((m) => m.content)).toEqual([
+      "filled",
+    ]);
+    expect(round).toBe(2);
+  });
+
   it("does not re-run when the only tool calls are server-side (null result)", async () => {
     let runs = 0;
     const fake = makeFakeAgent({

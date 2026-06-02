@@ -472,6 +472,48 @@ describe("AgUiChat", () => {
     expect(shadow(el).querySelectorAll(".tool-call")).toHaveLength(0);
   });
 
+  it("chains a server tool and a client tool in one round: both cards, then continues", async () => {
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        // One turn that mixes a server-executed tool (result streamed) with a
+        // frontend tool the client must run — the agent's server→UI chain.
+        emit.runStart();
+        emit.toolCall("srv1", "server_tool", {});
+        emit.toolResult("srv1", '{"found":1}');
+        emit.toolCall("ui1", "fill_field", { value: "Paris" });
+        emit.runEnd();
+      } else {
+        emit.runStart();
+        emit.text("all set");
+        emit.textEnd("all set");
+        emit.runEnd();
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "fill_field",
+      description: "fill a field",
+      parameters: { type: "object" },
+      handler: () => "filled-ok",
+    });
+    el.setAttribute("data-tool-display", "full");
+    await send(el, "do both");
+
+    // Both cards render; the server card shows its streamed result, not the fallback.
+    expect(shadow(el).querySelectorAll(".tool-call")).toHaveLength(2);
+    const srv = shadow(el).querySelector<HTMLElement>('.tool-call[data-tool-name="server_tool"]');
+    const srvResult = srv?.querySelector(".tool-call-result")?.textContent;
+    expect(srvResult).toContain('{"found":1}');
+    expect(srvResult).not.toContain("Executed on the server.");
+    const ui = shadow(el).querySelector<HTMLElement>('.tool-call[data-tool-name="fill_field"]');
+    expect(ui?.querySelector(".tool-call-result")?.textContent).toContain("filled-ok");
+    // The frontend tool drove a second round, which finished cleanly.
+    expect(round).toBe(2);
+    expect(shadow(el).querySelector(".message--assistant")?.textContent).toContain("all set");
+    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
+  });
+
   it("updates the header title when the title-text attribute changes", () => {
     const el = mount({ "title-text": "First" });
     expect(shadow(el).querySelector(".header-title")?.textContent).toBe("First");
