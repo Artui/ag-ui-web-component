@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-06-02
+
 ### Added
 - **Server-side tool results in the card.** The element now subscribes to
   AG-UI's `TOOL_CALL_RESULT` event and settles the matching tool-call card with
@@ -127,7 +129,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Artui/ag-ui-web-component/releases/tag/v0.1.0
