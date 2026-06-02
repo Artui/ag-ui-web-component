@@ -158,8 +158,14 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 
 **Properties** (JS only, not attributes): `headers`, `autoConfirm`, `confirmPredicate`,
 `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
-`autoInjectPageMap`, `conversationStore`, `navigationResult`, `skillContext`, plus the mirrors
-`endpoint` / `toolDisplay` / `collapsed`.
+`autoInjectPageMap`, `conversationStore`, `navigationResult`, `skillContext`, `toolSummaries`,
+plus the mirrors `endpoint` / `toolDisplay` / `collapsed`.
+
+`toolSummaries` is a `Record<string, string>` mapping tool name → a friendly card
+label, used when a tool has no `x-summary` in its own schema. Built-in and client tools
+should carry `x-summary` directly; this map is the seam for **server-side tools** (drf-mcp,
+the django-ag-ui `@tool` registry), whose schema never reaches the browser — e.g.
+`chat.toolSummaries = { list_projects: "Search projects" }`.
 
 **Methods**: `registerTool`, `registerStateHook`, `setSkills`, `appendMessage`, `newChat`,
 `setCollapsed`, `toggleCollapsed`.

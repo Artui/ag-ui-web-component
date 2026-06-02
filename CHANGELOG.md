@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Friendly tool-call card labels.** The built-in tools now carry `x-summary`
+  labels (`navigate_to_route` → "Navigate", `list_routes` → "List pages",
+  `read_page` → "Read the page", state-hook `read_*`/`set_*` → "Read/Update
+  <name>"). For tools whose schema never reaches the browser — **server-side
+  tools** (drf-mcp, `@tool` registry) — a new `toolSummaries: Record<string,
+  string>` property maps tool name → label as a fallback (e.g.
+  `chat.toolSummaries = { list_projects: "Search projects" }`).
+
+### Changed
+- A tool call that ends with **no client handler and no `TOOL_CALL_RESULT`** now
+  settles the card as **"No result returned."** instead of the misleading
+  "Executed on the server." (nothing executed it).
+
 ### Fixed
 - **Incoming-text animations no longer double-fire.** Two distinct cases:
   - *End of stream:* `data-text-animation="word"` wrapped the finished assistant

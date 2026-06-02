@@ -101,4 +101,10 @@ describe("createRouteTools", () => {
     const [, nav] = tools();
     expect(nav?.parameters["x-navigates"]).toBe(true);
   });
+
+  it("carries friendly x-summary labels for the built-in route tools", () => {
+    const [list, nav] = tools();
+    expect(list?.parameters["x-summary"]).toBe("List pages");
+    expect(nav?.parameters["x-summary"]).toBe("Navigate");
+  });
 });
