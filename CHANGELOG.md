@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`data-tools-url` — server tool-label catalog.** On connect the element
+  fetches a JSON catalog (`[{ name, summary, description? }]`) from the URL
+  (with `headers`) and uses it to label tool-call cards for **server-side tools**
+  whose schema never reaches the browser. Pairs with django-ag-ui's `tools/`
+  endpoint, so a tool's label flows from its server-side source (drf-mcp
+  `display_name`, `@tool(summary=…)`) with no per-tool client duplication.
+  Per-card label precedence: the tool's own `x-summary` → an explicit
+  `toolSummaries` entry → the fetched catalog → the raw name. Exports the
+  `ToolCatalogEntry` type and the `parseToolCatalog` helper.
+
 ## [0.2.2] — 2026-06-02
 
 ### Added

@@ -510,6 +510,52 @@ describe("AgUiChat", () => {
     expect(label).not.toContain("list_projects");
   });
 
+  it("labels a server tool's card from the fetched data-tools-url catalog", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: () => Promise.resolve([{ name: "list_projects", summary: "Search projects" }]),
+      }),
+    );
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-tools-url", "/agent/tools/");
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "list_projects", {});
+        emit.runEnd();
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    await flush(); // let the catalog fetch resolve
+    await send(el, "find projects");
+    const label = shadow(el).querySelector(".tool-call .tool-call-name")?.textContent;
+    expect(label).toContain("Search projects");
+  });
+
+  it("ignores a failed data-tools-url fetch (card falls back to the raw name)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-tools-url", "/agent/tools/");
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "list_projects", {});
+        emit.runEnd();
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    await flush();
+    await send(el, "find projects");
+    expect(shadow(el).querySelector(".tool-call .tool-call-name")?.textContent).toContain(
+      "list_projects",
+    );
+  });
+
   it("chains a server tool and a client tool in one round: both cards, then continues", async () => {
     let round = 0;
     const { el } = mountWithAgent((emit) => {

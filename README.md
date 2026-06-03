@@ -151,6 +151,7 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `data-slash-commands` | — | `"true"` to enable the `/`-command palette. |
 | `data-skills` | — | Inline JSON skill catalog. |
 | `data-skills-url` | — | URL of a JSON skill catalog (fetched with `headers`). |
+| `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with `headers`; labels tool-call cards for server-side tools. |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget. Persisted per-tab in `sessionStorage`. |
 | `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
@@ -165,7 +166,10 @@ plus the mirrors `endpoint` / `toolDisplay` / `collapsed`.
 label, used when a tool has no `x-summary` in its own schema. Built-in and client tools
 should carry `x-summary` directly; this map is the seam for **server-side tools** (drf-mcp,
 the django-ag-ui `@tool` registry), whose schema never reaches the browser — e.g.
-`chat.toolSummaries = { list_projects: "Search projects" }`.
+`chat.toolSummaries = { list_projects: "Search projects" }`. Or point
+`data-tools-url` at a server catalog endpoint (django-ag-ui's `tools/`) and the
+labels are fetched automatically — per card, `x-summary` → an explicit
+`toolSummaries` entry → the fetched catalog → the raw name.
 
 **Methods**: `registerTool`, `registerStateHook`, `setSkills`, `appendMessage`, `newChat`,
 `setCollapsed`, `toggleCollapsed`.

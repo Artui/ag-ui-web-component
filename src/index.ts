@@ -71,6 +71,7 @@ export { type ClientTool, ClientToolRegistry } from "./tools/client_tool_registr
 export { isDestructive } from "./tools/is_destructive.js";
 export { isNavigates } from "./tools/is_navigates.js";
 export { createPageMapContext, type PageMap } from "./tools/page_map.js";
+export { parseToolCatalog, type ToolCatalogEntry } from "./tools/parse_tool_catalog.js";
 export {
   createRouteTools,
   type Route,
