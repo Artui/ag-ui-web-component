@@ -15,6 +15,7 @@ import { type ClientTool, ClientToolRegistry } from "../tools/client_tool_regist
 import { isDestructive } from "../tools/is_destructive.js";
 import { isNavigates } from "../tools/is_navigates.js";
 import { createPageMapContext, type PageMap } from "../tools/page_map.js";
+import { parseToolCatalog } from "../tools/parse_tool_catalog.js";
 import { createRouteTools, type RouteMap } from "../tools/route_map.js";
 import { createStateHookTools, type StateHook } from "../tools/state_hook.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
@@ -158,6 +159,13 @@ export class AgUiChat extends HTMLElement {
    * schema; this map is the seam for everything else.
    */
   toolSummaries: Record<string, string> = {};
+
+  /**
+   * Card labels fetched from a server tool catalog (`data-tools-url`), keyed by
+   * tool name. The base layer behind {@link toolSummaries}: an explicit entry in
+   * `toolSummaries` wins, this fills the rest. Populated once on connect.
+   */
+  #toolCatalog: Record<string, string> = {};
 
   readonly #toolRegistry = new ClientToolRegistry();
   /** Tool-call cards awaiting execution, keyed by call id. */
@@ -312,8 +320,23 @@ export class AgUiChat extends HTMLElement {
       this.setAttribute("collapsed", "");
     }
     this.#initSkills();
+    void this.#fetchToolCatalog();
     this.#threadId = this.conversationStore.threadId();
     void this.#rehydrate();
+  }
+
+  /** Fetch the server tool-label catalog from `data-tools-url`, if set. */
+  async #fetchToolCatalog(): Promise<void> {
+    const url = this.getAttribute("data-tools-url");
+    if (url === null) {
+      return;
+    }
+    try {
+      const response = await fetch(url, { headers: this.headers });
+      this.#toolCatalog = parseToolCatalog(await response.json());
+    } catch {
+      // Network/parse failure: cards fall back to toolSummaries / raw names.
+    }
   }
 
   /**
@@ -871,10 +894,14 @@ export class AgUiChat extends HTMLElement {
     if (existing !== undefined) {
       return existing;
     }
-    // Prefer the tool's own `x-summary`; fall back to the `toolSummaries` map
-    // for server-side tools whose schema never reached the browser.
+    // Prefer the tool's own `x-summary`; then an explicit `toolSummaries`
+    // entry; then the fetched server catalog (`data-tools-url`). All cover
+    // server-side tools whose schema never reached the browser.
     const labelled = this.#resolveTool(call.name)?.parameters[X_SUMMARY_KEY];
-    const summary = typeof labelled === "string" ? labelled : this.toolSummaries[call.name];
+    const summary =
+      typeof labelled === "string"
+        ? labelled
+        : (this.toolSummaries[call.name] ?? this.#toolCatalog[call.name]);
     const card = new ToolCallCard(call.name, call.args, this.toolDisplay, summary);
     this.#toolCards.set(call.id, card);
     this.#messages.appendChild(card.element);
