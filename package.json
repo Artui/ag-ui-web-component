@@ -13,8 +13,7 @@
     },
     "./bundle": {
       "import": "./dist/ag-ui-web-component.bundle.js"
-    },
-    "./style.css": "./dist/ag-ui-web-component.bundle.css"
+    }
   },
   "files": [
     "dist/",

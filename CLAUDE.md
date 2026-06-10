@@ -33,7 +33,7 @@ protocol. Wraps `@ag-ui/client`'s `HttpAgent`. Ships:
 Downstream consumers (e.g. `django-admin-agent`) register their own admin-aware tool handlers
 on top via the pluggable registry. **No Django/admin specifics live here.**
 
-The design is at `/Users/arturveres/code/opensource/docs/plans/django-ag-ui-plan.md`.
+The design is at `/Users/arturveres/code/opensource/docs/plans/global/django-ag-ui-plan.md`.
 
 ## Commands
 

@@ -47,4 +47,56 @@ describe("createHttpAgent", () => {
       globalThis.fetch = original;
     }
   });
+
+  it("overlays getHeaders() on every request so rotated tokens reach the stream", async () => {
+    let token = "token-1";
+    const agent = createHttpAgent({
+      endpoint: "/agent/",
+      headers: { Authorization: `Bearer ${token}` },
+      getHeaders: () => ({ Authorization: `Bearer ${token}` }),
+    });
+    const wrapped = (agent as HttpAgent).fetch;
+    const original = globalThis.fetch;
+    const seen: string[] = [];
+    globalThis.fetch = ((_url: string, init: RequestInit) => {
+      seen.push(new Headers(init.headers).get("Authorization") ?? "");
+      return Promise.resolve(new Response("ok"));
+    }) as typeof fetch;
+    try {
+      await wrapped("/agent/", { method: "POST", headers: { Authorization: "Bearer token-1" } });
+      token = "token-2"; // rotate after the agent was constructed + cached
+      await wrapped("/agent/", { method: "POST", headers: { Authorization: "Bearer token-1" } });
+      expect(seen).toEqual(["Bearer token-1", "Bearer token-2"]);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("keeps existing request init fields when overlaying headers", async () => {
+    const agent = createHttpAgent({
+      endpoint: "/agent/",
+      getHeaders: () => ({ "X-Fresh": "yes" }),
+    });
+    const wrapped = (agent as HttpAgent).fetch;
+    const original = globalThis.fetch;
+    const calls: Array<{ method?: string; fresh: string | null; kept: string | null }> = [];
+    globalThis.fetch = ((_url: string, init: RequestInit) => {
+      const headers = new Headers(init.headers);
+      calls.push({
+        ...(init.method !== undefined ? { method: init.method } : {}),
+        fresh: headers.get("X-Fresh"),
+        kept: headers.get("Content-Type"),
+      });
+      return Promise.resolve(new Response("ok"));
+    }) as typeof fetch;
+    try {
+      await wrapped("/agent/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      expect(calls).toEqual([{ method: "POST", fresh: "yes", kept: "application/json" }]);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });
