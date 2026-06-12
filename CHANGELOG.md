@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Cancel / stop a run.** `AgUiClient.cancel()` aborts the in-flight
+  streaming request (`abortRun()` — AG-UI's transport-level cancel; the
+  server observes the disconnect) and stops the multi-round run loop: tool
+  calls collected before the abort are not executed and no further round
+  starts (a frontend tool handler already running completes, but its result
+  doesn't trigger a re-run). Safe no-op with no run in flight.
+- **`onCancelled()` handler** on `AgUiClientHandlers` — the deliberate-stop
+  sibling of `onError`. Partial assistant text stays in the transcript and
+  is persisted (`onPersist`), so a reload shows the truncated exchange;
+  `onSettled` still fires (terminal-rest guarantee). Both the
+  abort-resolves and abort-rejects behaviours of `@ag-ui/client` are
+  handled (its `runAgent` filters `AbortError` and resolves normally;
+  re-throwing versions are caught via the error's name).
+- **The Send button becomes Stop while a run is in flight** — same button,
+  label + `aria-label` swap, `data-state="running"` for styling — through
+  the whole interaction including between tool rounds. **Escape** in the
+  composer also cancels (only when the skills palette is closed; the
+  palette keeps its own Escape). After a cancel the transcript gets a muted
+  **"⏹ Stopped"** note (`.stopped-note`), not an error bubble.
+- **Cancelling declines an open confirmation card.**
+  `requestConfirmation` accepts `ConfirmationOptions` with an
+  `AbortSignal`; aborting resolves the pending decision as declined
+  (`data-resolved="declined"`). A decision already made wins over a late
+  abort.
+
+### Changed
+
+- `newChat()` now cancels any in-flight run before discarding the client —
+  previously the old agent kept streaming into a cleared transcript.
+- The Send button is no longer `disabled` during a run (it's the Stop
+  control now); `AgUiClientHandlers.onCancelled` is required, so hosts
+  implementing the handlers interface must add it.
+
 ## [0.3.1] — 2026-06-10
 
 ### Security

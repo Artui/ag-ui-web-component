@@ -40,6 +40,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
 - [Quickstart](#quickstart)
 - [Core concepts](#core-concepts)
   - [The run loop and the AG-UI client](#the-run-loop-and-the-ag-ui-client)
+  - [Stopping a run](#stopping-a-run)
   - [Registering tools](#registering-tools)
   - [Inline confirmation (`x-destructive` / `x-confirm` / `confirmPredicate`)](#inline-confirmation-x-destructive--x-confirm--confirmpredicate)
   - [DOM-driver and animation primitives](#dom-driver-and-animation-primitives)
@@ -203,6 +204,28 @@ the loop doesn't re-run them, but their streamed `TOOL_CALL_RESULT` is rendered 
 card (honouring `data-tool-display`), so server-side output is visible too. The current tool catalog
 and context are read **fresh on every run** (`getTools()` / `getContext()`), so they always reflect
 the current page state.
+
+### Stopping a run
+
+While a run is in flight the **Send button becomes Stop** (same button, label/`aria-label` swap,
+`data-state="running"` for styling); clicking it — or pressing **Escape** in the composer (when
+the skills palette is closed; the palette owns Escape while open) — calls `AgUiClient.cancel()`.
+AG-UI has no server-side cancel route: cancelling **aborts the streaming request**
+(`abortRun()`), and the server observes the disconnect. On cancel:
+
+- Partial assistant text already streamed **stays in the transcript** and is persisted via
+  `onPersist`, so a reload shows the truncated exchange. A muted **"⏹ Stopped"** note is appended
+  (`.stopped-note`) — a deliberate stop is not an error, so no ⚠️ bubble.
+- The run loop stops: tool calls collected before the abort are **not executed**, and no further
+  round starts. A frontend tool handler already running completes, but its result doesn't trigger
+  a re-run.
+- An **open confirmation card is declined** (`data-resolved="declined"`) — cancelling the run
+  answers the pending question.
+- The new `onCancelled()` handler fires instead of `onError()`; `onSettled()` still follows
+  (the terminal-rest guarantee), returning the button to **Send**.
+
+`cancel()` with no run in flight is a safe no-op. `newChat()` cancels any in-flight run before
+discarding the client.
 
 ### Registering tools
 
@@ -566,8 +589,9 @@ re-export point. Internal modules import from leaf paths.
 | --- | --- | --- |
 | `ToolCallCard` | class | A live tool-call card for the transcript. |
 | `ToolCallStatus` / `SettledStatus` / `ToolDisplayMode` | type | Card lifecycle states + display mode. |
-| `requestConfirmation(host, request)` | function | Append the inline confirmation card to the transcript. |
+| `requestConfirmation(host, request, options?)` | function | Append the inline confirmation card to the transcript. |
 | `ConfirmationRequest` | type | What the card displays. |
+| `ConfirmationOptions` | type | `{ signal? }` — aborting resolves the card as declined (the Stop control's hook). |
 | `renderMarkdown(text)` | function | Render sanitized markdown/HTML (marked + DOMPurify). |
 | `typeInto` / `highlightThenClick` / `pressThenClick` / `selectOption` / `toggleControl` / `scrollIntoCenterView` / `focusWithFlash` / `prefersReducedMotion` | function | Animation primitives. |
 | `fillField` / `clickElement` / `pressButton` / `selectControl` / `setControlValue` / `toggleCheckbox` | function | DOM-driver primitives. |

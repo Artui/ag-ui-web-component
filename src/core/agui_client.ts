@@ -54,10 +54,18 @@ export interface AgUiClientHandlers {
   onRunEnd(): void;
   onError(message: string): void;
   /**
+   * Fired when the user cancelled the run ({@link AgUiClient.cancel}) — the
+   * deliberate-stop sibling of `onError`. Any partial assistant text already
+   * streamed stays valid; the host should keep the bubble and show a muted
+   * "stopped" affordance rather than an error. `onSettled` still follows.
+   */
+  onCancelled(): void;
+  /**
    * Fired exactly once when the whole interaction settles — after the run loop
    * ends for any reason (a server-only round, frontend-tool rounds exhausted,
-   * or an error). The terminal guarantee that the UI returns to rest (pending
-   * indicator cleared, input re-enabled) no matter how the run finished.
+   * a cancellation, or an error). The terminal guarantee that the UI returns
+   * to rest (pending indicator cleared, input re-enabled) no matter how the
+   * run finished.
    */
   onSettled(): void;
 }
@@ -100,6 +108,9 @@ export class AgUiClient {
   readonly #getContext: () => Context[];
   readonly #executeTool: ExecuteTool | null;
   readonly #onPersist: (messages: readonly Message[]) => void;
+  // Set by cancel(); reset at the top of each #run(). Checked by the loop so
+  // a cancel between frontend-tool rounds doesn't start another round.
+  #cancelled = false;
 
   constructor(config: AgUiClientConfig) {
     this.#agent = config.agent;
@@ -148,24 +159,64 @@ export class AgUiClient {
     this.#onPersist(this.#agent.messages);
   }
 
+  /**
+   * Cancel the in-flight run (AG-UI has no server cancel route — aborting the
+   * streaming request is the protocol's cancel; the server observes the
+   * disconnect). Safe to call with no run in flight. Partial text already
+   * streamed stays in history; {@link AgUiClientHandlers.onCancelled} fires
+   * instead of `onError`, and `onSettled` still follows.
+   */
+  cancel(): void {
+    this.#cancelled = true;
+    this.#agent.abortRun();
+  }
+
   async #run(): Promise<void> {
+    this.#cancelled = false;
     try {
       await this.#runLoop();
+      // `@ag-ui/client` filters abort errors inside `runAgent` (it resolves
+      // rather than rejects on a cancelled fetch), so a cancelled run usually
+      // ends here, not in the catch.
+      if (this.#cancelled) {
+        this.#onCancelled();
+      }
     } catch (error) {
-      this.#handlers.onError(error instanceof Error ? error.message : String(error));
+      if (this.#cancelled || isAbortError(error)) {
+        this.#onCancelled();
+      } else {
+        this.#handlers.onError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
       this.#handlers.onSettled();
     }
   }
 
+  #onCancelled(): void {
+    // The truncated exchange (including any partial assistant text the agent
+    // already applied) survives a reload.
+    this.#onPersist(this.#agent.messages);
+    this.#handlers.onCancelled();
+  }
+
   async #runLoop(): Promise<void> {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+      // A cancel during the previous round's frontend-tool execution lands
+      // here: the running handler completed, but no further round starts.
+      if (this.#cancelled) {
+        return;
+      }
       const pending: AgUiToolCall[] = [];
       await this.#agent.runAgent(
         { tools: this.#getTools(), context: this.#getContext() },
         this.#buildSubscriber(pending),
       );
       this.#onPersist(this.#agent.messages);
+      // Cancelled mid-stream: the user said stop — don't execute the tool
+      // calls collected before the abort.
+      if (this.#cancelled) {
+        return;
+      }
       if (this.#executeTool === null || pending.length === 0) {
         return;
       }
@@ -227,4 +278,13 @@ export class AgUiClient {
       },
     };
   }
+}
+
+/**
+ * Whether a rejection came from aborting the run's fetch. Belt-and-suspenders
+ * with the `#cancelled` flag: some `@ag-ui/client` versions re-throw the
+ * `AbortError` instead of filtering it.
+ */
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }

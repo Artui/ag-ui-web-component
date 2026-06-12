@@ -15,6 +15,7 @@ function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {
     onToolResult: (id, content) => calls.push(`result:${id}:${content}`),
     onRunEnd: () => calls.push("done"),
     onError: (m) => calls.push(`err:${m}`),
+    onCancelled: () => calls.push("cancelled"),
     onSettled: () => calls.push("settled"),
   };
 }
@@ -290,5 +291,109 @@ describe("AgUiClient", () => {
       expect.objectContaining({ role: "tool", toolCallId: "tc1", content: '{"navigated":true}' }),
     ]);
     expect(persisted).toBe(1);
+  });
+
+  describe("cancel", () => {
+    it("aborts the run and routes to onCancelled, not onError", async () => {
+      let client: AgUiClient | null = null;
+      let runs = 0;
+      const executed: string[] = [];
+      const fake = makeFakeAgent({
+        script: (emit) => {
+          runs += 1;
+          emit.text("par");
+          client?.cancel(); // the user hits Stop mid-stream
+          emit.toolCall("tc1", "fill_field", {}); // collected before the abort lands
+        },
+      });
+      const handlers = recordingHandlers();
+      client = new AgUiClient({
+        agent: fake.agent,
+        handlers,
+        executeTool: async (call) => {
+          executed.push(call.name);
+          return { content: "ok" };
+        },
+      });
+      await client.send("x");
+
+      expect(fake.abortRuns).toBe(1);
+      expect(runs).toBe(1); // no further round
+      expect(executed).toEqual([]); // pending tools not executed after cancel
+      expect(handlers.calls).toContain("cancelled");
+      expect(handlers.calls.filter((c) => c.startsWith("err"))).toEqual([]);
+      expect(handlers.calls.filter((c) => c === "settled")).toEqual(["settled"]);
+    });
+
+    it("persists the partial history when cancelled", async () => {
+      let client: AgUiClient | null = null;
+      const lengths: number[] = [];
+      const fake = makeFakeAgent({
+        script: (emit) => {
+          emit.text("partial ans");
+          client?.cancel();
+        },
+      });
+      client = new AgUiClient({
+        agent: fake.agent,
+        handlers: recordingHandlers(),
+        onPersist: (messages) => lengths.push(messages.length),
+      });
+      await client.send("x");
+      // After the user message, after the aborted round, and in the cancel path.
+      expect(lengths).toEqual([1, 1, 1]);
+    });
+
+    it("routes an AbortError rejection to onCancelled (re-throwing agent versions)", async () => {
+      const abortError = new Error("The user aborted a request.");
+      abortError.name = "AbortError";
+      const fake = makeFakeAgent({ throwOnRun: abortError });
+      const handlers = recordingHandlers();
+      await new AgUiClient({ agent: fake.agent, handlers }).send("x");
+      expect(handlers.calls).toEqual(["cancelled", "settled"]);
+    });
+
+    it("cancel during frontend-tool execution lets the handler finish but stops the loop", async () => {
+      let client: AgUiClient | null = null;
+      let runs = 0;
+      const fake = makeFakeAgent({
+        script: (emit) => {
+          runs += 1;
+          emit.toolCall(`tc${runs}`, "fill_field", {});
+        },
+      });
+      const handlers = recordingHandlers();
+      client = new AgUiClient({
+        agent: fake.agent,
+        handlers,
+        executeTool: async () => {
+          client?.cancel(); // Stop pressed while the tool handler runs
+          return { content: "ok" };
+        },
+      });
+      await client.send("x");
+
+      expect(runs).toBe(1); // the result was posted, but no next round started
+      expect(fake.messages.find((m) => m.role === "tool")).toMatchObject({ content: "ok" });
+      expect(handlers.calls).toContain("cancelled");
+    });
+
+    it("is a safe no-op with no run in flight, and the next send runs clean", async () => {
+      const fake = makeFakeAgent({
+        script: (emit) => {
+          emit.text("ok");
+          emit.textEnd("ok");
+        },
+      });
+      const handlers = recordingHandlers();
+      const client = new AgUiClient({ agent: fake.agent, handlers });
+
+      expect(() => client.cancel()).not.toThrow();
+      expect(fake.abortRuns).toBe(1);
+
+      await client.send("hello"); // the stale flag must not mark this run cancelled
+      expect(handlers.calls).toContain("end:ok");
+      expect(handlers.calls).not.toContain("cancelled");
+    });
   });
 });

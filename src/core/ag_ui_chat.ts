@@ -195,6 +195,13 @@ export class AgUiChat extends HTMLElement {
   readonly #skillHint: HTMLDivElement;
 
   #client: AgUiClient | null = null;
+  // Whether an interaction is in flight (first onRunStart → onSettled). Drives
+  // the Send⇄Stop button: `agent.isRunning` is false between frontend-tool
+  // rounds, but the user must still be able to stop there.
+  #running = false;
+  // Aborting this dismisses (declines) an open confirmation card when the run
+  // is cancelled while the card awaits a decision. One controller per card.
+  #confirmAbort: AbortController | null = null;
   #streamingBubble: HTMLDivElement | null = null;
   // Text deltas applied to the current streaming bubble. >1 ⇒ the message
   // revealed progressively as it streamed, so the word reveal must not re-animate
@@ -462,6 +469,9 @@ export class AgUiChat extends HTMLElement {
    * in-memory run state, clear the transcript, and mint a new thread id.
    */
   newChat(): void {
+    // Stop any in-flight run first — discarding the client mid-run would
+    // leave the old agent streaming into a cleared transcript.
+    this.#cancelRun();
     this.conversationStore.clear(this.#threadId);
     this.#client = null;
     this.#streamingBubble = null;
@@ -471,7 +481,7 @@ export class AgUiChat extends HTMLElement {
     this.#initialMessages = [];
     this.#messages.replaceChildren();
     this.#threadId = this.conversationStore.threadId();
-    this.#send.disabled = false;
+    this.#setRunning(false);
   }
 
   /**
@@ -641,7 +651,15 @@ export class AgUiChat extends HTMLElement {
     this.#send.className = "send";
     this.#send.type = "button";
     this.#send.textContent = "Send";
+    this.#send.setAttribute("aria-label", "Send");
+    this.#send.dataset["state"] = "idle";
     this.#send.addEventListener("click", () => {
+      // One button, two states: Send while idle, Stop while a run is in
+      // flight (no layout change).
+      if (this.#running) {
+        this.#cancelRun();
+        return;
+      }
       void this.#submit();
     });
 
@@ -674,10 +692,37 @@ export class AgUiChat extends HTMLElement {
       event.preventDefault();
       return;
     }
+    // Escape-to-cancel — only reachable when the palette is closed (it
+    // consumed the key above otherwise), so the two Escapes don't clash.
+    if (event.key === "Escape" && this.#running) {
+      event.preventDefault();
+      this.#cancelRun();
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void this.#submit();
     }
+  }
+
+  /**
+   * Stop the in-flight run: decline any confirmation card awaiting a decision
+   * (the loop is suspended on it), then cancel the client run — the abort
+   * closes the streaming request, which is AG-UI's cancel (the server
+   * observes the disconnect).
+   */
+  #cancelRun(): void {
+    this.#confirmAbort?.abort();
+    this.#client?.cancel();
+  }
+
+  /** Swap the composer button between Send (idle) and Stop (running). */
+  #setRunning(running: boolean): void {
+    this.#running = running;
+    const label = running ? "Stop" : "Send";
+    this.#send.textContent = label;
+    this.#send.setAttribute("aria-label", label);
+    this.#send.dataset["state"] = running ? "running" : "idle";
   }
 
   async #submit(): Promise<void> {
@@ -762,9 +807,15 @@ export class AgUiChat extends HTMLElement {
       if (typeof confirmText === "string") {
         request.message = confirmText;
       }
-      const decision = requestConfirmation(this.#messages, request);
+      // The run loop is suspended on this card; a Stop while it's open aborts
+      // the controller, resolving the decision as declined.
+      this.#confirmAbort = new AbortController();
+      const decision = requestConfirmation(this.#messages, request, {
+        signal: this.#confirmAbort.signal,
+      });
       this.#messages.scrollTop = this.#messages.scrollHeight;
       const accepted = await decision;
+      this.#confirmAbort = null;
       if (!accepted) {
         const message = "User declined the action.";
         card.settle(TOOL_CALL_STATUS.DECLINED, message);
@@ -806,7 +857,7 @@ export class AgUiChat extends HTMLElement {
   #handlers(): AgUiClientHandlers {
     return {
       onRunStart: () => {
-        this.#send.disabled = true;
+        this.#setRunning(true);
         this.#showPending();
       },
       onTextDelta: (buffer) => {
@@ -838,23 +889,40 @@ export class AgUiChat extends HTMLElement {
         this.#serverSettled.add(toolCallId);
       },
       onRunEnd: () => {
+        // Per-round end; the button stays on Stop until the whole interaction
+        // settles — the user must be able to cancel between tool rounds.
         this.#hidePending();
-        this.#send.disabled = false;
         this.#streamingBubble = null;
       },
       onError: (message) => {
         this.#hidePending();
         this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`));
-        this.#send.disabled = false;
+        this.#streamingBubble = null;
+      },
+      onCancelled: () => {
+        // Deliberate stop, not a failure: keep whatever partial text already
+        // streamed and add a muted note instead of an error bubble.
+        this.#hidePending();
+        this.#appendStoppedNote();
         this.#streamingBubble = null;
       },
       onSettled: () => {
         // Terminal guarantee: whatever path ended the run, return to rest.
         this.#hidePending();
-        this.#send.disabled = false;
+        this.#setRunning(false);
         this.#streamingBubble = null;
       },
     };
+  }
+
+  /** A muted "⏹ Stopped" line in the transcript (distinct from the ⚠️ error bubble). */
+  #appendStoppedNote(): void {
+    const note = document.createElement("div");
+    note.className = "stopped-note";
+    note.setAttribute("role", "status");
+    note.textContent = "⏹ Stopped";
+    this.#messages.appendChild(note);
+    this.#messages.scrollTop = this.#messages.scrollHeight;
   }
 
   /**

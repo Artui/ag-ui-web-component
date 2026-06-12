@@ -346,16 +346,25 @@ describe("AgUiChat", () => {
     expect(assistantBubbles[0]?.textContent).toBe("Paris");
   });
 
-  it("toggles the send button disabled state across a run", async () => {
-    let sawDisabled = false;
+  it("swaps the composer button to Stop while running and back to Send after settle", async () => {
+    let midRun: { label: string | null; aria: string | null; state: string | undefined } | null =
+      null;
     const { el } = mountWithAgent((emit) => {
       emit.runStart();
-      sawDisabled = shadow(el).querySelector<HTMLButtonElement>(".send")?.disabled === true;
+      const button = shadow(el).querySelector<HTMLButtonElement>(".send");
+      midRun = {
+        label: button?.textContent ?? null,
+        aria: button?.getAttribute("aria-label") ?? null,
+        state: button?.dataset["state"],
+      };
       emit.runEnd();
     });
     await send(el, "go");
-    expect(sawDisabled).toBe(true);
-    expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.disabled).toBe(false);
+    expect(midRun).toEqual({ label: "Stop", aria: "Stop", state: "running" });
+    const button = shadow(el).querySelector<HTMLButtonElement>(".send");
+    expect(button?.textContent).toBe("Send");
+    expect(button?.getAttribute("aria-label")).toBe("Send");
+    expect(button?.dataset["state"]).toBe("idle");
   });
 
   it("renders a tool-call card with name, args, and a status", async () => {
@@ -1263,5 +1272,110 @@ describe("AgUiChat", () => {
     expect(handle.lastRunParams?.context).toEqual([
       { description: "page_map", value: JSON.stringify({ fields: ["title"] }) },
     ]);
+  });
+
+  describe("cancel / stop a run", () => {
+    /** Mount with a run held open by a gate the test releases. */
+    function mountGated(streamText?: string): {
+      el: AgUiChat;
+      handle: ReturnType<typeof makeFakeAgent>;
+      release: () => void;
+    } {
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const { el, handle } = mountWithAgent(async (emit) => {
+        emit.runStart();
+        if (streamText !== undefined) {
+          emit.text(streamText);
+        }
+        await gate; // held open until the test cancels and releases
+      });
+      return { el, handle, release };
+    }
+
+    it("clicking Stop mid-run aborts, keeps the partial text, and shows a stopped note", async () => {
+      const { el, handle, release } = mountGated("partial ans");
+      sendNoWait(el, "x");
+      await flush();
+
+      shadow(el).querySelector<HTMLButtonElement>(".send")?.click(); // reads "Stop"
+      release();
+      await flush();
+
+      expect(handle.abortRuns).toBe(1);
+      // The partial bubble survives; the affordance is a muted note, not an error.
+      expect(shadow(el).querySelector(".message--assistant")?.textContent).toContain("partial ans");
+      expect(shadow(el).querySelector(".stopped-note")?.textContent).toBe("⏹ Stopped");
+      expect(shadow(el).textContent).not.toContain("⚠️");
+      // Back to rest: the button returned to Send.
+      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.textContent).toBe("Send");
+    });
+
+    it("Escape in the composer cancels a running run", async () => {
+      const { el, handle, release } = mountGated();
+      sendNoWait(el, "x");
+      await flush();
+
+      inputOf(el).dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+      release();
+      await flush();
+
+      expect(handle.abortRuns).toBe(1);
+      expect(shadow(el).querySelector(".stopped-note")).not.toBeNull();
+    });
+
+    it("Escape while idle does nothing", () => {
+      const { el, handle } = mountWithAgent(() => {});
+      inputOf(el).dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+      expect(handle.abortRuns).toBe(0);
+      expect(shadow(el).querySelector(".stopped-note")).toBeNull();
+    });
+
+    it("Stop while a confirmation card is open declines it and stops the run", async () => {
+      let round = 0;
+      const { el, handle } = mountWithAgent((emit) => {
+        emit.runStart();
+        if (round === 0) {
+          emit.toolCall("tc1", "delete_user", { id: 7 });
+        }
+        round += 1;
+      });
+      el.registerTool({
+        name: "delete_user",
+        description: "delete",
+        parameters: { type: "object", "x-destructive": true },
+        handler: () => "deleted",
+      });
+
+      sendNoWait(el, "delete user 7");
+      await flush(); // the run is now suspended on the confirmation card
+
+      shadow(el).querySelector<HTMLButtonElement>(".send")?.click(); // Stop
+      await flush();
+
+      expect(shadow(el).querySelector(".confirm")?.getAttribute("data-resolved")).toBe("declined");
+      expect(handle.abortRuns).toBe(1);
+      expect(round).toBe(1); // the declined result did not start another round
+      expect(shadow(el).querySelector(".stopped-note")).not.toBeNull();
+    });
+
+    it("newChat stops an in-flight run before discarding the client", async () => {
+      const { el, handle, release } = mountGated("partial");
+      sendNoWait(el, "x");
+      await flush();
+
+      el.newChat();
+      release();
+      await flush();
+
+      expect(handle.abortRuns).toBe(1);
+      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.textContent).toBe("Send");
+    });
   });
 });

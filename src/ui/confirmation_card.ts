@@ -18,6 +18,16 @@ function actionButton(modifier: string, label: string): HTMLButtonElement {
   return button;
 }
 
+/** Options for {@link requestConfirmation}. */
+export interface ConfirmationOptions {
+  /**
+   * Aborting this signal resolves the card as declined (buttons disabled,
+   * `data-resolved="declined"`) — the hook a Stop control uses to dismiss a
+   * pending confirmation when the user cancels the whole run.
+   */
+  signal?: AbortSignal;
+}
+
 /**
  * Append an inline confirmation card to ``host`` (the chat message list) and
  * resolve when the user decides.
@@ -31,6 +41,7 @@ function actionButton(modifier: string, label: string): HTMLButtonElement {
 export function requestConfirmation(
   host: Node & ParentNode,
   request: ConfirmationRequest,
+  options: ConfirmationOptions = {},
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const card = document.createElement("div");
@@ -53,7 +64,12 @@ export function requestConfirmation(
     const cancel = actionButton("cancel", "Cancel");
     const confirm = actionButton("confirm", "Confirm");
 
+    let settled = false;
     const close = (accepted: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       cancel.disabled = true;
       confirm.disabled = true;
       card.setAttribute("data-resolved", accepted ? "confirmed" : "declined");
@@ -62,10 +78,16 @@ export function requestConfirmation(
 
     cancel.addEventListener("click", () => close(false));
     confirm.addEventListener("click", () => close(true));
+    options.signal?.addEventListener("abort", () => close(false), { once: true });
 
     actions.append(cancel, confirm);
     card.append(body, args, actions);
     host.appendChild(card);
+    if (options.signal?.aborted === true) {
+      // The run was cancelled before the card could ask; record the decline.
+      close(false);
+      return;
+    }
     confirm.focus();
   });
 }
