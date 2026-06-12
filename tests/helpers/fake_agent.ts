@@ -42,6 +42,8 @@ export interface FakeAgentHandle {
   agent: AbstractAgent;
   messages: ReadonlyArray<{ id: string; role: string; content: string; toolCallId?: string }>;
   lastRunParams: { tools?: unknown; context?: unknown } | null;
+  /** How many times abortRun() was called (the protocol-level cancel). */
+  abortRuns: number;
 }
 
 /** Build a minimal fake AG-UI agent that drives the client's subscriber. */
@@ -50,6 +52,7 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
   const handle: FakeAgentHandle = {
     messages,
     lastRunParams: null,
+    abortRuns: 0,
     agent: undefined as unknown as AbstractAgent,
   };
   const agent = {
@@ -57,6 +60,9 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
     messages,
     addMessage(message: { id: string; role: string; content: string; toolCallId?: string }): void {
       messages.push(message);
+    },
+    abortRun(): void {
+      handle.abortRuns += 1;
     },
     async runAgent(
       params: { tools?: unknown; context?: unknown },

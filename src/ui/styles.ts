@@ -501,6 +501,19 @@ export const STYLES = `
   cursor: default;
 }
 
+/* The composer button doubles as the Stop control while a run is in flight. */
+.send[data-state="running"] {
+  background: var(--ag-ui-muted);
+}
+
+/* Muted "⏹ Stopped" line after a cancelled run — a note, not an error bubble. */
+.stopped-note {
+  align-self: flex-start;
+  color: var(--ag-ui-muted);
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
 /* Inline confirmation card — lives in the transcript, no focus-stealing overlay. */
 .confirm {
   align-self: stretch;
