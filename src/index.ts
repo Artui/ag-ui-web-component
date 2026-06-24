@@ -32,6 +32,7 @@ export {
   type ClientConversationStore,
   type NavigationCheckpoint,
   SessionStorageStore,
+  type ThreadMeta,
 } from "./core/conversation_store.js";
 export {
   type AgentFactory,
