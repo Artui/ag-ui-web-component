@@ -4,6 +4,7 @@ import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT } from "../src/constants.js";
 import type { AgUiChat, SubmitDetail } from "../src/core/ag_ui_chat.js";
 import { SessionStorageStore } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import { RemoteConversationStore } from "../src/core/remote_conversation_store.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 /** Mount the element with a fake agent factory and an optional run script. */
@@ -1489,6 +1490,28 @@ describe("AgUiChat", () => {
       await flush();
       expect(el.conversationStore.threadId()).toBe(active);
       expect(titles(el)).toEqual(["current"]);
+    });
+
+    it("routes the drawer through data-threads-url when set", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          threads: [
+            { thread_id: "s1", title: "Server thread", updated_at: null, preview: "from server" },
+          ],
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      try {
+        const el = mount({ "data-threads-url": "/agent/threads/" });
+        await flush();
+        expect(el.conversationStore).toBeInstanceOf(RemoteConversationStore);
+        shadow(el).querySelector<HTMLButtonElement>(".header-btn--history")?.click();
+        await flush();
+        expect(titles(el)).toEqual(["Server thread"]);
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   });
 });

@@ -38,6 +38,7 @@ import {
   SessionStorageStore,
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
+import { RemoteConversationStore } from "./remote_conversation_store.js";
 
 /** The role a rendered chat message takes. */
 export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
@@ -355,8 +356,26 @@ export class AgUiChat extends HTMLElement {
     }
     this.#initSkills();
     void this.#fetchToolCatalog();
+    this.#wireThreadStore();
     this.#threadId = this.conversationStore.threadId();
     void this.#rehydrate();
+  }
+
+  /**
+   * When `data-threads-url` is set, route thread enumeration / load / rename /
+   * delete through that server endpoint (wrapping the current store as the
+   * client-only fallback), so the history drawer shows durable, cross-device
+   * threads. Without it, the client store's per-tab threads are used.
+   */
+  #wireThreadStore(): void {
+    const url = this.getAttribute("data-threads-url");
+    if (url !== null) {
+      this.conversationStore = new RemoteConversationStore(
+        url,
+        () => this.headers,
+        this.conversationStore,
+      );
+    }
   }
 
   /** Fetch the server tool-label catalog from `data-tools-url`, if set. */
