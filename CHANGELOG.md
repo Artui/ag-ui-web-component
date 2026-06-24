@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-24
+
 ### Added
 
 - **Chat-history drawer.** A history toggle (☰) in the header opens a slide-over
@@ -267,7 +269,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.2...v0.3.0
