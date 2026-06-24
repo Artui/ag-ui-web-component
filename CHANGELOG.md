@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-24
+
+### Added
+
+- **Chat-history drawer.** A history toggle (☰) in the header opens a slide-over
+  listing the user's past conversations (title · relative time · preview), with
+  select, new chat, inline rename, and delete-with-confirm. The
+  `ClientConversationStore` interface gains `listThreads` / `setActiveThread` /
+  `renameThread` and a `ThreadMeta` row shape; the default `SessionStorageStore`
+  now keeps a per-tab thread index so the drawer works with no server. Selecting
+  a row switches the active conversation and replays its history. The drawer is a
+  slide-over by default, with an inline side-panel variant for
+  `placement="embedded"`.
+- **Server-backed history via `data-threads-url`.** Set the attribute (to
+  django-ag-ui's `ThreadsView` URL) and the drawer routes list / load / rename /
+  delete through that endpoint via a new `RemoteConversationStore`, showing
+  durable, cross-device threads. The client store remains the offline fallback;
+  rename / delete apply optimistically.
+
 ## [0.4.0] — 2026-06-12
 
 ### Added
@@ -250,7 +269,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.2.2...v0.3.0

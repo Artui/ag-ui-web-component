@@ -24,6 +24,7 @@ import { renderMarkdown } from "../ui/render_markdown.js";
 import { wrapWords } from "../ui/reveal_words.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
 import { STYLES } from "../ui/styles.js";
+import { ThreadDrawer } from "../ui/thread_drawer.js";
 import { ToolCallCard, type ToolDisplayMode } from "../ui/tool_call_card.js";
 import {
   AgUiClient,
@@ -37,6 +38,7 @@ import {
   SessionStorageStore,
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
+import { RemoteConversationStore } from "./remote_conversation_store.js";
 
 /** The role a rendered chat message takes. */
 export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
@@ -192,6 +194,7 @@ export class AgUiChat extends HTMLElement {
   readonly #send: HTMLButtonElement;
   readonly #title: HTMLSpanElement;
   readonly #skillsMenu: SkillsMenu;
+  readonly #drawer: ThreadDrawer;
   readonly #skillHint: HTMLDivElement;
 
   #client: AgUiClient | null = null;
@@ -225,6 +228,22 @@ export class AgUiChat extends HTMLElement {
     this.#title = document.createElement("span");
     this.#skillHint = document.createElement("div");
     this.#skillsMenu = new SkillsMenu((skill) => this.#applySkill(skill));
+    this.#drawer = new ThreadDrawer({
+      onSelect: (threadId) => {
+        void this.#switchThread(threadId);
+      },
+      onNew: () => {
+        this.newChat();
+        void this.#refreshDrawer();
+      },
+      onRename: (threadId, title) => {
+        this.conversationStore.renameThread(threadId, title);
+        void this.#refreshDrawer();
+      },
+      onDelete: (threadId) => {
+        this.#deleteThread(threadId);
+      },
+    });
   }
 
   /** Attributes whose late changes must reflect in already-rendered chrome. */
@@ -337,8 +356,26 @@ export class AgUiChat extends HTMLElement {
     }
     this.#initSkills();
     void this.#fetchToolCatalog();
+    this.#wireThreadStore();
     this.#threadId = this.conversationStore.threadId();
     void this.#rehydrate();
+  }
+
+  /**
+   * When `data-threads-url` is set, route thread enumeration / load / rename /
+   * delete through that server endpoint (wrapping the current store as the
+   * client-only fallback), so the history drawer shows durable, cross-device
+   * threads. Without it, the client store's per-tab threads are used.
+   */
+  #wireThreadStore(): void {
+    const url = this.getAttribute("data-threads-url");
+    if (url !== null) {
+      this.conversationStore = new RemoteConversationStore(
+        url,
+        () => this.headers,
+        this.conversationStore,
+      );
+    }
   }
 
   /** Fetch the server tool-label catalog from `data-tools-url`, if set. */
@@ -473,6 +510,13 @@ export class AgUiChat extends HTMLElement {
     // leave the old agent streaming into a cleared transcript.
     this.#cancelRun();
     this.conversationStore.clear(this.#threadId);
+    this.#resetState();
+    this.#threadId = this.conversationStore.threadId();
+    this.#setRunning(false);
+  }
+
+  /** Drop the in-memory run + transcript, leaving the thread id untouched. */
+  #resetState(): void {
     this.#client = null;
     this.#streamingBubble = null;
     this.#hidePending();
@@ -480,8 +524,39 @@ export class AgUiChat extends HTMLElement {
     this.#serverSettled.clear();
     this.#initialMessages = [];
     this.#messages.replaceChildren();
-    this.#threadId = this.conversationStore.threadId();
+  }
+
+  /** Switch the active conversation to an existing thread and replay it. */
+  async #switchThread(threadId: string): Promise<void> {
+    if (threadId === this.#threadId) {
+      return;
+    }
+    this.#cancelRun();
+    this.#resetState();
+    this.conversationStore.setActiveThread(threadId);
+    this.#threadId = threadId;
     this.#setRunning(false);
+    await this.#rehydrate();
+  }
+
+  /** Delete a thread; if it was the active one, fall back to a fresh chat. */
+  #deleteThread(threadId: string): void {
+    const wasActive = threadId === this.#threadId;
+    if (wasActive) {
+      this.#cancelRun();
+    }
+    this.conversationStore.clear(threadId);
+    if (wasActive) {
+      this.#resetState();
+      this.#threadId = this.conversationStore.threadId();
+      this.#setRunning(false);
+    }
+    void this.#refreshDrawer();
+  }
+
+  /** Reload the drawer's thread list, marking the active thread. */
+  async #refreshDrawer(): Promise<void> {
+    this.#drawer.setThreads(await this.conversationStore.listThreads(), this.#threadId);
   }
 
   /**
@@ -613,6 +688,17 @@ export class AgUiChat extends HTMLElement {
     const controls = document.createElement("div");
     controls.className = "header-controls";
 
+    const history = document.createElement("button");
+    history.type = "button";
+    history.className = "header-btn header-btn--history";
+    history.title = "Chat history";
+    history.setAttribute("aria-label", "Chat history");
+    history.textContent = "☰";
+    history.addEventListener("click", () => {
+      void this.#refreshDrawer();
+      this.#drawer.open();
+    });
+
     const newChat = document.createElement("button");
     newChat.type = "button";
     newChat.className = "header-btn header-btn--new";
@@ -629,7 +715,7 @@ export class AgUiChat extends HTMLElement {
     collapse.textContent = "—";
     collapse.addEventListener("click", () => this.toggleCollapsed());
 
-    controls.append(newChat, collapse);
+    controls.append(history, newChat, collapse);
     header.append(title, controls);
 
     this.#messages.className = "messages";
@@ -676,6 +762,7 @@ export class AgUiChat extends HTMLElement {
       this.#skillsMenu.chips,
       this.#skillHint,
       inputRow,
+      this.#drawer.element,
     );
     this.#root.append(style, this.#chat);
   }

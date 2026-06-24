@@ -4,6 +4,7 @@ import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT } from "../src/constants.js";
 import type { AgUiChat, SubmitDetail } from "../src/core/ag_ui_chat.js";
 import { SessionStorageStore } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import { RemoteConversationStore } from "../src/core/remote_conversation_store.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 /** Mount the element with a fake agent factory and an optional run script. */
@@ -1376,6 +1377,141 @@ describe("AgUiChat", () => {
 
       expect(handle.abortRuns).toBe(1);
       expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.textContent).toBe("Send");
+    });
+  });
+
+  describe("thread drawer", () => {
+    function titles(el: AgUiChat): (string | null)[] {
+      return [...shadow(el).querySelectorAll(".drawer-row-title")].map((node) => node.textContent);
+    }
+
+    async function openDrawer(el: AgUiChat): Promise<void> {
+      shadow(el).querySelector<HTMLButtonElement>(".header-btn--history")?.click();
+      await flush();
+    }
+
+    it("opens the history drawer listing saved threads", async () => {
+      const el = mount();
+      el.conversationStore.saveMessages("t1", [
+        { id: "u1", role: "user", content: "alpha" },
+      ] as never);
+      el.conversationStore.saveMessages("t2", [
+        { id: "u2", role: "user", content: "beta" },
+      ] as never);
+      await openDrawer(el);
+      expect(shadow(el).querySelector<HTMLDivElement>(".drawer")?.hidden).toBe(false);
+      expect(titles(el).sort()).toEqual(["alpha", "beta"]);
+    });
+
+    it("selecting a row switches the active thread and replays it", async () => {
+      const el = mount();
+      el.conversationStore.saveMessages("t1", [
+        { id: "u1", role: "user", content: "hello t1" },
+      ] as never);
+      await openDrawer(el);
+      shadow(el).querySelector<HTMLButtonElement>(".drawer-row-select")?.click();
+      await flush();
+      expect(el.conversationStore.threadId()).toBe("t1");
+      expect(shadow(el).querySelector(".message--user")?.textContent).toBe("hello t1");
+      expect(shadow(el).querySelector<HTMLDivElement>(".drawer")?.hidden).toBe(true);
+    });
+
+    it("selecting the already-active thread is a no-op", async () => {
+      const el = mount();
+      const active = el.conversationStore.threadId();
+      el.conversationStore.saveMessages(active, [
+        { id: "u1", role: "user", content: "x" },
+      ] as never);
+      await openDrawer(el);
+      shadow(el).querySelector<HTMLButtonElement>(".drawer-row-select")?.click();
+      await flush();
+      expect(el.conversationStore.threadId()).toBe(active);
+    });
+
+    it("the drawer's New chat starts a fresh thread", async () => {
+      const el = mount();
+      const first = el.conversationStore.threadId();
+      el.conversationStore.saveMessages(first, [{ id: "u1", role: "user", content: "x" }] as never);
+      await openDrawer(el);
+      shadow(el).querySelector<HTMLButtonElement>(".drawer-new")?.click();
+      await flush();
+      expect(el.conversationStore.threadId()).not.toBe(first);
+    });
+
+    it("renaming a row persists the new title", async () => {
+      const el = mount();
+      el.conversationStore.saveMessages("t1", [
+        { id: "u1", role: "user", content: "alpha" },
+      ] as never);
+      await openDrawer(el);
+      shadow(el).querySelector<HTMLButtonElement>(".drawer-row-rename")?.click();
+      const input = shadow(el).querySelector<HTMLInputElement>(".drawer-rename-input");
+      if (input === null) {
+        throw new Error("expected a rename input");
+      }
+      input.value = "Renamed";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+      await flush();
+      expect(titles(el)).toContain("Renamed");
+    });
+
+    it("deleting the active thread falls back to a fresh chat", async () => {
+      const el = mount();
+      const active = el.conversationStore.threadId();
+      el.conversationStore.saveMessages(active, [
+        { id: "u1", role: "user", content: "x" },
+      ] as never);
+      await openDrawer(el);
+      shadow(el).querySelector<HTMLButtonElement>(".drawer-row-delete")?.click();
+      shadow(el).querySelector<HTMLButtonElement>(".drawer-confirm-yes")?.click();
+      await flush();
+      expect(el.conversationStore.threadId()).not.toBe(active);
+      expect(shadow(el).querySelector(".drawer-empty")).not.toBeNull();
+    });
+
+    it("deleting a non-active thread keeps the current conversation", async () => {
+      const el = mount();
+      const active = el.conversationStore.threadId();
+      el.conversationStore.saveMessages(active, [
+        { id: "u1", role: "user", content: "current" },
+      ] as never);
+      el.conversationStore.saveMessages("other", [
+        { id: "u2", role: "user", content: "other thread" },
+      ] as never);
+      await openDrawer(el);
+      const otherRow = [...shadow(el).querySelectorAll<HTMLDivElement>(".drawer-row")].find(
+        (row) => row.querySelector(".drawer-row-title")?.textContent === "other thread",
+      );
+      if (otherRow === undefined) {
+        throw new Error("expected the 'other' row");
+      }
+      otherRow.querySelector<HTMLButtonElement>(".drawer-row-delete")?.click();
+      otherRow.querySelector<HTMLButtonElement>(".drawer-confirm-yes")?.click();
+      await flush();
+      expect(el.conversationStore.threadId()).toBe(active);
+      expect(titles(el)).toEqual(["current"]);
+    });
+
+    it("routes the drawer through data-threads-url when set", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          threads: [
+            { thread_id: "s1", title: "Server thread", updated_at: null, preview: "from server" },
+          ],
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      try {
+        const el = mount({ "data-threads-url": "/agent/threads/" });
+        await flush();
+        expect(el.conversationStore).toBeInstanceOf(RemoteConversationStore);
+        shadow(el).querySelector<HTMLButtonElement>(".header-btn--history")?.click();
+        await flush();
+        expect(titles(el)).toEqual(["Server thread"]);
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   });
 });
