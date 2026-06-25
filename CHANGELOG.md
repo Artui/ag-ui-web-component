@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **File uploads.** Set `data-attachments-url` (django-ag-ui's `AttachmentsView`)
+  to reveal a 📎 picker + drag-and-drop on the composer. Each file uploads
+  out-of-band (multipart, with the element's `headers`) into a pending tray —
+  one chip per file with a progress bar, settling to `ready` or `error` (with
+  retry / remove). On send, the ready files' refs render as read-only chips on
+  the user bubble and travel to the agent: the wire stays vanilla AG-UI (only
+  lightweight `{ id, name, mime, size }` refs, never bytes), the model learns the
+  ids from a one-line run-context manifest, and reads contents server-side via
+  the `read_attachment` tool. Refs persist on the message, so a restored
+  conversation re-renders its chips.
+- **Client-side guards** (instant feedback; the server stays authoritative):
+  `data-attachment-accept` (an `<input accept>` list) and
+  `data-attachment-max-bytes` (default 10 MiB, `0` disables).
+- **New exports:** `uploadAttachment` + `UploadOptions`, the `AttachmentRef`
+  type, and `messageAttachments`. `AgUiClient.send` gains an optional second
+  `attachments` argument; the `ag-ui-submit` event `detail` now also carries
+  `attachments`.
+
 ## [0.5.0] — 2026-06-24
 
 ### Added

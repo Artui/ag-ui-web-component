@@ -71,6 +71,24 @@ export const TOOL_CALL_STATUS = {
 } as const;
 
 /**
+ * Lifecycle status of a pending-attachment chip in the composer tray. A chip
+ * opens as `UPLOADING` (with a progress bar), then settles to `READY` (a durable
+ * ref) or `ERROR` (with a retry control).
+ */
+export const ATTACHMENT_STATUS = {
+  UPLOADING: "uploading",
+  READY: "ready",
+  ERROR: "error",
+} as const;
+
+/**
+ * Default client-side upload size cap (10 MiB), matching django-ag-ui's
+ * `ATTACHMENT_MAX_BYTES` default. Overridable per element via
+ * `data-attachment-max-bytes`; the server stays authoritative.
+ */
+export const DEFAULT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
  * How much detail a tool-call card shows. Set via the `data-tool-display`
  * attribute on `<ag-ui-chat>`; defaults to `full` (back-compatible).
  *
