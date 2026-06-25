@@ -1,6 +1,7 @@
 import { randomUUID } from "@ag-ui/client";
 import { ATTACHMENT_STATUS } from "../constants.js";
 import type { AttachmentRef } from "../core/attachment.js";
+import type { UploadHandler } from "../core/upload_attachment.js";
 import { formatBytes, iconFor } from "./attachment_chips.js";
 
 /** Status of a pending tray chip. */
@@ -9,7 +10,7 @@ type AttachmentStatus = (typeof ATTACHMENT_STATUS)[keyof typeof ATTACHMENT_STATU
 /** Config the host ({@link AgUiChat}) hands the tray. */
 export interface AttachmentTrayConfig {
   /** Upload one file, reporting `0..1` progress; resolves to a durable ref. */
-  readonly upload: (file: File, onProgress: (fraction: number) => void) => Promise<AttachmentRef>;
+  readonly upload: UploadHandler;
   /** Client-side size cap in bytes (`0` = no cap). The server stays authoritative. */
   readonly maxBytes: number;
   /** Client-side accept list (`<input accept>` syntax; `""` = any). */

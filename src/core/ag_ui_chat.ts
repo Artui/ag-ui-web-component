@@ -43,7 +43,7 @@ import {
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
-import { uploadAttachment } from "./upload_attachment.js";
+import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
 
 /** The role a rendered chat message takes. */
 export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
@@ -155,6 +155,17 @@ export class AgUiChat extends HTMLElement {
    * server-backed store for cross-tab/device durability.
    */
   conversationStore: ClientConversationStore = new SessionStorageStore();
+
+  /**
+   * How attached files are uploaded. `null` (default) uses the built-in
+   * multipart `POST` to `data-attachments-url`. Set a custom
+   * {@link UploadHandler} — `(file, onProgress) => Promise<AttachmentRef>` — to
+   * swap the transport (e.g. a `tus-js-client` resumable adapter or
+   * direct-to-S3 multipart) without changing the tray, the chips, or the AG-UI
+   * wire (refs are transport-agnostic). When set, the 📎 affordance appears even
+   * with no `data-attachments-url`; the handler owns its own endpoint + headers.
+   */
+  uploadHandler: UploadHandler | null = null;
 
   /**
    * Builds the tool result a navigating tool resumes with after the page
@@ -386,21 +397,21 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * When `data-attachments-url` is set, enable the composer's file-upload tray:
-   * reveal the 📎 button, wire the hidden file input + drag-and-drop, and mount
-   * a tray that uploads each picked file (with the element's `headers`) to that
-   * endpoint. Without the attribute, the affordance stays hidden — the chat
-   * degrades to text-only.
+   * Enable the composer's file-upload tray when uploads are possible — either a
+   * custom {@link uploadHandler} is set or `data-attachments-url` provides the
+   * built-in multipart endpoint: reveal the 📎 button, wire the hidden file
+   * input + drag-and-drop, and mount the tray. With neither, the affordance
+   * stays hidden and the chat degrades to text-only.
    */
   #wireAttachments(): void {
     const url = this.getAttribute("data-attachments-url");
-    if (url === null) {
+    const upload = this.uploadHandler ?? this.#defaultUploadHandler(url);
+    if (upload === null) {
       return;
     }
     const accept = this.getAttribute("data-attachment-accept") ?? "";
     this.#attachTray = new AttachmentTray({
-      upload: (file, onProgress) =>
-        uploadAttachment(file, { url, headers: this.headers, onProgress }),
+      upload,
       maxBytes: this.#attachmentMaxBytes(),
       accept,
     });
@@ -408,6 +419,14 @@ export class AgUiChat extends HTMLElement {
     this.#fileInput.accept = accept;
     this.#attachButton.hidden = false;
     this.#enableDragAndDrop();
+  }
+
+  /** The built-in multipart upload handler for `data-attachments-url`, or `null`. */
+  #defaultUploadHandler(url: string | null): UploadHandler | null {
+    if (url === null) {
+      return null;
+    }
+    return (file, onProgress) => uploadAttachment(file, { url, headers: this.headers, onProgress });
   }
 
   /** The client-side upload size cap from `data-attachment-max-bytes`. */

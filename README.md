@@ -163,8 +163,8 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 
 **Properties** (JS only, not attributes): `headers`, `allowImages`, `autoConfirm`,
 `confirmPredicate`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
-`getPageMap`, `autoInjectPageMap`, `conversationStore`, `navigationResult`, `skillContext`,
-`toolSummaries`, plus the mirrors `endpoint` / `toolDisplay` / `collapsed`.
+`getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `navigationResult`,
+`skillContext`, `toolSummaries`, plus the mirrors `endpoint` / `toolDisplay` / `collapsed`.
 
 `allowImages` (default `false`) re-enables `<img>` in rendered assistant markdown.
 It is off by default because a model-controlled image URL is fetched by the browser
@@ -552,6 +552,34 @@ Client-side `accept` / size checks are an instant-feedback nicety — **the serv
 authoritative**. Refs persist on the message, so a restored conversation re-renders its chips.
 Without the attribute the affordance stays hidden and the chat is text-only.
 
+**Swapping the upload transport.** The built-in multipart `POST` is just the default
+`uploadHandler`. Set your own to use a different transport — a resumable
+[`tus-js-client`](https://github.com/tus/tus-js-client) adapter, direct-to-S3 multipart, etc.
+— without touching the tray, the chips, or the AG-UI wire (refs are transport-agnostic). The
+handler is `(file, onProgress) => Promise<AttachmentRef>`; when set, the 📎 affordance appears
+even with no `data-attachments-url`, and your handler owns its own endpoint and headers:
+
+```js
+import { Upload } from "tus-js-client";
+
+chat.uploadHandler = (file, onProgress) =>
+  new Promise((resolve, reject) => {
+    const up = new Upload(file, {
+      endpoint: "/tus/",
+      headers: chat.headers,
+      onProgress: (sent, total) => onProgress(sent / total),
+      onError: reject,
+      onSuccess: () =>
+        resolve({ id: up.url.split("/").pop(), name: file.name, mime: file.type, size: file.size }),
+    });
+    up.start();
+  });
+```
+
+The server side is the matching half: the agent reads bytes by ref id, so point the
+`read_attachment` store at wherever your transport persisted them (django-ag-ui's
+`AttachmentStore` is the seam). The refs themselves never change shape.
+
 ---
 
 ## Public API surface
@@ -616,8 +644,9 @@ re-export point. Internal modules import from leaf paths.
 
 | Export | Kind | Summary |
 | --- | --- | --- |
-| `uploadAttachment(file, options)` | function | Upload one file to the attachments endpoint (multipart, progress) → `AttachmentRef`. |
+| `uploadAttachment(file, options)` | function | The built-in upload (multipart, progress) → `AttachmentRef`. |
 | `UploadOptions` | type | `{ url, headers?, onProgress?, signal? }`. |
+| `UploadHandler` | type | `(file, onProgress) => Promise<AttachmentRef>` — the `uploadHandler` swap seam (TUS / S3). |
 | `AttachmentRef` | type | The durable upload ref (`{ id, name, mime, size, url? }`). |
 | `messageAttachments(message)` | function | Read the refs a restored user message carries. |
 

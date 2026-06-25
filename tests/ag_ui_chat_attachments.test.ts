@@ -97,6 +97,29 @@ describe("AgUiChat — attachments", () => {
     expect(shadow(el).querySelector(".attachment-tray")).toBeNull();
   });
 
+  it("uses a custom uploadHandler instead of the built-in multipart upload", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    // No data-attachments-url: the custom handler owns its own endpoint.
+    const calls: File[] = [];
+    el.uploadHandler = (f, onProgress) => {
+      calls.push(f);
+      onProgress(1);
+      return Promise.resolve({ id: "custom1", name: f.name, mime: f.type, size: f.size });
+    };
+    document.body.appendChild(el);
+
+    // The 📎 affordance appears purely from the handler being set.
+    expect(shadow(el).querySelector<HTMLButtonElement>(".attach-btn")?.hidden).toBe(false);
+
+    drop(el, [file()]);
+    await flush();
+
+    expect(calls).toHaveLength(1);
+    expect(xhr.instances).toHaveLength(0); // the built-in XHR upload was never used
+    expect(shadow(el).querySelector(".attachment-chip--ready")).not.toBeNull();
+  });
+
   it("reveals the attach button and wires accept when configured", () => {
     const { el } = mount({ "data-attachment-accept": "image/*,.pdf" });
     expect(shadow(el).querySelector<HTMLButtonElement>(".attach-btn")?.hidden).toBe(false);

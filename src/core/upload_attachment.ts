@@ -1,5 +1,18 @@
 import type { AttachmentRef } from "./attachment.js";
 
+/**
+ * The composer's upload contract: take a `File`, report `0..1` progress, and
+ * resolve to a durable {@link AttachmentRef}. The built-in handler is
+ * {@link uploadAttachment} (multipart POST); a host swaps in its own — e.g. a
+ * `tus-js-client` or direct-to-S3 adapter — via `AgUiChat.uploadHandler`,
+ * **without** touching the tray, the chips, or the AG-UI wire (refs are
+ * transport-agnostic).
+ */
+export type UploadHandler = (
+  file: File,
+  onProgress: (fraction: number) => void,
+) => Promise<AttachmentRef>;
+
 /** Options for {@link uploadAttachment}. */
 export interface UploadOptions {
   /** The attachments endpoint (`data-attachments-url`). */

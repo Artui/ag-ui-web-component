@@ -42,7 +42,11 @@ export {
 } from "./core/create_http_agent.js";
 export { defineAgUiChat } from "./core/define_ag_ui_chat.js";
 export { RemoteConversationStore } from "./core/remote_conversation_store.js";
-export { type UploadOptions, uploadAttachment } from "./core/upload_attachment.js";
+export {
+  type UploadHandler,
+  type UploadOptions,
+  uploadAttachment,
+} from "./core/upload_attachment.js";
 export {
   type FlashOptions,
   focusWithFlash,

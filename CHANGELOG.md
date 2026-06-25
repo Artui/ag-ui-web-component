@@ -22,10 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Client-side guards** (instant feedback; the server stays authoritative):
   `data-attachment-accept` (an `<input accept>` list) and
   `data-attachment-max-bytes` (default 10 MiB, `0` disables).
-- **New exports:** `uploadAttachment` + `UploadOptions`, the `AttachmentRef`
-  type, and `messageAttachments`. `AgUiClient.send` gains an optional second
-  `attachments` argument; the `ag-ui-submit` event `detail` now also carries
-  `attachments`.
+- **Pluggable upload transport.** A new `uploadHandler` property —
+  `(file, onProgress) => Promise<AttachmentRef>` — swaps the built-in multipart
+  upload for a custom one (a resumable `tus-js-client` adapter, direct-to-S3
+  multipart, …) without touching the tray, chips, or AG-UI wire. When set, the
+  📎 affordance appears even with no `data-attachments-url`. Defaults to the
+  built-in `uploadAttachment`.
+- **New exports:** `uploadAttachment` + `UploadOptions` + `UploadHandler`, the
+  `AttachmentRef` type, and `messageAttachments`. `AgUiClient.send` gains an
+  optional second `attachments` argument; the `ag-ui-submit` event `detail` now
+  also carries `attachments`.
 
 ## [0.5.0] — 2026-06-24
 
