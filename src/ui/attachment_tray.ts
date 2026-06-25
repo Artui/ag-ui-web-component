@@ -3,6 +3,7 @@ import { ATTACHMENT_STATUS } from "../constants.js";
 import type { AttachmentRef } from "../core/attachment.js";
 import type { UploadHandler } from "../core/upload_attachment.js";
 import { formatBytes, iconFor } from "./attachment_chips.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
 /** Status of a pending tray chip. */
 type AttachmentStatus = (typeof ATTACHMENT_STATUS)[keyof typeof ATTACHMENT_STATUS];
@@ -17,6 +18,8 @@ export interface AttachmentTrayConfig {
   readonly accept: string;
   /** Fired when the set of attachments changes (add / settle / remove). */
   readonly onChange?: () => void;
+  /** Localized strings; defaults to the English {@link DEFAULT_UI_STRINGS}. */
+  readonly strings?: UiStrings;
 }
 
 /** One pending file in the tray, from pick to ready/error. */
@@ -44,12 +47,15 @@ export class AttachmentTray {
   readonly element: HTMLDivElement;
 
   readonly #config: AttachmentTrayConfig;
+  readonly #strings: UiStrings;
   #items: TrayItem[] = [];
 
   constructor(config: AttachmentTrayConfig) {
     this.#config = config;
+    this.#strings = config.strings ?? DEFAULT_UI_STRINGS;
     this.element = document.createElement("div");
     this.element.className = "attachment-tray";
+    this.element.setAttribute("part", "attachment-tray");
     this.element.hidden = true;
   }
 
@@ -113,10 +119,10 @@ export class AttachmentTray {
   /** The size/type rejection reason for a file, or `null` when accepted. */
   #reject(file: File): string | null {
     if (this.#config.maxBytes > 0 && file.size > this.#config.maxBytes) {
-      return `Too large (max ${formatBytes(this.#config.maxBytes)})`;
+      return this.#strings.tooLarge.replace("{size}", formatBytes(this.#config.maxBytes));
     }
     if (!accepts(this.#config.accept, file)) {
-      return "File type not allowed";
+      return this.#strings.fileTypeNotAllowed;
     }
     return null;
   }
@@ -137,7 +143,7 @@ export class AttachmentTray {
       })
       .catch((error: unknown) => {
         item.status = ATTACHMENT_STATUS.ERROR;
-        item.error = error instanceof Error ? error.message : "upload failed";
+        item.error = error instanceof Error ? error.message : this.#strings.uploadFailed;
       })
       .finally(() => {
         this.#render();
@@ -194,8 +200,8 @@ export class AttachmentTray {
       const retry = document.createElement("button");
       retry.type = "button";
       retry.className = "attachment-chip-retry";
-      retry.title = "Retry";
-      retry.setAttribute("aria-label", "Retry upload");
+      retry.title = this.#strings.retry;
+      retry.setAttribute("aria-label", this.#strings.retryUpload);
       retry.textContent = "↻";
       retry.addEventListener("click", () => this.#upload(item));
       chip.appendChild(retry);
@@ -204,8 +210,8 @@ export class AttachmentTray {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "attachment-chip-remove";
-    remove.title = "Remove";
-    remove.setAttribute("aria-label", "Remove attachment");
+    remove.title = this.#strings.remove;
+    remove.setAttribute("aria-label", this.#strings.removeAttachment);
     remove.textContent = "✕";
     remove.addEventListener("click", () => this.#remove(item));
     chip.appendChild(remove);

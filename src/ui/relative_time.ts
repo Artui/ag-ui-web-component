@@ -1,28 +1,35 @@
+import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+
 /**
  * A compact relative timestamp for a thread row — e.g. `"just now"`, `"5m ago"`,
  * `"3h ago"`, `"2d ago"`, `"4w ago"`.
  *
  * `now` is injectable so callers (and tests) can pin the reference point; it
  * defaults to the current time. A timestamp in the future (clock skew) reads as
- * `"just now"`. Kept locale-independent on purpose so the rendered label is
- * stable across environments.
+ * `"just now"`. The unit words come from {@link UiStrings} (the `{n}` token is
+ * filled in here) so a localized host translates them; the bucketing stays
+ * integer-rounded and locale-neutral.
  */
-export function relativeTime(timestamp: number, now: number = Date.now()): string {
+export function relativeTime(
+  timestamp: number,
+  now: number = Date.now(),
+  strings: UiStrings = DEFAULT_UI_STRINGS,
+): string {
   const seconds = Math.round((now - timestamp) / 1000);
   if (seconds < 60) {
-    return "just now";
+    return strings.justNow;
   }
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) {
-    return `${minutes}m ago`;
+    return strings.minutesAgo.replace("{n}", String(minutes));
   }
   const hours = Math.round(minutes / 60);
   if (hours < 24) {
-    return `${hours}h ago`;
+    return strings.hoursAgo.replace("{n}", String(hours));
   }
   const days = Math.round(hours / 24);
   if (days < 7) {
-    return `${days}d ago`;
+    return strings.daysAgo.replace("{n}", String(days));
   }
-  return `${Math.round(days / 7)}w ago`;
+  return strings.weeksAgo.replace("{n}", String(Math.round(days / 7)));
 }

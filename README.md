@@ -44,6 +44,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
   - [Registering tools](#registering-tools)
   - [Inline confirmation (`x-destructive` / `x-confirm` / `confirmPredicate`)](#inline-confirmation-x-destructive--x-confirm--confirmpredicate)
   - [DOM-driver and animation primitives](#dom-driver-and-animation-primitives)
+  - [Page-action tools](#page-action-tools)
 - [New chat and collapse](#new-chat-and-collapse)
 - [Tool-call display modes](#tool-call-display-modes)
 - [Markdown rendering](#markdown-rendering)
@@ -52,6 +53,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
 - [Host seams: the SPA story](#host-seams-the-spa-story)
 - [Public API surface](#public-api-surface)
 - [Theming, density, and placement](#theming-density-and-placement)
+- [Internationalization (i18n)](#internationalization-i18n)
 - [Building the bundle](#building-the-bundle)
 - [Compatibility](#compatibility)
 
@@ -156,15 +158,20 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's 📎 picker + drag-and-drop. |
 | `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
 | `data-attachment-max-bytes` | — | Client-side upload size cap in bytes (default 10 MiB; `0` disables). The server stays authoritative. |
-| `collapsed` | `collapsed` | Reflected boolean; collapses the widget. Persisted per-tab in `sessionStorage`. |
+| `data-strings` | `strings` | Partial JSON override of the UI string table (localization). The property wins key-by-key over the attribute; see [Internationalization](#internationalization-i18n). |
+| `data-icon-url` | — | Header (and sidebar-rail) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
+| `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
+| `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
+| `collapsed` | `collapsed` | Reflected boolean; collapses the widget (to a rail under `placement="sidebar"`). Persisted per-tab in `sessionStorage`. |
 | `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
-| `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `full` / `embedded`. |
+| `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `embedded`. |
 
 **Properties** (JS only, not attributes): `headers`, `allowImages`, `autoConfirm`,
 `confirmPredicate`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
 `getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `navigationResult`,
-`skillContext`, `toolSummaries`, plus the mirrors `endpoint` / `toolDisplay` / `collapsed`.
+`skillContext`, `toolSummaries`, `strings`, `resolvePageTarget`, plus the mirrors
+`endpoint` / `toolDisplay` / `collapsed`.
 
 `allowImages` (default `false`) re-enables `<img>` in rendered assistant markdown.
 It is off by default because a model-controlled image URL is fetched by the browser
@@ -328,6 +335,36 @@ register the change.
 
 Each takes an element the caller has already located; host packages wrap them with
 environment-aware lookups (e.g. "find `#id_<name>`, then `fillField`").
+
+### Page-action tools
+
+Two built-in client tools let the agent perform common page interactions without every host
+re-implementing them. They are **opt-in** via `data-page-actions` — a comma list of the tokens you
+want — so you control the agent's interaction surface:
+
+```html
+<ag-ui-chat endpoint="/agent/" data-page-actions="scroll,drag"></ag-ui-chat>
+```
+
+- **`scroll_to`** — scroll a target into view. `target` is `"top"`, `"bottom"`, or a CSS selector
+  / page-map element id. Read-only (no confirmation).
+- **`drag_and_drop`** — drag the `from` element onto the `to` element (selectors / page-map ids),
+  firing the standard HTML5 drag sequence (`dragstart` → `dragenter`/`dragover`/`drop` → `dragend`)
+  so the page's own drop handler reacts. Useful for reordering sortable lists.
+
+Targets resolve through the overridable `resolvePageTarget` property — `(target) => HTMLElement |
+null`, defaulting to `document.querySelector`. A host with a page map overrides it to map its own
+element ids (the same way the DOM-driver primitives are wrapped with environment-aware lookups):
+
+```js
+chat.resolvePageTarget = (id) => myPageMap.elementFor(id);
+```
+
+**Destructiveness.** Page actions are *not* stamped `x-destructive` — a drag rearranges transient
+state, and the durable change happens at the page's explicit commit (a Save), which stays in the
+user's hands. If your page persists *on drop* (a kanban board firing a PATCH from the drop
+handler), gate `drag_and_drop` with [`confirmPredicate`](#inline-confirmation-x-destructive--x-confirm--confirmpredicate)
+— or don't enable it. A target that resolves to nothing returns a clean, model-readable tool error.
 
 ---
 
@@ -604,6 +641,7 @@ re-export point. Internal modules import from leaf paths.
 | `AgUiClient` | class | Orchestration layer over an AG-UI `AbstractAgent`. |
 | `AgUiClientConfig` / `AgUiClientHandlers` / `AgUiRunInputs` | type | Client config, lifecycle handlers, per-run input providers. |
 | `AgUiToolCall` / `ToolExecution` / `ExecuteTool` | type | Tool-call shape, execution result, executor signature. |
+| `ConnectionLostError` | class | Raised (→ `onError`) when a run's stream closes with no terminal AG-UI event. |
 | `createHttpAgent(options)` | function | Default agent factory (wraps `HttpAgent`). |
 | `AgentFactory` / `HttpAgentOptions` | type | Factory signature and its options. |
 
@@ -615,6 +653,9 @@ re-export point. Internal modules import from leaf paths.
 | `ClientTool` | type | A frontend tool declaration. |
 | `isDestructive(parameters)` | function | Read the `x-destructive` flag. |
 | `isNavigates(parameters)` | function | Read the `x-navigates` flag. |
+| `createPageActionTools(enabled, resolveTarget)` | function | Build the opt-in `scroll_to` / `drag_and_drop` tools. |
+| `PAGE_ACTIONS` | const | The page-action opt-in tokens (`scroll` / `drag`). |
+| `ResolvePageTarget` | type | `(target) => HTMLElement | null` — the page-target resolver. |
 | `X_DESTRUCTIVE_KEY` / `X_NAVIGATES_KEY` | const | The JSON-Schema extension keys. |
 
 ### Host seams
@@ -658,7 +699,10 @@ re-export point. Internal modules import from leaf paths.
 | `ToolCallStatus` / `SettledStatus` / `ToolDisplayMode` | type | Card lifecycle states + display mode. |
 | `requestConfirmation(host, request, options?)` | function | Append the inline confirmation card to the transcript. |
 | `ConfirmationRequest` | type | What the card displays. |
-| `ConfirmationOptions` | type | `{ signal? }` — aborting resolves the card as declined (the Stop control's hook). |
+| `ConfirmationOptions` | type | `{ signal?, strings? }` — abort resolves the card as declined; `strings` localizes it. |
+| `UiStrings` | type | The flat table of every user-facing string. |
+| `DEFAULT_UI_STRINGS` | const | The English defaults (the override floor). |
+| `mergeUiStrings(overrides)` | function | Merge a partial override over the defaults. |
 | `renderMarkdown(text)` | function | Render sanitized markdown/HTML (marked + DOMPurify). |
 | `typeInto` / `highlightThenClick` / `pressThenClick` / `selectOption` / `toggleControl` / `scrollIntoCenterView` / `focusWithFlash` / `prefersReducedMotion` | function | Animation primitives. |
 | `fillField` / `clickElement` / `pressButton` / `selectControl` / `setControlValue` / `toggleCheckbox` | function | DOM-driver primitives. |
@@ -708,8 +752,8 @@ have to hand-tune the variables:
 
 - `theme` — `light` (default) / `dark` / `auto` (follow the OS) / `code`.
 - `density` — `comfortable` (default) / `compact`.
-- `placement` — `floating` (default) / `bottom-left` / `side` / `full` / `embedded`. `embedded`
-  drops the fixed positioning and z-index so the widget sits in normal document flow.
+- `placement` — `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `embedded`.
+  `embedded` drops the fixed positioning and z-index so the widget sits in normal document flow.
 
 ```html
 <ag-ui-chat endpoint="/agent/" theme="dark" density="compact" placement="side"></ag-ui-chat>
@@ -718,6 +762,96 @@ have to hand-tune the variables:
 See [`src/ui/styles.ts`](src/ui/styles.ts) for the full variable + preset list. The
 [`demo/`](demo/) live playground (`node demo/mock-server.mjs`) flips theme, density, placement,
 text-animation, and tool-display live from a single page.
+
+### Parts and slots
+
+For styling beyond the `--ag-ui-*` variables, every structural element exposes a `part` so you can
+reach it from outside the Shadow DOM with `::part()` — no shadow piercing. The part names are
+**public API** (additions are non-breaking; renames are breaking):
+
+```css
+ag-ui-chat::part(panel)   { border-radius: 0; }
+ag-ui-chat::part(header)  { background: #111; }
+ag-ui-chat::part(send)    { text-transform: uppercase; }
+ag-ui-chat::part(tool-card) { font-family: var(--my-mono); }
+```
+
+Available parts: `panel`, `header`, `title`, `icon`, `header-controls`, `header-button`
+(plus `history-button` / `new-button` / `collapse-button`), `messages`, `message` (plus
+`message-user` / `message-assistant`), `empty`, `pending`, `tool-card` (plus `tool-card-head` /
+`-name` / `-status` / `-args` / `-toggle` / `-result`), `confirm` (plus `confirm-body` /
+`-args` / `-actions` / `-button` / `-cancel` / `-confirm`), `composer`, `input`, `send`,
+`attach-button`, `attachment-tray`, `launcher`, `launcher-icon`, and the drawer parts
+(`drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`,
+`drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`).
+
+Coarse **slots** let you replace whole regions with your own markup (project light-DOM children
+with a matching `slot=`):
+
+| Slot | Where |
+| --- | --- |
+| `icon` | A header brand icon, before the title. |
+| `header-actions` | Extra controls between the title and the built-in buttons. |
+| `empty` | The empty-state shown before any message. |
+| `footer` | Below the composer. |
+| `launcher` | The collapsed sidebar rail's content. |
+
+```html
+<ag-ui-chat endpoint="/agent/">
+  <img slot="icon" src="/logo.svg" alt="" />
+  <button slot="header-actions" onclick="openHelp()">?</button>
+</ag-ui-chat>
+```
+
+### Header and launcher icon
+
+Give the header a brand icon with either the `icon` slot (any markup) or the `data-icon-url`
+convenience attribute (an `<img>`); the slot wins when both are set, and with neither the header
+stays icon-less. The same icon seam feeds the collapsed sidebar rail. Size it via
+`--ag-ui-icon-size` (default `22px`).
+
+```html
+<ag-ui-chat endpoint="/agent/" data-icon-url="/logo.png"></ag-ui-chat>
+```
+
+### Sidebar placement
+
+`placement="sidebar"` is a full-height **docked** panel that slides open/closed and collapses to a
+slim **icon rail** (rather than the floating launcher). It docks right by default; `data-side="left"`
+docks it left. Collapse state reuses the `collapsed` attribute (persisted per-tab), and the rail
+carries `aria-expanded`. The slide honours `prefers-reduced-motion`.
+
+```html
+<ag-ui-chat endpoint="/agent/" placement="sidebar" data-side="left"></ag-ui-chat>
+```
+
+It overlays the page by default (no host-layout coupling). To make the host content reflow around
+it instead, set `--ag-ui-position: static` and place the element in your own grid/flex layout.
+
+---
+
+## Internationalization (i18n)
+
+Every user-facing string — labels, placeholders, `aria-label`s, and `title` tooltips — is read
+from a flat `UiStrings` table, so a non-English host can translate the widget without forking it.
+Override any subset; the rest fall back to the English defaults. Two equivalent seams:
+
+```js
+// As a property (merged over the defaults):
+chat.strings = { send: "Senden", inputPlaceholder: "Frag mich…", stop: "Stopp" };
+```
+
+```html
+<!-- Or inline, as JSON (the property wins key-by-key when both are set): -->
+<ag-ui-chat endpoint="/agent/" data-strings='{"send": "Senden", "inputPlaceholder": "Frag mich…"}'></ag-ui-chat>
+```
+
+Set `strings` / `data-strings` **before** the element connects (they resolve on mount). A few keys
+are templates carrying `{token}` placeholders the widget fills in — e.g. `minutesAgo`
+(`"{n}m ago"`), `confirmRun` (`"Run “{tool}”?"`), `tooLarge` (`"Too large (max {size})"`). Keep the
+token verbatim when translating. The full key list and English defaults live in
+[`src/ui/ui_strings.ts`](src/ui/ui_strings.ts) (exported as `DEFAULT_UI_STRINGS`); `mergeUiStrings`
+is exported too if you want to compute a complete table yourself.
 
 ---
 

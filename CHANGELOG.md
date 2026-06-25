@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Localization (i18n).** Every user-facing string — labels, placeholders,
+  `aria-label`s, and `title` tooltips — now reads from a flat `UiStrings` table.
+  Override any subset via the `strings` property or the `data-strings` JSON
+  attribute (the property wins key-by-key); the rest fall back to the English
+  defaults. A few keys are `{token}` templates (`minutesAgo`, `confirmRun`,
+  `tooLarge`, …). New exports: `UiStrings`, `DEFAULT_UI_STRINGS`,
+  `mergeUiStrings`.
+- **`::part()` styling and replaceable slots.** Every structural element exposes
+  a stable `part` (`panel`, `header`, `title`, `messages`, `tool-card`,
+  `composer`, `input`, `send`, `launcher`, the drawer parts, …) so hosts restyle
+  from outside the Shadow DOM without piercing it. Coarse slots — `icon`,
+  `header-actions`, `empty`, `footer`, `launcher` — replace whole regions with
+  host markup.
+- **Header / launcher icon.** An `icon` slot (any markup) before the title, or
+  the `data-icon-url` attribute convenience (an `<img>`); the slot wins. Sized
+  via `--ag-ui-icon-size`.
+- **Sidebar placement.** `placement="sidebar"` is a full-height docked panel
+  that slides open/closed and collapses to a slim icon **rail** (instead of the
+  floating launcher). Docks right by default; `data-side="left"` docks left.
+  Overlays by default (`--ag-ui-position: static` for host-managed push); the
+  slide honours `prefers-reduced-motion`; the rail carries `aria-expanded`.
+- **Built-in page-action tools.** Opt in via `data-page-actions` (a comma list of
+  `scroll` / `drag`): `scroll_to` (a target into view — `top` / `bottom` / a
+  selector or page-map id) and `drag_and_drop` (fires the native HTML5 drag
+  sequence so the page's own drop handler reacts). Targets resolve through the
+  overridable `resolvePageTarget` property. Not stamped destructive — gate
+  auto-persist-on-drop pages with `confirmPredicate`. New exports:
+  `createPageActionTools`, `PAGE_ACTIONS`, `ResolvePageTarget`.
+
+### Fixed
+
+- **Stuck "pending" UI when the stream drops mid-run.** A run whose stream closes
+  without a terminal `RUN_FINISHED` / `RUN_ERROR` event used to resolve as if it
+  had succeeded, leaving the thinking indicator — and any in-flight tool card —
+  stuck forever. Such a close is now surfaced as a connection-loss error (the
+  localizable `connectionLost` string), and `onSettled` sweeps any tool card
+  still pending to the no-result fallback. New export: `ConnectionLostError`.
+
 ## [0.6.0] — 2026-06-25
 
 ### Added

@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { ToolCallCard } from "../src/ui/tool_call_card.js";
+import { mergeUiStrings } from "../src/ui/ui_strings.js";
 
 describe("ToolCallCard", () => {
   it("renders the tool name, args, and a pending status", () => {
     const card = new ToolCallCard("fill_field", { name: "city", value: "Paris" });
     expect(card.element.getAttribute("data-tool-name")).toBe("fill_field");
     expect(card.element.getAttribute("data-status")).toBe("pending");
+    expect(card.element.getAttribute("part")).toBe("tool-card");
     expect(card.element.querySelector(".tool-call-name")?.textContent).toBe("🔧 fill_field");
     expect(card.element.querySelector(".tool-call-status")?.textContent).toContain("running");
     expect(card.element.querySelector(".tool-call-args")?.textContent).toContain(
@@ -13,6 +15,33 @@ describe("ToolCallCard", () => {
     );
     // No result body until settled.
     expect(card.element.querySelector(".tool-call-result")).toBeNull();
+  });
+
+  it("reports its settled state for the terminal sweep", () => {
+    const card = new ToolCallCard("count_users", {});
+    expect(card.settled).toBe(false);
+    card.settle("done", "42");
+    expect(card.settled).toBe(true);
+  });
+
+  it("marks a minimal-mode card settled even with no body", () => {
+    const card = new ToolCallCard("ping", {}, "minimal");
+    card.settle("done", "pong");
+    expect(card.settled).toBe(true);
+    expect(card.element.querySelector(".tool-call-result")).toBeNull();
+  });
+
+  it("draws all visible text from the string table", () => {
+    const strings = mergeUiStrings({
+      toolRunning: "läuft…",
+      toolDone: "fertig",
+      resultLabel: "Ergebnis",
+    });
+    const card = new ToolCallCard("count_users", {}, "full", undefined, strings);
+    expect(card.element.querySelector(".tool-call-status")?.textContent).toBe("läuft…");
+    card.settle("done", "42");
+    expect(card.element.querySelector(".tool-call-status")?.textContent).toBe("fertig");
+    expect(card.element.querySelector(".tool-call-toggle")?.textContent).toBe("Ergebnis");
   });
 
   it("settles to done with a collapsed result body", () => {
