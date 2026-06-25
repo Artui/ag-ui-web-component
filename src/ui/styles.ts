@@ -506,6 +506,116 @@ export const STYLES = `
   background: var(--ag-ui-muted);
 }
 
+/* ── File attachments ───────────────────────────────────────────────────── */
+/* The 📎 picker button sits left of the input; hidden until data-attachments-url. */
+.attach-btn {
+  border: 1px solid var(--ag-ui-border);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--ag-ui-input-bg);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.attach-btn:hover {
+  border-color: var(--ag-ui-accent);
+}
+
+.attach-input {
+  display: none;
+}
+
+/* Pending-attachments tray, above the input row; collapses (hidden) when empty. */
+.attachment-slot {
+  display: contents;
+}
+
+.attachment-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+
+.attachment-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--ag-ui-border);
+  border-radius: 999px;
+  background: var(--ag-ui-assistant-bg);
+  font-size: 0.85em;
+  position: relative;
+}
+
+.attachment-chip--error {
+  border-color: var(--ag-ui-danger);
+  color: var(--ag-ui-danger);
+}
+
+.attachment-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14ch;
+}
+
+.attachment-chip-size {
+  color: var(--ag-ui-muted);
+  white-space: nowrap;
+}
+
+.attachment-chip--error .attachment-chip-size {
+  color: var(--ag-ui-danger);
+}
+
+/* The progress bar fills as the file uploads. */
+.attachment-chip-bar {
+  flex-basis: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ag-ui-border);
+  overflow: hidden;
+}
+
+.attachment-chip-bar-fill {
+  height: 100%;
+  background: var(--ag-ui-accent);
+  transition: width 0.15s ease;
+}
+
+.attachment-chip-remove,
+.attachment-chip-retry {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.attachment-chip-remove:hover,
+.attachment-chip-retry:hover {
+  opacity: 1;
+}
+
+/* A subtle outline while a file is dragged over the shell. */
+.chat--dragover {
+  outline: 2px dashed var(--ag-ui-accent);
+  outline-offset: -4px;
+}
+
 /* Muted "⏹ Stopped" line after a cancelled run — a note, not an error bubble. */
 .stopped-note {
   align-self: flex-start;

@@ -31,6 +31,18 @@ describe("AgUiClient", () => {
     expect(fake.messages).toHaveLength(1);
     expect(fake.messages[0]).toMatchObject({ role: "user", content: "hello" });
     expect(typeof fake.messages[0]?.id).toBe("string");
+    // No attachments passed → no attachments field on the message.
+    expect(fake.messages[0]).not.toHaveProperty("attachments");
+  });
+
+  it("rides attachment refs on the user message", async () => {
+    const fake = makeFakeAgent();
+    const refs = [{ id: "a1", name: "notes.txt", mime: "text/plain", size: 5 }];
+    await new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() }).send(
+      "read this",
+      refs,
+    );
+    expect(fake.messages[0]).toMatchObject({ content: "read this", attachments: refs });
   });
 
   it("maps every subscriber callback to a handler", async () => {

@@ -1,5 +1,6 @@
 import type { Context, Message, Tool } from "@ag-ui/core";
 import {
+  DEFAULT_ATTACHMENT_MAX_BYTES,
   MESSAGE_ROLE,
   SUBMIT_EVENT,
   TOGGLE_EVENT,
@@ -18,6 +19,8 @@ import { createPageMapContext, type PageMap } from "../tools/page_map.js";
 import { parseToolCatalog } from "../tools/parse_tool_catalog.js";
 import { createRouteTools, type RouteMap } from "../tools/route_map.js";
 import { createStateHookTools, type StateHook } from "../tools/state_hook.js";
+import { renderAttachmentChips } from "../ui/attachment_chips.js";
+import { AttachmentTray } from "../ui/attachment_tray.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
@@ -32,6 +35,7 @@ import {
   type AgUiToolCall,
   type ToolExecution,
 } from "./agui_client.js";
+import { type AttachmentRef, messageAttachments } from "./attachment.js";
 import {
   type ClientConversationStore,
   type NavigationCheckpoint,
@@ -39,6 +43,7 @@ import {
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
+import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
 
 /** The role a rendered chat message takes. */
 export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
@@ -46,6 +51,8 @@ export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
 /** `detail` shape of the {@link SUBMIT_EVENT} CustomEvent. */
 export interface SubmitDetail {
   readonly content: string;
+  /** Durable refs for the files attached to this message (empty when none). */
+  readonly attachments: readonly AttachmentRef[];
 }
 
 /** `detail` shape of the {@link TOGGLE_EVENT} CustomEvent. */
@@ -114,9 +121,14 @@ export class AgUiChat extends HTMLElement {
 
   /**
    * Per-run context provider. Defaults to the compact page map (when a
-   * {@link getPageMap} provider is set and {@link autoInjectPageMap} is on).
+   * {@link getPageMap} provider is set and {@link autoInjectPageMap} is on)
+   * plus a one-line manifest of the files attached to the message being sent,
+   * so the agent knows which `read_attachment` ids are available.
    */
-  getContext: () => Context[] = () => createPageMapContext(this.getPageMap, this.autoInjectPageMap);
+  getContext: () => Context[] = () => [
+    ...createPageMapContext(this.getPageMap, this.autoInjectPageMap),
+    ...this.#attachmentContext(),
+  ];
 
   /**
    * Navigable routes the agent can jump to via the built-in `route.*` tools.
@@ -143,6 +155,17 @@ export class AgUiChat extends HTMLElement {
    * server-backed store for cross-tab/device durability.
    */
   conversationStore: ClientConversationStore = new SessionStorageStore();
+
+  /**
+   * How attached files are uploaded. `null` (default) uses the built-in
+   * multipart `POST` to `data-attachments-url`. Set a custom
+   * {@link UploadHandler} — `(file, onProgress) => Promise<AttachmentRef>` — to
+   * swap the transport (e.g. a `tus-js-client` resumable adapter or
+   * direct-to-S3 multipart) without changing the tray, the chips, or the AG-UI
+   * wire (refs are transport-agnostic). When set, the 📎 affordance appears even
+   * with no `data-attachments-url`; the handler owns its own endpoint + headers.
+   */
+  uploadHandler: UploadHandler | null = null;
 
   /**
    * Builds the tool result a navigating tool resumes with after the page
@@ -196,6 +219,14 @@ export class AgUiChat extends HTMLElement {
   readonly #skillsMenu: SkillsMenu;
   readonly #drawer: ThreadDrawer;
   readonly #skillHint: HTMLDivElement;
+  /** File-picker button + hidden input + tray slot; the tray mounts on connect. */
+  readonly #attachButton: HTMLButtonElement;
+  readonly #fileInput: HTMLInputElement;
+  readonly #attachSlot: HTMLDivElement;
+  /** Upload tray; created on connect only when `data-attachments-url` is set. */
+  #attachTray: AttachmentTray | null = null;
+  /** Refs attached to the message currently being sent (the context manifest). */
+  #runAttachments: readonly AttachmentRef[] = [];
 
   #client: AgUiClient | null = null;
   // Whether an interaction is in flight (first onRunStart → onSettled). Drives
@@ -227,6 +258,9 @@ export class AgUiChat extends HTMLElement {
     this.#send = document.createElement("button");
     this.#title = document.createElement("span");
     this.#skillHint = document.createElement("div");
+    this.#attachButton = document.createElement("button");
+    this.#fileInput = document.createElement("input");
+    this.#attachSlot = document.createElement("div");
     this.#skillsMenu = new SkillsMenu((skill) => this.#applySkill(skill));
     this.#drawer = new ThreadDrawer({
       onSelect: (threadId) => {
@@ -357,8 +391,101 @@ export class AgUiChat extends HTMLElement {
     this.#initSkills();
     void this.#fetchToolCatalog();
     this.#wireThreadStore();
+    this.#wireAttachments();
     this.#threadId = this.conversationStore.threadId();
     void this.#rehydrate();
+  }
+
+  /**
+   * Enable the composer's file-upload tray when uploads are possible — either a
+   * custom {@link uploadHandler} is set or `data-attachments-url` provides the
+   * built-in multipart endpoint: reveal the 📎 button, wire the hidden file
+   * input + drag-and-drop, and mount the tray. With neither, the affordance
+   * stays hidden and the chat degrades to text-only.
+   */
+  #wireAttachments(): void {
+    const url = this.getAttribute("data-attachments-url");
+    const upload = this.uploadHandler ?? this.#defaultUploadHandler(url);
+    if (upload === null) {
+      return;
+    }
+    const accept = this.getAttribute("data-attachment-accept") ?? "";
+    this.#attachTray = new AttachmentTray({
+      upload,
+      maxBytes: this.#attachmentMaxBytes(),
+      accept,
+    });
+    this.#attachSlot.appendChild(this.#attachTray.element);
+    this.#fileInput.accept = accept;
+    this.#attachButton.hidden = false;
+    this.#enableDragAndDrop();
+  }
+
+  /** The built-in multipart upload handler for `data-attachments-url`, or `null`. */
+  #defaultUploadHandler(url: string | null): UploadHandler | null {
+    if (url === null) {
+      return null;
+    }
+    return (file, onProgress) => uploadAttachment(file, { url, headers: this.headers, onProgress });
+  }
+
+  /** The client-side upload size cap from `data-attachment-max-bytes`. */
+  #attachmentMaxBytes(): number {
+    const attr = this.getAttribute("data-attachment-max-bytes");
+    if (attr === null) {
+      return DEFAULT_ATTACHMENT_MAX_BYTES;
+    }
+    const parsed = Number.parseInt(attr, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_ATTACHMENT_MAX_BYTES;
+  }
+
+  /** Queue every file from the picker into the tray, then reset the input. */
+  #onFilesPicked(): void {
+    const files = this.#fileInput.files;
+    if (files !== null) {
+      for (const file of Array.from(files)) {
+        this.#attachTray?.add(file);
+      }
+    }
+    // Reset so re-picking the same file fires `change` again.
+    this.#fileInput.value = "";
+  }
+
+  /** Accept files dropped anywhere on the chat shell into the tray. */
+  #enableDragAndDrop(): void {
+    this.#chat.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      this.#chat.classList.add("chat--dragover");
+    });
+    this.#chat.addEventListener("dragleave", () => {
+      this.#chat.classList.remove("chat--dragover");
+    });
+    this.#chat.addEventListener("drop", (event) => {
+      event.preventDefault();
+      this.#chat.classList.remove("chat--dragover");
+      const files = event.dataTransfer?.files;
+      if (files !== undefined) {
+        for (const file of Array.from(files)) {
+          this.#attachTray?.add(file);
+        }
+      }
+    });
+  }
+
+  /** The one-line manifest of the message's attachments, for the run context. */
+  #attachmentContext(): Context[] {
+    if (this.#runAttachments.length === 0) {
+      return [];
+    }
+    const lines = this.#runAttachments.map(
+      (ref) => `- ${ref.name} (id: ${ref.id}, ${ref.mime || "unknown type"}, ${ref.size} bytes)`,
+    );
+    return [
+      {
+        description: "Files the user attached to this message",
+        value: `${lines.join("\n")}\nUse the read_attachment tool with an id to read a file's contents.`,
+      },
+    ];
   }
 
   /**
@@ -523,6 +650,8 @@ export class AgUiChat extends HTMLElement {
     this.#toolCards.clear();
     this.#serverSettled.clear();
     this.#initialMessages = [];
+    this.#runAttachments = [];
+    this.#attachTray?.clear();
     this.#messages.replaceChildren();
   }
 
@@ -587,8 +716,12 @@ export class AgUiChat extends HTMLElement {
   #renderHistoricMessage(message: Message): void {
     const text = typeof message.content === "string" ? message.content : "";
     if (message.role === MESSAGE_ROLE.USER) {
-      if (text !== "") {
-        this.appendMessage(MESSAGE_ROLE.USER, text);
+      const attachments = messageAttachments(message);
+      if (text !== "" || attachments.length > 0) {
+        const bubble = this.appendMessage(MESSAGE_ROLE.USER, text);
+        if (attachments.length > 0) {
+          bubble.appendChild(renderAttachmentChips(attachments));
+        }
       }
       return;
     }
@@ -752,15 +885,35 @@ export class AgUiChat extends HTMLElement {
     this.#skillHint.className = "skill-hint";
     this.#skillHint.hidden = true;
 
-    inputRow.append(this.#input, this.#send);
+    // File-upload affordance: a 📎 button (hidden until `data-attachments-url`
+    // is wired) opening a hidden multi-file input. Drag-and-drop covers the
+    // whole shell (wired in #enableDragAndDrop).
+    this.#attachButton.className = "attach-btn";
+    this.#attachButton.type = "button";
+    this.#attachButton.textContent = "📎";
+    this.#attachButton.title = "Attach files";
+    this.#attachButton.setAttribute("aria-label", "Attach files");
+    this.#attachButton.hidden = true;
+    this.#attachButton.addEventListener("click", () => this.#fileInput.click());
+
+    this.#fileInput.className = "attach-input";
+    this.#fileInput.type = "file";
+    this.#fileInput.multiple = true;
+    this.#fileInput.hidden = true;
+    this.#fileInput.addEventListener("change", () => this.#onFilesPicked());
+
+    this.#attachSlot.className = "attachment-slot";
+
+    inputRow.append(this.#attachButton, this.#input, this.#send, this.#fileInput);
     // Skill surfaces sit just above the input: palette (opens on `/`), chips,
-    // and the missing-placeholder hint.
+    // the missing-placeholder hint, and the pending-attachments tray.
     this.#chat.append(
       header,
       this.#messages,
       this.#skillsMenu.palette,
       this.#skillsMenu.chips,
       this.#skillHint,
+      this.#attachSlot,
       inputRow,
       this.#drawer.element,
     );
@@ -814,26 +967,36 @@ export class AgUiChat extends HTMLElement {
 
   async #submit(): Promise<void> {
     const content = this.#input.value.trim();
-    if (content === "") {
+    const attachments = this.#attachTray?.readyRefs() ?? [];
+    // Allow an attachments-only message (no typed text), but nothing empty.
+    if (content === "" && attachments.length === 0) {
       return;
     }
-    this.appendMessage(MESSAGE_ROLE.USER, content);
+    const bubble = this.appendMessage(MESSAGE_ROLE.USER, content);
+    if (attachments.length > 0) {
+      bubble.appendChild(renderAttachmentChips(attachments));
+    }
     this.#input.value = "";
+    // The refs are now on the bubble; drop the settled chips, keep any still
+    // uploading for a follow-up message.
+    this.#attachTray?.clearReady();
+    // Surfaced to the run via the context manifest until the run settles.
+    this.#runAttachments = attachments;
     this.dispatchEvent(
       new CustomEvent<SubmitDetail>(SUBMIT_EVENT, {
-        detail: { content },
+        detail: { content, attachments },
         bubbles: true,
         composed: true,
       }),
     );
-    await this.#client_send(content);
+    await this.#client_send(content, attachments);
   }
 
-  async #client_send(content: string): Promise<void> {
+  async #client_send(content: string, attachments: readonly AttachmentRef[]): Promise<void> {
     if (this.endpoint === "") {
       return;
     }
-    await this.#ensureClient().send(content);
+    await this.#ensureClient().send(content, attachments);
   }
 
   #ensureClient(): AgUiClient {
@@ -998,6 +1161,9 @@ export class AgUiChat extends HTMLElement {
         this.#hidePending();
         this.#setRunning(false);
         this.#streamingBubble = null;
+        // The attachment manifest was for this run only; the model has read what
+        // it needed (results now live in history).
+        this.#runAttachments = [];
       },
     };
   }

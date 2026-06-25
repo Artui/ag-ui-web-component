@@ -152,6 +152,10 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `data-skills` | — | Inline JSON skill catalog. |
 | `data-skills-url` | — | URL of a JSON skill catalog (fetched with `headers`). |
 | `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with `headers`; labels tool-call cards for server-side tools. |
+| `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
+| `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's 📎 picker + drag-and-drop. |
+| `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
+| `data-attachment-max-bytes` | — | Client-side upload size cap in bytes (default 10 MiB; `0` disables). The server stays authoritative. |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget. Persisted per-tab in `sessionStorage`. |
 | `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
@@ -159,8 +163,8 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 
 **Properties** (JS only, not attributes): `headers`, `allowImages`, `autoConfirm`,
 `confirmPredicate`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
-`getPageMap`, `autoInjectPageMap`, `conversationStore`, `navigationResult`, `skillContext`,
-`toolSummaries`, plus the mirrors `endpoint` / `toolDisplay` / `collapsed`.
+`getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `navigationResult`,
+`skillContext`, `toolSummaries`, plus the mirrors `endpoint` / `toolDisplay` / `collapsed`.
 
 `allowImages` (default `false`) re-enables `<img>` in rendered assistant markdown.
 It is off by default because a model-controlled image URL is fetched by the browser
@@ -525,6 +529,57 @@ chat.navigate = (path) => router.push(path); // SPA: in-page, no reload
 
 Route map + `navigate()` and the reload model are the same feature seen from two ends.
 
+## File uploads
+
+Set **`data-attachments-url`** (django-ag-ui's `AttachmentsView`) to let the user attach files
+to a message. A 📎 button and drag-and-drop appear on the composer; each picked file uploads
+out-of-band (multipart, with the element's `headers`) and shows a chip in a pending tray —
+`uploading` (with a progress bar) → `ready`, or `error` with a retry. On send, the ready files'
+**refs** ride on the user bubble as read-only chips and the agent reads their contents
+server-side via the `read_attachment` tool. The wire stays vanilla AG-UI: only lightweight refs
+(`{ id, name, mime, size }`) travel, never the bytes.
+
+```html
+<ag-ui-chat
+  endpoint="/agent/"
+  data-attachments-url="/agent/attachments/"
+  data-attachment-accept="image/*,application/pdf,text/plain"
+  data-attachment-max-bytes="10485760"
+></ag-ui-chat>
+```
+
+Client-side `accept` / size checks are an instant-feedback nicety — **the server is
+authoritative**. Refs persist on the message, so a restored conversation re-renders its chips.
+Without the attribute the affordance stays hidden and the chat is text-only.
+
+**Swapping the upload transport.** The built-in multipart `POST` is just the default
+`uploadHandler`. Set your own to use a different transport — a resumable
+[`tus-js-client`](https://github.com/tus/tus-js-client) adapter, direct-to-S3 multipart, etc.
+— without touching the tray, the chips, or the AG-UI wire (refs are transport-agnostic). The
+handler is `(file, onProgress) => Promise<AttachmentRef>`; when set, the 📎 affordance appears
+even with no `data-attachments-url`, and your handler owns its own endpoint and headers:
+
+```js
+import { Upload } from "tus-js-client";
+
+chat.uploadHandler = (file, onProgress) =>
+  new Promise((resolve, reject) => {
+    const up = new Upload(file, {
+      endpoint: "/tus/",
+      headers: chat.headers,
+      onProgress: (sent, total) => onProgress(sent / total),
+      onError: reject,
+      onSuccess: () =>
+        resolve({ id: up.url.split("/").pop(), name: file.name, mime: file.type, size: file.size }),
+    });
+    up.start();
+  });
+```
+
+The server side is the matching half: the agent reads bytes by ref id, so point the
+`read_attachment` store at wherever your transport persisted them (django-ag-ui's
+`AttachmentStore` is the seam). The refs themselves never change shape.
+
 ---
 
 ## Public API surface
@@ -580,8 +635,20 @@ re-export point. Internal modules import from leaf paths.
 | Export | Kind | Summary |
 | --- | --- | --- |
 | `SessionStorageStore` | class | Default per-tab conversation store. |
+| `RemoteConversationStore` | class | Server-backed store over a `data-threads-url` endpoint. |
 | `ClientConversationStore` | type | The persistence seam. |
+| `ThreadMeta` | type | A thread-drawer row (`{ threadId, title, updatedAt, preview }`). |
 | `NavigationCheckpoint` | type | The pre-reload checkpoint marker. |
+
+### Attachments
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `uploadAttachment(file, options)` | function | The built-in upload (multipart, progress) → `AttachmentRef`. |
+| `UploadOptions` | type | `{ url, headers?, onProgress?, signal? }`. |
+| `UploadHandler` | type | `(file, onProgress) => Promise<AttachmentRef>` — the `uploadHandler` swap seam (TUS / S3). |
+| `AttachmentRef` | type | The durable upload ref (`{ id, name, mime, size, url? }`). |
+| `messageAttachments(message)` | function | Read the refs a restored user message carries. |
 
 ### UI & DOM primitives
 

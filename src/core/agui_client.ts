@@ -1,6 +1,7 @@
 import { type AbstractAgent, type AgentSubscriber, randomUUID } from "@ag-ui/client";
 import type { Context, Message, Tool } from "@ag-ui/core";
 import { MAX_TOOL_ROUNDS } from "../constants.js";
+import type { AttachmentRef } from "./attachment.js";
 
 /** A tool call surfaced to the host by {@link AgUiClient}. */
 export interface AgUiToolCall {
@@ -137,9 +138,21 @@ export class AgUiClient {
    * When the agent calls frontend tools, this executes them and re-runs the
    * agent with the results, looping until the agent stops calling frontend
    * tools (bounded by {@link MAX_TOOL_ROUNDS}).
+   *
+   * `attachments` ride on the user message as a non-standard field so the
+   * default client store round-trips them for history replay; the agent learns
+   * the ids from the run context (the server's strict validation ignores the
+   * unknown message field), then reads bytes via the `read_attachment` tool.
    */
-  async send(content: string): Promise<void> {
-    this.#agent.addMessage({ id: randomUUID(), role: "user", content });
+  async send(content: string, attachments: readonly AttachmentRef[] = []): Promise<void> {
+    // Cast at the AG-UI boundary: `attachments` is a web-component augmentation
+    // the strict `Message` union doesn't declare, but `addMessage` /
+    // `structuredClone` preserve it verbatim.
+    const message = { id: randomUUID(), role: "user", content } as Message;
+    if (attachments.length > 0) {
+      (message as { attachments?: readonly AttachmentRef[] }).attachments = attachments;
+    }
+    this.#agent.addMessage(message);
     this.#onPersist(this.#agent.messages);
     await this.#run();
   }

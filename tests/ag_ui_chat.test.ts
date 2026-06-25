@@ -227,7 +227,7 @@ describe("AgUiChat", () => {
     input.value = "  count users  ";
     shadow(el).querySelector<HTMLButtonElement>(".send")?.click();
 
-    expect(onSubmit).toHaveBeenCalledWith({ content: "count users" });
+    expect(onSubmit).toHaveBeenCalledWith({ content: "count users", attachments: [] });
     expect(input.value).toBe("");
     const bubbles = shadow(el).querySelectorAll(".message--user");
     expect(bubbles).toHaveLength(1);
