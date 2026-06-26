@@ -1,5 +1,6 @@
 import type { ThreadMeta } from "../core/conversation_store.js";
 import { relativeTime } from "./relative_time.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
 /** Actions the host ({@link AgUiChat}) wires to the drawer's rows. */
 export interface ThreadDrawerCallbacks {
@@ -20,52 +21,76 @@ export interface ThreadDrawerCallbacks {
  * {@link element}, toggles it, feeds rows via {@link setThreads}, and acts on
  * the callbacks. The drawer is a *view*: it does not mutate the store; after a
  * callback the host updates the store and calls {@link setThreads} to refresh.
+ *
+ * All visible text comes from {@link UiStrings}; {@link setStrings} re-localizes
+ * a drawer the host built before its strings resolved.
  */
 export class ThreadDrawer {
   /** The drawer root (backdrop + panel). Append to the chat shell; hidden until opened. */
   readonly element: HTMLDivElement;
 
   readonly #callbacks: ThreadDrawerCallbacks;
+  readonly #panel: HTMLDivElement;
+  readonly #heading: HTMLSpanElement;
+  readonly #newButton: HTMLButtonElement;
   readonly #list: HTMLDivElement;
+  #strings: UiStrings;
   #threads: readonly ThreadMeta[] = [];
   #activeId = "";
 
-  constructor(callbacks: ThreadDrawerCallbacks) {
+  constructor(callbacks: ThreadDrawerCallbacks, strings: UiStrings = DEFAULT_UI_STRINGS) {
     this.#callbacks = callbacks;
+    this.#strings = strings;
 
     this.element = document.createElement("div");
     this.element.className = "drawer";
+    this.element.setAttribute("part", "drawer");
     this.element.hidden = true;
 
     const backdrop = document.createElement("div");
     backdrop.className = "drawer-backdrop";
+    backdrop.setAttribute("part", "drawer-backdrop");
     backdrop.addEventListener("click", () => this.close());
 
-    const panel = document.createElement("div");
-    panel.className = "drawer-panel";
-    panel.setAttribute("role", "dialog");
-    panel.setAttribute("aria-label", "Chat history");
+    this.#panel = document.createElement("div");
+    this.#panel.className = "drawer-panel";
+    this.#panel.setAttribute("part", "drawer-panel");
+    this.#panel.setAttribute("role", "dialog");
+    this.#panel.setAttribute("aria-label", strings.chatHistory);
 
     const header = document.createElement("div");
     header.className = "drawer-header";
-    const heading = document.createElement("span");
-    heading.className = "drawer-title";
-    heading.textContent = "Chats";
-    const newButton = document.createElement("button");
-    newButton.type = "button";
-    newButton.className = "drawer-new";
-    newButton.textContent = "New chat";
-    newButton.addEventListener("click", () => {
+    header.setAttribute("part", "drawer-header");
+    this.#heading = document.createElement("span");
+    this.#heading.className = "drawer-title";
+    this.#heading.setAttribute("part", "drawer-title");
+    this.#heading.textContent = strings.chats;
+    this.#newButton = document.createElement("button");
+    this.#newButton.type = "button";
+    this.#newButton.className = "drawer-new";
+    this.#newButton.setAttribute("part", "drawer-new");
+    this.#newButton.textContent = strings.newChat;
+    this.#newButton.addEventListener("click", () => {
       this.close();
       this.#callbacks.onNew();
     });
-    header.append(heading, newButton);
+    header.append(this.#heading, this.#newButton);
 
     this.#list = document.createElement("div");
     this.#list.className = "drawer-list";
+    this.#list.setAttribute("part", "drawer-list");
 
-    panel.append(header, this.#list);
-    this.element.append(backdrop, panel);
+    this.#panel.append(header, this.#list);
+    this.element.append(backdrop, this.#panel);
+  }
+
+  /** Re-localize the drawer's chrome and rows (the host calls this on connect). */
+  setStrings(strings: UiStrings): void {
+    this.#strings = strings;
+    this.#panel.setAttribute("aria-label", strings.chatHistory);
+    this.#heading.textContent = strings.chats;
+    this.#newButton.textContent = strings.newChat;
+    this.#renderList();
   }
 
   isOpen(): boolean {
@@ -96,7 +121,8 @@ export class ThreadDrawer {
     if (this.#threads.length === 0) {
       const empty = document.createElement("div");
       empty.className = "drawer-empty";
-      empty.textContent = "No conversations yet.";
+      empty.setAttribute("part", "drawer-empty");
+      empty.textContent = this.#strings.noConversations;
       this.#list.appendChild(empty);
       return;
     }
@@ -108,6 +134,7 @@ export class ThreadDrawer {
   #renderRow(meta: ThreadMeta): HTMLDivElement {
     const row = document.createElement("div");
     row.className = "drawer-row";
+    row.setAttribute("part", "drawer-row");
     if (meta.threadId === this.#activeId) {
       row.classList.add("drawer-row--active");
     }
@@ -115,12 +142,13 @@ export class ThreadDrawer {
     const select = document.createElement("button");
     select.type = "button";
     select.className = "drawer-row-select";
+    select.setAttribute("part", "drawer-row-select");
     const title = document.createElement("span");
     title.className = "drawer-row-title";
     title.textContent = meta.title;
     const time = document.createElement("span");
     time.className = "drawer-row-time";
-    time.textContent = relativeTime(meta.updatedAt);
+    time.textContent = relativeTime(meta.updatedAt, undefined, this.#strings);
     const preview = document.createElement("span");
     preview.className = "drawer-row-preview";
     preview.textContent = meta.preview;
@@ -133,16 +161,16 @@ export class ThreadDrawer {
     const rename = document.createElement("button");
     rename.type = "button";
     rename.className = "drawer-row-rename";
-    rename.title = "Rename";
-    rename.setAttribute("aria-label", "Rename conversation");
+    rename.title = this.#strings.rename;
+    rename.setAttribute("aria-label", this.#strings.renameConversation);
     rename.textContent = "✎";
     rename.addEventListener("click", () => this.#startRename(row, meta));
 
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "drawer-row-delete";
-    remove.title = "Delete";
-    remove.setAttribute("aria-label", "Delete conversation");
+    remove.title = this.#strings.delete;
+    remove.setAttribute("aria-label", this.#strings.deleteConversation);
     remove.textContent = "🗑";
     remove.addEventListener("click", () => this.#confirmDelete(row, meta));
 
@@ -183,16 +211,16 @@ export class ThreadDrawer {
     confirm.className = "drawer-confirm";
     const label = document.createElement("span");
     label.className = "drawer-confirm-label";
-    label.textContent = "Delete?";
+    label.textContent = this.#strings.deletePrompt;
     const yes = document.createElement("button");
     yes.type = "button";
     yes.className = "drawer-confirm-yes";
-    yes.textContent = "Delete";
+    yes.textContent = this.#strings.delete;
     yes.addEventListener("click", () => this.#callbacks.onDelete(meta.threadId));
     const no = document.createElement("button");
     no.type = "button";
     no.className = "drawer-confirm-no";
-    no.textContent = "Cancel";
+    no.textContent = this.#strings.cancel;
     no.addEventListener("click", () => this.#renderList());
     confirm.append(label, yes, no);
     row.replaceChildren(confirm);

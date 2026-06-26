@@ -11,7 +11,12 @@ export interface Emit {
   runEnd(): void;
 }
 
-function emitter(s: AgentSubscriber): Emit {
+/** Tracks whether the script emitted a terminal AG-UI event (finish / error). */
+interface EmitState {
+  terminal: boolean;
+}
+
+function emitter(s: AgentSubscriber, state: EmitState): Emit {
   // The subscriber callbacks require full AgentSubscriberParams; tests only
   // exercise the fields the client reads, so minimal objects are cast through
   // ``never`` (which is assignable to any parameter type).
@@ -27,8 +32,14 @@ function emitter(s: AgentSubscriber): Emit {
       } as never),
     toolResult: (toolCallId, content) =>
       void s.onToolCallResultEvent?.({ event: { toolCallId, content } } as never),
-    error: (message) => void s.onRunErrorEvent?.({ event: { message } } as never),
-    runEnd: () => void s.onRunFinalized?.({} as never),
+    error: (message) => {
+      state.terminal = true;
+      void s.onRunErrorEvent?.({ event: { message } } as never);
+    },
+    runEnd: () => {
+      state.terminal = true;
+      void s.onRunFinalized?.({} as never);
+    },
   };
 }
 
@@ -36,6 +47,13 @@ export interface FakeAgentOptions {
   isRunning?: boolean;
   script?: (emit: Emit) => void | Promise<void>;
   throwOnRun?: Error;
+  /**
+   * Simulate a dropped stream: skip the implicit `RUN_FINISHED` the fake emits
+   * after a script that didn't terminate itself. A real successful run always
+   * finalizes, so by default the fake does too — only the connection-loss tests
+   * opt out.
+   */
+  dropStream?: boolean;
 }
 
 export interface FakeAgentHandle {
@@ -72,7 +90,13 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
       if (opts.throwOnRun !== undefined) {
         throw opts.throwOnRun;
       }
-      await opts.script?.(emitter(subscriber));
+      const state: EmitState = { terminal: false };
+      await opts.script?.(emitter(subscriber, state));
+      // A real run that streamed cleanly ends with RUN_FINISHED; mirror that so
+      // the client's dropped-stream detection only trips when asked to.
+      if (!state.terminal && opts.dropStream !== true) {
+        subscriber.onRunFinalized?.({} as never);
+      }
       return {};
     },
   };

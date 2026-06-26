@@ -1,7 +1,11 @@
 import type { Context, Tool } from "@ag-ui/core";
 import { describe, expect, it } from "vitest";
 import { MAX_TOOL_ROUNDS } from "../src/constants.js";
-import { AgUiClient, type AgUiClientHandlers } from "../src/core/agui_client.js";
+import {
+  AgUiClient,
+  type AgUiClientHandlers,
+  ConnectionLostError,
+} from "../src/core/agui_client.js";
 import { makeFakeAgent } from "./helpers/fake_agent.js";
 
 function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {
@@ -303,6 +307,61 @@ describe("AgUiClient", () => {
       expect.objectContaining({ role: "tool", toolCallId: "tc1", content: '{"navigated":true}' }),
     ]);
     expect(persisted).toBe(1);
+  });
+
+  describe("dropped stream (connection loss)", () => {
+    it("treats a close without a terminal event as a connection loss", async () => {
+      // The stream emits text then closes without RUN_FINISHED / RUN_ERROR.
+      const fake = makeFakeAgent({ dropStream: true, script: (emit) => emit.text("partial") });
+      const handlers = recordingHandlers();
+      await new AgUiClient({ agent: fake.agent, handlers }).send("x");
+      expect(handlers.calls).toEqual(["delta:partial", "err:Connection lost", "settled"]);
+      // Crucially, it did NOT rest silently as if the run finished.
+      expect(handlers.calls).not.toContain("done");
+    });
+
+    it("surfaces a custom connection-lost message", async () => {
+      const fake = makeFakeAgent({ dropStream: true });
+      const handlers = recordingHandlers();
+      await new AgUiClient({
+        agent: fake.agent,
+        handlers,
+        connectionLostMessage: "Verbindung verloren",
+      }).send("x");
+      expect(handlers.calls).toContain("err:Verbindung verloren");
+    });
+
+    it("does not flag a connection loss when the run finished normally", async () => {
+      // The fake auto-emits RUN_FINISHED for a clean script (dropStream unset).
+      const fake = makeFakeAgent({ script: (emit) => emit.text("hi") });
+      const handlers = recordingHandlers();
+      await new AgUiClient({ agent: fake.agent, handlers }).send("x");
+      expect(handlers.calls).toContain("done");
+      expect(handlers.calls.filter((c) => c.startsWith("err"))).toEqual([]);
+    });
+
+    it("does not flag a connection loss on a deliberate cancel", async () => {
+      let client: AgUiClient | null = null;
+      const fake = makeFakeAgent({
+        dropStream: true,
+        script: (emit) => {
+          emit.text("partial");
+          client?.cancel();
+        },
+      });
+      const handlers = recordingHandlers();
+      client = new AgUiClient({ agent: fake.agent, handlers });
+      await client.send("x");
+      expect(handlers.calls).toContain("cancelled");
+      expect(handlers.calls.filter((c) => c.startsWith("err"))).toEqual([]);
+    });
+
+    it("exposes ConnectionLostError as an Error subclass", () => {
+      const error = new ConnectionLostError("Connection lost");
+      expect(error).toBeInstanceOf(Error);
+      expect(error.name).toBe("ConnectionLostError");
+      expect(error.message).toBe("Connection lost");
+    });
   });
 
   describe("cancel", () => {

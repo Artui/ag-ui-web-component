@@ -15,6 +15,7 @@ import type { Skill } from "../skills/skill.js";
 import { type ClientTool, ClientToolRegistry } from "../tools/client_tool_registry.js";
 import { isDestructive } from "../tools/is_destructive.js";
 import { isNavigates } from "../tools/is_navigates.js";
+import { createPageActionTools, type ResolvePageTarget } from "../tools/page_action_tools.js";
 import { createPageMapContext, type PageMap } from "../tools/page_map.js";
 import { parseToolCatalog } from "../tools/parse_tool_catalog.js";
 import { createRouteTools, type RouteMap } from "../tools/route_map.js";
@@ -29,6 +30,7 @@ import { SkillsMenu } from "../ui/skills_menu.js";
 import { STYLES } from "../ui/styles.js";
 import { ThreadDrawer } from "../ui/thread_drawer.js";
 import { ToolCallCard, type ToolDisplayMode } from "../ui/tool_call_card.js";
+import { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "../ui/ui_strings.js";
 import {
   AgUiClient,
   type AgUiClientHandlers,
@@ -195,11 +197,29 @@ export class AgUiChat extends HTMLElement {
   toolSummaries: Record<string, string> = {};
 
   /**
+   * Localizable UI strings — a partial override merged over the English
+   * {@link DEFAULT_UI_STRINGS}. Resolved once on connect (so set it before the
+   * element is appended); the `data-strings` JSON attribute is the markup
+   * equivalent, and this property wins key-by-key over it.
+   */
+  strings: Partial<UiStrings> = {};
+
+  /**
+   * Resolve a `scroll_to` / `drag_and_drop` target string to a host-page
+   * element (or `null`). Defaults to a CSS-selector lookup; override to map
+   * page-map element ids. The page-action tools are opt-in via the
+   * `data-page-actions` attribute (`"scroll"` / `"drag"`).
+   */
+  resolvePageTarget: ResolvePageTarget = (target) => document.querySelector<HTMLElement>(target);
+
+  /**
    * Card labels fetched from a server tool catalog (`data-tools-url`), keyed by
    * tool name. The base layer behind {@link toolSummaries}: an explicit entry in
    * `toolSummaries` wins, this fills the rest. Populated once on connect.
    */
   #toolCatalog: Record<string, string> = {};
+  /** The resolved string table (defaults ← `data-strings` ← `strings`). */
+  #strings: UiStrings = DEFAULT_UI_STRINGS;
 
   readonly #toolRegistry = new ClientToolRegistry();
   /** Tool-call cards awaiting execution, keyed by call id. */
@@ -223,6 +243,10 @@ export class AgUiChat extends HTMLElement {
   readonly #attachButton: HTMLButtonElement;
   readonly #fileInput: HTMLInputElement;
   readonly #attachSlot: HTMLDivElement;
+  /** The collapsed-sidebar rail (an expand affordance; shown only for `placement="sidebar"`). */
+  readonly #rail: HTMLButtonElement;
+  /** Empty-state region at the top of the message list; hidden once anything renders. */
+  readonly #emptyWrap: HTMLDivElement;
   /** Upload tray; created on connect only when `data-attachments-url` is set. */
   #attachTray: AttachmentTray | null = null;
   /** Refs attached to the message currently being sent (the context manifest). */
@@ -261,6 +285,8 @@ export class AgUiChat extends HTMLElement {
     this.#attachButton = document.createElement("button");
     this.#fileInput = document.createElement("input");
     this.#attachSlot = document.createElement("div");
+    this.#rail = document.createElement("button");
+    this.#emptyWrap = document.createElement("div");
     this.#skillsMenu = new SkillsMenu((skill) => this.#applySkill(skill));
     this.#drawer = new ThreadDrawer({
       onSelect: (threadId) => {
@@ -287,8 +313,9 @@ export class AgUiChat extends HTMLElement {
 
   attributeChangedCallback(_name: string, _previous: string | null, value: string | null): void {
     // Only `title-text` is observed (other attributes are read at use-time or
-    // are CSS-reactive), so update the header title directly.
-    this.#title.textContent = value ?? "Assistant";
+    // are CSS-reactive), so update the header title directly. `#strings` is the
+    // resolved table once connected, the English defaults before then.
+    this.#title.textContent = value ?? this.#strings.title;
   }
 
   /** Declare a frontend tool the agent may call. */
@@ -341,9 +368,29 @@ export class AgUiChat extends HTMLElement {
     ];
   }
 
-  /** All built-in (route + page) frontend tools. */
+  /**
+   * Opt-in page-action tools (`scroll_to` / `drag_and_drop`), enabled per token
+   * via the `data-page-actions` attribute (e.g. `"scroll,drag"`). Targets resolve
+   * through {@link resolvePageTarget} so a host controls the agent's interaction
+   * surface; absent attribute ⇒ no tools registered.
+   */
+  #pageActionTools(): ClientTool[] {
+    const attr = this.getAttribute("data-page-actions");
+    if (attr === null) {
+      return [];
+    }
+    const enabled = new Set(
+      attr
+        .split(",")
+        .map((token) => token.trim())
+        .filter((token) => token !== ""),
+    );
+    return createPageActionTools(enabled, (target) => this.resolvePageTarget(target));
+  }
+
+  /** All built-in (route + page + page-action) frontend tools. */
   #builtinTools(): ClientTool[] {
-    return [...this.#routeTools(), ...this.#pageTools()];
+    return [...this.#routeTools(), ...this.#pageTools(), ...this.#pageActionTools()];
   }
 
   /** Resolve a tool by name: built-in tools first, then the registry. */
@@ -384,16 +431,38 @@ export class AgUiChat extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // Resolve the string table before rendering any chrome (defaults are the
+    // floor; `data-strings` then the `strings` property layer over them).
+    this.#strings = mergeUiStrings({ ...this.#readStringOverrides(), ...this.strings });
     this.#render();
+    this.#drawer.setStrings(this.#strings);
     if (sessionStorage.getItem(COLLAPSED_KEY) === "1") {
       this.setAttribute("collapsed", "");
     }
+    this.#syncRail();
     this.#initSkills();
     void this.#fetchToolCatalog();
     this.#wireThreadStore();
     this.#wireAttachments();
     this.#threadId = this.conversationStore.threadId();
     void this.#rehydrate();
+  }
+
+  /** Parse the inline `data-strings` JSON overrides (empty when absent/malformed). */
+  #readStringOverrides(): Partial<UiStrings> {
+    const raw = this.getAttribute("data-strings");
+    if (raw === null) {
+      return {};
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed === "object" && parsed !== null) {
+        return parsed as Partial<UiStrings>;
+      }
+    } catch {
+      // Malformed JSON — fall back to the defaults rather than failing to mount.
+    }
+    return {};
   }
 
   /**
@@ -414,6 +483,7 @@ export class AgUiChat extends HTMLElement {
       upload,
       maxBytes: this.#attachmentMaxBytes(),
       accept,
+      strings: this.#strings,
     });
     this.#attachSlot.appendChild(this.#attachTray.element);
     this.#fileInput.accept = accept;
@@ -578,7 +648,9 @@ export class AgUiChat extends HTMLElement {
   #applySkill(skill: Skill): void {
     const { text, missing } = fillTemplate(skill.prompt, this.skillContext());
     if (missing.length > 0) {
-      this.#skillHint.textContent = `“${skill.title}” needs: ${missing.join(", ")}`;
+      this.#skillHint.textContent = this.#strings.skillNeeds
+        .replace("{title}", skill.title)
+        .replace("{fields}", missing.join(", "));
       this.#skillHint.hidden = false;
       return;
     }
@@ -614,6 +686,7 @@ export class AgUiChat extends HTMLElement {
       this.removeAttribute("collapsed");
     }
     sessionStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
+    this.#syncRail();
     this.dispatchEvent(
       new CustomEvent<ToggleDetail>(TOGGLE_EVENT, {
         detail: { collapsed },
@@ -652,7 +725,9 @@ export class AgUiChat extends HTMLElement {
     this.#initialMessages = [];
     this.#runAttachments = [];
     this.#attachTray?.clear();
-    this.#messages.replaceChildren();
+    // Keep the empty-state region; everything else clears.
+    this.#messages.replaceChildren(this.#emptyWrap);
+    this.#updateEmptyState();
   }
 
   /** Switch the active conversation to an existing thread and replay it. */
@@ -795,12 +870,14 @@ export class AgUiChat extends HTMLElement {
   appendMessage(role: MessageRole, content: string): HTMLDivElement {
     const bubble = document.createElement("div");
     bubble.className = `message message--${role}`;
+    bubble.setAttribute("part", `message message-${role}`);
     if (role === MESSAGE_ROLE.ASSISTANT) {
       bubble.innerHTML = renderMarkdown(content, { allowImages: this.allowImages });
     } else {
       bubble.textContent = content;
     }
     this.#messages.appendChild(bubble);
+    this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
     return bubble;
   }
@@ -810,67 +887,83 @@ export class AgUiChat extends HTMLElement {
     style.textContent = STYLES;
 
     this.#chat.className = "chat";
+    this.#chat.setAttribute("part", "panel");
 
     const header = document.createElement("div");
     header.className = "header";
+    header.setAttribute("part", "header");
 
     const title = this.#title;
     title.className = "header-title";
-    title.textContent = this.getAttribute("title-text") ?? "Assistant";
+    title.setAttribute("part", "title");
+    title.textContent = this.getAttribute("title-text") ?? this.#strings.title;
+
+    // Optional header icon: a slot (any markup) with a `data-icon-url` <img>
+    // fallback. Rendered only when one of the two is provided, so the header has
+    // no phantom gap otherwise.
+    if (
+      this.querySelector('[slot="icon"]') !== null ||
+      this.getAttribute("data-icon-url") !== null
+    ) {
+      header.append(this.#iconElement("icon", "icon", null));
+    }
+
+    // A coarse slot for host-provided header actions, between title and controls.
+    const headerActions = document.createElement("slot");
+    headerActions.name = "header-actions";
 
     const controls = document.createElement("div");
     controls.className = "header-controls";
+    controls.setAttribute("part", "header-controls");
 
-    const history = document.createElement("button");
-    history.type = "button";
-    history.className = "header-btn header-btn--history";
-    history.title = "Chat history";
-    history.setAttribute("aria-label", "Chat history");
-    history.textContent = "☰";
+    const history = this.#headerButton("history", this.#strings.chatHistory, "☰");
     history.addEventListener("click", () => {
       void this.#refreshDrawer();
       this.#drawer.open();
     });
 
-    const newChat = document.createElement("button");
-    newChat.type = "button";
-    newChat.className = "header-btn header-btn--new";
-    newChat.title = "New chat";
-    newChat.setAttribute("aria-label", "New chat");
-    newChat.textContent = "✚";
+    const newChat = this.#headerButton("new", this.#strings.newChat, "✚");
     newChat.addEventListener("click", () => this.newChat());
 
-    const collapse = document.createElement("button");
-    collapse.type = "button";
-    collapse.className = "header-btn header-btn--collapse";
-    collapse.title = "Collapse";
-    collapse.setAttribute("aria-label", "Collapse");
-    collapse.textContent = "—";
+    const collapse = this.#headerButton("collapse", this.#strings.collapse, "—");
     collapse.addEventListener("click", () => this.toggleCollapsed());
 
     controls.append(history, newChat, collapse);
-    header.append(title, controls);
+    header.append(title, headerActions, controls);
 
     this.#messages.className = "messages";
+    this.#messages.setAttribute("part", "messages");
     // Screen readers announce streamed messages as they arrive.
     this.#messages.setAttribute("role", "log");
     this.#messages.setAttribute("aria-live", "polite");
-    this.#messages.setAttribute("aria-label", "Conversation");
+    this.#messages.setAttribute("aria-label", this.#strings.conversation);
+
+    // Empty-state region: a host slot at the top of the list, hidden as soon as
+    // anything renders.
+    this.#emptyWrap.className = "empty";
+    this.#emptyWrap.setAttribute("part", "empty");
+    const emptySlot = document.createElement("slot");
+    emptySlot.name = "empty";
+    this.#emptyWrap.append(emptySlot);
+    this.#messages.append(this.#emptyWrap);
 
     const inputRow = document.createElement("div");
     inputRow.className = "input-row";
+    inputRow.setAttribute("part", "composer");
 
     this.#input.className = "input";
-    this.#input.setAttribute("aria-label", "Message");
+    this.#input.setAttribute("part", "input");
+    this.#input.setAttribute("aria-label", this.#strings.message);
     this.#input.rows = 2;
-    this.#input.placeholder = "Ask anything…";
+    this.#input.placeholder = this.#strings.inputPlaceholder;
     this.#input.addEventListener("keydown", (event) => this.#onKeydown(event));
     this.#input.addEventListener("input", () => this.#onInput());
 
     this.#send.className = "send";
     this.#send.type = "button";
-    this.#send.textContent = "Send";
-    this.#send.setAttribute("aria-label", "Send");
+    this.#send.setAttribute("part", "send");
+    this.#send.textContent = this.#strings.send;
+    this.#send.setAttribute("aria-label", this.#strings.send);
     this.#send.dataset["state"] = "idle";
     this.#send.addEventListener("click", () => {
       // One button, two states: Send while idle, Stop while a run is in
@@ -890,9 +983,10 @@ export class AgUiChat extends HTMLElement {
     // whole shell (wired in #enableDragAndDrop).
     this.#attachButton.className = "attach-btn";
     this.#attachButton.type = "button";
+    this.#attachButton.setAttribute("part", "attach-button");
     this.#attachButton.textContent = "📎";
-    this.#attachButton.title = "Attach files";
-    this.#attachButton.setAttribute("aria-label", "Attach files");
+    this.#attachButton.title = this.#strings.attachFiles;
+    this.#attachButton.setAttribute("aria-label", this.#strings.attachFiles);
     this.#attachButton.hidden = true;
     this.#attachButton.addEventListener("click", () => this.#fileInput.click());
 
@@ -903,6 +997,10 @@ export class AgUiChat extends HTMLElement {
     this.#fileInput.addEventListener("change", () => this.#onFilesPicked());
 
     this.#attachSlot.className = "attachment-slot";
+
+    // A coarse footer slot below the composer.
+    const footer = document.createElement("slot");
+    footer.name = "footer";
 
     inputRow.append(this.#attachButton, this.#input, this.#send, this.#fileInput);
     // Skill surfaces sit just above the input: palette (opens on `/`), chips,
@@ -915,9 +1013,67 @@ export class AgUiChat extends HTMLElement {
       this.#skillHint,
       this.#attachSlot,
       inputRow,
+      footer,
       this.#drawer.element,
     );
-    this.#root.append(style, this.#chat);
+
+    // The collapsed-sidebar rail: a slim edge strip (the expand affordance),
+    // sibling of the panel so it survives the panel being hidden. CSS shows it
+    // only for `placement="sidebar"` + `collapsed`.
+    this.#rail.className = "rail";
+    this.#rail.type = "button";
+    this.#rail.setAttribute("part", "launcher");
+    this.#rail.setAttribute("aria-label", this.#strings.expand);
+    this.#rail.append(this.#iconElement("launcher", "launcher-icon", "💬"));
+    this.#rail.addEventListener("click", () => this.setCollapsed(false));
+
+    this.#root.append(style, this.#chat, this.#rail);
+  }
+
+  /** Build a header control button (icon glyph + localized title/aria). */
+  #headerButton(modifier: string, label: string, glyph: string): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `header-btn header-btn--${modifier}`;
+    button.setAttribute("part", `header-button ${modifier}-button`);
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.textContent = glyph;
+    return button;
+  }
+
+  /**
+   * An icon holder wrapping a `<slot>` so a host can project custom markup; with
+   * a `data-icon-url` `<img>` as the slot's fallback, or a glyph when given.
+   */
+  #iconElement(slotName: string, part: string, fallbackGlyph: string | null): HTMLSpanElement {
+    const holder = document.createElement("span");
+    holder.className = "icon-holder";
+    holder.setAttribute("part", part);
+    const slot = document.createElement("slot");
+    slot.name = slotName;
+    const iconUrl = this.getAttribute("data-icon-url");
+    if (iconUrl !== null) {
+      const img = document.createElement("img");
+      img.className = "icon-img";
+      img.src = iconUrl;
+      img.alt = "";
+      slot.append(img);
+    } else if (fallbackGlyph !== null) {
+      slot.append(document.createTextNode(fallbackGlyph));
+    }
+    holder.append(slot);
+    return holder;
+  }
+
+  /** Reflect the collapsed state on the rail's `aria-expanded`. */
+  #syncRail(): void {
+    this.#rail.setAttribute("aria-expanded", String(!this.collapsed));
+  }
+
+  /** Hide the empty-state region once the message list holds anything else. */
+  #updateEmptyState(): void {
+    this.#emptyWrap.hidden = this.#messages.childElementCount > 1;
   }
 
   /** Forward input changes to the skills palette and clear any stale hint. */
@@ -959,7 +1115,7 @@ export class AgUiChat extends HTMLElement {
   /** Swap the composer button between Send (idle) and Stop (running). */
   #setRunning(running: boolean): void {
     this.#running = running;
-    const label = running ? "Stop" : "Send";
+    const label = running ? this.#strings.stop : this.#strings.send;
     this.#send.textContent = label;
     this.#send.setAttribute("aria-label", label);
     this.#send.dataset["state"] = running ? "running" : "idle";
@@ -1018,6 +1174,7 @@ export class AgUiChat extends HTMLElement {
         getContext: () => this.getContext(),
         executeTool: (call) => this.#executeTool(call),
         onPersist: (messages) => this.conversationStore.saveMessages(this.#threadId, messages),
+        connectionLostMessage: this.#strings.connectionLost,
       });
     }
     return this.#client;
@@ -1047,7 +1204,7 @@ export class AgUiChat extends HTMLElement {
       // pending indicator: nothing here triggers another client round, so it
       // would hang after the run ended.
       if (!this.#serverSettled.has(call.id)) {
-        card.settle(TOOL_CALL_STATUS.DONE, "No result returned.");
+        card.settle(TOOL_CALL_STATUS.DONE, this.#strings.noResult);
       }
       return null;
     }
@@ -1062,12 +1219,14 @@ export class AgUiChat extends HTMLElement {
       this.#confirmAbort = new AbortController();
       const decision = requestConfirmation(this.#messages, request, {
         signal: this.#confirmAbort.signal,
+        strings: this.#strings,
       });
+      this.#updateEmptyState();
       this.#messages.scrollTop = this.#messages.scrollHeight;
       const accepted = await decision;
       this.#confirmAbort = null;
       if (!accepted) {
-        const message = "User declined the action.";
+        const message = this.#strings.declinedAction;
         card.settle(TOOL_CALL_STATUS.DECLINED, message);
         this.#showPending();
         return { content: message };
@@ -1085,7 +1244,7 @@ export class AgUiChat extends HTMLElement {
     try {
       const result = await tool.handler(call.args);
       if (navigates) {
-        card.settle(TOOL_CALL_STATUS.DONE, "Navigating…");
+        card.settle(TOOL_CALL_STATUS.DONE, this.#strings.navigating);
         return { content: "", halt: true };
       }
       const content = JSON.stringify(result ?? null);
@@ -1164,6 +1323,14 @@ export class AgUiChat extends HTMLElement {
         // The attachment manifest was for this run only; the model has read what
         // it needed (results now live in history).
         this.#runAttachments = [];
+        // Belt-and-suspenders: a tool card still pending at settle (e.g. a
+        // server tool whose result never streamed because the connection
+        // dropped) would hang forever — settle it to the no-result fallback.
+        for (const card of this.#toolCards.values()) {
+          if (!card.settled) {
+            card.settle(TOOL_CALL_STATUS.DONE, this.#strings.noResult);
+          }
+        }
       },
     };
   }
@@ -1172,9 +1339,11 @@ export class AgUiChat extends HTMLElement {
   #appendStoppedNote(): void {
     const note = document.createElement("div");
     note.className = "stopped-note";
+    note.setAttribute("part", "stopped");
     note.setAttribute("role", "status");
-    note.textContent = "⏹ Stopped";
+    note.textContent = this.#strings.stopped;
     this.#messages.appendChild(note);
+    this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
   }
 
@@ -1189,8 +1358,9 @@ export class AgUiChat extends HTMLElement {
     }
     const pending = document.createElement("div");
     pending.className = "pending";
+    pending.setAttribute("part", "pending");
     pending.setAttribute("role", "status");
-    pending.setAttribute("aria-label", "Assistant is thinking…");
+    pending.setAttribute("aria-label", this.#strings.thinking);
     for (let i = 0; i < 3; i += 1) {
       const dot = document.createElement("span");
       dot.className = "pending-dot";
@@ -1198,6 +1368,7 @@ export class AgUiChat extends HTMLElement {
     }
     this.#pending = pending;
     this.#messages.appendChild(pending);
+    this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
   }
 
@@ -1238,9 +1409,10 @@ export class AgUiChat extends HTMLElement {
         : (this.toolSummaries[call.name] ??
           this.#toolCatalog[call.name] ??
           prettifyToolName(call.name));
-    const card = new ToolCallCard(call.name, call.args, this.toolDisplay, summary);
+    const card = new ToolCallCard(call.name, call.args, this.toolDisplay, summary, this.#strings);
     this.#toolCards.set(call.id, card);
     this.#messages.appendChild(card.element);
+    this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
     return card;
   }

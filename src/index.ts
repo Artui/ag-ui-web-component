@@ -25,6 +25,7 @@ export {
   type AgUiClientHandlers,
   type AgUiRunInputs,
   type AgUiToolCall,
+  ConnectionLostError,
   type ExecuteTool,
   type ToolExecution,
 } from "./core/agui_client.js";
@@ -78,6 +79,11 @@ export type { Skill } from "./skills/skill.js";
 export { type ClientTool, ClientToolRegistry } from "./tools/client_tool_registry.js";
 export { isDestructive } from "./tools/is_destructive.js";
 export { isNavigates } from "./tools/is_navigates.js";
+export {
+  createPageActionTools,
+  PAGE_ACTIONS,
+  type ResolvePageTarget,
+} from "./tools/page_action_tools.js";
 export { createPageMapContext, type PageMap } from "./tools/page_map.js";
 export { parseToolCatalog, type ToolCatalogEntry } from "./tools/parse_tool_catalog.js";
 export {
@@ -100,4 +106,5 @@ export {
   type ToolCallStatus,
   type ToolDisplayMode,
 } from "./ui/tool_call_card.js";
+export { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "./ui/ui_strings.js";
 export { VERSION } from "./version.js";

@@ -1,10 +1,12 @@
+import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+
 /** What the inline confirmation card displays. */
 export interface ConfirmationRequest {
   toolName: string;
   args: Record<string, unknown>;
   /**
    * Human-readable prompt (from the tool's `x-confirm` metadata), e.g.
-   * "Activate this project?". Falls back to a generic `Run "<tool>"?`.
+   * "Activate this project?". Falls back to the generic `confirmRun` template.
    */
   message?: string;
 }
@@ -14,6 +16,7 @@ function actionButton(modifier: string, label: string): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `confirm-btn confirm-btn--${modifier}`;
+  button.setAttribute("part", `confirm-button confirm-${modifier}`);
   button.textContent = label;
   return button;
 }
@@ -26,6 +29,8 @@ export interface ConfirmationOptions {
    * pending confirmation when the user cancels the whole run.
    */
   signal?: AbortSignal;
+  /** Localized strings; defaults to the English {@link DEFAULT_UI_STRINGS}. */
+  strings?: UiStrings;
 }
 
 /**
@@ -43,26 +48,31 @@ export function requestConfirmation(
   request: ConfirmationRequest,
   options: ConfirmationOptions = {},
 ): Promise<boolean> {
+  const strings = options.strings ?? DEFAULT_UI_STRINGS;
   return new Promise<boolean>((resolve) => {
     const card = document.createElement("div");
     card.className = "confirm";
+    card.setAttribute("part", "confirm");
     card.setAttribute("data-tool-name", request.toolName);
     card.setAttribute("role", "group");
-    card.setAttribute("aria-label", "Confirm action");
+    card.setAttribute("aria-label", strings.confirmAction);
 
     const body = document.createElement("div");
     body.className = "confirm-body";
-    body.textContent = request.message ?? `Run “${request.toolName}”?`;
+    body.setAttribute("part", "confirm-body");
+    body.textContent = request.message ?? strings.confirmRun.replace("{tool}", request.toolName);
 
     const args = document.createElement("pre");
     args.className = "confirm-args";
+    args.setAttribute("part", "confirm-args");
     args.textContent = JSON.stringify(request.args, null, 2);
 
     const actions = document.createElement("div");
     actions.className = "confirm-actions";
+    actions.setAttribute("part", "confirm-actions");
 
-    const cancel = actionButton("cancel", "Cancel");
-    const confirm = actionButton("confirm", "Confirm");
+    const cancel = actionButton("cancel", strings.cancel);
+    const confirm = actionButton("confirm", strings.confirm);
 
     let settled = false;
     const close = (accepted: boolean): void => {

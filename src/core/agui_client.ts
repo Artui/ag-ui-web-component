@@ -93,6 +93,26 @@ export interface AgUiClientConfig extends AgUiRunInputs {
    * conversation in-memory only.
    */
   onPersist?: (messages: readonly Message[]) => void;
+  /**
+   * Error text surfaced to {@link AgUiClientHandlers.onError} when a run's
+   * stream closes without a terminal AG-UI event (`RUN_FINISHED`/`RUN_ERROR`) —
+   * a dropped connection. Defaults to `"Connection lost"`; the host passes its
+   * localized string.
+   */
+  connectionLostMessage?: string;
+}
+
+/**
+ * Raised when a run's stream closes cleanly at the transport level but never
+ * emits a terminal AG-UI event, so the run neither finished nor errored. Routed
+ * to {@link AgUiClientHandlers.onError} (it is not an abort), turning a silent
+ * "stuck pending" into a visible "connection lost".
+ */
+export class ConnectionLostError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConnectionLostError";
+  }
 }
 
 /**
@@ -109,6 +129,7 @@ export class AgUiClient {
   readonly #getContext: () => Context[];
   readonly #executeTool: ExecuteTool | null;
   readonly #onPersist: (messages: readonly Message[]) => void;
+  readonly #connectionLostMessage: string;
   // Set by cancel(); reset at the top of each #run(). Checked by the loop so
   // a cancel between frontend-tool rounds doesn't start another round.
   #cancelled = false;
@@ -120,6 +141,7 @@ export class AgUiClient {
     this.#getContext = config.getContext ?? (() => []);
     this.#executeTool = config.executeTool ?? null;
     this.#onPersist = config.onPersist ?? (() => {});
+    this.#connectionLostMessage = config.connectionLostMessage ?? "Connection lost";
   }
 
   /** Whether a run is currently in flight. */
@@ -220,15 +242,22 @@ export class AgUiClient {
         return;
       }
       const pending: AgUiToolCall[] = [];
+      const runState = { terminal: false };
       await this.#agent.runAgent(
         { tools: this.#getTools(), context: this.#getContext() },
-        this.#buildSubscriber(pending),
+        this.#buildSubscriber(pending, runState),
       );
       this.#onPersist(this.#agent.messages);
       // Cancelled mid-stream: the user said stop — don't execute the tool
       // calls collected before the abort.
       if (this.#cancelled) {
         return;
+      }
+      // The stream resolved without RUN_FINISHED / RUN_ERROR: the transport
+      // dropped mid-run. Surface it as an error so the UI doesn't rest silently
+      // with a stuck pending indicator (caught by #run → onError).
+      if (!runState.terminal) {
+        throw new ConnectionLostError(this.#connectionLostMessage);
       }
       if (this.#executeTool === null || pending.length === 0) {
         return;
@@ -259,7 +288,7 @@ export class AgUiClient {
     }
   }
 
-  #buildSubscriber(pending: AgUiToolCall[]): AgentSubscriber {
+  #buildSubscriber(pending: AgUiToolCall[], runState: { terminal: boolean }): AgentSubscriber {
     const h = this.#handlers;
     return {
       onRunInitialized() {
@@ -284,9 +313,11 @@ export class AgUiClient {
         h.onToolResult(event.toolCallId, event.content);
       },
       onRunErrorEvent({ event }) {
+        runState.terminal = true;
         h.onError(event.message);
       },
       onRunFinalized() {
+        runState.terminal = true;
         h.onRunEnd();
       },
     };

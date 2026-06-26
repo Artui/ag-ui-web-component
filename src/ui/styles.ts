@@ -133,6 +133,71 @@ export const STYLES = `
   --ag-ui-radius: 0;
 }
 
+/* Sidebar (CUST-3): a full-height docked panel that slides open/closed and
+   collapses to a slim icon rail (not the floating launcher). Docked right by
+   default; data-side="left" docks it left. Overlay by default — set
+   --ag-ui-position: static (and place this element in your own layout) for a
+   host-managed push instead. */
+:host([placement="sidebar"]) {
+  --ag-ui-inset: 0 0 0 auto;
+  --ag-ui-width: 420px;
+  --ag-ui-height: 100vh;
+  --ag-ui-max-height: 100vh;
+  --ag-ui-radius: 0;
+  --ag-ui-rail-width: 52px;
+  transition: width 0.28s ease;
+}
+
+:host([placement="sidebar"][data-side="left"]) {
+  --ag-ui-inset: 0 auto 0 0;
+}
+
+:host([placement="sidebar"]) .chat {
+  transition: transform 0.28s ease;
+}
+
+/* Collapsed sidebar: shrink the host to the rail width, hide the panel, and
+   reveal the rail. Higher specificity than the generic collapse rules, so it
+   wins regardless of source order. */
+:host([placement="sidebar"][collapsed]) {
+  width: var(--ag-ui-rail-width);
+  height: 100vh;
+  max-height: 100vh;
+  bottom: 0;
+}
+
+:host([placement="sidebar"][collapsed]) .chat {
+  display: none;
+}
+
+/* The rail is a sibling of the panel (so it survives the panel being hidden);
+   shown only for a collapsed sidebar. */
+.rail {
+  display: none;
+  border: none;
+  font: inherit;
+}
+
+:host([placement="sidebar"][collapsed]) .rail {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 16px;
+  border: 1px solid var(--ag-ui-border);
+  background: var(--ag-ui-header-bg);
+  color: var(--ag-ui-header-fg);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host([placement="sidebar"]),
+  :host([placement="sidebar"]) .chat {
+    transition: none;
+  }
+}
+
 /* Embedded: drop the floating chrome and the high z-index stacking context so
    the widget lives in the host's own layout (fixes overlay/z-index clashes). */
 :host([placement="embedded"]) {
@@ -170,10 +235,31 @@ export const STYLES = `
 }
 
 .header-title {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Header / launcher icon holder (CUST-2): a slot, with a data-icon-url <img>
+   fallback, sized via --ag-ui-icon-size. */
+.icon-holder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--ag-ui-icon-size, 22px);
+  height: var(--ag-ui-icon-size, 22px);
+  line-height: 1;
+}
+
+.icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: var(--ag-ui-icon-radius, 4px);
 }
 
 .header-controls {
@@ -229,6 +315,18 @@ export const STYLES = `
   display: flex;
   flex-direction: column;
   gap: var(--ag-ui-space);
+}
+
+/* Empty-state region (CUST-1 slot): centred while it's the only thing in the
+   list, hidden as soon as a message, card, or pending indicator renders. */
+.empty {
+  margin: auto;
+  text-align: center;
+  color: var(--ag-ui-muted);
+}
+
+.empty[hidden] {
+  display: none;
 }
 
 .message {
