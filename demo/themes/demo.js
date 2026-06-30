@@ -113,6 +113,11 @@ bind("cfg-placement", "placement");
 bind("cfg-text", "data-text-animation");
 bind("cfg-tools", "data-tool-display");
 
+// The well is a boolean attribute (presence = on), so toggle rather than set.
+$("cfg-well").addEventListener("change", (event) => {
+  chat.toggleAttribute("data-answer-well", event.target.checked);
+});
+
 $("save").addEventListener("click", () => {
   $("banner").classList.add("show");
 });

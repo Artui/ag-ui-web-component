@@ -147,7 +147,7 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | --- | --- | --- |
 | `endpoint` | `endpoint` | The AG-UI endpoint URL. Required to send. Reflecting getter + setter. |
 | `title-text` | — | Header label; defaults to `"Assistant"`. The only **observed** attribute (live-updates the header). |
-| `data-tool-display` | `toolDisplay` | Tool-call card detail: `minimal` / `compact` / `full` (default `full`). |
+| `data-tool-display` | `toolDisplay` | Tool-call card detail: `inline` / `minimal` / `compact` / `full` (default `full`). |
 | `data-text-animation` | — | Incoming-text reveal: `none` (default) / `fade` / `word`. |
 | `data-prompt-chips` | — | `"true"` to surface skills as chips. |
 | `data-slash-commands` | — | `"true"` to enable the `/`-command palette. |
@@ -162,10 +162,11 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `data-icon-url` | — | Header (and sidebar-rail) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
 | `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
+| `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget (to a rail under `placement="sidebar"`). Persisted per-tab in `sessionStorage`. |
 | `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
-| `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `embedded`. |
+| `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` / `embedded`. |
 
 **Properties** (JS only, not attributes): `headers`, `allowImages`, `autoConfirm`,
 `confirmPredicate`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
@@ -394,14 +395,23 @@ chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
 ## Tool-call display modes
 
 How much a tool-call card shows is set via the `data-tool-display` attribute (or `toolDisplay`
-property), one of `minimal` / `compact` / `full` (default `full`):
+property), one of `inline` / `minimal` / `compact` / `full` (default `full`):
 
+- `inline` — the lightest mode: a single status row (icon + summary, no card chrome) with the
+  result behind its own toggle. Reads as one line of the answer — pairs with [the answer
+  well](#the-answer-well).
 - `minimal` — tool name + status pill only.
 - `compact` — name + status, with args *and* result behind a single collapsed "Details" toggle.
 - `full` — args inline, result behind its own toggle (the original behaviour).
 
 If a tool's schema carries an `x-summary` string (use `X_SUMMARY_KEY`), the card shows it on the
 label instead of the raw tool name.
+
+Every card leads with a **status icon** drawn entirely in CSS — a spinning ring while the call
+runs, then a check / cross / slash on success / error / decline. Re-theme it via custom
+properties (or the `tool-card-icon` part): `--ag-ui-tool-icon-done`, `--ag-ui-tool-icon-error`,
+`--ag-ui-tool-icon-declined` (quoted-string glyphs) and `--ag-ui-tool-spin-duration` (spinner
+speed; the spin respects `prefers-reduced-motion`).
 
 ```html
 <ag-ui-chat endpoint="/agent/" data-tool-display="compact"></ag-ui-chat>
@@ -752,8 +762,9 @@ have to hand-tune the variables:
 
 - `theme` — `light` (default) / `dark` / `auto` (follow the OS) / `code`.
 - `density` — `comfortable` (default) / `compact`.
-- `placement` — `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `embedded`.
-  `embedded` drops the fixed positioning and z-index so the widget sits in normal document flow.
+- `placement` — `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` /
+  `embedded`. `embedded` drops the fixed positioning and z-index so the widget sits in normal
+  document flow; `page` is a full-screen [centred reading column](#page-placement).
 
 ```html
 <ag-ui-chat endpoint="/agent/" theme="dark" density="compact" placement="side"></ag-ui-chat>
@@ -761,7 +772,7 @@ have to hand-tune the variables:
 
 See [`src/ui/styles.ts`](src/ui/styles.ts) for the full variable + preset list. The
 [`demo/`](demo/) live playground (`node demo/mock-server.mjs`) flips theme, density, placement,
-text-animation, and tool-display live from a single page.
+text-animation, tool-display, and the answer well live from a single page.
 
 ### Parts and slots
 
@@ -777,9 +788,10 @@ ag-ui-chat::part(tool-card) { font-family: var(--my-mono); }
 ```
 
 Available parts: `panel`, `header`, `title`, `icon`, `header-controls`, `header-button`
-(plus `history-button` / `new-button` / `collapse-button`), `messages`, `message` (plus
-`message-user` / `message-assistant`), `empty`, `pending`, `tool-card` (plus `tool-card-head` /
-`-name` / `-status` / `-args` / `-toggle` / `-result`), `confirm` (plus `confirm-body` /
+(plus `history-button` / `new-button` / `collapse-button`), `messages`, `answer` (the per-turn
+group), `message` (plus `message-user` / `message-assistant`), `empty`, `pending`, `tool-card`
+(plus `tool-card-head` / `-icon` / `-name` / `-status` / `-args` / `-toggle` / `-result`),
+`confirm` (plus `confirm-body` /
 `-args` / `-actions` / `-button` / `-cancel` / `-confirm`), `composer`, `input`, `send`,
 `attach-button`, `attachment-tray`, `launcher`, `launcher-icon`, and the drawer parts
 (`drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`,
@@ -827,6 +839,31 @@ carries `aria-expanded`. The slide honours `prefers-reduced-motion`.
 
 It overlays the page by default (no host-layout coupling). To make the host content reflow around
 it instead, set `--ag-ui-position: static` and place the element in your own grid/flex layout.
+
+### Page placement
+
+`placement="page"` turns the widget into a full-screen chat **page**: a full-bleed background with
+the conversation in a centred reading column (default ~820px, set via `--ag-ui-content-max-width`).
+The assistant turn spans the column width while the user message stays a right-aligned pill. Unlike
+`full` (edge-to-edge, left-aligned), it's the layout you want for a dedicated `/chat` route. Pairs
+naturally with the [answer well](#the-answer-well).
+
+```html
+<ag-ui-chat endpoint="/agent/" placement="page" data-answer-well></ag-ui-chat>
+```
+
+### The answer well
+
+Each assistant turn renders inside one `.answer` group (part `answer`) that holds its streamed
+text, tool cards, and pending indicator — so a turn that calls tools reads as a single answer
+rather than a string of loose siblings. Add the boolean `data-answer-well` attribute to box that
+group in a bordered, padded "well"; without it the layout is the flat stack as before. The well is
+pure CSS and turn-scoped — no JS API — and themeable via `--ag-ui-well-bg` / `--ag-ui-well-border`
+(and `::part(answer)`).
+
+```html
+<ag-ui-chat endpoint="/agent/" data-answer-well></ag-ui-chat>
+```
 
 ---
 

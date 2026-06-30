@@ -266,6 +266,13 @@ export class AgUiChat extends HTMLElement {
   // it; ≤1 ⇒ it arrived at once and the word reveal is appropriate.
   #streamDeltas = 0;
   #pending: HTMLDivElement | null = null;
+  // The current assistant turn's grouping container (WELL-1). One `.answer`
+  // wraps everything a single answer produces — streamed text, tool cards, the
+  // pending indicator — so it can be boxed as one "well" by CSS. Opened on the
+  // turn's first run start, closed at settle, so it spans the whole multi-round
+  // frontend-tool loop (which is several AG-UI runs), not one run. `null`
+  // between turns; user bubbles never enter it.
+  #currentGroup: HTMLDivElement | null = null;
   #threadId = "";
   #initialMessages: readonly Message[] = [];
   // Skill catalog by source; merged backend → embed → client (later wins).
@@ -420,7 +427,11 @@ export class AgUiChat extends HTMLElement {
    */
   get toolDisplay(): ToolDisplayMode {
     const attr = this.getAttribute("data-tool-display");
-    if (attr === TOOL_DISPLAY.MINIMAL || attr === TOOL_DISPLAY.COMPACT) {
+    if (
+      attr === TOOL_DISPLAY.INLINE ||
+      attr === TOOL_DISPLAY.MINIMAL ||
+      attr === TOOL_DISPLAY.COMPACT
+    ) {
       return attr;
     }
     return TOOL_DISPLAY.FULL;
@@ -719,6 +730,7 @@ export class AgUiChat extends HTMLElement {
   #resetState(): void {
     this.#client = null;
     this.#streamingBubble = null;
+    this.#currentGroup = null;
     this.#hidePending();
     this.#toolCards.clear();
     this.#serverSettled.clear();
@@ -866,6 +878,10 @@ export class AgUiChat extends HTMLElement {
    * Assistant content is rendered as sanitised markdown/HTML; user content
    * stays literal text (no need to parse what the user typed, and it avoids
    * rendering user-authored markup).
+   *
+   * Assistant bubbles land in the current answer group (WELL-1), opening one if
+   * needed; a user bubble closes the prior group and sits directly in the list
+   * (the well wraps the *assistant* turn, the user message precedes it).
    */
   appendMessage(role: MessageRole, content: string): HTMLDivElement {
     const bubble = document.createElement("div");
@@ -873,13 +889,34 @@ export class AgUiChat extends HTMLElement {
     bubble.setAttribute("part", `message message-${role}`);
     if (role === MESSAGE_ROLE.ASSISTANT) {
       bubble.innerHTML = renderMarkdown(content, { allowImages: this.allowImages });
+      this.#ensureGroup().appendChild(bubble);
     } else {
+      this.#currentGroup = null;
       bubble.textContent = content;
+      this.#messages.appendChild(bubble);
     }
-    this.#messages.appendChild(bubble);
     this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
     return bubble;
+  }
+
+  /**
+   * The open answer group, creating and appending it on first use. Everything a
+   * single assistant turn renders (text, tool cards, the pending indicator)
+   * goes inside it, so the opt-in `data-answer-well` styling can box the whole
+   * turn. Idempotent across the turn's runs — it persists until {@link #handlers}'
+   * `onSettled` nulls it.
+   */
+  #ensureGroup(): HTMLDivElement {
+    if (this.#currentGroup === null) {
+      const group = document.createElement("div");
+      group.className = "answer";
+      group.setAttribute("part", "answer");
+      this.#currentGroup = group;
+      this.#messages.appendChild(group);
+      this.#updateEmptyState();
+    }
+    return this.#currentGroup;
   }
 
   #render(): void {
@@ -1267,6 +1304,10 @@ export class AgUiChat extends HTMLElement {
     return {
       onRunStart: () => {
         this.#setRunning(true);
+        // Open the answer group on the turn's first run so the pending
+        // indicator (and everything after) lands inside the well. Idempotent:
+        // later rounds of the same turn reuse it.
+        this.#ensureGroup();
         this.#showPending();
       },
       onTextDelta: (buffer) => {
@@ -1331,6 +1372,14 @@ export class AgUiChat extends HTMLElement {
             card.settle(TOOL_CALL_STATUS.DONE, this.#strings.noResult);
           }
         }
+        // Close the turn's answer group. Drop it if the turn rendered nothing
+        // (e.g. a server-only round that streamed no text/card) so an opted-in
+        // well leaves no empty box behind.
+        if (this.#currentGroup !== null && this.#currentGroup.childElementCount === 0) {
+          this.#currentGroup.remove();
+          this.#updateEmptyState();
+        }
+        this.#currentGroup = null;
       },
     };
   }
@@ -1342,7 +1391,7 @@ export class AgUiChat extends HTMLElement {
     note.setAttribute("part", "stopped");
     note.setAttribute("role", "status");
     note.textContent = this.#strings.stopped;
-    this.#messages.appendChild(note);
+    this.#ensureGroup().appendChild(note);
     this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
   }
@@ -1367,7 +1416,7 @@ export class AgUiChat extends HTMLElement {
       pending.appendChild(dot);
     }
     this.#pending = pending;
-    this.#messages.appendChild(pending);
+    this.#ensureGroup().appendChild(pending);
     this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
   }
@@ -1411,7 +1460,7 @@ export class AgUiChat extends HTMLElement {
           prettifyToolName(call.name));
     const card = new ToolCallCard(call.name, call.args, this.toolDisplay, summary, this.#strings);
     this.#toolCards.set(call.id, card);
-    this.#messages.appendChild(card.element);
+    this.#ensureGroup().appendChild(card.element);
     this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
     return card;

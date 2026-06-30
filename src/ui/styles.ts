@@ -24,6 +24,17 @@ export const STYLES = `
   --ag-ui-danger: #b91c1c;
   --ag-ui-muted: #6b7280;
 
+  /* Tool-call status icon glyphs (override to re-theme) + spinner speed.
+     The pending state is the animated ring; the settled states use these. */
+  --ag-ui-tool-icon-done: "✓";
+  --ag-ui-tool-icon-error: "✕";
+  --ag-ui-tool-icon-declined: "⊘";
+  --ag-ui-tool-spin-duration: 0.7s;
+
+  /* Answer well (opt-in via data-answer-well) — boxes a whole assistant turn. */
+  --ag-ui-well-bg: transparent;
+  --ag-ui-well-border: var(--ag-ui-border);
+
   /* Surface — set --ag-ui-shadow: none for a flush, embedded panel. */
   --ag-ui-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
   --ag-ui-font: inherit;
@@ -46,6 +57,8 @@ export const STYLES = `
   --ag-ui-inset: auto 24px 24px auto;
   --ag-ui-max-width: calc(100vw - 48px);
   --ag-ui-max-height: calc(100vh - 48px);
+  /* Reading-column width for placement="page" (full-bleed, centred content). */
+  --ag-ui-content-max-width: 820px;
 
   position: var(--ag-ui-position);
   inset: var(--ag-ui-inset);
@@ -131,6 +144,34 @@ export const STYLES = `
   --ag-ui-max-width: 100vw;
   --ag-ui-max-height: 100vh;
   --ag-ui-radius: 0;
+}
+
+/* Page (PAGE-1): full-bleed background with a centred reading column. Unlike
+   "full" (edge-to-edge, left-aligned messages) the content sits in a column
+   capped at --ag-ui-content-max-width. The column is produced by symmetric auto
+   padding on the scroll area + composer (no per-row wrapper), so user pills
+   still right-align and the assistant well spans the column. */
+:host([placement="page"]) {
+  --ag-ui-inset: 0;
+  --ag-ui-width: 100vw;
+  --ag-ui-height: 100vh;
+  --ag-ui-max-width: 100vw;
+  --ag-ui-max-height: 100vh;
+  --ag-ui-radius: 0;
+}
+
+:host([placement="page"]) .messages {
+  padding-inline: max(var(--ag-ui-pad), calc((100% - var(--ag-ui-content-max-width)) / 2));
+}
+
+:host([placement="page"]) .input-row {
+  padding-inline: max(12px, calc((100% - var(--ag-ui-content-max-width)) / 2));
+}
+
+/* In the reading column the assistant well uses the full width; the user
+   message stays a right-aligned pill (its default align-self + max-width). */
+:host([placement="page"]) .message--assistant {
+  max-width: 100%;
 }
 
 /* Sidebar (CUST-3): a full-height docked panel that slides open/closed and
@@ -329,6 +370,27 @@ export const STYLES = `
   display: none;
 }
 
+/* ── Answer group / well (WELL-1) ─────────────────────────────────────────
+   One .answer per assistant turn wraps the streamed text, its tool cards,
+   and the pending indicator so a whole answer reads (and can be boxed) as one
+   unit. A flex column on the message-list gap, stretched to the list width so
+   its children keep their own left/right alignment. data-answer-well opts into
+   the bordered "well"; without it the layout is today's flat stack. */
+.answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ag-ui-space);
+  align-self: stretch;
+  min-width: 0;
+}
+
+:host([data-answer-well]) .answer {
+  padding: var(--ag-ui-pad);
+  background: var(--ag-ui-well-bg);
+  border: 1px solid var(--ag-ui-well-border);
+  border-radius: var(--ag-ui-radius);
+}
+
 .message {
   max-width: 80%;
   padding: var(--ag-ui-msg-pad);
@@ -501,8 +563,69 @@ export const STYLES = `
 }
 
 .tool-call-name {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
   word-break: break-word;
+}
+
+/* Leading status icon (CARD-1). Empty in the DOM — the glyph/spinner is drawn
+   here from the card's data-status, so it stays themeable. */
+.tool-call-icon {
+  flex: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* Pending: a real spinning ring. Speed is tunable; reduced motion stops it. */
+.tool-call[data-status="pending"] .tool-call-icon {
+  border: 2px solid var(--ag-ui-muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ag-ui-tool-spin var(--ag-ui-tool-spin-duration) linear infinite;
+}
+
+@keyframes ag-ui-tool-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Settled: a themeable glyph coloured by outcome. */
+.tool-call[data-status="done"] .tool-call-icon::before {
+  content: var(--ag-ui-tool-icon-done);
+  color: var(--ag-ui-success);
+}
+
+.tool-call[data-status="error"] .tool-call-icon::before {
+  content: var(--ag-ui-tool-icon-error);
+  color: var(--ag-ui-danger);
+}
+
+.tool-call[data-status="declined"] .tool-call-icon::before {
+  content: var(--ag-ui-tool-icon-declined);
+  color: var(--ag-ui-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-call[data-status="pending"] .tool-call-icon {
+    animation: none;
+  }
+}
+
+/* Inline display mode (CARD-1): the lightest card — drop the box chrome so the
+   status row reads as one line of the answer; the result toggle still expands
+   below it. */
+.tool-call[data-display="inline"] {
+  max-width: 100%;
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  gap: 2px;
 }
 
 .tool-call-status {

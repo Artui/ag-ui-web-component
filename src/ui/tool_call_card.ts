@@ -32,14 +32,21 @@ function resultLabels(strings: UiStrings): Record<SettledStatus, string> {
 /**
  * A live tool-call card for the chat transcript.
  *
- * Construction renders the tool name and a `running…` status pill; in `full`
- * mode it also shows the pretty-printed arguments inline. {@link settle} later
- * flips the pill to the outcome and — depending on the {@link ToolDisplayMode} —
- * appends a collapsible body:
+ * Construction renders a status icon, the tool name, and a `running…` status
+ * pill; in `full` mode it also shows the pretty-printed arguments inline.
+ * {@link settle} later flips the pill to the outcome and — depending on the
+ * {@link ToolDisplayMode} — appends a collapsible body:
  *
+ * - `inline` — no args; the result behind its own toggle (like `full` but with
+ *   the card chrome stripped to a single light row).
  * - `minimal` — pill only; nothing to expand.
  * - `compact` — one "Details" toggle revealing args *and* result together.
  * - `full` — the result (or error / decline message) behind its own toggle.
+ *
+ * The leading icon carries no text of its own: its glyph/spinner is drawn by
+ * the shadow CSS keyed off the card's `data-status`, so a host themes it via
+ * the `--ag-ui-tool-icon-*` custom properties (or the `tool-card-icon` part)
+ * without the card reaching into the host stylesheet.
  *
  * Pure DOM (no framework); the host appends {@link element} into its shadow
  * root and themes it via the `--ag-ui-*` custom properties or the exposed
@@ -77,18 +84,26 @@ export class ToolCallCard {
     head.className = "tool-call-head";
     head.setAttribute("part", "tool-card-head");
 
+    // The leading status icon — a spinner while pending, a check/cross/slash on
+    // settle. Empty in the DOM: the shadow CSS draws it from `data-status`, so
+    // the glyphs stay themeable (`--ag-ui-tool-icon-*`) and the spin is real.
+    const icon = document.createElement("span");
+    icon.className = "tool-call-icon";
+    icon.setAttribute("part", "tool-card-icon");
+    icon.setAttribute("aria-hidden", "true");
+
     const label = document.createElement("span");
     label.className = "tool-call-name";
     label.setAttribute("part", "tool-card-name");
     // A server-provided `x-summary` label reads better than the raw tool name.
-    label.textContent = `🔧 ${summary ?? name}`;
+    label.textContent = summary ?? name;
 
     this.#status = document.createElement("span");
     this.#status.className = "tool-call-status";
     this.#status.setAttribute("part", "tool-card-status");
     this.#status.textContent = statusLabels(strings)[TOOL_CALL_STATUS.PENDING];
 
-    head.append(label, this.#status);
+    head.append(icon, label, this.#status);
     this.element.append(head);
 
     if (mode === TOOL_DISPLAY.FULL) {
@@ -107,8 +122,8 @@ export class ToolCallCard {
 
   /**
    * Flip the status pill to ``status`` and, unless in `minimal` mode, append a
-   * collapsed body behind a click-to-expand toggle: the result alone (`full`),
-   * or the args + result together (`compact`).
+   * collapsed body behind a click-to-expand toggle: the result alone (`full` /
+   * `inline`), or the args + result together (`compact`).
    */
   settle(status: SettledStatus, text: string): void {
     this.#settled = true;

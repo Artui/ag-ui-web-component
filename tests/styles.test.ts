@@ -126,4 +126,50 @@ describe("STYLES", () => {
     expect(STYLES).toContain("--ag-ui-z-index: auto;");
     expect(STYLES).toContain("--ag-ui-position: static;");
   });
+
+  it("page placement centres a reading column capped by a content-width var", () => {
+    expect(STYLES).toContain(':host([placement="page"])');
+    expect(STYLES).toContain("--ag-ui-content-max-width:");
+    // The column is produced by symmetric auto padding on the scroll area.
+    expect(STYLES).toContain(
+      "max(var(--ag-ui-pad), calc((100% - var(--ag-ui-content-max-width)) / 2))",
+    );
+    // In page mode the assistant well uses the full column width.
+    expect(STYLES).toContain(':host([placement="page"]) .message--assistant');
+  });
+
+  it("groups each assistant turn in an .answer well that is opt-in", () => {
+    // The grouping container always exists…
+    expect(STYLES).toContain(".answer {");
+    // …but the bordered well only draws under the data-answer-well opt-in.
+    expect(STYLES).toContain(":host([data-answer-well]) .answer");
+    for (const name of ["--ag-ui-well-bg", "--ag-ui-well-border"]) {
+      expect(STYLES).toContain(`${name}:`);
+    }
+  });
+
+  it("draws the tool-call status icon from CSS (spinner + themeable glyphs)", () => {
+    // The icon element is styled, not text — a spinning ring while pending.
+    expect(STYLES).toContain(".tool-call-icon");
+    expect(STYLES).toContain('.tool-call[data-status="pending"] .tool-call-icon');
+    expect(STYLES).toContain("@keyframes ag-ui-tool-spin");
+    // Settled glyphs come from overridable vars.
+    for (const name of [
+      "--ag-ui-tool-icon-done",
+      "--ag-ui-tool-icon-error",
+      "--ag-ui-tool-icon-declined",
+      "--ag-ui-tool-spin-duration",
+    ]) {
+      expect(STYLES).toContain(`${name}:`);
+    }
+    expect(STYLES).toContain("content: var(--ag-ui-tool-icon-done)");
+    // The spinner speed is driven by the tunable duration var.
+    expect(STYLES).toContain("ag-ui-tool-spin var(--ag-ui-tool-spin-duration)");
+    // The spin honours reduced motion.
+    expect(STYLES).toContain("prefers-reduced-motion: reduce");
+  });
+
+  it("strips the box chrome in inline tool-display mode", () => {
+    expect(STYLES).toContain('.tool-call[data-display="inline"]');
+  });
 });

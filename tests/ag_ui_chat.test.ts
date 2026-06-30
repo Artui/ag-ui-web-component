@@ -376,7 +376,7 @@ describe("AgUiChat", () => {
     const card = shadow(el).querySelector<HTMLElement>(".tool-call");
     expect(card?.getAttribute("data-tool-name")).toBe("fill_field");
     // No label found anywhere -> auto-prettified snake_case fallback.
-    expect(card?.querySelector(".tool-call-name")?.textContent).toBe("🔧 Fill field");
+    expect(card?.querySelector(".tool-call-name")?.textContent).toBe("Fill field");
     expect(card?.querySelector(".tool-call-args")?.textContent).toContain('"name": "city"');
     // fill_field isn't registered here, so it's treated as server-executed.
     expect(card?.getAttribute("data-status")).toBe("done");
@@ -739,7 +739,7 @@ describe("AgUiChat", () => {
       handler: () => "ok",
     });
     await send(el, "go");
-    expect(shadow(el).querySelector(".tool-call-name")?.textContent).toBe("🔧 Query orders");
+    expect(shadow(el).querySelector(".tool-call-name")?.textContent).toBe("Query orders");
   });
 
   it("forwards the current tools and context to the run", async () => {
@@ -1513,5 +1513,129 @@ describe("AgUiChat", () => {
         vi.unstubAllGlobals();
       }
     });
+  });
+});
+
+describe("AgUiChat — answer group (WELL-1)", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  it("wraps a whole multi-round turn (text → tool → text) in one .answer group", async () => {
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.runStart();
+        emit.text("looking…");
+        emit.textEnd("looking…");
+        emit.toolCall("ui1", "fill_field", { value: "Paris" });
+        emit.runEnd();
+      } else {
+        emit.runStart();
+        emit.text("all set");
+        emit.textEnd("all set");
+        emit.runEnd();
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "fill_field",
+      description: "fill",
+      parameters: { type: "object" },
+      handler: () => "ok",
+    });
+    await send(el, "fill it");
+
+    // The whole turn — both assistant bubbles and the tool card — lives in a
+    // single group, even though it spanned two AG-UI runs.
+    const groups = shadow(el).querySelectorAll(".answer");
+    expect(groups).toHaveLength(1);
+    const group = groups[0];
+    expect(group?.querySelectorAll(".message--assistant")).toHaveLength(2);
+    expect(group?.querySelectorAll(".tool-call")).toHaveLength(1);
+    // The user bubble is excluded — it precedes the group in the list.
+    expect(group?.querySelector(".message--user")).toBeNull();
+    expect(shadow(el).querySelector(".messages > .message--user")).not.toBeNull();
+  });
+
+  it("opens a fresh group per turn and never nests user bubbles", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.text("hi");
+      emit.textEnd("hi");
+      emit.runEnd();
+    });
+    await send(el, "one");
+    await send(el, "two");
+    expect(shadow(el).querySelectorAll(".answer")).toHaveLength(2);
+    // Each group holds exactly its assistant reply; both user bubbles are
+    // top-level children of the list.
+    for (const group of shadow(el).querySelectorAll(".answer")) {
+      expect(group.querySelector(".message--user")).toBeNull();
+    }
+    expect(shadow(el).querySelectorAll(".messages > .message--user")).toHaveLength(2);
+  });
+
+  it("toggles the opt-in well via the data-answer-well attribute", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.text("hi");
+      emit.textEnd("hi");
+      emit.runEnd();
+    });
+    el.setAttribute("data-answer-well", "");
+    await send(el, "go");
+    // The attribute is the styling seam (pure CSS); the group is present and the
+    // host carries the opt-in flag the stylesheet selects on.
+    expect(shadow(el).querySelector(".answer")).not.toBeNull();
+    expect(el.hasAttribute("data-answer-well")).toBe(true);
+  });
+
+  it("drops an empty group at settle (server-only round with no text/card)", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.runEnd();
+    });
+    await send(el, "nothing happens");
+    // The group opened on run start but nothing rendered into it, so it's
+    // removed rather than leaving a phantom (potentially welled) empty box.
+    expect(shadow(el).querySelector(".answer")).toBeNull();
+  });
+
+  it("reconstructs one group per assistant turn when replaying history", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    const store = new SessionStorageStore();
+    store.saveMessages(store.threadId(), [
+      { id: "u1", role: "user", content: "first" },
+      { id: "a1", role: "assistant", content: "first reply" },
+      { id: "u2", role: "user", content: "second" },
+      {
+        id: "a2",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "t1", type: "function", function: { name: "do_it", arguments: "{}" } }],
+      } as never,
+      { id: "tr1", role: "tool", content: "done", toolCallId: "t1" } as never,
+    ]);
+    el.conversationStore = store;
+    el.agentFactory = () => makeFakeAgent().agent;
+    document.body.appendChild(el);
+    await flush();
+
+    // One group per assistant turn: the text reply, and the tool-only turn.
+    const groups = shadow(el).querySelectorAll(".answer");
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.textContent).toContain("first reply");
+    expect(groups[1]?.querySelector(".tool-call")).not.toBeNull();
+    // User bubbles stay out of the groups.
+    expect(shadow(el).querySelectorAll(".messages > .message--user")).toHaveLength(2);
+    // The empty-state region is hidden once the transcript renders.
+    expect(shadow(el).querySelector<HTMLElement>(".empty")?.hidden).toBe(true);
   });
 });

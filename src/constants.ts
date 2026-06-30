@@ -92,12 +92,17 @@ export const DEFAULT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
  * How much detail a tool-call card shows. Set via the `data-tool-display`
  * attribute on `<ag-ui-chat>`; defaults to `full` (back-compatible).
  *
+ * - `inline` — the lightest mode: a single status row (icon + summary) with no
+ *   surrounding card chrome, the result tucked behind its own toggle. Reads as
+ *   one line of the answer rather than a boxed card — pairs with the answer
+ *   well (page mode).
  * - `minimal` — just the tool name + status pill. No args, no result body.
  * - `compact` — name + status, with args *and* result tucked behind a single
  *   collapsed "Details" toggle. The light default for dense UIs.
  * - `full` — args shown inline, result behind its own toggle (the original).
  */
 export const TOOL_DISPLAY = {
+  INLINE: "inline",
   MINIMAL: "minimal",
   COMPACT: "compact",
   FULL: "full",
