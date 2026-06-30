@@ -52,6 +52,12 @@ export interface AgUiClientHandlers {
    * their result itself — so this is the channel for server-executed output.
    */
   onToolResult(toolCallId: string, content: string): void;
+  /** Fired when a reasoning model starts emitting its chain-of-thought. */
+  onReasoningStart(): void;
+  /** Fired on every reasoning token; ``buffer`` is the full reasoning text so far. */
+  onReasoningDelta(buffer: string): void;
+  /** Fired when the reasoning block ends (before the answer text streams). */
+  onReasoningEnd(): void;
   onRunEnd(): void;
   onError(message: string): void;
   /**
@@ -311,6 +317,18 @@ export class AgUiClient {
       },
       onToolCallResultEvent({ event }) {
         h.onToolResult(event.toolCallId, event.content);
+      },
+      // Reasoning (THINK-1). `@ag-ui/client` already maps the deprecated
+      // THINKING_* events onto these REASONING_* callbacks, so handling the
+      // reasoning family alone covers both protocol versions.
+      onReasoningStartEvent() {
+        h.onReasoningStart();
+      },
+      onReasoningMessageContentEvent({ reasoningMessageBuffer }) {
+        h.onReasoningDelta(reasoningMessageBuffer);
+      },
+      onReasoningEndEvent() {
+        h.onReasoningEnd();
       },
       onRunErrorEvent({ event }) {
         runState.terminal = true;

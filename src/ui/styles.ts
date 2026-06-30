@@ -553,6 +553,69 @@ export const STYLES = `
   }
 }
 
+/* ── Thoughts region (THINK-1) ────────────────────────────────────────────
+   A muted, collapsible chain-of-thought at the top of the answer group: open
+   while the model reasons, folded once the answer text starts. */
+.thoughts {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ag-ui-muted);
+}
+
+.thoughts-toggle {
+  align-self: flex-start;
+  border: none;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ag-ui-muted);
+  cursor: pointer;
+}
+
+.thoughts-toggle::before {
+  content: "▾ ";
+}
+
+.thoughts-toggle[aria-expanded="false"]::before {
+  content: "▸ ";
+}
+
+/* A gentle pulse on the label while reasoning is still streaming. */
+.thoughts[data-streaming] .thoughts-label {
+  animation: ag-ui-thoughts-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ag-ui-thoughts-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.thoughts-body {
+  margin: 0;
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--ag-ui-border);
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+}
+
+.thoughts-body[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thoughts[data-streaming] .thoughts-label {
+    animation: none;
+  }
+}
+
 .tool-call {
   align-self: flex-start;
   max-width: 80%;
@@ -759,6 +822,49 @@ export const STYLES = `
 
 .attach-input {
   display: none;
+}
+
+/* The 🎤 mic button (VOICE-1); shown only once #wireVoice mounts it. */
+.voice-slot {
+  display: contents;
+}
+
+.voice-btn {
+  border: 1px solid var(--ag-ui-border);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--ag-ui-input-bg);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.voice-btn:hover {
+  border-color: var(--ag-ui-accent);
+}
+
+.voice-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Recording: a red tint + a gentle pulse so it's clearly "live". */
+.voice-btn[data-state="recording"] {
+  border-color: var(--ag-ui-danger);
+  background: var(--ag-ui-danger);
+  color: #ffffff;
+  animation: ag-ui-voice-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes ag-ui-voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-btn[data-state="recording"] {
+    animation: none;
+  }
 }
 
 /* Pending-attachments tray, above the input row; collapses (hidden) when empty. */

@@ -5,6 +5,7 @@ import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "../src/ui/ui_strings.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
+import { installFakeMedia } from "./helpers/fake_media.js";
 
 function shadow(el: AgUiChat): ShadowRoot {
   const root = el.shadowRoot;
@@ -287,6 +288,92 @@ describe("AgUiChat — UX & customization", () => {
       const card = root.querySelector(".tool-call");
       expect(card?.getAttribute("data-status")).toBe("done");
       expect(card?.querySelector(".tool-call-result")?.textContent).toBe("No result returned.");
+    });
+  });
+
+  describe("voice input", () => {
+    it("hides the mic until transcription is wired", () => {
+      expect(shadow(mount()).querySelector(".voice-btn")).toBeNull();
+    });
+
+    it("reveals the mic with data-transcribe-url", () => {
+      const el = mount({ "data-transcribe-url": "/agent/transcribe/" });
+      expect(shadow(el).querySelector(".voice-btn")).not.toBeNull();
+    });
+
+    it("reveals the mic with a custom transcribeHandler and no url", () => {
+      const el = mount({}, (e) => {
+        e.transcribeHandler = async () => "x";
+      });
+      expect(shadow(el).querySelector(".voice-btn")).not.toBeNull();
+    });
+
+    it("drops a transcript into the composer, appending to typed text", async () => {
+      const media = installFakeMedia();
+      try {
+        const el = mount({}, (e) => {
+          e.transcribeHandler = async () => "from voice";
+        });
+        const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
+        if (input === null) {
+          throw new Error("expected an input");
+        }
+        input.value = "typed";
+        const mic = shadow(el).querySelector<HTMLButtonElement>(".voice-btn");
+        mic?.click(); // start
+        await flush();
+        mic?.click(); // stop → transcribe → insert
+        await flush();
+        expect(input.value).toBe("typed from voice");
+      } finally {
+        media.restore();
+      }
+    });
+
+    it("sets the transcript as-is when the composer is empty", async () => {
+      const media = installFakeMedia();
+      try {
+        const el = mount({}, (e) => {
+          e.transcribeHandler = async () => "just voice";
+        });
+        const mic = shadow(el).querySelector<HTMLButtonElement>(".voice-btn");
+        mic?.click();
+        await flush();
+        mic?.click();
+        await flush();
+        expect(shadow(el).querySelector<HTMLTextAreaElement>(".input")?.value).toBe("just voice");
+      } finally {
+        media.restore();
+      }
+    });
+  });
+
+  describe("built-in theme toggle", () => {
+    it("is absent unless opted in", () => {
+      expect(shadow(mount()).querySelector(".header-btn--theme")).toBeNull();
+    });
+
+    it("flips the theme attribute and persists it per tab", () => {
+      const el = mount({ "data-theme-toggle": "" });
+      const toggle = shadow(el).querySelector<HTMLButtonElement>(".header-btn--theme");
+      expect(toggle?.getAttribute("part")).toBe("header-button theme-toggle");
+      expect(toggle?.textContent).toBe("🌙"); // light → offer dark
+
+      toggle?.click();
+      expect(el.getAttribute("theme")).toBe("dark");
+      expect(sessionStorage.getItem("ag-ui-chat:theme")).toBe("dark");
+      expect(toggle?.textContent).toBe("☀️"); // dark → offer light
+
+      toggle?.click();
+      expect(el.getAttribute("theme")).toBe("light");
+    });
+
+    it("restores a persisted theme on connect (opt-in only)", () => {
+      sessionStorage.setItem("ag-ui-chat:theme", "dark");
+      // Without the opt-in the persisted value is ignored…
+      expect(mount().getAttribute("theme")).toBeNull();
+      // …with it, the theme is restored.
+      expect(mount({ "data-theme-toggle": "" }).getAttribute("theme")).toBe("dark");
     });
   });
 });

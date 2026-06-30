@@ -1607,6 +1607,45 @@ describe("AgUiChat — answer group (WELL-1)", () => {
     expect(shadow(el).querySelector(".answer")).toBeNull();
   });
 
+  it("streams reasoning into a thoughts region at the top of the group, folding it on the answer", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.reasoningStart();
+      emit.reasoning("Let me think");
+      emit.reasoningEnd();
+      emit.text("The answer is 42");
+      emit.textEnd("The answer is 42");
+      emit.runEnd();
+    });
+    await send(el, "ponder this");
+
+    const group = shadow(el).querySelector(".answer");
+    const thoughts = group?.querySelector(".thoughts");
+    expect(thoughts).not.toBeNull();
+    // The thoughts region is the group's first child (above the answer text).
+    expect(group?.firstElementChild).toBe(thoughts);
+    expect(thoughts?.querySelector(".thoughts-body")?.textContent).toBe("Let me think");
+    // The answer's first text token folds the thoughts away.
+    expect(thoughts?.querySelector(".thoughts-toggle")?.getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(group?.querySelector(".message--assistant")?.textContent).toContain("The answer is 42");
+  });
+
+  it("shows a thoughts region without an answer-well opt-in (independent of the well)", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.reasoningStart();
+      emit.reasoning("hmm");
+      emit.runEnd();
+    });
+    await send(el, "think");
+    // Reasoning with no answer text: the region stays (expanded) inside the group.
+    const thoughts = shadow(el).querySelector(".answer .thoughts");
+    expect(thoughts).not.toBeNull();
+    expect(thoughts?.querySelector(".thoughts-body")?.textContent).toBe("hmm");
+  });
+
   it("reconstructs one group per assistant turn when replaying history", async () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
     el.setAttribute("endpoint", "/agent/");

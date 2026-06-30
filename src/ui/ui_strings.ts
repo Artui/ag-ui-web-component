@@ -26,12 +26,17 @@ export interface UiStrings {
   collapse: string;
   /** Expand affordance (the sidebar rail toggle). */
   expand: string;
+  /** Built-in header theme toggle (light ⇄ dark). */
+  toggleTheme: string;
 
   // ── Messages region ─────────────────────────────────────────────────────────
   /** `aria-label` of the scrolling message log. */
   conversation: string;
-  /** `aria-label` of the "thinking" pending indicator. */
+  /** `aria-label` of the "thinking" pending indicator, and the thoughts region's
+   * header while the model is still reasoning. */
   thinking: string;
+  /** The thoughts region's header once reasoning has streamed (collapsed label). */
+  thoughts: string;
   /** The muted note after a cancelled run. */
   stopped: string;
   /** Error shown when the stream drops without a terminal AG-UI event. */
@@ -56,6 +61,14 @@ export interface UiStrings {
   stop: string;
   /** Attach-files button. */
   attachFiles: string;
+  /** Mic button while idle (start recording). */
+  recordVoice: string;
+  /** Mic button while recording (stop + transcribe). */
+  stopRecording: string;
+  /** Mic button while the clip is being transcribed. */
+  transcribing: string;
+  /** Mic button fallback message when transcription fails. */
+  transcriptionFailed: string;
 
   // ── Tool-call card ──────────────────────────────────────────────────────────
   /** Status pill while the call runs. */
@@ -137,9 +150,11 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   newChat: "New chat",
   collapse: "Collapse",
   expand: "Expand",
+  toggleTheme: "Toggle theme",
 
   conversation: "Conversation",
   thinking: "Assistant is thinking…",
+  thoughts: "Thoughts",
   stopped: "⏹ Stopped",
   connectionLost: "Connection lost",
   noResult: "No result returned.",
@@ -152,6 +167,10 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   send: "Send",
   stop: "Stop",
   attachFiles: "Attach files",
+  recordVoice: "Record voice",
+  stopRecording: "Stop recording",
+  transcribing: "Transcribing…",
+  transcriptionFailed: "Transcription failed",
 
   toolRunning: "running…",
   toolDone: "✓ done",

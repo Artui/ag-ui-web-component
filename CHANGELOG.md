@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-06-30
+
+### Added
+
+- **Model thoughts (THINK-1).** When the server forwards a reasoning model's
+  chain-of-thought, the element now renders a muted, collapsible **thoughts
+  region** (part `thoughts`) at the top of the current answer group — it streams
+  while the model reasons and folds away on the answer's first token (the reader
+  can reopen it). `AgUiClientHandlers` gains `onReasoningStart` / `onReasoningDelta`
+  / `onReasoningEnd`, wired from `@ag-ui/client`'s `REASONING_*` subscriber
+  callbacks (which also cover the deprecated `THINKING_*` family).
+- **Voice input (VOICE-1).** Set `data-transcribe-url` (django-ag-ui's
+  `TranscribeView`) to reveal a 🎤 mic button in the composer (part
+  `voice-button`): it records via `MediaRecorder`, POSTs the clip, and drops the
+  returned transcript into the textarea. A pluggable `transcribeHandler` —
+  `(audio: Blob) => Promise<string>` — swaps the transport (a different STT
+  endpoint, a Web Speech adapter) and reveals the mic even without the attribute.
+  New exports: `transcribeAudio`, `TranscribeOptions`, `TranscribeHandler`.
+- **Built-in theme toggle (THEME-1).** The boolean `data-theme-toggle` attribute
+  adds an optional light⇄dark toggle to the header (part `theme-toggle`,
+  `toggleTheme()`) that flips `theme` and persists per tab. Off by default, so a
+  host-supplied switch in `slot="header-actions"` stays unaffected.
+
 ## [0.8.1] — 2026-06-30
 
 ### Fixed
@@ -377,7 +400,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.6.0...v0.7.0
