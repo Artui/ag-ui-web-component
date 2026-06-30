@@ -1,6 +1,6 @@
 {
   "name": "@artooi/ag-ui-web-component",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Framework-free <ag-ui-chat> Web Component over the AG-UI protocol. Drop-in chat sidebar with a pluggable client-side tool registry, DOM driver primitives, animations, and destructive-action confirmation modal.",
   "type": "module",
   "main": "./dist/index.js",
