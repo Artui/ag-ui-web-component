@@ -168,6 +168,20 @@ export const STYLES = `
   padding-inline: max(12px, calc((100% - var(--ag-ui-content-max-width)) / 2));
 }
 
+/* The rows between the message list and the composer (skill chips, the
+   /-command palette, the missing-placeholder hint, the upload tray) line up
+   with the column too — chips are padding-based, the palette/hint/tray are
+   margin-based, so each gets its own inline axis nudged by the same gutter. */
+:host([placement="page"]) .skill-chips,
+:host([placement="page"]) .attachment-tray {
+  padding-inline: max(12px, calc((100% - var(--ag-ui-content-max-width)) / 2));
+}
+
+:host([placement="page"]) .skill-palette,
+:host([placement="page"]) .skill-hint {
+  margin-inline: max(12px, calc((100% - var(--ag-ui-content-max-width)) / 2));
+}
+
 /* In the reading column the assistant well uses the full width; the user
    message stays a right-aligned pill (its default align-self + max-width). */
 :host([placement="page"]) .message--assistant {
