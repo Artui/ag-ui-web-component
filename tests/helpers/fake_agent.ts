@@ -7,6 +7,9 @@ export interface Emit {
   textEnd(buffer: string): void;
   toolCall(id: string, name: string, args: Record<string, unknown>): void;
   toolResult(toolCallId: string, content: string): void;
+  reasoningStart(): void;
+  reasoning(buffer: string): void;
+  reasoningEnd(): void;
   error(message: string): void;
   runEnd(): void;
 }
@@ -32,6 +35,10 @@ function emitter(s: AgentSubscriber, state: EmitState): Emit {
       } as never),
     toolResult: (toolCallId, content) =>
       void s.onToolCallResultEvent?.({ event: { toolCallId, content } } as never),
+    reasoningStart: () => void s.onReasoningStartEvent?.({ event: {} } as never),
+    reasoning: (reasoningMessageBuffer) =>
+      void s.onReasoningMessageContentEvent?.({ reasoningMessageBuffer } as never),
+    reasoningEnd: () => void s.onReasoningEndEvent?.({ event: {} } as never),
     error: (message) => {
       state.terminal = true;
       void s.onRunErrorEvent?.({ event: { message } } as never);

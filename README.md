@@ -158,6 +158,8 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's 📎 picker + drag-and-drop. |
 | `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
 | `data-attachment-max-bytes` | — | Client-side upload size cap in bytes (default 10 MiB; `0` disables). The server stays authoritative. |
+| `data-transcribe-url` | — | URL of the voice-transcription endpoint (django-ag-ui's `TranscribeView`); reveals the composer's 🎤 mic button. See [Voice input](#voice-input). |
+| `data-theme-toggle` | — | Boolean: show a built-in header light⇄dark toggle (persists per tab). Off by default. See [Theme toggle](#theme-toggle). |
 | `data-strings` | `strings` | Partial JSON override of the UI string table (localization). The property wins key-by-key over the attribute; see [Internationalization](#internationalization-i18n). |
 | `data-icon-url` | — | Header (and sidebar-rail) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
 | `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
@@ -170,9 +172,9 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 
 **Properties** (JS only, not attributes): `headers`, `allowImages`, `autoConfirm`,
 `confirmPredicate`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
-`getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `navigationResult`,
-`skillContext`, `toolSummaries`, `strings`, `resolvePageTarget`, plus the mirrors
-`endpoint` / `toolDisplay` / `collapsed`.
+`getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`,
+`navigationResult`, `skillContext`, `toolSummaries`, `strings`, `resolvePageTarget`, plus the
+mirrors `endpoint` / `toolDisplay` / `collapsed`.
 
 `allowImages` (default `false`) re-enables `<img>` in rendered assistant markdown.
 It is off by default because a model-controlled image URL is fetched by the browser
@@ -772,7 +774,8 @@ have to hand-tune the variables:
 
 See [`src/ui/styles.ts`](src/ui/styles.ts) for the full variable + preset list. The
 [`demo/`](demo/) live playground (`node demo/mock-server.mjs`) flips theme, density, placement,
-text-animation, tool-display, and the answer well live from a single page.
+text-animation, tool-display, and the answer well live from a single page, and demos the
+streamed thoughts region, the 🎤 mic, and the header theme toggle.
 
 ### Parts and slots
 
@@ -788,12 +791,13 @@ ag-ui-chat::part(tool-card) { font-family: var(--my-mono); }
 ```
 
 Available parts: `panel`, `header`, `title`, `icon`, `header-controls`, `header-button`
-(plus `history-button` / `new-button` / `collapse-button`), `messages`, `answer` (the per-turn
-group), `message` (plus `message-user` / `message-assistant`), `empty`, `pending`, `tool-card`
+(plus `history-button` / `new-button` / `collapse-button` / `theme-toggle`), `messages`,
+`answer` (the per-turn group), `thoughts` (plus `thoughts-toggle` / `thoughts-body`), `message`
+(plus `message-user` / `message-assistant`), `empty`, `pending`, `tool-card`
 (plus `tool-card-head` / `-icon` / `-name` / `-status` / `-args` / `-toggle` / `-result`),
 `confirm` (plus `confirm-body` /
 `-args` / `-actions` / `-button` / `-cancel` / `-confirm`), `composer`, `input`, `send`,
-`attach-button`, `attachment-tray`, `launcher`, `launcher-icon`, and the drawer parts
+`attach-button`, `voice-button`, `attachment-tray`, `launcher`, `launcher-icon`, and the drawer parts
 (`drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`,
 `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`).
 
@@ -863,6 +867,40 @@ pure CSS and turn-scoped — no JS API — and themeable via `--ag-ui-well-bg` /
 
 ```html
 <ag-ui-chat endpoint="/agent/" data-answer-well></ag-ui-chat>
+```
+
+### Model reasoning (thoughts)
+
+When a reasoning model streams its chain-of-thought (django-ag-ui forwards it as AG-UI reasoning
+events — enable a thinking budget via `MODEL_SETTINGS`, see its docs), the element renders a muted,
+collapsible **thoughts region** (part `thoughts`) at the top of the current answer group. It opens
+while the model reasons and folds away on the answer's first token; the reader can reopen it. The
+web component handles the `REASONING_*` event family (and the deprecated `THINKING_*`, which
+`@ag-ui/client` maps onto it), so no client config is needed — the thoughts appear whenever the
+server forwards reasoning.
+
+### Voice input
+
+Set `data-transcribe-url` (django-ag-ui's `TranscribeView`) to reveal a 🎤 mic button in the
+composer (part `voice-button`). Click it to record via `MediaRecorder`, click again to stop — the
+clip is POSTed to the endpoint and the returned transcript is dropped into the textarea. Swap the
+transport with a custom `transcribeHandler` — `(audio: Blob) => Promise<string>` — to use a
+different STT endpoint or a browser Web Speech adapter without touching the button; when set, the
+mic appears even with no `data-transcribe-url`.
+
+```html
+<ag-ui-chat endpoint="/agent/" data-transcribe-url="/agent/transcribe/"></ag-ui-chat>
+```
+
+### Theme toggle
+
+`theme` is a plain attribute you can set yourself, and a host can always drop its own switch into
+`slot="header-actions"`. For convenience, the boolean `data-theme-toggle` attribute adds a built-in
+light⇄dark toggle to the header (part `theme-toggle`) that flips `theme` and persists the choice
+per tab. Off by default so it never competes with a host-supplied control.
+
+```html
+<ag-ui-chat endpoint="/agent/" data-theme-toggle></ag-ui-chat>
 ```
 
 ---

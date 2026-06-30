@@ -17,6 +17,9 @@ function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {
     onTextEnd: (b) => calls.push(`end:${b}`),
     onToolCall: (c) => calls.push(`tool:${c.name}:${c.id}:${JSON.stringify(c.args)}`),
     onToolResult: (id, content) => calls.push(`result:${id}:${content}`),
+    onReasoningStart: () => calls.push("reasoning-start"),
+    onReasoningDelta: (b) => calls.push(`reasoning:${b}`),
+    onReasoningEnd: () => calls.push("reasoning-end"),
     onRunEnd: () => calls.push("done"),
     onError: (m) => calls.push(`err:${m}`),
     onCancelled: () => calls.push("cancelled"),
@@ -71,6 +74,35 @@ describe("AgUiClient", () => {
       "end:paris",
       'tool:fill_field:tc1:{"name":"city","value":"Paris"}',
       "result:tc1:filled",
+      "done",
+      "settled",
+    ]);
+  });
+
+  it("maps reasoning events to the reasoning handlers", async () => {
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.reasoningStart();
+        emit.reasoning("weigh");
+        emit.reasoning("weighing the options");
+        emit.reasoningEnd();
+        emit.text("the answer");
+        emit.textEnd("the answer");
+        emit.runEnd();
+      },
+    });
+    const handlers = recordingHandlers();
+    await new AgUiClient({ agent: fake.agent, handlers }).send("x");
+
+    expect(handlers.calls).toEqual([
+      "start",
+      "reasoning-start",
+      "reasoning:weigh",
+      "reasoning:weighing the options",
+      "reasoning-end",
+      "delta:the answer",
+      "end:the answer",
       "done",
       "settled",
     ]);

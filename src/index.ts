@@ -44,6 +44,11 @@ export {
 export { defineAgUiChat } from "./core/define_ag_ui_chat.js";
 export { RemoteConversationStore } from "./core/remote_conversation_store.js";
 export {
+  type TranscribeHandler,
+  type TranscribeOptions,
+  transcribeAudio,
+} from "./core/transcribe_audio.js";
+export {
   type UploadHandler,
   type UploadOptions,
   uploadAttachment,

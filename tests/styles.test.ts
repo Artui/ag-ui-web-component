@@ -177,4 +177,20 @@ describe("STYLES", () => {
   it("strips the box chrome in inline tool-display mode", () => {
     expect(STYLES).toContain('.tool-call[data-display="inline"]');
   });
+
+  it("styles the collapsible thoughts region and pulses it while streaming", () => {
+    expect(STYLES).toContain(".thoughts");
+    expect(STYLES).toContain(".thoughts-toggle");
+    expect(STYLES).toContain(".thoughts-body");
+    // The streaming pulse keys off data-streaming and respects reduced motion.
+    expect(STYLES).toContain(".thoughts[data-streaming] .thoughts-label");
+    expect(STYLES).toContain("@keyframes ag-ui-thoughts-pulse");
+    expect(STYLES).toContain("prefers-reduced-motion: reduce");
+  });
+
+  it("styles the mic button with a recording state that respects reduced motion", () => {
+    expect(STYLES).toContain(".voice-btn");
+    expect(STYLES).toContain('.voice-btn[data-state="recording"]');
+    expect(STYLES).toContain("@keyframes ag-ui-voice-pulse");
+  });
 });

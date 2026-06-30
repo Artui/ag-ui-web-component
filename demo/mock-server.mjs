@@ -46,6 +46,21 @@ function emitToolCall(res, id, name, args, parentMessageId) {
   emit(res, { type: "TOOL_CALL_END", toolCallId: id });
 }
 
+// A reasoning model's streamed chain-of-thought (THINK-1): the web component
+// renders it as a collapsible "thinking" region that folds on the first answer.
+async function streamReasoning(res, messageId, chunks) {
+  emit(res, { type: "REASONING_START", messageId });
+  emit(res, { type: "REASONING_MESSAGE_START", messageId, role: "reasoning" });
+  let buffer = "";
+  for (const delta of chunks) {
+    buffer += delta;
+    emit(res, { type: "REASONING_MESSAGE_CONTENT", messageId, delta });
+    await sleep(90);
+  }
+  emit(res, { type: "REASONING_MESSAGE_END", messageId });
+  emit(res, { type: "REASONING_END", messageId });
+}
+
 async function handleAgent(res, body) {
   const input = JSON.parse(body);
   const { threadId, runId, messages } = input;
@@ -66,6 +81,12 @@ async function handleAgent(res, body) {
       "and saved. ✅",
     ]);
   } else {
+    await streamReasoning(res, "r-intro", [
+      "The user wants the article filled. ",
+      "I'll set the title and slug, ",
+      "publish it, mark it featured, ",
+      "then save.",
+    ]);
     const parent = "m-intro";
     await streamText(res, parent, [
       "On it — ",
@@ -106,6 +127,16 @@ const server = createServer((req, res) => {
         res.writeHead(500);
         res.end(String(error));
       });
+    });
+    return;
+  }
+  if (req.method === "POST" && req.url === "/transcribe/") {
+    // Voice input (VOICE-1): a real backend would run STT on the posted clip;
+    // the demo just drains the body and returns a canned transcript.
+    req.on("data", () => {});
+    req.on("end", () => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ text: "Draft an article about sea otters." }));
     });
     return;
   }

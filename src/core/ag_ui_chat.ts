@@ -28,9 +28,11 @@ import { renderMarkdown } from "../ui/render_markdown.js";
 import { wrapWords } from "../ui/reveal_words.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
 import { STYLES } from "../ui/styles.js";
+import { ThoughtsBlock } from "../ui/thoughts_block.js";
 import { ThreadDrawer } from "../ui/thread_drawer.js";
 import { ToolCallCard, type ToolDisplayMode } from "../ui/tool_call_card.js";
 import { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "../ui/ui_strings.js";
+import { VoiceInput } from "../ui/voice_input.js";
 import {
   AgUiClient,
   type AgUiClientHandlers,
@@ -45,6 +47,7 @@ import {
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
+import { type TranscribeHandler, transcribeAudio } from "./transcribe_audio.js";
 import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
 
 /** The role a rendered chat message takes. */
@@ -64,6 +67,9 @@ export interface ToggleDetail {
 
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
+
+/** Per-tab persistence key for the built-in theme toggle (THEME-1). */
+const THEME_KEY = "ag-ui-chat:theme";
 
 /**
  * `<ag-ui-chat>` — a framework-free chat sidebar Web Component over AG-UI.
@@ -170,6 +176,16 @@ export class AgUiChat extends HTMLElement {
   uploadHandler: UploadHandler | null = null;
 
   /**
+   * How recorded voice clips are transcribed. `null` (default) POSTs the clip
+   * to `data-transcribe-url` (django-ag-ui's `TranscribeView`). Set a custom
+   * {@link TranscribeHandler} — `(audio: Blob) => Promise<string>` — to swap the
+   * transport (a different STT endpoint, a browser Web Speech adapter) without
+   * touching the mic button. When set, the 🎤 affordance appears even with no
+   * `data-transcribe-url`.
+   */
+  transcribeHandler: TranscribeHandler | null = null;
+
+  /**
    * Builds the tool result a navigating tool resumes with after the page
    * reloads. Defaults to the landed URL; a host (e.g. the admin package) can
    * override to include a page snapshot or post-reload validation errors.
@@ -243,12 +259,18 @@ export class AgUiChat extends HTMLElement {
   readonly #attachButton: HTMLButtonElement;
   readonly #fileInput: HTMLInputElement;
   readonly #attachSlot: HTMLDivElement;
+  /** Optional built-in header theme toggle (THEME-1); shown only with `data-theme-toggle`. */
+  readonly #themeToggle: HTMLButtonElement;
   /** The collapsed-sidebar rail (an expand affordance; shown only for `placement="sidebar"`). */
   readonly #rail: HTMLButtonElement;
   /** Empty-state region at the top of the message list; hidden once anything renders. */
   readonly #emptyWrap: HTMLDivElement;
   /** Upload tray; created on connect only when `data-attachments-url` is set. */
   #attachTray: AttachmentTray | null = null;
+  /** Mic button mount point (input row); the control mounts on connect when enabled. */
+  readonly #voiceSlot: HTMLSpanElement;
+  /** Voice-input control; created on connect when transcription is available. */
+  #voice: VoiceInput | null = null;
   /** Refs attached to the message currently being sent (the context manifest). */
   #runAttachments: readonly AttachmentRef[] = [];
 
@@ -273,6 +295,10 @@ export class AgUiChat extends HTMLElement {
   // frontend-tool loop (which is several AG-UI runs), not one run. `null`
   // between turns; user bubbles never enter it.
   #currentGroup: HTMLDivElement | null = null;
+  // The current turn's streamed-reasoning region (THINK-1), shown at the top of
+  // the answer group while a reasoning model thinks and collapsed once the
+  // answer's first text token arrives. `null` outside a reasoning turn.
+  #thoughts: ThoughtsBlock | null = null;
   #threadId = "";
   #initialMessages: readonly Message[] = [];
   // Skill catalog by source; merged backend → embed → client (later wins).
@@ -292,6 +318,8 @@ export class AgUiChat extends HTMLElement {
     this.#attachButton = document.createElement("button");
     this.#fileInput = document.createElement("input");
     this.#attachSlot = document.createElement("div");
+    this.#voiceSlot = document.createElement("span");
+    this.#themeToggle = document.createElement("button");
     this.#rail = document.createElement("button");
     this.#emptyWrap = document.createElement("div");
     this.#skillsMenu = new SkillsMenu((skill) => this.#applySkill(skill));
@@ -445,6 +473,14 @@ export class AgUiChat extends HTMLElement {
     // Resolve the string table before rendering any chrome (defaults are the
     // floor; `data-strings` then the `strings` property layer over them).
     this.#strings = mergeUiStrings({ ...this.#readStringOverrides(), ...this.strings });
+    // Restore a theme the built-in toggle persisted last visit (opt-in only, so
+    // it never overrides a host that drives `theme` itself).
+    if (this.getAttribute("data-theme-toggle") !== null) {
+      const saved = sessionStorage.getItem(THEME_KEY);
+      if (saved !== null) {
+        this.setAttribute("theme", saved);
+      }
+    }
     this.#render();
     this.#drawer.setStrings(this.#strings);
     if (sessionStorage.getItem(COLLAPSED_KEY) === "1") {
@@ -455,6 +491,7 @@ export class AgUiChat extends HTMLElement {
     void this.#fetchToolCatalog();
     this.#wireThreadStore();
     this.#wireAttachments();
+    this.#wireVoice();
     this.#threadId = this.conversationStore.threadId();
     void this.#rehydrate();
   }
@@ -508,6 +545,43 @@ export class AgUiChat extends HTMLElement {
       return null;
     }
     return (file, onProgress) => uploadAttachment(file, { url, headers: this.headers, onProgress });
+  }
+
+  /**
+   * Reveal the composer's 🎤 mic button when transcription is possible — either
+   * a custom {@link transcribeHandler} is set or `data-transcribe-url` provides
+   * the built-in POST endpoint. The control records via `MediaRecorder` and
+   * drops the transcript into the composer; with neither configured the mic
+   * stays hidden and the chat is text-only.
+   */
+  #wireVoice(): void {
+    const url = this.getAttribute("data-transcribe-url");
+    const transcribe = this.transcribeHandler ?? this.#defaultTranscribeHandler(url);
+    if (transcribe === null) {
+      return;
+    }
+    this.#voice = new VoiceInput({
+      transcribe,
+      onText: (text) => this.#insertVoiceText(text),
+      strings: this.#strings,
+    });
+    this.#voiceSlot.appendChild(this.#voice.element);
+  }
+
+  /** The built-in transcription handler for `data-transcribe-url`, or `null`. */
+  #defaultTranscribeHandler(url: string | null): TranscribeHandler | null {
+    if (url === null) {
+      return null;
+    }
+    return (audio) => transcribeAudio(audio, { url, headers: this.headers });
+  }
+
+  /** Drop a voice transcript into the composer (appended to any typed text). */
+  #insertVoiceText(text: string): void {
+    const current = this.#input.value.trim();
+    this.#input.value = current === "" ? text : `${current} ${text}`;
+    this.#onInput();
+    this.#input.focus();
   }
 
   /** The client-side upload size cap from `data-attachment-max-bytes`. */
@@ -713,6 +787,25 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * Flip the `theme` attribute between `light` and `dark` and persist the choice
+   * per tab. Bound to the optional built-in header theme toggle
+   * (`data-theme-toggle`); any non-dark theme (incl. `auto` / `code`) flips to
+   * `dark` first.
+   */
+  toggleTheme(): void {
+    const next = this.getAttribute("theme") === "dark" ? "light" : "dark";
+    this.setAttribute("theme", next);
+    sessionStorage.setItem(THEME_KEY, next);
+    this.#syncThemeGlyph();
+  }
+
+  /** Reflect the current theme on the toggle: show the destination's glyph. */
+  #syncThemeGlyph(): void {
+    const dark = this.getAttribute("theme") === "dark";
+    this.#themeToggle.textContent = dark ? "☀️" : "🌙";
+  }
+
+  /**
    * Start a fresh conversation: forget the persisted history, drop the
    * in-memory run state, clear the transcript, and mint a new thread id.
    */
@@ -731,6 +824,7 @@ export class AgUiChat extends HTMLElement {
     this.#client = null;
     this.#streamingBubble = null;
     this.#currentGroup = null;
+    this.#thoughts = null;
     this.#hidePending();
     this.#toolCards.clear();
     this.#serverSettled.clear();
@@ -965,7 +1059,20 @@ export class AgUiChat extends HTMLElement {
     const collapse = this.#headerButton("collapse", this.#strings.collapse, "—");
     collapse.addEventListener("click", () => this.toggleCollapsed());
 
-    controls.append(history, newChat, collapse);
+    controls.append(history, newChat);
+    // Optional built-in theme toggle (THEME-1): off unless the host opts in, so
+    // it never competes with a host-supplied switch in `slot="header-actions"`.
+    if (this.getAttribute("data-theme-toggle") !== null) {
+      this.#themeToggle.type = "button";
+      this.#themeToggle.className = "header-btn header-btn--theme";
+      this.#themeToggle.setAttribute("part", "header-button theme-toggle");
+      this.#themeToggle.title = this.#strings.toggleTheme;
+      this.#themeToggle.setAttribute("aria-label", this.#strings.toggleTheme);
+      this.#themeToggle.addEventListener("click", () => this.toggleTheme());
+      this.#syncThemeGlyph();
+      controls.append(this.#themeToggle);
+    }
+    controls.append(collapse);
     header.append(title, headerActions, controls);
 
     this.#messages.className = "messages";
@@ -1035,11 +1142,14 @@ export class AgUiChat extends HTMLElement {
 
     this.#attachSlot.className = "attachment-slot";
 
+    // Mic button mount point (kept empty until #wireVoice mounts the control).
+    this.#voiceSlot.className = "voice-slot";
+
     // A coarse footer slot below the composer.
     const footer = document.createElement("slot");
     footer.name = "footer";
 
-    inputRow.append(this.#attachButton, this.#input, this.#send, this.#fileInput);
+    inputRow.append(this.#attachButton, this.#voiceSlot, this.#input, this.#send, this.#fileInput);
     // Skill surfaces sit just above the input: palette (opens on `/`), chips,
     // the missing-placeholder hint, and the pending-attachments tray.
     this.#chat.append(
@@ -1310,8 +1420,23 @@ export class AgUiChat extends HTMLElement {
         this.#ensureGroup();
         this.#showPending();
       },
+      onReasoningStart: () => {
+        // The model is thinking: swap the pending dots for a live thoughts
+        // region at the top of the turn's answer group.
+        this.#hidePending();
+        this.#showThoughts();
+      },
+      onReasoningDelta: (buffer) => {
+        this.#showThoughts().stream(buffer);
+      },
+      onReasoningEnd: () => {
+        // Leave the region expanded until the answer text starts — it collapses
+        // on the first text delta (onTextDelta).
+      },
       onTextDelta: (buffer) => {
         this.#hidePending();
+        // The answer has begun — fold the thoughts away so they don't crowd it.
+        this.#thoughts?.collapse();
         this.#streamInto(buffer);
         this.#streamDeltas += 1;
       },
@@ -1380,6 +1505,7 @@ export class AgUiChat extends HTMLElement {
           this.#updateEmptyState();
         }
         this.#currentGroup = null;
+        this.#thoughts = null;
       },
     };
   }
@@ -1425,6 +1551,22 @@ export class AgUiChat extends HTMLElement {
   #hidePending(): void {
     this.#pending?.remove();
     this.#pending = null;
+  }
+
+  /**
+   * The current turn's thoughts region, creating it (at the top of the answer
+   * group, above any streamed text or tool cards) on first sight. Idempotent
+   * across a turn's reasoning tokens.
+   */
+  #showThoughts(): ThoughtsBlock {
+    if (this.#thoughts === null) {
+      this.#thoughts = new ThoughtsBlock(this.#strings);
+      const group = this.#ensureGroup();
+      group.insertBefore(this.#thoughts.element, group.firstChild);
+      this.#updateEmptyState();
+      this.#messages.scrollTop = this.#messages.scrollHeight;
+    }
+    return this.#thoughts;
   }
 
   #streamInto(buffer: string): HTMLDivElement {
