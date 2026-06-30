@@ -8,13 +8,43 @@ describe("ToolCallCard", () => {
     expect(card.element.getAttribute("data-tool-name")).toBe("fill_field");
     expect(card.element.getAttribute("data-status")).toBe("pending");
     expect(card.element.getAttribute("part")).toBe("tool-card");
-    expect(card.element.querySelector(".tool-call-name")?.textContent).toBe("🔧 fill_field");
+    expect(card.element.querySelector(".tool-call-name")?.textContent).toBe("fill_field");
     expect(card.element.querySelector(".tool-call-status")?.textContent).toContain("running");
     expect(card.element.querySelector(".tool-call-args")?.textContent).toContain(
       '"value": "Paris"',
     );
     // No result body until settled.
     expect(card.element.querySelector(".tool-call-result")).toBeNull();
+  });
+
+  it("renders a status icon element keyed off data-status (themed by CSS)", () => {
+    const card = new ToolCallCard("fill_field", {});
+    const icon = card.element.querySelector(".tool-call-icon");
+    expect(icon).not.toBeNull();
+    expect(icon?.getAttribute("part")).toBe("tool-card-icon");
+    // The icon carries no text of its own — the glyph/spinner is pure CSS.
+    expect(icon?.textContent).toBe("");
+    // Its appearance follows the card's status, which the CSS selects on.
+    expect(card.element.getAttribute("data-status")).toBe("pending");
+    card.settle("done", "ok");
+    expect(card.element.getAttribute("data-status")).toBe("done");
+    expect(icon?.textContent).toBe("");
+  });
+
+  it("inline mode shows no args but keeps a collapsible result", () => {
+    const card = new ToolCallCard("count_users", { active: true }, "inline");
+    expect(card.element.getAttribute("data-display")).toBe("inline");
+    // Like minimal/compact, args aren't shown inline…
+    expect(card.element.querySelector(".tool-call-args")).toBeNull();
+    card.settle("done", "42");
+    // …but unlike minimal, the result is reachable behind its own toggle.
+    const toggle = card.element.querySelector<HTMLButtonElement>(".tool-call-toggle");
+    const output = card.element.querySelector<HTMLElement>(".tool-call-result");
+    expect(toggle?.textContent).toBe("Result");
+    expect(output?.textContent).toBe("42");
+    expect(output?.hidden).toBe(true);
+    // Result only — no args bundled in (that's compact's behaviour).
+    expect(output?.textContent).not.toContain("args:");
   });
 
   it("reports its settled state for the terminal sweep", () => {
@@ -91,7 +121,7 @@ describe("ToolCallCard", () => {
 
   it("shows the x-summary label instead of the tool name when given", () => {
     const card = new ToolCallCard("query_model", { model: "Order" }, "full", "Query orders");
-    expect(card.element.querySelector(".tool-call-name")?.textContent).toBe("🔧 Query orders");
+    expect(card.element.querySelector(".tool-call-name")?.textContent).toBe("Query orders");
     // The raw name is still on the data attribute for selectors.
     expect(card.element.getAttribute("data-tool-name")).toBe("query_model");
   });

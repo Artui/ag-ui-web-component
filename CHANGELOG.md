@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Per-turn answer group + opt-in well (WELL-1).** Each assistant turn now
+  renders inside one `.answer` group (part `answer`) that holds its streamed
+  text, tool cards, and pending indicator — so a turn that calls tools reads as
+  a single answer instead of loose siblings. The group spans the whole
+  multi-round frontend-tool loop (several AG-UI runs), opening on the turn's
+  first run and closing at settle; user bubbles stay outside it, and history
+  replay reconstructs one group per assistant turn. Add the boolean
+  `data-answer-well` attribute to box that group in a bordered, padded "well"
+  (themeable via `--ag-ui-well-bg` / `--ag-ui-well-border`); without it the
+  layout is the flat stack as before. Pure CSS, turn-scoped, no JS API.
+- **Full-screen page placement (PAGE-1).** New `placement="page"`: a full-bleed
+  background with the conversation in a centred reading column (default ~820px,
+  set via `--ag-ui-content-max-width`). The assistant turn spans the column
+  while the user message stays a right-aligned pill — the layout for a dedicated
+  chat page (distinct from `full`'s edge-to-edge, left-aligned messages).
+- **Inline tool-display mode + themeable status icons (CARD-1).** New
+  `data-tool-display="inline"`: the lightest card — a one-line status row (icon
+  + summary, no box chrome) with the result behind its own toggle. Every
+  tool-call card now leads with a CSS-drawn **status icon** (part
+  `tool-card-icon`): a spinning ring while running, then a check / cross / slash
+  on success / error / decline, replacing the hardcoded `🔧` glyph. Re-theme via
+  `--ag-ui-tool-icon-done` / `--ag-ui-tool-icon-error` / `--ag-ui-tool-icon-declined`
+  and `--ag-ui-tool-spin-duration`; the spin respects `prefers-reduced-motion`.
+
 ## [0.7.0] — 2026-06-26
 
 ### Added
