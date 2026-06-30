@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Page-mode column alignment.** In `placement="page"`, the rows between the
+  message list and the composer — skill chips, the `/`-command palette, the
+  missing-placeholder hint, and the upload tray — stayed left-anchored while
+  `.messages` and `.input-row` centred on `--ag-ui-content-max-width`. They now
+  share the same column gutter, so the whole page reads as one centred column.
+
 ## [0.8.0] — 2026-06-30
 
 ### Added

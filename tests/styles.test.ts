@@ -136,6 +136,11 @@ describe("STYLES", () => {
     );
     // In page mode the assistant well uses the full column width.
     expect(STYLES).toContain(':host([placement="page"]) .message--assistant');
+    // The skill chips, palette/hint, and upload tray align to the same column.
+    expect(STYLES).toContain(':host([placement="page"]) .skill-chips');
+    expect(STYLES).toContain(':host([placement="page"]) .attachment-tray');
+    expect(STYLES).toContain(':host([placement="page"]) .skill-palette');
+    expect(STYLES).toContain(':host([placement="page"]) .skill-hint');
   });
 
   it("groups each assistant turn in an .answer well that is opt-in", () => {
