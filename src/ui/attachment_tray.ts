@@ -30,6 +30,8 @@ interface TrayItem {
   progress: number;
   ref: AttachmentRef | null;
   error: string;
+  /** Aborts the in-flight upload when the chip is removed / the tray cleared. */
+  controller: AbortController | null;
 }
 
 /**
@@ -68,6 +70,7 @@ export class AttachmentTray {
       progress: 0,
       ref: null,
       error: "",
+      controller: null,
     };
     this.#items.push(item);
     const rejection = this.#reject(file);
@@ -110,10 +113,24 @@ export class AttachmentTray {
     this.#render();
   }
 
-  /** Drop every chip (a reset / new-chat). */
+  /** Drop every chip (a reset / new-chat), aborting any in-flight upload. */
   clear(): void {
+    for (const item of this.#items) {
+      item.controller?.abort();
+    }
     this.#items = [];
     this.#render();
+  }
+
+  /**
+   * Abort every in-flight upload without touching the rendered chips — the
+   * teardown path when the host element is removed mid-upload, so a cancelled
+   * transfer doesn't orphan a server-side file.
+   */
+  dispose(): void {
+    for (const item of this.#items) {
+      item.controller?.abort();
+    }
   }
 
   /** The size/type rejection reason for a file, or `null` when accepted. */
@@ -128,15 +145,32 @@ export class AttachmentTray {
   }
 
   #upload(item: TrayItem): void {
+    // Re-apply the client guard on every attempt, not just the first `add` — an
+    // ERROR chip always renders retry, so without this a size/type-rejected file
+    // would upload in full on ↻.
+    const rejection = this.#reject(item.file);
+    if (rejection !== null) {
+      item.status = ATTACHMENT_STATUS.ERROR;
+      item.error = rejection;
+      this.#render();
+      this.#config.onChange?.();
+      return;
+    }
     item.status = ATTACHMENT_STATUS.UPLOADING;
     item.progress = 0;
     item.error = "";
+    const controller = new AbortController();
+    item.controller = controller;
     this.#render();
     this.#config
-      .upload(item.file, (fraction) => {
-        item.progress = fraction;
-        this.#render();
-      })
+      .upload(
+        item.file,
+        (fraction) => {
+          item.progress = fraction;
+          this.#render();
+        },
+        controller.signal,
+      )
       .then((ref) => {
         item.status = ATTACHMENT_STATUS.READY;
         item.ref = ref;
@@ -146,12 +180,15 @@ export class AttachmentTray {
         item.error = error instanceof Error ? error.message : this.#strings.uploadFailed;
       })
       .finally(() => {
+        item.controller = null;
         this.#render();
         this.#config.onChange?.();
       });
   }
 
   #remove(item: TrayItem): void {
+    // Abort an in-flight upload so removing its chip doesn't orphan the file.
+    item.controller?.abort();
     this.#items = this.#items.filter((other) => other !== item);
     this.#render();
     this.#config.onChange?.();

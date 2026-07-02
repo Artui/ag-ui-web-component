@@ -96,7 +96,13 @@ export class RemoteConversationStore implements ClientConversationStore {
     if (response === null || !response.ok) {
       return this.#local.loadMessages(threadId);
     }
-    const body = (await response.json()) as { messages?: readonly Message[] };
+    // A 200 whose body isn't the expected JSON (a proxy's HTML error page, a
+    // truncated stream) must not throw an unhandled rejection that the caller's
+    // `void #rehydrate()` swallows — fall back to the local cache instead.
+    const body = await this.#readJson<{ messages?: readonly Message[] }>(response);
+    if (body === null) {
+      return this.#local.loadMessages(threadId);
+    }
     return body.messages ?? null;
   }
 
@@ -105,15 +111,30 @@ export class RemoteConversationStore implements ClientConversationStore {
     if (response === null || !response.ok) {
       return null;
     }
-    const body = (await response.json()) as { threads?: readonly ServerThreadRow[] };
+    const body = await this.#readJson<{ threads?: readonly ServerThreadRow[] }>(response);
+    if (body === null) {
+      return null;
+    }
     return body.threads ?? [];
+  }
+
+  /** Parse a `Response` body as JSON, or `null` when it isn't valid JSON. */
+  async #readJson<T>(response: Response): Promise<T | null> {
+    try {
+      return (await response.json()) as T;
+    } catch {
+      return null;
+    }
   }
 
   #toMeta(row: ServerThreadRow): ThreadMeta {
     return {
       threadId: row.thread_id,
       title: this.#renamed.get(row.thread_id) ?? row.title,
-      updatedAt: row.updated_at === null ? 0 : Date.parse(row.updated_at),
+      // `null` or an unparseable date both become `NaN` (Date.parse's own
+      // signal), which `relativeTime` renders as a neutral label rather than
+      // "~2950w ago" (epoch 0) or "NaNw ago".
+      updatedAt: row.updated_at === null ? Number.NaN : Date.parse(row.updated_at),
       preview: row.preview,
     };
   }

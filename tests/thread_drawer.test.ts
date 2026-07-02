@@ -137,4 +137,136 @@ describe("ThreadDrawer", () => {
     expect(callbacks.onDelete).not.toHaveBeenCalled();
     expect($(drawer, ".drawer-row-select")).not.toBeNull();
   });
+
+  it("toggle closes an open drawer; open/close are idempotent", () => {
+    const { drawer } = make();
+    drawer.open();
+    drawer.open(); // no-op while open
+    expect(drawer.isOpen()).toBe(true);
+    drawer.toggle();
+    expect(drawer.isOpen()).toBe(false);
+    drawer.close(); // no-op while closed
+    expect(drawer.isOpen()).toBe(false);
+  });
+
+  it("is a labelled modal dialog", () => {
+    const { drawer } = make();
+    const panel = $(drawer, ".drawer-panel");
+    expect(panel?.getAttribute("role")).toBe("dialog");
+    expect(panel?.getAttribute("aria-modal")).toBe("true");
+    expect(panel?.getAttribute("aria-label")).toBe("Chat history");
+  });
+
+  describe("focus + keyboard", () => {
+    function mounted() {
+      const m = make();
+      document.body.append(m.drawer.element);
+      return m;
+    }
+
+    it("moves focus into the panel on open and restores it on close", () => {
+      const { drawer } = mounted();
+      const opener = document.createElement("button");
+      document.body.append(opener);
+      opener.focus();
+      drawer.open();
+      expect(document.activeElement).toBe($(drawer, ".drawer-new"));
+      drawer.close();
+      expect(document.activeElement).toBe(opener);
+      drawer.element.remove();
+      opener.remove();
+    });
+
+    it("Escape closes the drawer", () => {
+      const { drawer } = mounted();
+      drawer.setThreads([META], "t1");
+      drawer.open();
+      const panel = $(drawer, ".drawer-panel") as HTMLElement;
+      panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      expect(drawer.isOpen()).toBe(false);
+      drawer.element.remove();
+    });
+
+    it("traps Tab focus at the panel edges and ignores the middle", () => {
+      const { drawer } = mounted();
+      drawer.setThreads([META], "t1");
+      drawer.open();
+      const panel = $(drawer, ".drawer-panel") as HTMLElement;
+      const focusables = Array.from(panel.querySelectorAll<HTMLElement>("button, input")).filter(
+        (el) => !el.hidden,
+      );
+      const first = focusables[0] as HTMLElement;
+      const last = focusables.at(-1) as HTMLElement;
+      expect(first).not.toBe(last);
+
+      // Tab off the last wraps to the first.
+      last.focus();
+      panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+      expect(document.activeElement).toBe(first);
+
+      // Shift+Tab off the first wraps to the last.
+      first.focus();
+      panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true }));
+      expect(document.activeElement).toBe(last);
+
+      // Neither edge (Tab on first / Shift+Tab on last): focus is left alone.
+      first.focus();
+      panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+      expect(document.activeElement).toBe(first);
+      last.focus();
+      panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true }));
+      expect(document.activeElement).toBe(last);
+
+      // A non-Tab, non-Escape key is ignored.
+      panel.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+      expect(drawer.isOpen()).toBe(true);
+      drawer.element.remove();
+    });
+
+    it("commits a rename on blur", () => {
+      const { drawer, callbacks } = mounted();
+      drawer.setThreads([META], "t1");
+      $(drawer, ".drawer-row-rename")?.click();
+      const input = $(drawer, ".drawer-rename-input") as HTMLInputElement;
+      input.value = "Blurred";
+      input.dispatchEvent(new Event("blur"));
+      expect(callbacks.onRename).toHaveBeenCalledWith("t1", "Blurred");
+      drawer.element.remove();
+    });
+
+    it("an unchanged rename is not committed", () => {
+      const { drawer, callbacks } = mounted();
+      drawer.setThreads([META], "t1");
+      $(drawer, ".drawer-row-rename")?.click();
+      const input = $(drawer, ".drawer-rename-input") as HTMLInputElement;
+      // Value left equal to the title → treated as a no-op cancel.
+      press(input, "Enter");
+      expect(callbacks.onRename).not.toHaveBeenCalled();
+      expect($(drawer, ".drawer-row-select")).not.toBeNull();
+      drawer.element.remove();
+    });
+
+    it("Enter then blur commits only once", () => {
+      const { drawer, callbacks } = mounted();
+      drawer.setThreads([META], "t1");
+      $(drawer, ".drawer-row-rename")?.click();
+      const input = $(drawer, ".drawer-rename-input") as HTMLInputElement;
+      input.value = "Once";
+      press(input, "Enter");
+      input.dispatchEvent(new Event("blur"));
+      expect(callbacks.onRename).toHaveBeenCalledTimes(1);
+      drawer.element.remove();
+    });
+
+    it("a second cancel key after the first is a no-op", () => {
+      const { drawer, callbacks } = mounted();
+      drawer.setThreads([META], "t1");
+      $(drawer, ".drawer-row-rename")?.click();
+      const input = $(drawer, ".drawer-rename-input") as HTMLInputElement;
+      press(input, "Escape"); // cancels the edit (done)
+      press(input, "Escape"); // second cancel is guarded out
+      expect(callbacks.onRename).not.toHaveBeenCalled();
+      drawer.element.remove();
+    });
+  });
 });

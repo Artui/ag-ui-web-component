@@ -7,25 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-07-02
+
+### Added
+
+- **Upload cancellation.** `UploadHandler` gains an optional third argument,
+  `signal: AbortSignal`. Removing a pending chip, clearing the tray, or removing
+  the element now aborts the in-flight upload, so a cancelled transfer no longer
+  orphans a server-side file. Non-breaking: existing two-argument handlers keep
+  working; a custom handler that honours the signal should abort its own
+  transport when it fires.
+- **Teardown on disconnect.** `<ag-ui-chat>` now cleans up when it leaves the
+  DOM (a removed node or a client-side route swap): it cancels the in-flight
+  run so the SSE stream closes, aborts in-flight uploads, and releases the
+  microphone so the browser's recording indicator clears.
+- **Accessible history drawer.** The chat-history drawer is now a proper modal
+  dialog — Escape closes it, focus moves into the panel on open and is restored
+  to the opener on close, Tab is trapped within the panel, and an inline rename
+  commits on blur.
+- **Per-instance storage scoping.** The collapsed / theme / active-thread state
+  and the default thread store are now namespaced by the element's `id` (else
+  its `endpoint`), so two `<ag-ui-chat>` instances — or two apps — on the same
+  origin no longer share state. Pre-existing per-tab state migrates into the
+  namespace automatically on first load.
+
+### Fixed
+
+- **Submit while running.** Pressing Enter during a live run no longer starts a
+  second, concurrent SSE run (which orphaned the first and could corrupt its
+  pending tool cards). Enter now matches the Send/Stop button and is ignored
+  while a run is in flight.
+- **Thread-switch race.** Rapidly switching threads against a slow remote store
+  can no longer interleave two replays into one transcript — a stale replay is
+  dropped once a newer switch begins.
+- **Malformed thread responses.** A `200` from the threads endpoint whose body
+  isn't valid JSON (a proxy's HTML error page, a truncated stream) now falls
+  back to the local cache instead of silently failing to load the drawer or
+  history.
+- **Relative timestamps.** An unparseable or missing `updated_at` now renders a
+  neutral "just now" rather than `"NaNw ago"` or `"~2950w ago"`.
+- **Corrupt attachment refs.** Malformed entries in a message's persisted
+  attachments are dropped instead of throwing and aborting the whole history
+  replay.
+- **Retry of a rejected upload.** Retrying a chip that was rejected client-side
+  (oversize / disallowed type) now re-applies the guard instead of uploading the
+  file in full.
+- **Duplicate tool result.** A repeated `TOOL_CALL_RESULT` (or a replayed tool
+  message for an already-settled card) no longer appends a second result
+  section.
+- **Run-error continuation.** A run that ends in an error is now terminal: the
+  loop no longer proceeds into frontend-tool execution or another round, so a
+  failed run can't surface a confusing second error. Pending tool cards still
+  settle.
+
 ## [0.9.0] — 2026-06-30
 
 ### Added
 
-- **Model thoughts (THINK-1).** When the server forwards a reasoning model's
+- **Model thoughts.** When the server forwards a reasoning model's
   chain-of-thought, the element now renders a muted, collapsible **thoughts
   region** (part `thoughts`) at the top of the current answer group — it streams
   while the model reasons and folds away on the answer's first token (the reader
   can reopen it). `AgUiClientHandlers` gains `onReasoningStart` / `onReasoningDelta`
   / `onReasoningEnd`, wired from `@ag-ui/client`'s `REASONING_*` subscriber
   callbacks (which also cover the deprecated `THINKING_*` family).
-- **Voice input (VOICE-1).** Set `data-transcribe-url` (django-ag-ui's
+- **Voice input.** Set `data-transcribe-url` (django-ag-ui's
   `TranscribeView`) to reveal a 🎤 mic button in the composer (part
   `voice-button`): it records via `MediaRecorder`, POSTs the clip, and drops the
   returned transcript into the textarea. A pluggable `transcribeHandler` —
   `(audio: Blob) => Promise<string>` — swaps the transport (a different STT
   endpoint, a Web Speech adapter) and reveals the mic even without the attribute.
   New exports: `transcribeAudio`, `TranscribeOptions`, `TranscribeHandler`.
-- **Built-in theme toggle (THEME-1).** The boolean `data-theme-toggle` attribute
+- **Built-in theme toggle.** The boolean `data-theme-toggle` attribute
   adds an optional light⇄dark toggle to the header (part `theme-toggle`,
   `toggleTheme()`) that flips `theme` and persists per tab. Off by default, so a
   host-supplied switch in `slot="header-actions"` stays unaffected.
@@ -44,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Per-turn answer group + opt-in well (WELL-1).** Each assistant turn now
+- **Per-turn answer group + opt-in well.** Each assistant turn now
   renders inside one `.answer` group (part `answer`) that holds its streamed
   text, tool cards, and pending indicator — so a turn that calls tools reads as
   a single answer instead of loose siblings. The group spans the whole
@@ -54,12 +107,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `data-answer-well` attribute to box that group in a bordered, padded "well"
   (themeable via `--ag-ui-well-bg` / `--ag-ui-well-border`); without it the
   layout is the flat stack as before. Pure CSS, turn-scoped, no JS API.
-- **Full-screen page placement (PAGE-1).** New `placement="page"`: a full-bleed
+- **Full-screen page placement.** New `placement="page"`: a full-bleed
   background with the conversation in a centred reading column (default ~820px,
   set via `--ag-ui-content-max-width`). The assistant turn spans the column
   while the user message stays a right-aligned pill — the layout for a dedicated
   chat page (distinct from `full`'s edge-to-edge, left-aligned messages).
-- **Inline tool-display mode + themeable status icons (CARD-1).** New
+- **Inline tool-display mode + themeable status icons.** New
   `data-tool-display="inline"`: the lightest card — a one-line status row (icon
   + summary, no box chrome) with the result behind its own toggle. Every
   tool-call card now leads with a CSS-drawn **status icon** (part
@@ -400,7 +453,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.7.0...v0.8.0

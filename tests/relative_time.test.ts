@@ -26,4 +26,9 @@ describe("relativeTime", () => {
   it("defaults the reference point to now", () => {
     expect(relativeTime(Date.now())).toBe("just now");
   });
+
+  it("treats a non-finite timestamp (unparseable/missing date) as 'just now'", () => {
+    expect(relativeTime(Number.NaN, NOW)).toBe("just now");
+    expect(relativeTime(Number.POSITIVE_INFINITY, NOW)).toBe("just now");
+  });
 });
