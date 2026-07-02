@@ -132,4 +132,26 @@ describe("VoiceInput", () => {
     await flush();
     expect(voice.element.dataset["state"]).toBe("idle");
   });
+
+  it("dispose while recording releases the mic and suppresses transcription", async () => {
+    media = installFakeMedia();
+    const transcribe = vi.fn().mockResolvedValue("late");
+    const got: string[] = [];
+    const voice = new VoiceInput({ transcribe, onText: (t) => got.push(t) });
+    voice.element.click(); // start
+    await flush();
+    expect(voice.element.dataset["state"]).toBe("recording");
+
+    voice.dispose();
+    await flush();
+    // The mic track was stopped and the pending stop never transcribed.
+    expect(media.recorder().stream.track.stopped).toBe(true);
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(got).toEqual([]);
+  });
+
+  it("dispose when idle is a safe no-op", () => {
+    const voice = new VoiceInput({ transcribe: async () => "", onText: () => {} });
+    expect(() => voice.dispose()).not.toThrow();
+  });
 });

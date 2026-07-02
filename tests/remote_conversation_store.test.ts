@@ -12,6 +12,16 @@ function notOk(): Response {
   return { ok: false, json: async () => ({}) } as unknown as Response;
 }
 
+/** A 200 whose body isn't JSON (e.g. a proxy's HTML error page). */
+function badJson(): Response {
+  return {
+    ok: true,
+    json: async () => {
+      throw new SyntaxError("Unexpected token < in JSON");
+    },
+  } as unknown as Response;
+}
+
 /** Drain microtasks so a fire-and-forget mutation's fetch settles. */
 async function flush(): Promise<void> {
   for (let i = 0; i < 3; i += 1) {
@@ -52,7 +62,9 @@ describe("RemoteConversationStore", () => {
         updatedAt: Date.parse("2026-06-24T00:00:00+00:00"),
         preview: "hi",
       },
-      { threadId: "t2", title: "Other", updatedAt: 0, preview: "" },
+      // A null `updated_at` maps to NaN (a neutral "no meaningful age" signal),
+      // not epoch 0 — which `relativeTime` would render as "~2950w ago".
+      { threadId: "t2", title: "Other", updatedAt: Number.NaN, preview: "" },
     ]);
   });
 
@@ -109,6 +121,22 @@ describe("RemoteConversationStore", () => {
     fetchMock.mockRejectedValue(new Error("offline"));
     const store = new RemoteConversationStore("https://x/threads/");
     expect(await store.loadMessages("absent")).toBeNull();
+  });
+
+  it("falls back to local messages on a 200 with an unreadable body", async () => {
+    const local = new SessionStorageStore();
+    local.saveMessages("t1", [{ id: "c", role: "user", content: "cached" }] as never);
+    fetchMock.mockResolvedValue(badJson());
+    const store = new RemoteConversationStore("https://x/threads/", () => ({}), local);
+    expect(await store.loadMessages("t1")).toEqual([{ id: "c", role: "user", content: "cached" }]);
+  });
+
+  it("falls back to the local list on a 200 with an unreadable body", async () => {
+    const local = new SessionStorageStore();
+    local.saveMessages("t1", [{ role: "user", content: "local" }] as never);
+    fetchMock.mockResolvedValue(badJson());
+    const store = new RemoteConversationStore("https://x/threads/", () => ({}), local);
+    expect((await store.listThreads()).map((m) => m.threadId)).toEqual(["t1"]);
   });
 
   it("renames optimistically and PATCHes the server", async () => {

@@ -248,7 +248,7 @@ export class AgUiClient {
         return;
       }
       const pending: AgUiToolCall[] = [];
-      const runState = { terminal: false };
+      const runState = { terminal: false, errored: false };
       await this.#agent.runAgent(
         { tools: this.#getTools(), context: this.#getContext() },
         this.#buildSubscriber(pending, runState),
@@ -264,6 +264,13 @@ export class AgUiClient {
       // with a stuck pending indicator (caught by #run → onError).
       if (!runState.terminal) {
         throw new ConnectionLostError(this.#connectionLostMessage);
+      }
+      // RUN_ERROR is terminal: the agent already reported the failure via
+      // onError. Don't execute the tool calls collected before it or start
+      // another round — that would run into a broken context and surface a
+      // confusing second error. Any pending tool card is swept at onSettled.
+      if (runState.errored) {
+        return;
       }
       if (this.#executeTool === null || pending.length === 0) {
         return;
@@ -294,7 +301,10 @@ export class AgUiClient {
     }
   }
 
-  #buildSubscriber(pending: AgUiToolCall[], runState: { terminal: boolean }): AgentSubscriber {
+  #buildSubscriber(
+    pending: AgUiToolCall[],
+    runState: { terminal: boolean; errored: boolean },
+  ): AgentSubscriber {
     const h = this.#handlers;
     return {
       onRunInitialized() {
@@ -318,7 +328,7 @@ export class AgUiClient {
       onToolCallResultEvent({ event }) {
         h.onToolResult(event.toolCallId, event.content);
       },
-      // Reasoning (THINK-1). `@ag-ui/client` already maps the deprecated
+      // Reasoning. `@ag-ui/client` already maps the deprecated
       // THINKING_* events onto these REASONING_* callbacks, so handling the
       // reasoning family alone covers both protocol versions.
       onReasoningStartEvent() {
@@ -332,6 +342,7 @@ export class AgUiClient {
       },
       onRunErrorEvent({ event }) {
         runState.terminal = true;
+        runState.errored = true;
         h.onError(event.message);
       },
       onRunFinalized() {

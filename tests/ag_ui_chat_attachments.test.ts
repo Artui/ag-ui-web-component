@@ -294,4 +294,13 @@ describe("AgUiChat — attachments", () => {
     el.newChat();
     expect(shadow(el).querySelector(".attachment-chip")).toBeNull();
   });
+
+  it("aborts an in-flight upload when the element is disconnected", async () => {
+    const { el } = mount();
+    drop(el, [file()]); // upload in flight (XHR pending, not settled)
+    await flush();
+    expect(xhr.last().aborted).toBe(false);
+    el.remove(); // disconnectedCallback → tray.dispose → abort the upload XHR
+    expect(xhr.last().aborted).toBe(true);
+  });
 });

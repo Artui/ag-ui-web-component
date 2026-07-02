@@ -32,8 +32,28 @@ export interface AttachmentRef {
  * restored conversation re-renders its attachment chips. The server's strict
  * `RunAgentInput` validation ignores the unknown field — the model learns the
  * ids from the run context manifest instead.
+ *
+ * The persisted array is untrusted (it can be hand-edited, truncated, or
+ * corrupted in storage), so every entry is validated and malformed ones are
+ * dropped — a `null` or shapeless entry would otherwise throw in `iconFor` and
+ * abort the whole history replay.
  */
 export function messageAttachments(message: Message): readonly AttachmentRef[] {
   const refs = (message as { attachments?: unknown }).attachments;
-  return Array.isArray(refs) ? (refs as readonly AttachmentRef[]) : [];
+  return Array.isArray(refs) ? refs.filter(isAttachmentRef) : [];
+}
+
+/** Whether an unknown value is a structurally valid {@link AttachmentRef}. */
+function isAttachmentRef(value: unknown): value is AttachmentRef {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const ref = value as Record<string, unknown>;
+  return (
+    typeof ref["id"] === "string" &&
+    typeof ref["name"] === "string" &&
+    typeof ref["mime"] === "string" &&
+    typeof ref["size"] === "number" &&
+    (ref["url"] === undefined || typeof ref["url"] === "string")
+  );
 }

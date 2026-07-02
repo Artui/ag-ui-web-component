@@ -146,7 +146,7 @@ export const STYLES = `
   --ag-ui-radius: 0;
 }
 
-/* Page (PAGE-1): full-bleed background with a centred reading column. Unlike
+/* Page: full-bleed background with a centred reading column. Unlike
    "full" (edge-to-edge, left-aligned messages) the content sits in a column
    capped at --ag-ui-content-max-width. The column is produced by symmetric auto
    padding on the scroll area + composer (no per-row wrapper), so user pills
@@ -188,7 +188,7 @@ export const STYLES = `
   max-width: 100%;
 }
 
-/* Sidebar (CUST-3): a full-height docked panel that slides open/closed and
+/* Sidebar: a full-height docked panel that slides open/closed and
    collapses to a slim icon rail (not the floating launcher). Docked right by
    default; data-side="left" docks it left. Overlay by default — set
    --ag-ui-position: static (and place this element in your own layout) for a
@@ -298,7 +298,7 @@ export const STYLES = `
   white-space: nowrap;
 }
 
-/* Header / launcher icon holder (CUST-2): a slot, with a data-icon-url <img>
+/* Header / launcher icon holder: a slot, with a data-icon-url <img>
    fallback, sized via --ag-ui-icon-size. */
 .icon-holder {
   display: inline-flex;
@@ -372,7 +372,7 @@ export const STYLES = `
   gap: var(--ag-ui-space);
 }
 
-/* Empty-state region (CUST-1 slot): centred while it's the only thing in the
+/* Empty-state region (slot): centred while it's the only thing in the
    list, hidden as soon as a message, card, or pending indicator renders. */
 .empty {
   margin: auto;
@@ -384,7 +384,7 @@ export const STYLES = `
   display: none;
 }
 
-/* ── Answer group / well (WELL-1) ─────────────────────────────────────────
+/* ── Answer group / well ─────────────────────────────────────────
    One .answer per assistant turn wraps the streamed text, its tool cards,
    and the pending indicator so a whole answer reads (and can be boxed) as one
    unit. A flex column on the message-list gap, stretched to the list width so
@@ -553,7 +553,7 @@ export const STYLES = `
   }
 }
 
-/* ── Thoughts region (THINK-1) ────────────────────────────────────────────
+/* ── Thoughts region ────────────────────────────────────────────
    A muted, collapsible chain-of-thought at the top of the answer group: open
    while the model reasons, folded once the answer text starts. */
 .thoughts {
@@ -646,7 +646,7 @@ export const STYLES = `
   word-break: break-word;
 }
 
-/* Leading status icon (CARD-1). Empty in the DOM — the glyph/spinner is drawn
+/* Leading status icon. Empty in the DOM — the glyph/spinner is drawn
    here from the card's data-status, so it stays themeable. */
 .tool-call-icon {
   flex: none;
@@ -694,7 +694,7 @@ export const STYLES = `
   }
 }
 
-/* Inline display mode (CARD-1): the lightest card — drop the box chrome so the
+/* Inline display mode: the lightest card — drop the box chrome so the
    status row reads as one line of the answer; the result toggle still expands
    below it. */
 .tool-call[data-display="inline"] {
@@ -824,7 +824,7 @@ export const STYLES = `
   display: none;
 }
 
-/* The 🎤 mic button (VOICE-1); shown only once #wireVoice mounts it. */
+/* The 🎤 mic button; shown only once #wireVoice mounts it. */
 .voice-slot {
   display: contents;
 }

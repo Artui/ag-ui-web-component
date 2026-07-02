@@ -15,7 +15,7 @@ export interface VoiceInputOptions {
 }
 
 /**
- * The composer's voice-input control (VOICE-1): a mic button that records via
+ * The composer's voice-input control: a mic button that records via
  * `MediaRecorder`, then POSTs the clip through a {@link TranscribeHandler} and
  * hands the transcript back via `onText`.
  *
@@ -38,6 +38,7 @@ export class VoiceInput {
   #recorder: MediaRecorder | null = null;
   #stream: MediaStream | null = null;
   #chunks: Blob[] = [];
+  #disposed = false;
 
   constructor(options: VoiceInputOptions) {
     this.#transcribe = options.transcribe;
@@ -94,7 +95,26 @@ export class VoiceInput {
     this.#recorder?.stop();
   }
 
+  /**
+   * Tear the control down — the teardown path when the host element is removed
+   * mid-recording. Stops any live `MediaRecorder`, releases the mic tracks (so
+   * the browser's recording indicator clears), and suppresses the pending
+   * transcription: a disconnected control must not fire `onText` back into a
+   * detached element.
+   */
+  dispose(): void {
+    this.#disposed = true;
+    if (this.#recorder !== null && this.#recorder.state !== "inactive") {
+      this.#recorder.stop();
+    }
+    this.#recorder = null;
+    this.#releaseStream();
+  }
+
   async #finish(mimeType: string): Promise<void> {
+    if (this.#disposed) {
+      return;
+    }
     this.#releaseStream();
     this.#setState("transcribing");
     const audio = new Blob(this.#chunks, { type: mimeType || "audio/webm" });

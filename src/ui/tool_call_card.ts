@@ -126,6 +126,12 @@ export class ToolCallCard {
    * `inline`), or the args + result together (`compact`).
    */
   settle(status: SettledStatus, text: string): void {
+    // Idempotent: a duplicate `TOOL_CALL_RESULT`, or a replayed tool message
+    // for an already-settled card, must not append a second toggle+body. The
+    // first settle wins; later calls are ignored.
+    if (this.#settled) {
+      return;
+    }
     this.#settled = true;
     this.element.setAttribute("data-status", status);
     this.#status.textContent = statusLabels(this.#strings)[status];

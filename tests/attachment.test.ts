@@ -19,4 +19,27 @@ describe("messageAttachments", () => {
     const message = { id: "u1", role: "user", content: "hi", attachments: "nope" } as Message;
     expect(messageAttachments(message)).toEqual([]);
   });
+
+  it("drops malformed entries, keeping the valid ones", () => {
+    const message = {
+      id: "u1",
+      role: "user",
+      content: "hi",
+      attachments: [
+        null,
+        REF,
+        "nope",
+        { id: "a2", name: "x", mime: "text/plain" }, // missing size
+        { id: 1, name: "x", mime: "text/plain", size: 2 }, // non-string id
+        { ...REF, url: 42 }, // non-string url
+      ],
+    } as Message;
+    expect(messageAttachments(message)).toEqual([REF]);
+  });
+
+  it("keeps an entry with a valid string url", () => {
+    const withUrl: AttachmentRef = { ...REF, url: "https://x/f" };
+    const message = { id: "u1", role: "user", content: "hi", attachments: [withUrl] } as Message;
+    expect(messageAttachments(message)).toEqual([withUrl]);
+  });
 });

@@ -22,13 +22,14 @@ interface UploadCall {
   file: File;
   onProgress: (fraction: number) => void;
   deferred: Deferred<AttachmentRef>;
+  signal?: AbortSignal | undefined;
 }
 
 function makeUploader(): { upload: AttachmentTrayConfig["upload"]; calls: UploadCall[] } {
   const calls: UploadCall[] = [];
-  const upload: AttachmentTrayConfig["upload"] = (file, onProgress) => {
+  const upload: AttachmentTrayConfig["upload"] = (file, onProgress, signal) => {
     const d = deferred<AttachmentRef>();
-    calls.push({ file, onProgress, deferred: d });
+    calls.push({ file, onProgress, deferred: d, signal });
     return d.promise;
   };
   return { upload, calls };
@@ -189,5 +190,51 @@ describe("AttachmentTray", () => {
     const tray = new AttachmentTray({ upload, maxBytes: 0, accept: "" });
     tray.add(file());
     expect(tray.isEmpty()).toBe(false);
+  });
+
+  it("passes an abort signal to the upload handler", () => {
+    const { tray, calls } = makeTray();
+    tray.add(file());
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal);
+    expect(calls[0]?.signal?.aborted).toBe(false);
+  });
+
+  it("aborts the in-flight upload when its chip is removed", () => {
+    const { tray, calls } = makeTray();
+    tray.add(file());
+    tray.element.querySelector<HTMLButtonElement>(".attachment-chip-remove")?.click();
+    expect(calls[0]?.signal?.aborted).toBe(true);
+    expect(tray.isEmpty()).toBe(true);
+  });
+
+  it("clear aborts every in-flight upload", () => {
+    const { tray, calls } = makeTray();
+    tray.add(file("a.txt"));
+    tray.add(file("b.txt"));
+    tray.clear();
+    expect(calls[0]?.signal?.aborted).toBe(true);
+    expect(calls[1]?.signal?.aborted).toBe(true);
+  });
+
+  it("dispose aborts in-flight uploads without touching the chips", () => {
+    const { tray, calls } = makeTray();
+    tray.add(file());
+    tray.dispose();
+    expect(calls[0]?.signal?.aborted).toBe(true);
+    // Chips are left in place (the element is being torn down anyway).
+    expect(tray.isEmpty()).toBe(false);
+  });
+
+  it("re-applies the size guard on retry instead of uploading a rejected file", async () => {
+    const { tray, calls } = makeTray({ maxBytes: 5 });
+    tray.add(file("big.txt", "text/plain", 10));
+    expect(calls).toHaveLength(0);
+    // The ERROR chip always renders retry; ↻ must re-reject, not upload the 10-byte file.
+    tray.element.querySelector<HTMLButtonElement>(".attachment-chip-retry")?.click();
+    await flush();
+    expect(calls).toHaveLength(0);
+    expect(tray.element.querySelector(".attachment-chip--error")?.textContent).toContain(
+      "Too large",
+    );
   });
 });

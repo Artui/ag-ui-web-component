@@ -7,10 +7,17 @@ import type { AttachmentRef } from "./attachment.js";
  * `tus-js-client` or direct-to-S3 adapter — via `AgUiChat.uploadHandler`,
  * **without** touching the tray, the chips, or the AG-UI wire (refs are
  * transport-agnostic).
+ *
+ * The optional third `signal` argument lets the tray abort an in-flight upload
+ * when its chip is removed (or the element is torn down), so a cancelled upload
+ * doesn't orphan a server-side file. It is non-breaking: existing two-argument
+ * handlers keep working (the extra argument is simply ignored), and a custom
+ * handler that honours it should abort its own transport when the signal fires.
  */
 export type UploadHandler = (
   file: File,
   onProgress: (fraction: number) => void,
+  signal?: AbortSignal,
 ) => Promise<AttachmentRef>;
 
 /** Options for {@link uploadAttachment}. */
@@ -22,7 +29,7 @@ export interface UploadOptions {
   /** Progress callback, `0..1`, fired as the body uploads. */
   readonly onProgress?: (fraction: number) => void;
   /** Abort signal to cancel the in-flight upload. */
-  readonly signal?: AbortSignal;
+  readonly signal?: AbortSignal | undefined;
 }
 
 /**
