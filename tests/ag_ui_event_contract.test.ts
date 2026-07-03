@@ -2,11 +2,11 @@ import { EventType } from "@ag-ui/core";
 import { describe, expect, it } from "vitest";
 
 /**
- * Cross-repo AG-UI event-set contract (roadmap CI-1).
+ * Cross-repo AG-UI event-set contract.
  *
  * The JS (`@ag-ui/core`) and Python (`ag-ui-protocol`) event sets are identical
  * today, and the trio relies on it — reasoning rides the `REASONING_*` family on
- * both sides (THINK-1). This pins the canonical set so a dependency bump that
+ * both sides. This pins the canonical set so a dependency bump that
  * adds / removes / renames an event fails here and forces a deliberate review.
  *
  * The **same** list is asserted in django-ag-ui's suite
@@ -55,7 +55,7 @@ describe("AG-UI event-set contract", () => {
     expect(actual).toEqual(CANONICAL_AG_UI_EVENTS);
   });
 
-  it("includes the reasoning family THINK-1 rides on", () => {
+  it("includes the reasoning event family", () => {
     // REASONING_* (7, the modern family) + the legacy THINKING_* (5) this client
     // maps onto it.
     const reasoning = [...CANONICAL_AG_UI_EVENTS].filter(

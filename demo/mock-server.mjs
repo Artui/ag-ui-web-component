@@ -46,7 +46,7 @@ function emitToolCall(res, id, name, args, parentMessageId) {
   emit(res, { type: "TOOL_CALL_END", toolCallId: id });
 }
 
-// A reasoning model's streamed chain-of-thought (THINK-1): the web component
+// A reasoning model's streamed chain-of-thought: the web component
 // renders it as a collapsible "thinking" region that folds on the first answer.
 async function streamReasoning(res, messageId, chunks) {
   emit(res, { type: "REASONING_START", messageId });
@@ -131,7 +131,7 @@ const server = createServer((req, res) => {
     return;
   }
   if (req.method === "POST" && req.url === "/transcribe/") {
-    // Voice input (VOICE-1): a real backend would run STT on the posted clip;
+    // Voice input: a real backend would run STT on the posted clip;
     // the demo just drains the body and returns a canned transcript.
     req.on("data", () => {});
     req.on("end", () => {

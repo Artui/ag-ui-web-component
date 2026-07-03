@@ -1521,7 +1521,7 @@ describe("AgUiChat", () => {
   });
 });
 
-describe("AgUiChat — answer group (WELL-1)", () => {
+describe("AgUiChat — answer group", () => {
   beforeAll(() => {
     defineAgUiChat();
   });
