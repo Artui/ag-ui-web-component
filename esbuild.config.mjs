@@ -1,8 +1,7 @@
 // esbuild bundle config. Run via `node esbuild.config.mjs` (invoked by
-// `make build` / `pnpm build`). Produces:
+// `make build` / `pnpm build`). Produces two ESM .js outputs:
 //   - dist/index.js          — ESM, externals (@ag-ui/*) NOT bundled (npm-consumer build)
 //   - dist/ag-ui-web-component.bundle.js  — ESM, @ag-ui/* INLINED (vendored-bundle build)
-//   - dist/ag-ui-web-component.bundle.css — extracted CSS sidecar
 //
 // The vendored bundle is what django-admin-agent ships under its
 // static/ directory.
