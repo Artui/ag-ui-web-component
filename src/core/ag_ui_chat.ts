@@ -68,7 +68,7 @@ export interface ToggleDetail {
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
 
-/** Per-tab persistence key for the built-in theme toggle (THEME-1). */
+/** Per-tab persistence key for the built-in theme toggle. */
 const THEME_KEY = "ag-ui-chat:theme";
 
 /**
@@ -259,7 +259,7 @@ export class AgUiChat extends HTMLElement {
   readonly #attachButton: HTMLButtonElement;
   readonly #fileInput: HTMLInputElement;
   readonly #attachSlot: HTMLDivElement;
-  /** Optional built-in header theme toggle (THEME-1); shown only with `data-theme-toggle`. */
+  /** Optional built-in header theme toggle; shown only with `data-theme-toggle`. */
   readonly #themeToggle: HTMLButtonElement;
   /** The collapsed-sidebar rail (an expand affordance; shown only for `placement="sidebar"`). */
   readonly #rail: HTMLButtonElement;
@@ -288,18 +288,25 @@ export class AgUiChat extends HTMLElement {
   // it; ≤1 ⇒ it arrived at once and the word reveal is appropriate.
   #streamDeltas = 0;
   #pending: HTMLDivElement | null = null;
-  // The current assistant turn's grouping container (WELL-1). One `.answer`
+  // The current assistant turn's grouping container. One `.answer`
   // wraps everything a single answer produces — streamed text, tool cards, the
   // pending indicator — so it can be boxed as one "well" by CSS. Opened on the
   // turn's first run start, closed at settle, so it spans the whole multi-round
   // frontend-tool loop (which is several AG-UI runs), not one run. `null`
   // between turns; user bubbles never enter it.
   #currentGroup: HTMLDivElement | null = null;
-  // The current turn's streamed-reasoning region (THINK-1), shown at the top of
+  // The current turn's streamed-reasoning region, shown at the top of
   // the answer group while a reasoning model thinks and collapsed once the
   // answer's first text token arrives. `null` outside a reasoning turn.
   #thoughts: ThoughtsBlock | null = null;
   #threadId = "";
+  // Per-instance suffix for the origin-scoped storage keys (collapsed / theme /
+  // active thread), so two instances on one origin don't clobber each other.
+  // Empty ⇒ the pre-namespacing global keys (back-compat). Resolved on connect.
+  #storageNs = "";
+  // Bumped on every #rehydrate; a replay whose generation is stale (a newer
+  // thread switch started while it awaited a slow store) drops its result.
+  #rehydrateGeneration = 0;
   #initialMessages: readonly Message[] = [];
   // Skill catalog by source; merged backend → embed → client (later wins).
   #backendSkills: readonly Skill[] = [];
@@ -470,30 +477,53 @@ export class AgUiChat extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // Resolve the per-instance storage namespace (id, else endpoint) before any
+    // key read/write, so this instance doesn't share collapsed/theme/thread
+    // state with another on the same origin.
+    this.#storageNs = this.id !== "" ? this.id : this.endpoint;
     // Resolve the string table before rendering any chrome (defaults are the
     // floor; `data-strings` then the `strings` property layer over them).
     this.#strings = mergeUiStrings({ ...this.#readStringOverrides(), ...this.strings });
     // Restore a theme the built-in toggle persisted last visit (opt-in only, so
     // it never overrides a host that drives `theme` itself).
     if (this.getAttribute("data-theme-toggle") !== null) {
-      const saved = sessionStorage.getItem(THEME_KEY);
+      const saved = this.#readScopedItem(THEME_KEY);
       if (saved !== null) {
         this.setAttribute("theme", saved);
       }
     }
     this.#render();
     this.#drawer.setStrings(this.#strings);
-    if (sessionStorage.getItem(COLLAPSED_KEY) === "1") {
+    if (this.#readScopedItem(COLLAPSED_KEY) === "1") {
       this.setAttribute("collapsed", "");
     }
     this.#syncRail();
     this.#initSkills();
     void this.#fetchToolCatalog();
+    // Namespace the built-in default store too (a host-injected store is used
+    // verbatim). Must precede #wireThreadStore, which wraps the current store.
+    if (this.#storageNs !== "" && this.conversationStore instanceof SessionStorageStore) {
+      this.conversationStore = new SessionStorageStore(this.#storageNs);
+    }
     this.#wireThreadStore();
     this.#wireAttachments();
     this.#wireVoice();
     this.#threadId = this.conversationStore.threadId();
     void this.#rehydrate();
+  }
+
+  /**
+   * Tear down live resources when the element leaves the DOM (a removed node, a
+   * client-side route swap): cancel the in-flight run so its SSE stream closes,
+   * abort any in-flight uploads so they don't orphan server-side files, and
+   * release the mic so the browser's recording indicator clears. Without this a
+   * removed `<ag-ui-chat>` leaks a streaming request, uploads, and a live
+   * `MediaRecorder`.
+   */
+  disconnectedCallback(): void {
+    this.#cancelRun();
+    this.#attachTray?.dispose();
+    this.#voice?.dispose();
   }
 
   /** Parse the inline `data-strings` JSON overrides (empty when absent/malformed). */
@@ -544,7 +574,10 @@ export class AgUiChat extends HTMLElement {
     if (url === null) {
       return null;
     }
-    return (file, onProgress) => uploadAttachment(file, { url, headers: this.headers, onProgress });
+    // Forward the tray's abort signal so removing a chip (or tearing the
+    // element down) cancels the XHR.
+    return (file, onProgress, signal) =>
+      uploadAttachment(file, { url, headers: this.headers, onProgress, signal });
   }
 
   /**
@@ -770,7 +803,7 @@ export class AgUiChat extends HTMLElement {
     } else {
       this.removeAttribute("collapsed");
     }
-    sessionStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
+    sessionStorage.setItem(this.#storageKey(COLLAPSED_KEY), collapsed ? "1" : "0");
     this.#syncRail();
     this.dispatchEvent(
       new CustomEvent<ToggleDetail>(TOGGLE_EVENT, {
@@ -795,8 +828,26 @@ export class AgUiChat extends HTMLElement {
   toggleTheme(): void {
     const next = this.getAttribute("theme") === "dark" ? "light" : "dark";
     this.setAttribute("theme", next);
-    sessionStorage.setItem(THEME_KEY, next);
+    sessionStorage.setItem(this.#storageKey(THEME_KEY), next);
     this.#syncThemeGlyph();
+  }
+
+  /** This instance's namespaced form of an origin-scoped storage key. */
+  #storageKey(base: string): string {
+    return this.#storageNs === "" ? base : `${base}:${this.#storageNs}`;
+  }
+
+  /**
+   * Read a namespaced origin-scoped value, falling back once to the legacy
+   * pre-namespacing global key (left in place) so an existing collapsed/theme
+   * preference survives the upgrade.
+   */
+  #readScopedItem(base: string): string | null {
+    const scoped = sessionStorage.getItem(this.#storageKey(base));
+    if (scoped !== null || this.#storageNs === "") {
+      return scoped;
+    }
+    return sessionStorage.getItem(base);
   }
 
   /** Reflect the current theme on the toggle: show the destination's glyph. */
@@ -875,7 +926,16 @@ export class AgUiChat extends HTMLElement {
    * result from the page we landed on.
    */
   async #rehydrate(): Promise<void> {
+    // Guard against a thread-switch race: with a slow remote store, picking
+    // thread B then C would interleave both replays into one transcript. Each
+    // rehydrate claims a generation before awaiting and bails if a newer one
+    // started meanwhile (its `#resetState` already cleared the transcript).
+    this.#rehydrateGeneration += 1;
+    const generation = this.#rehydrateGeneration;
     const messages = await this.conversationStore.loadMessages(this.#threadId);
+    if (generation !== this.#rehydrateGeneration) {
+      return;
+    }
     if (messages !== null) {
       this.#initialMessages = messages;
       for (const message of messages) {
@@ -973,7 +1033,7 @@ export class AgUiChat extends HTMLElement {
    * stays literal text (no need to parse what the user typed, and it avoids
    * rendering user-authored markup).
    *
-   * Assistant bubbles land in the current answer group (WELL-1), opening one if
+   * Assistant bubbles land in the current answer group, opening one if
    * needed; a user bubble closes the prior group and sits directly in the list
    * (the well wraps the *assistant* turn, the user message precedes it).
    */
@@ -1060,7 +1120,7 @@ export class AgUiChat extends HTMLElement {
     collapse.addEventListener("click", () => this.toggleCollapsed());
 
     controls.append(history, newChat);
-    // Optional built-in theme toggle (THEME-1): off unless the host opts in, so
+    // Optional built-in theme toggle: off unless the host opts in, so
     // it never competes with a host-supplied switch in `slot="header-actions"`.
     if (this.getAttribute("data-theme-toggle") !== null) {
       this.#themeToggle.type = "button";
@@ -1269,6 +1329,14 @@ export class AgUiChat extends HTMLElement {
   }
 
   async #submit(): Promise<void> {
+    // Ignore a submit while a run is in flight — the single choke point for
+    // both Enter and the Send button. The button already turns into Stop, but
+    // Enter has no such guard; without this it would start a second concurrent
+    // SSE run that orphans the first (unabortable) and lets the second run's
+    // settle sweep corrupt the first's still-pending tool cards.
+    if (this.#running) {
+      return;
+    }
     const content = this.#input.value.trim();
     const attachments = this.#attachTray?.readyRefs() ?? [];
     // Allow an attachments-only message (no typed text), but nothing empty.

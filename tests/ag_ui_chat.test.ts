@@ -1,7 +1,12 @@
-import type { Context, Tool } from "@ag-ui/core";
+import type { Context, Message, Tool } from "@ag-ui/core";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT } from "../src/constants.js";
 import type { AgUiChat, SubmitDetail } from "../src/core/ag_ui_chat.js";
+import type {
+  ClientConversationStore,
+  NavigationCheckpoint,
+  ThreadMeta,
+} from "../src/core/conversation_store.js";
 import { SessionStorageStore } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { RemoteConversationStore } from "../src/core/remote_conversation_store.js";
@@ -1516,7 +1521,7 @@ describe("AgUiChat", () => {
   });
 });
 
-describe("AgUiChat — answer group (WELL-1)", () => {
+describe("AgUiChat — answer group", () => {
   beforeAll(() => {
     defineAgUiChat();
   });
@@ -1676,5 +1681,155 @@ describe("AgUiChat — answer group (WELL-1)", () => {
     expect(shadow(el).querySelectorAll(".messages > .message--user")).toHaveLength(2);
     // The empty-state region is hidden once the transcript renders.
     expect(shadow(el).querySelector<HTMLElement>(".empty")?.hidden).toBe(true);
+  });
+
+  describe("client hardening", () => {
+    it("ignores a submit while a run is in flight", async () => {
+      let runs = 0;
+      let release: () => void = () => {};
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      el.agentFactory = () =>
+        makeFakeAgent({
+          script: async (emit) => {
+            runs += 1;
+            emit.runStart();
+            await new Promise<void>((r) => {
+              release = r;
+            });
+            emit.textEnd("done");
+            emit.runEnd();
+          },
+        }).agent;
+      document.body.appendChild(el);
+
+      sendNoWait(el, "first");
+      await flush();
+      expect(runs).toBe(1); // first run is in flight
+
+      // A second Enter while running hits #submit's guard: no second run, and
+      // the input is left untouched (the guard returns before clearing it).
+      const input = inputOf(el);
+      input.value = "second";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
+      await flush();
+      expect(runs).toBe(1);
+      expect(input.value).toBe("second");
+
+      release();
+      await flush();
+    });
+
+    it("cancels the in-flight run when the element is disconnected", async () => {
+      let release: () => void = () => {};
+      const handle = makeFakeAgent({
+        script: async (emit) => {
+          emit.runStart();
+          await new Promise<void>((r) => {
+            release = r;
+          });
+        },
+      });
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      el.agentFactory = () => handle.agent;
+      // Wire voice so disconnect also tears the mic control down.
+      el.transcribeHandler = async () => "";
+      document.body.appendChild(el);
+      sendNoWait(el, "go");
+      await flush();
+
+      expect(handle.abortRuns).toBe(0);
+      el.remove(); // disconnectedCallback → cancelRun + voice.dispose
+      expect(handle.abortRuns).toBe(1);
+      release();
+      await flush();
+    });
+
+    it("drops a stale thread replay when a newer switch started", async () => {
+      // A controllable store whose loadMessages resolves on demand, so we can
+      // interleave two thread switches and land the slower (older) one last.
+      const loaders = new Map<string, (m: readonly Message[] | null) => void>();
+      let active = "t0";
+      const store: ClientConversationStore = {
+        threadId: () => active,
+        setActiveThread: (id) => {
+          active = id;
+        },
+        loadMessages: (id) =>
+          new Promise<readonly Message[] | null>((resolve) => loaders.set(id, resolve)),
+        saveMessages: () => {},
+        loadCheckpoint: (): NavigationCheckpoint | null => null,
+        saveCheckpoint: () => {},
+        clear: () => {},
+        listThreads: (): Promise<readonly ThreadMeta[]> =>
+          Promise.resolve([
+            { threadId: "t1", title: "One", updatedAt: 2, preview: "" },
+            { threadId: "t2", title: "Two", updatedAt: 1, preview: "" },
+          ]),
+        renameThread: () => {},
+      };
+      const el = mount();
+      el.conversationStore = store;
+      // Re-run connect wiring so the injected store is used (mount already ran
+      // connectedCallback; switch threads through the drawer instead).
+      loaders.get("t0")?.(null); // let the initial rehydrate settle
+      await flush();
+
+      const openDrawer = async (): Promise<void> => {
+        shadow(el).querySelector<HTMLButtonElement>(".header-btn--history")?.click();
+        await flush();
+      };
+      const selectRow = (title: string): void => {
+        const row = [...shadow(el).querySelectorAll<HTMLDivElement>(".drawer-row")].find(
+          (r) => r.querySelector(".drawer-row-title")?.textContent === title,
+        );
+        row?.querySelector<HTMLButtonElement>(".drawer-row-select")?.click();
+      };
+
+      await openDrawer();
+      selectRow("One"); // switch → rehydrate(t1), awaiting loadMessages
+      await flush();
+      await openDrawer();
+      selectRow("Two"); // switch → rehydrate(t2), awaiting loadMessages
+      await flush();
+
+      // Resolve the OLDER switch (t1) last: it must be dropped as stale.
+      loaders.get("t1")?.([{ id: "m1", role: "user", content: "STALE t1" }] as never);
+      await flush();
+      loaders.get("t2")?.([{ id: "m2", role: "user", content: "FRESH t2" }] as never);
+      await flush();
+
+      const users = [...shadow(el).querySelectorAll(".message--user")].map((n) => n.textContent);
+      expect(users).toEqual(["FRESH t2"]);
+    });
+
+    it("namespaces origin-scoped storage keys by endpoint", () => {
+      const el = mount({ endpoint: "/agent/" });
+      el.setCollapsed(true);
+      expect(sessionStorage.getItem("ag-ui-chat:collapsed:/agent/")).toBe("1");
+      expect(sessionStorage.getItem("ag-ui-chat:collapsed")).toBeNull();
+    });
+
+    it("prefers the element id over the endpoint for the namespace", () => {
+      const el = mount({ id: "chat-a", endpoint: "/agent/" });
+      el.setCollapsed(true);
+      expect(sessionStorage.getItem("ag-ui-chat:collapsed:chat-a")).toBe("1");
+    });
+
+    it("restores a namespaced collapsed state, ignoring another instance's key", () => {
+      sessionStorage.setItem("ag-ui-chat:collapsed:/agent/", "1");
+      sessionStorage.setItem("ag-ui-chat:collapsed:/other/", "0");
+      expect(mount({ endpoint: "/agent/" }).collapsed).toBe(true);
+    });
+
+    it("seeds theme from the legacy global key on a first namespaced mount", () => {
+      sessionStorage.setItem("ag-ui-chat:theme", "dark");
+      const el = mount({ endpoint: "/agent/", "data-theme-toggle": "" });
+      expect(el.getAttribute("theme")).toBe("dark");
+      // A later toggle persists under the namespaced key, not the legacy one.
+      el.toggleTheme();
+      expect(sessionStorage.getItem("ag-ui-chat:theme:/agent/")).toBe("light");
+    });
   });
 });

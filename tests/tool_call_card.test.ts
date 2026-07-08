@@ -61,6 +61,18 @@ describe("ToolCallCard", () => {
     expect(card.element.querySelector(".tool-call-result")).toBeNull();
   });
 
+  it("ignores a second settle: no duplicate body, first outcome wins", () => {
+    const card = new ToolCallCard("count_users", {});
+    card.settle("done", "42");
+    // A duplicate TOOL_CALL_RESULT or a replayed tool message must not append a
+    // second toggle+result section or overwrite the first outcome.
+    card.settle("error", "kaboom");
+    expect(card.element.querySelectorAll(".tool-call-toggle")).toHaveLength(1);
+    expect(card.element.querySelectorAll(".tool-call-result")).toHaveLength(1);
+    expect(card.element.getAttribute("data-status")).toBe("done");
+    expect(card.element.querySelector(".tool-call-result")?.textContent).toBe("42");
+  });
+
   it("draws all visible text from the string table", () => {
     const strings = mergeUiStrings({
       toolRunning: "läuft…",

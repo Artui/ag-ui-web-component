@@ -115,6 +115,31 @@ describe("AgUiClient", () => {
     expect(handlers.calls).toContain("err:model exploded");
   });
 
+  it("stops the loop on RUN_ERROR: pending frontend tools are not executed", async () => {
+    // A run that emits a frontend tool call and then errors is terminal — the
+    // loop must not execute the tool or start another round.
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.toolCall("tc1", "fill_field", { value: "Paris" });
+        emit.error("model exploded");
+      },
+    });
+    const executed: string[] = [];
+    const handlers = recordingHandlers();
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers,
+      executeTool: async (call) => {
+        executed.push(call.name);
+        return { content: "ok" };
+      },
+    }).send("fill it");
+
+    expect(executed).toEqual([]); // the tool was NOT run
+    expect(fake.messages.some((m) => m.role === "tool")).toBe(false);
+    expect(handlers.calls).toContain("err:model exploded");
+  });
+
   it("catches a thrown run (network failure) and reports it", async () => {
     const fake = makeFakeAgent({ throwOnRun: new Error("connection refused") });
     const handlers = recordingHandlers();

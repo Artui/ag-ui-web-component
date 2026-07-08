@@ -146,4 +146,63 @@ describe("SessionStorageStore", () => {
     expect(meta?.preview).toHaveLength(100);
     expect(meta?.preview.endsWith("…")).toBe(true);
   });
+
+  describe("namespacing", () => {
+    it("scopes keys per namespace so two stores don't collide", () => {
+      const a = new SessionStorageStore("app-a");
+      const b = new SessionStorageStore("app-b");
+      a.setActiveThread("ta");
+      b.setActiveThread("tb");
+      expect(a.threadId()).toBe("ta");
+      expect(b.threadId()).toBe("tb");
+      // Neither writes the legacy global key.
+      expect(sessionStorage.getItem("ag-ui-chat:thread")).toBeNull();
+      expect(sessionStorage.getItem("ag-ui-chat@app-a:thread")).toBe("ta");
+    });
+
+    it("keeps namespaced thread indexes separate", async () => {
+      const a = new SessionStorageStore("app-a");
+      const b = new SessionStorageStore("app-b");
+      a.saveMessages("t1", [{ role: "user", content: "in a" }] as never);
+      expect((await a.listThreads()).map((t) => t.threadId)).toEqual(["t1"]);
+      expect(await b.listThreads()).toEqual([]);
+    });
+
+    it("migrates pre-namespacing keys into the namespace once", async () => {
+      // Seed legacy (global) state as if written before the upgrade.
+      const legacy = new SessionStorageStore();
+      legacy.setActiveThread("t1");
+      legacy.saveMessages("t1", [{ role: "user", content: "hello" }] as never);
+      legacy.saveCheckpoint("t1", { toolCallId: "tc1" });
+      // A key the store does NOT own must be left untouched by migration.
+      sessionStorage.setItem("ag-ui-chat:theme", "dark");
+
+      const store = new SessionStorageStore("app-a");
+      expect(store.threadId()).toBe("t1");
+      expect(await store.loadMessages("t1")).toEqual([{ role: "user", content: "hello" }]);
+      expect(store.loadCheckpoint("t1")).toEqual({ toolCallId: "tc1" });
+      // Legacy owned keys are moved (removed); the element's theme key stays.
+      expect(sessionStorage.getItem("ag-ui-chat:thread")).toBeNull();
+      expect(sessionStorage.getItem("ag-ui-chat:messages:t1")).toBeNull();
+      expect(sessionStorage.getItem("ag-ui-chat:theme")).toBe("dark");
+    });
+
+    it("a second namespace finds the legacy data already adopted", async () => {
+      const legacy = new SessionStorageStore();
+      legacy.setActiveThread("t1");
+      new SessionStorageStore("app-a"); // adopts the legacy pointer
+      const b = new SessionStorageStore("app-b"); // nothing left to adopt
+      expect(b.threadId()).not.toBe("t1");
+    });
+
+    it("does not overwrite an existing namespaced value during migration", () => {
+      const store = new SessionStorageStore("app-a");
+      store.setActiveThread("kept");
+      // A stray legacy key present at a later construction must not clobber the
+      // already-namespaced value.
+      sessionStorage.setItem("ag-ui-chat:thread", "legacy");
+      const reopened = new SessionStorageStore("app-a");
+      expect(reopened.threadId()).toBe("kept");
+    });
+  });
 });

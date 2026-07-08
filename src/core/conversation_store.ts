@@ -64,10 +64,11 @@ export interface ClientConversationStore {
   renameThread(threadId: string, title: string): void;
 }
 
-const THREAD_KEY = "ag-ui-chat:thread";
-const THREADS_KEY = "ag-ui-chat:threads";
-const MESSAGES_PREFIX = "ag-ui-chat:messages:";
-const CHECKPOINT_PREFIX = "ag-ui-chat:checkpoint:";
+const KEY_ROOT = "ag-ui-chat";
+const THREAD_SUFFIX = "thread";
+const THREADS_SUFFIX = "threads";
+const MESSAGES_SUFFIX = "messages:";
+const CHECKPOINT_SUFFIX = "checkpoint:";
 
 const TITLE_LIMIT = 60;
 const PREVIEW_LIMIT = 100;
@@ -90,33 +91,50 @@ interface StoredThread {
  * Tracks multiple threads per tab: the active id lives under one key, the
  * message history / checkpoint are namespaced by id, and a small index feeds
  * the drawer so it works with no server.
+ *
+ * An optional `namespace` scopes every key to one element (its `id`, else its
+ * endpoint), so two `<ag-ui-chat>` instances — or two apps — on the same origin
+ * keep separate active-thread pointers and drawer indexes instead of clobbering
+ * each other. Constructing with a namespace migrates any pre-namespacing
+ * (`ag-ui-chat:*`) keys into it once, so an existing conversation survives the
+ * upgrade; the default empty namespace keeps the legacy origin-global keys.
  */
 export class SessionStorageStore implements ClientConversationStore {
+  readonly #root: string;
+
+  constructor(namespace = "") {
+    this.#root = namespace === "" ? KEY_ROOT : `${KEY_ROOT}@${namespace}`;
+    if (namespace !== "") {
+      this.#migrateLegacyKeys();
+    }
+  }
+
   threadId(): string {
-    const existing = sessionStorage.getItem(THREAD_KEY);
+    const key = this.#key(THREAD_SUFFIX);
+    const existing = sessionStorage.getItem(key);
     if (existing !== null) {
       return existing;
     }
     const id = randomUUID();
-    sessionStorage.setItem(THREAD_KEY, id);
+    sessionStorage.setItem(key, id);
     return id;
   }
 
   loadMessages(threadId: string): Promise<readonly Message[] | null> {
-    return Promise.resolve(this.#readJson<Message[]>(MESSAGES_PREFIX + threadId));
+    return Promise.resolve(this.#readJson<Message[]>(this.#key(MESSAGES_SUFFIX + threadId)));
   }
 
   saveMessages(threadId: string, messages: readonly Message[]): void {
-    sessionStorage.setItem(MESSAGES_PREFIX + threadId, JSON.stringify(messages));
+    sessionStorage.setItem(this.#key(MESSAGES_SUFFIX + threadId), JSON.stringify(messages));
     this.#touchThread(threadId, messages);
   }
 
   loadCheckpoint(threadId: string): NavigationCheckpoint | null {
-    return this.#readJson<NavigationCheckpoint>(CHECKPOINT_PREFIX + threadId);
+    return this.#readJson<NavigationCheckpoint>(this.#key(CHECKPOINT_SUFFIX + threadId));
   }
 
   saveCheckpoint(threadId: string, checkpoint: NavigationCheckpoint | null): void {
-    const key = CHECKPOINT_PREFIX + threadId;
+    const key = this.#key(CHECKPOINT_SUFFIX + threadId);
     if (checkpoint === null) {
       sessionStorage.removeItem(key);
       return;
@@ -125,14 +143,14 @@ export class SessionStorageStore implements ClientConversationStore {
   }
 
   clear(threadId: string): void {
-    sessionStorage.removeItem(MESSAGES_PREFIX + threadId);
-    sessionStorage.removeItem(CHECKPOINT_PREFIX + threadId);
+    sessionStorage.removeItem(this.#key(MESSAGES_SUFFIX + threadId));
+    sessionStorage.removeItem(this.#key(CHECKPOINT_SUFFIX + threadId));
     this.#writeThreads(this.#readThreads().filter((thread) => thread.threadId !== threadId));
     // Only drop the active pointer when the active thread itself is cleared, so
     // the next `threadId()` mints a fresh one. Deleting another thread from the
     // drawer must not disturb the conversation on screen.
-    if (sessionStorage.getItem(THREAD_KEY) === threadId) {
-      sessionStorage.removeItem(THREAD_KEY);
+    if (sessionStorage.getItem(this.#key(THREAD_SUFFIX)) === threadId) {
+      sessionStorage.removeItem(this.#key(THREAD_SUFFIX));
     }
   }
 
@@ -144,7 +162,7 @@ export class SessionStorageStore implements ClientConversationStore {
   }
 
   setActiveThread(threadId: string): void {
-    sessionStorage.setItem(THREAD_KEY, threadId);
+    sessionStorage.setItem(this.#key(THREAD_SUFFIX), threadId);
   }
 
   renameThread(threadId: string, title: string): void {
@@ -183,15 +201,53 @@ export class SessionStorageStore implements ClientConversationStore {
   }
 
   #readThreads(): StoredThread[] {
-    return this.#readJson<StoredThread[]>(THREADS_KEY) ?? [];
+    return this.#readJson<StoredThread[]>(this.#key(THREADS_SUFFIX)) ?? [];
   }
 
   #writeThreads(threads: readonly StoredThread[]): void {
+    const key = this.#key(THREADS_SUFFIX);
     if (threads.length === 0) {
-      sessionStorage.removeItem(THREADS_KEY);
+      sessionStorage.removeItem(key);
       return;
     }
-    sessionStorage.setItem(THREADS_KEY, JSON.stringify(threads));
+    sessionStorage.setItem(key, JSON.stringify(threads));
+  }
+
+  /** This store's fully-qualified key for a suffix (namespaced when set). */
+  #key(suffix: string): string {
+    return `${this.#root}:${suffix}`;
+  }
+
+  /**
+   * One-time move of pre-namespacing (`ag-ui-chat:*`) keys into this instance's
+   * namespace, so an existing conversation isn't orphaned by the upgrade. Only
+   * this store's own keys move (thread pointer, drawer index, per-thread
+   * messages/checkpoints) — the element's `collapsed`/`theme` keys are left
+   * alone. The first namespaced instance to mount adopts the legacy data; a
+   * second namespace finds it gone and starts fresh.
+   */
+  #migrateLegacyKeys(): void {
+    const legacyRoot = `${KEY_ROOT}:`;
+    const moves: Array<readonly [string, string]> = [];
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i);
+      if (key === null || !key.startsWith(legacyRoot)) {
+        continue;
+      }
+      const suffix = key.slice(legacyRoot.length);
+      if (isOwnedSuffix(suffix)) {
+        moves.push([key, this.#key(suffix)]);
+      }
+    }
+    // Collected first, mutated second — writing while iterating by index skips
+    // entries as the key list shifts.
+    for (const [from, to] of moves) {
+      const value = sessionStorage.getItem(from);
+      if (value !== null && sessionStorage.getItem(to) === null) {
+        sessionStorage.setItem(to, value);
+      }
+      sessionStorage.removeItem(from);
+    }
   }
 
   /** Parse a stored JSON value, returning `null` when absent or corrupt. */
@@ -206,6 +262,16 @@ export class SessionStorageStore implements ClientConversationStore {
       return null;
     }
   }
+}
+
+/** Whether a legacy key suffix belongs to the store (vs the element's own keys). */
+function isOwnedSuffix(suffix: string): boolean {
+  return (
+    suffix === THREAD_SUFFIX ||
+    suffix === THREADS_SUFFIX ||
+    suffix.startsWith(MESSAGES_SUFFIX) ||
+    suffix.startsWith(CHECKPOINT_SUFFIX)
+  );
 }
 
 /** The thread title: the first user message, collapsed + truncated. */

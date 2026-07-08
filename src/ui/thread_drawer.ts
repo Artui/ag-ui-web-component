@@ -37,6 +37,8 @@ export class ThreadDrawer {
   #strings: UiStrings;
   #threads: readonly ThreadMeta[] = [];
   #activeId = "";
+  /** The element focused before the drawer opened, restored on close. */
+  #lastFocused: HTMLElement | null = null;
 
   constructor(callbacks: ThreadDrawerCallbacks, strings: UiStrings = DEFAULT_UI_STRINGS) {
     this.#callbacks = callbacks;
@@ -56,7 +58,10 @@ export class ThreadDrawer {
     this.#panel.className = "drawer-panel";
     this.#panel.setAttribute("part", "drawer-panel");
     this.#panel.setAttribute("role", "dialog");
+    this.#panel.setAttribute("aria-modal", "true");
     this.#panel.setAttribute("aria-label", strings.chatHistory);
+    // Escape closes the drawer; Tab is trapped within the panel while it's open.
+    this.#panel.addEventListener("keydown", (event) => this.#onPanelKeydown(event));
 
     const header = document.createElement("div");
     header.className = "drawer-header";
@@ -98,15 +103,61 @@ export class ThreadDrawer {
   }
 
   open(): void {
+    if (this.isOpen()) {
+      return;
+    }
+    // Remember what had focus so it's restored on close, then move focus into
+    // the panel (its first control) so keyboard users land inside the dialog.
+    this.#lastFocused = this.#activeElement() as HTMLElement | null;
     this.element.hidden = false;
+    this.#newButton.focus();
   }
 
   close(): void {
+    if (!this.isOpen()) {
+      return;
+    }
     this.element.hidden = true;
+    this.#lastFocused?.focus();
+    this.#lastFocused = null;
   }
 
   toggle(): void {
-    this.element.hidden = !this.element.hidden;
+    if (this.isOpen()) {
+      this.close();
+    } else {
+      this.open();
+    }
+  }
+
+  /** The currently-focused element within the drawer's root (shadow-aware). */
+  #activeElement(): Element | null {
+    return (this.element.getRootNode() as Document | ShadowRoot).activeElement;
+  }
+
+  /** Escape-to-close and a Tab focus trap while the dialog is open. */
+  #onPanelKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.close();
+      return;
+    }
+    if (event.key !== "Tab") {
+      return;
+    }
+    const focusables = Array.from(
+      this.#panel.querySelectorAll<HTMLElement>("button, input, [tabindex]"),
+    ).filter((el) => !el.hidden);
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = this.#activeElement();
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first?.focus();
+    }
   }
 
   /** Render the rows (or the empty state), highlighting the active thread. */
@@ -182,24 +233,47 @@ export class ThreadDrawer {
     return row;
   }
 
-  /** Swap a row for an inline rename input; Enter commits, Escape cancels. */
+  /** Swap a row for an inline rename input; Enter/blur commits, Escape cancels. */
   #startRename(row: HTMLDivElement, meta: ThreadMeta): void {
     const input = document.createElement("input");
     input.type = "text";
     input.className = "drawer-rename-input";
     input.value = meta.title;
+    // One-shot: Enter, Escape, and blur can all fire for a single edit (Enter
+    // commits and re-renders, which blurs the detached input); the flag makes
+    // the later events no-ops so a rename isn't submitted twice.
+    let done = false;
+    const commit = (): void => {
+      if (done) {
+        return;
+      }
+      done = true;
+      const value = input.value.trim();
+      if (value === "" || value === meta.title) {
+        this.#renderList();
+      } else {
+        this.#callbacks.onRename(meta.threadId, value);
+      }
+    };
+    const cancel = (): void => {
+      if (done) {
+        return;
+      }
+      done = true;
+      this.#renderList();
+    };
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
-        const value = input.value.trim();
-        if (value === "") {
-          this.#renderList();
-        } else {
-          this.#callbacks.onRename(meta.threadId, value);
-        }
+        event.preventDefault();
+        commit();
       } else if (event.key === "Escape") {
-        this.#renderList();
+        // Stop the panel's Escape handler from also closing the drawer.
+        event.preventDefault();
+        event.stopPropagation();
+        cancel();
       }
     });
+    input.addEventListener("blur", () => commit());
     row.replaceChildren(input);
     input.focus();
     input.select();

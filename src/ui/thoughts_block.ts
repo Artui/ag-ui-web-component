@@ -2,9 +2,9 @@ import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
 /**
  * A muted, collapsible "thinking" region for a reasoning model's streamed
- * chain-of-thought (THINK-1).
+ * chain-of-thought.
  *
- * Lives at the top of the current answer group (the WELL-1 turn container): it
+ * Lives at the top of the current answer group (the turn container): it
  * opens expanded while the model reasons — {@link stream} replaces its body with
  * the running reasoning buffer — and {@link collapse} folds it away once the
  * answer's first text token arrives, so the thoughts don't crowd the answer.
