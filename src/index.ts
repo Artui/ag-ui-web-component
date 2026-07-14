@@ -27,6 +27,8 @@ export {
   type AgUiToolCall,
   ConnectionLostError,
   type ExecuteTool,
+  type InterruptResponse,
+  type ResolveInterrupts,
   type ToolExecution,
 } from "./core/agui_client.js";
 export { type AttachmentRef, messageAttachments } from "./core/attachment.js";
@@ -99,11 +101,23 @@ export {
 } from "./tools/route_map.js";
 export { createStateHookTools, type StateHook } from "./tools/state_hook.js";
 export {
+  type ApprovalOptions,
+  type ApprovalRenderer,
+  type ApprovalRequest,
+  requestApproval,
+} from "./ui/approval_card.js";
+export {
   type ConfirmationOptions,
   type ConfirmationRequest,
   requestConfirmation,
 } from "./ui/confirmation_card.js";
 export { prettifyToolName } from "./ui/prettify_tool_name.js";
+export {
+  type QuestionOptions,
+  type QuestionRenderer,
+  type QuestionRequest,
+  requestQuestion,
+} from "./ui/question_card.js";
 export { type RenderMarkdownOptions, renderMarkdown } from "./ui/render_markdown.js";
 export {
   type SettledStatus,

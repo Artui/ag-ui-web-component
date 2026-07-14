@@ -98,6 +98,26 @@ export interface UiStrings {
   /** Cancel button (confirmation + delete confirm). */
   cancel: string;
 
+  // ── Approval card (server-side tool gate) ───────────────────────────────────
+  /** `aria-label` of the inline server-side-tool approval card. */
+  approveAction: string;
+  /** Fallback approval prompt when the interrupt carries no message. */
+  approvalPrompt: string;
+  /** Approve button (runs the gated server-side tool). */
+  approve: string;
+  /** Deny button (declines the gated server-side tool). */
+  deny: string;
+
+  // ── Question card (the `ask_user` frontend tool) ────────────────────────────
+  /** `aria-label` of the inline question card. */
+  askUserAction: string;
+  /** Radio label for the free-text "other" choice (when custom answers are allowed). */
+  otherOption: string;
+  /** Placeholder for the free-text answer field. */
+  answerPlaceholder: string;
+  /** Submit button for the question card. */
+  submit: string;
+
   // ── Chat-history drawer ─────────────────────────────────────────────────────
   /** Drawer heading. */
   chats: string;
@@ -185,6 +205,16 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   confirmRun: "Run “{tool}”?",
   confirm: "Confirm",
   cancel: "Cancel",
+
+  approveAction: "Approve action",
+  approvalPrompt: "Approve this action?",
+  approve: "Approve",
+  deny: "Deny",
+
+  askUserAction: "Question",
+  otherOption: "Other…",
+  answerPlaceholder: "Type your answer…",
+  submit: "Submit",
 
   chats: "Chats",
   noConversations: "No conversations yet.",

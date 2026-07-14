@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-07-14
+
+### Added
+
+- **Server-side tool approval — the browser half of the human-in-the-loop gate.**
+  When a gated server-side tool defers instead of executing, the run finishes on
+  an AG-UI *interrupt*; the client now renders an inline **approval card**
+  (`requestApproval`, next to the pending tool-call card) and, on the user's
+  decision, resumes the run with the answer via the protocol's `resume[]`.
+  Approve runs the tool (its result streams back into the same card); deny sends
+  a `cancelled` answer so the model learns it was declined and the card settles
+  as declined. No `@ag-ui/*` dependency bump — the interrupt/resume types already
+  ship in the pinned `0.0.x`. `AgUiClient` gains a `resolveInterrupts` config hook
+  and exports `InterruptResponse` / `ResolveInterrupts`. The card is fully
+  customizable: `strings` (`approveAction` / `approvalPrompt` / `approve` /
+  `deny`), a `::part()` surface (`approval`, `-body`, `-actions`, `-button`,
+  `-approve`, `-deny`), and an `approvalRenderer` hook that fully replaces the UI
+  (given the request + a Stop `AbortSignal`, resolves approve/deny). Exports
+  `ApprovalRenderer`.
+- **`ask_user` — a built-in typed-question frontend tool (opt-in).** Set
+  `askUser = true` on `<ag-ui-chat>` to offer the agent an `ask_user(question,
+  options?, allow_custom?)` tool: calling it renders an inline **question card**
+  (`requestQuestion` — radio choices and/or a free-text field) and returns the
+  chosen or typed answer as the tool result, reusing the existing frontend-tool
+  path (no new protocol). Off by default, like the other built-in tool groups, so
+  the advertised catalog is unchanged until a host opts in. The card is **fully
+  customizable**: localized `strings` (`askUserAction` / `otherOption` /
+  `answerPlaceholder` / `submit`), a full `::part()` surface (`question`,
+  `question-body`, `-options`, `-choice`, `-radio`, `-input`, `-actions`,
+  `-button`), and a `askUserRenderer` hook that fully replaces the UI with a
+  host-supplied renderer (given the request + a Stop `AbortSignal`, resolves the
+  answer). Exports `QuestionRenderer`.
+- **Complete `::part()` coverage sweep.** Every rendered UI element now exposes a
+  `part` for `::part()` styling — closing gaps in the attachment chips
+  (`attachment-chips` and the shared `attachment-chip*` parts, now on both the
+  composer tray and the read-only chips on sent bubbles), the skills UI
+  (`skill-chips` / `skill-chip` / `skill-palette` / `skill-item*` / `skill-hint`),
+  the history-drawer row internals (`drawer-row-title` / `-time` / `-preview` /
+  `-actions` / `-rename` / `-delete`, the inline `drawer-rename-input`, and the
+  `drawer-confirm*` delete prompt), plus `thoughts-label`, `question-choice-text`,
+  and the `stopped` note. All are documented in the README "Available parts" list.
+
 ## [0.10.0] — 2026-07-02
 
 ### Added
@@ -453,7 +495,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.8.0...v0.8.1

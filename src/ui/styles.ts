@@ -1028,6 +1028,127 @@ export const STYLES = `
   color: #ffffff;
 }
 
+/* Approval card — the server-side-tool gate (approve/deny an interrupt). */
+.approval {
+  align-self: stretch;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--ag-ui-bg);
+  border: 1px solid var(--ag-ui-accent);
+  border-radius: 10px;
+}
+
+.approval[data-resolved] {
+  opacity: 0.7;
+  border-color: var(--ag-ui-border);
+}
+
+.approval-body {
+  font-weight: 600;
+}
+
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.approval-btn {
+  border: 1px solid var(--ag-ui-border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--ag-ui-bg);
+  color: var(--ag-ui-fg);
+}
+
+.approval-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.approval-btn--approve {
+  border-color: var(--ag-ui-accent);
+  background: var(--ag-ui-accent);
+  color: #ffffff;
+}
+
+/* Question card — the built-in ask_user prompt (radios and/or free text). */
+.question {
+  align-self: stretch;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--ag-ui-bg);
+  border: 1px solid var(--ag-ui-accent);
+  border-radius: 10px;
+}
+
+.question[data-resolved] {
+  opacity: 0.7;
+  border-color: var(--ag-ui-border);
+}
+
+.question-body {
+  font-weight: 600;
+}
+
+.question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.question-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.question-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--ag-ui-fg);
+  background: var(--ag-ui-bg);
+  border: 1px solid var(--ag-ui-border);
+  border-radius: 8px;
+}
+
+.question-input:disabled {
+  opacity: 0.6;
+}
+
+.question-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.question-btn {
+  border: 1px solid var(--ag-ui-accent);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--ag-ui-accent);
+  color: #ffffff;
+}
+
+.question-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* Skills — chips row + the /-command palette, above the input. */
 .skill-chips {
   display: flex;

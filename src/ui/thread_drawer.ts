@@ -196,12 +196,15 @@ export class ThreadDrawer {
     select.setAttribute("part", "drawer-row-select");
     const title = document.createElement("span");
     title.className = "drawer-row-title";
+    title.setAttribute("part", "drawer-row-title");
     title.textContent = meta.title;
     const time = document.createElement("span");
     time.className = "drawer-row-time";
+    time.setAttribute("part", "drawer-row-time");
     time.textContent = relativeTime(meta.updatedAt, undefined, this.#strings);
     const preview = document.createElement("span");
     preview.className = "drawer-row-preview";
+    preview.setAttribute("part", "drawer-row-preview");
     preview.textContent = meta.preview;
     select.append(title, time, preview);
     select.addEventListener("click", () => {
@@ -212,6 +215,7 @@ export class ThreadDrawer {
     const rename = document.createElement("button");
     rename.type = "button";
     rename.className = "drawer-row-rename";
+    rename.setAttribute("part", "drawer-row-rename");
     rename.title = this.#strings.rename;
     rename.setAttribute("aria-label", this.#strings.renameConversation);
     rename.textContent = "✎";
@@ -220,6 +224,7 @@ export class ThreadDrawer {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "drawer-row-delete";
+    remove.setAttribute("part", "drawer-row-delete");
     remove.title = this.#strings.delete;
     remove.setAttribute("aria-label", this.#strings.deleteConversation);
     remove.textContent = "🗑";
@@ -227,6 +232,7 @@ export class ThreadDrawer {
 
     const actions = document.createElement("div");
     actions.className = "drawer-row-actions";
+    actions.setAttribute("part", "drawer-row-actions");
     actions.append(rename, remove);
 
     row.append(select, actions);
@@ -238,6 +244,7 @@ export class ThreadDrawer {
     const input = document.createElement("input");
     input.type = "text";
     input.className = "drawer-rename-input";
+    input.setAttribute("part", "drawer-rename-input");
     input.value = meta.title;
     // One-shot: Enter, Escape, and blur can all fire for a single edit (Enter
     // commits and re-renders, which blurs the detached input); the flag makes
@@ -283,17 +290,21 @@ export class ThreadDrawer {
   #confirmDelete(row: HTMLDivElement, meta: ThreadMeta): void {
     const confirm = document.createElement("div");
     confirm.className = "drawer-confirm";
+    confirm.setAttribute("part", "drawer-confirm");
     const label = document.createElement("span");
     label.className = "drawer-confirm-label";
+    label.setAttribute("part", "drawer-confirm-label");
     label.textContent = this.#strings.deletePrompt;
     const yes = document.createElement("button");
     yes.type = "button";
     yes.className = "drawer-confirm-yes";
+    yes.setAttribute("part", "drawer-confirm-yes");
     yes.textContent = this.#strings.delete;
     yes.addEventListener("click", () => this.#callbacks.onDelete(meta.threadId));
     const no = document.createElement("button");
     no.type = "button";
     no.className = "drawer-confirm-no";
+    no.setAttribute("part", "drawer-confirm-no");
     no.textContent = this.#strings.cancel;
     no.addEventListener("click", () => this.#renderList());
     confirm.append(label, yes, no);

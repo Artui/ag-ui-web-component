@@ -1,5 +1,11 @@
-import { type AbstractAgent, type AgentSubscriber, randomUUID } from "@ag-ui/client";
-import type { Context, Message, Tool } from "@ag-ui/core";
+import {
+  type AbstractAgent,
+  type AgentSubscriber,
+  buildResumeArray,
+  type RunAgentParameters,
+  randomUUID,
+} from "@ag-ui/client";
+import type { Context, Interrupt, Message, ResumeEntry, Tool } from "@ag-ui/core";
 import { MAX_TOOL_ROUNDS } from "../constants.js";
 import type { AttachmentRef } from "./attachment.js";
 
@@ -32,6 +38,27 @@ export interface ToolExecution {
  * already executed — the client must not re-run for it).
  */
 export type ExecuteTool = (call: AgUiToolCall) => Promise<ToolExecution | null>;
+
+/**
+ * One user decision for a server-side-tool approval interrupt. Structurally
+ * matches `@ag-ui/client`'s (non-exported) `ResumeResponse`, the payload
+ * {@link buildResumeArray} turns into a `ResumeEntry`: `resolved` approves (with
+ * an optional `payload`, e.g. `{ approved: true }`), `cancelled` denies.
+ */
+export type InterruptResponse = { status: "resolved"; payload?: unknown } | { status: "cancelled" };
+
+/**
+ * Resolves the approval interrupts a run finished on, keyed by interrupt id.
+ *
+ * When a gated **server-side** tool defers instead of executing, the run
+ * finishes on an AG-UI interrupt outcome; the host renders an approval card per
+ * interrupt and returns each decision here, and the loop resumes the run with
+ * the answers. Omit for agents that never gate server-side tools — an
+ * unresolved interrupt then simply ends the loop.
+ */
+export type ResolveInterrupts = (
+  interrupts: readonly Interrupt[],
+) => Promise<Record<string, InterruptResponse>>;
 
 /**
  * Callbacks the {@link AgUiClient} invokes as a run progresses. The host
@@ -94,6 +121,11 @@ export interface AgUiClientConfig extends AgUiRunInputs {
   /** Executes frontend tool calls. Omit for server-only tool sets. */
   executeTool?: ExecuteTool;
   /**
+   * Resolves server-side-tool approval interrupts. Omit when no server-side
+   * tool is gated for approval — an interrupt then ends the loop unanswered.
+   */
+  resolveInterrupts?: ResolveInterrupts;
+  /**
    * Invoked with the latest history whenever it changes, so the host can
    * persist it for durability across page reloads. Omit to keep the
    * conversation in-memory only.
@@ -134,6 +166,7 @@ export class AgUiClient {
   readonly #getTools: () => Tool[];
   readonly #getContext: () => Context[];
   readonly #executeTool: ExecuteTool | null;
+  readonly #resolveInterrupts: ResolveInterrupts | null;
   readonly #onPersist: (messages: readonly Message[]) => void;
   readonly #connectionLostMessage: string;
   // Set by cancel(); reset at the top of each #run(). Checked by the loop so
@@ -146,6 +179,7 @@ export class AgUiClient {
     this.#getTools = config.getTools ?? (() => []);
     this.#getContext = config.getContext ?? (() => []);
     this.#executeTool = config.executeTool ?? null;
+    this.#resolveInterrupts = config.resolveInterrupts ?? null;
     this.#onPersist = config.onPersist ?? (() => {});
     this.#connectionLostMessage = config.connectionLostMessage ?? "Connection lost";
   }
@@ -241,6 +275,11 @@ export class AgUiClient {
   }
 
   async #runLoop(): Promise<void> {
+    // Carries the resolved approval answers into the *next* run when a round
+    // finished on a server-side-tool interrupt. Distinct from the public
+    // resume() navigation-reload path (which continues an unfinished
+    // frontend-tool round after a page load) — this stays inside one #run().
+    let resume: ResumeEntry[] | undefined;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
       // A cancel during the previous round's frontend-tool execution lands
       // here: the running handler completed, but no further round starts.
@@ -248,11 +287,16 @@ export class AgUiClient {
         return;
       }
       const pending: AgUiToolCall[] = [];
-      const runState = { terminal: false, errored: false };
-      await this.#agent.runAgent(
-        { tools: this.#getTools(), context: this.#getContext() },
-        this.#buildSubscriber(pending, runState),
-      );
+      const runState: RunState = { terminal: false, errored: false, interrupts: [] };
+      const params: RunAgentParameters = {
+        tools: this.#getTools(),
+        context: this.#getContext(),
+      };
+      if (resume !== undefined) {
+        params.resume = resume;
+      }
+      await this.#agent.runAgent(params, this.#buildSubscriber(pending, runState));
+      resume = undefined;
       this.#onPersist(this.#agent.messages);
       // Cancelled mid-stream: the user said stop — don't execute the tool
       // calls collected before the abort.
@@ -271,6 +315,22 @@ export class AgUiClient {
       // confusing second error. Any pending tool card is swept at onSettled.
       if (runState.errored) {
         return;
+      }
+      // A gated server-side tool deferred instead of executing: the run finished
+      // on an interrupt outcome. Ask the host to resolve each interrupt, then
+      // re-enter the loop carrying the answers — the follow-up run runs or denies
+      // the tool (its result streams back as TOOL_CALL_RESULT). Takes precedence
+      // over the frontend-tool sweep below: a server-side tool isn't ours to run.
+      if (runState.interrupts.length > 0) {
+        if (this.#resolveInterrupts === null) {
+          return;
+        }
+        const responses = await this.#resolveInterrupts(runState.interrupts);
+        if (this.#cancelled) {
+          return;
+        }
+        resume = buildResumeArray(runState.interrupts, responses);
+        continue;
       }
       if (this.#executeTool === null || pending.length === 0) {
         return;
@@ -301,10 +361,7 @@ export class AgUiClient {
     }
   }
 
-  #buildSubscriber(
-    pending: AgUiToolCall[],
-    runState: { terminal: boolean; errored: boolean },
-  ): AgentSubscriber {
+  #buildSubscriber(pending: AgUiToolCall[], runState: RunState): AgentSubscriber {
     const h = this.#handlers;
     return {
       onRunInitialized() {
@@ -340,6 +397,16 @@ export class AgUiClient {
       onReasoningEndEvent() {
         h.onReasoningEnd();
       },
+      onRunFinishedEvent(params) {
+        // RUN_FINISHED is terminal for both a normal finish and an interrupt.
+        // Capturing the interrupts here (rather than reading the agent's
+        // `pendingInterrupts` field afterwards) keeps the loop self-contained
+        // and independent of that field's cross-run clearing semantics.
+        runState.terminal = true;
+        if (params.outcome === "interrupt") {
+          runState.interrupts = params.interrupts;
+        }
+      },
       onRunErrorEvent({ event }) {
         runState.terminal = true;
         runState.errored = true;
@@ -351,6 +418,14 @@ export class AgUiClient {
       },
     };
   }
+}
+
+/** Per-run mutable flags the subscriber writes and {@link AgUiClient} reads. */
+interface RunState {
+  terminal: boolean;
+  errored: boolean;
+  /** Approval interrupts a run finished on (empty for a normal finish). */
+  interrupts: Interrupt[];
 }
 
 /**

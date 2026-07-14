@@ -171,7 +171,7 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` / `embedded`. |
 
 **Properties** (JS only, not attributes): `headers`, `allowImages`, `autoConfirm`,
-`confirmPredicate`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
+`confirmPredicate`, `askUser`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
 `getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`,
 `navigationResult`, `skillContext`, `toolSummaries`, `strings`, `resolvePageTarget`, plus the
 mirrors `endpoint` / `toolDisplay` / `collapsed`.
@@ -234,7 +234,8 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
   round starts. A frontend tool handler already running completes, but its result doesn't trigger
   a re-run.
 - An **open confirmation card is declined** (`data-resolved="declined"`) — cancelling the run
-  answers the pending question.
+  answers the pending question. Likewise an open **approval card** is denied and an open
+  **question card** (`ask_user`) resolves with an empty answer.
 - The new `onCancelled()` handler fires instead of `onError()`; `onSettled()` still follows
   (the terminal-rest guarantee), returning the button to **Send**.
 
@@ -306,6 +307,73 @@ chat.registerTool({
   parameters: { type: "object", properties: {}, [X_DESTRUCTIVE_KEY]: true, [X_CONFIRM_KEY]: "Activate this project?" },
   handler: async () => await api.activate(),
 });
+```
+
+The confirmation card gates **client-registered** tools *before* they run. A **server-side**
+tool runs on the server, so the browser can't intercept it the same way — that is what the
+approval card below is for.
+
+### Server-side tool approval (interrupts)
+
+When the server gates a destructive tool (e.g. django-ag-ui's `ToolGuard`), the tool **defers**
+instead of executing and the run finishes on an AG-UI *interrupt*. The element then appends an
+**inline approval card** (a `<div class="approval">`) via
+[`requestApproval`](src/ui/approval_card.ts), next to the pending tool-call card:
+
+- **Approve** → the run resumes and the server runs the tool; its result streams back into the
+  same card.
+- **Deny** → the run resumes carrying a `cancelled` answer, so the model learns the tool was
+  declined; the pending card settles as declined.
+
+This uses the AG-UI protocol's own interrupt/resume mechanism (`RunAgentInput.resume[]`) — the
+wire stays vanilla AG-UI. A **Stop** while an approval card is open denies every open card and
+cancels the run. No configuration is needed on the client; the gate is enabled server-side.
+
+Like the question card, the approval card is customizable at three levels: **text** (`strings`:
+`approveAction` / `approvalPrompt` / `approve` / `deny`), **CSS** (`::part()`: `approval`,
+`approval-body`, `approval-actions`, `approval-button`, `approval-approve`, `approval-deny`), and
+**full replacement** via `chat.approvalRenderer` — given the request (`message` + `toolName`) and
+a Stop `AbortSignal`, render your own UI and resolve `true`/`false`:
+
+```js
+chat.approvalRenderer = (request, { signal }) =>
+  myConfirmDialog(request.message ?? `Run ${request.toolName}?`, { signal });
+```
+
+### Asking the user a question (`ask_user`)
+
+Set `chat.askUser = true` to offer the agent a built-in `ask_user` frontend tool. When the agent
+calls it, the element renders an **inline question card** (a `<div class="question">`) via
+[`requestQuestion`](src/ui/question_card.ts) and returns the user's answer as the tool result:
+
+```js
+chat.askUser = true; // opt in; off by default so the tool catalog is unchanged otherwise
+```
+
+`ask_user(question, options?, allow_custom?)` renders `options` as radio buttons, adds a free-text
+field when `allow_custom` is set (or when no options are given), and feeds the chosen or typed
+answer back through the normal frontend-tool path — no new protocol. A **Stop** dismisses an open
+question with an empty answer.
+
+The question card is **fully customizable** at three levels:
+
+- **Text** — every label is a `strings` key: `askUserAction` (the card's `aria-label`),
+  `otherOption`, `answerPlaceholder`, `submit`.
+- **CSS** — every element exposes a `::part()`: `question`, `question-body`, `question-options`,
+  `question-choice`, `question-radio`, `question-input`, `question-actions`, `question-button`
+  (plus the `--ag-ui-*` theme variables). No shadow piercing.
+- **Full replacement** — set `chat.askUserRenderer` to own the entire UI. Given the parsed request
+  and an `AbortSignal` (fired on Stop), render anything — a native modal, a framework component —
+  and resolve with the answer (empty string = no answer). The built-in card is bypassed entirely.
+
+```js
+// Level 1+2: restyle the built-in card.
+chat.strings = { submit: "Answer", answerPlaceholder: "Type here…" };
+// ag-ui-chat::part(question) { border-radius: 0; }
+
+// Level 3: replace the card with your own UI.
+chat.askUserRenderer = (request, { signal }) =>
+  myModal.ask(request.question, request.options, { allowCustom: request.allowCustom, signal });
 ```
 
 ### DOM-driver and animation primitives
@@ -792,14 +860,28 @@ ag-ui-chat::part(tool-card) { font-family: var(--my-mono); }
 
 Available parts: `panel`, `header`, `title`, `icon`, `header-controls`, `header-button`
 (plus `history-button` / `new-button` / `collapse-button` / `theme-toggle`), `messages`,
-`answer` (the per-turn group), `thoughts` (plus `thoughts-toggle` / `thoughts-body`), `message`
-(plus `message-user` / `message-assistant`), `empty`, `pending`, `tool-card`
+`answer` (the per-turn group), `thoughts` (plus `thoughts-toggle` / `thoughts-body` /
+`thoughts-label`), `message`
+(plus `message-user` / `message-assistant`), `empty`, `pending`, `stopped` (the "⏹ Stopped" note),
+`tool-card`
 (plus `tool-card-head` / `-icon` / `-name` / `-status` / `-args` / `-toggle` / `-result`),
 `confirm` (plus `confirm-body` /
-`-args` / `-actions` / `-button` / `-cancel` / `-confirm`), `composer`, `input`, `send`,
-`attach-button`, `voice-button`, `attachment-tray`, `launcher`, `launcher-icon`, and the drawer parts
+`-args` / `-actions` / `-button` / `-cancel` / `-confirm`),
+`approval` (plus `approval-body` / `-actions` / `-button` / `-approve` / `-deny`),
+`question` (plus `question-body` / `-options` / `-choice` / `-choice-text` / `-radio` / `-input` /
+`-actions` / `-button`), `composer`, `input`, `send`,
+`attach-button`, `voice-button`,
+the attachment chips — `attachment-tray` and `attachment-chips` (the read-only chips on sent
+bubbles) with the shared chip parts `attachment-chip` (plus `-icon` / `-name` / `-size` / `-bar` /
+`-bar-fill` / `-retry` / `-remove`),
+the skills UI (`skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`,
+`skill-item-desc`, and the missing-placeholder `skill-hint`),
+`launcher`, `launcher-icon`, and the drawer parts
 (`drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`,
-`drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`).
+`drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`,
+`drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`,
+`drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`,
+`drawer-confirm-yes`, `drawer-confirm-no`).
 
 Coarse **slots** let you replace whole regions with your own markup (project light-DOM children
 with a matching `slot=`):

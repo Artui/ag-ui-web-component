@@ -205,19 +205,23 @@ export class AttachmentTray {
   #renderChip(item: TrayItem): HTMLDivElement {
     const chip = document.createElement("div");
     chip.className = `attachment-chip attachment-chip--${item.status}`;
+    chip.setAttribute("part", "attachment-chip");
 
     const icon = document.createElement("span");
     icon.className = "attachment-chip-icon";
+    icon.setAttribute("part", "attachment-chip-icon");
     icon.textContent = iconFor(item.file.type);
     icon.setAttribute("aria-hidden", "true");
 
     const name = document.createElement("span");
     name.className = "attachment-chip-name";
+    name.setAttribute("part", "attachment-chip-name");
     name.textContent = item.file.name;
     name.title = item.file.name;
 
     const meta = document.createElement("span");
     meta.className = "attachment-chip-size";
+    meta.setAttribute("part", "attachment-chip-size");
     meta.textContent =
       item.status === ATTACHMENT_STATUS.ERROR ? item.error : formatBytes(item.file.size);
 
@@ -226,8 +230,10 @@ export class AttachmentTray {
     if (item.status === ATTACHMENT_STATUS.UPLOADING) {
       const bar = document.createElement("div");
       bar.className = "attachment-chip-bar";
+      bar.setAttribute("part", "attachment-chip-bar");
       const fill = document.createElement("div");
       fill.className = "attachment-chip-bar-fill";
+      fill.setAttribute("part", "attachment-chip-bar-fill");
       fill.style.width = `${Math.round(item.progress * 100)}%`;
       bar.appendChild(fill);
       chip.appendChild(bar);
@@ -237,6 +243,7 @@ export class AttachmentTray {
       const retry = document.createElement("button");
       retry.type = "button";
       retry.className = "attachment-chip-retry";
+      retry.setAttribute("part", "attachment-chip-retry");
       retry.title = this.#strings.retry;
       retry.setAttribute("aria-label", this.#strings.retryUpload);
       retry.textContent = "↻";
@@ -247,6 +254,7 @@ export class AttachmentTray {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "attachment-chip-remove";
+    remove.setAttribute("part", "attachment-chip-remove");
     remove.title = this.#strings.remove;
     remove.setAttribute("aria-label", this.#strings.removeAttachment);
     remove.textContent = "✕";
