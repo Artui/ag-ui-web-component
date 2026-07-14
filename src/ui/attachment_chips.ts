@@ -9,6 +9,7 @@ import type { AttachmentRef } from "../core/attachment.js";
 export function renderAttachmentChips(refs: readonly AttachmentRef[]): HTMLDivElement {
   const list = document.createElement("div");
   list.className = "attachment-chips";
+  list.setAttribute("part", "attachment-chips");
   for (const ref of refs) {
     list.appendChild(renderChip(ref));
   }
@@ -18,19 +19,23 @@ export function renderAttachmentChips(refs: readonly AttachmentRef[]): HTMLDivEl
 function renderChip(ref: AttachmentRef): HTMLDivElement {
   const chip = document.createElement("div");
   chip.className = "attachment-chip attachment-chip--ready";
+  chip.setAttribute("part", "attachment-chip");
 
   const icon = document.createElement("span");
   icon.className = "attachment-chip-icon";
+  icon.setAttribute("part", "attachment-chip-icon");
   icon.textContent = iconFor(ref.mime);
   icon.setAttribute("aria-hidden", "true");
 
   const name = document.createElement("span");
   name.className = "attachment-chip-name";
+  name.setAttribute("part", "attachment-chip-name");
   name.textContent = ref.name;
   name.title = ref.name;
 
   const size = document.createElement("span");
   size.className = "attachment-chip-size";
+  size.setAttribute("part", "attachment-chip-size");
   size.textContent = formatBytes(ref.size);
 
   chip.append(icon, name, size);

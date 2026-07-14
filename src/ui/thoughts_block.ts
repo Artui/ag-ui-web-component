@@ -42,6 +42,7 @@ export class ThoughtsBlock {
 
     this.#label = document.createElement("span");
     this.#label.className = "thoughts-label";
+    this.#label.setAttribute("part", "thoughts-label");
     this.#label.textContent = strings.thinking;
     this.#toggle.append(this.#label);
 

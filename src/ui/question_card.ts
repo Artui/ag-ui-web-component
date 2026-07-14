@@ -105,6 +105,7 @@ export function requestQuestion(
       radio.value = choice;
       radio.setAttribute("part", "question-radio");
       const text = document.createElement("span");
+      text.setAttribute("part", "question-choice-text");
       text.textContent = choice;
       label.append(radio, text);
       form.appendChild(label);
@@ -126,6 +127,7 @@ export function requestQuestion(
         otherRadio.value = "";
         otherRadio.setAttribute("part", "question-radio");
         const text = document.createElement("span");
+        text.setAttribute("part", "question-choice-text");
         text.textContent = strings.otherOption;
         label.append(otherRadio, text);
         form.appendChild(label);

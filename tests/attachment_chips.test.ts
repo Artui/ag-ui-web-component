@@ -21,6 +21,21 @@ describe("renderAttachmentChips", () => {
   it("renders an empty container for no refs", () => {
     expect(renderAttachmentChips([]).children).toHaveLength(0);
   });
+
+  it("exposes ::part() attributes for external styling", () => {
+    const list = renderAttachmentChips([ref()]);
+    expect(list.getAttribute("part")).toBe("attachment-chips");
+    const parts = [list, ...list.querySelectorAll("[part]")].map((n) => n.getAttribute("part"));
+    for (const part of [
+      "attachment-chips",
+      "attachment-chip",
+      "attachment-chip-icon",
+      "attachment-chip-name",
+      "attachment-chip-size",
+    ]) {
+      expect(parts).toContain(part);
+    }
+  });
 });
 
 describe("iconFor", () => {

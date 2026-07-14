@@ -38,6 +38,9 @@ describe("SkillsMenu chips", () => {
     expect(chips).toHaveLength(2);
     expect([...chips].map((c) => c.textContent)).toEqual(["Summarize", "Find records"]);
     expect(m.chips.hidden).toBe(false);
+    // ::part() surface for external styling.
+    expect(m.chips.getAttribute("part")).toBe("skill-chips");
+    expect(chips[0]?.getAttribute("part")).toBe("skill-chip");
   });
 
   it("stays hidden when chips are disabled", () => {

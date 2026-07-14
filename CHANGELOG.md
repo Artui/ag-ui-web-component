@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-button`), and a `askUserRenderer` hook that fully replaces the UI with a
   host-supplied renderer (given the request + a Stop `AbortSignal`, resolves the
   answer). Exports `QuestionRenderer`.
+- **Complete `::part()` coverage sweep.** Every rendered UI element now exposes a
+  `part` for `::part()` styling — closing gaps in the attachment chips
+  (`attachment-chips` and the shared `attachment-chip*` parts, now on both the
+  composer tray and the read-only chips on sent bubbles), the skills UI
+  (`skill-chips` / `skill-chip` / `skill-palette` / `skill-item*` / `skill-hint`),
+  the history-drawer row internals (`drawer-row-title` / `-time` / `-preview` /
+  `-actions` / `-rename` / `-delete`, the inline `drawer-rename-input`, and the
+  `drawer-confirm*` delete prompt), plus `thoughts-label`, `question-choice-text`,
+  and the `stopped` note. All are documented in the README "Available parts" list.
 
 ## [0.10.0] — 2026-07-02
 

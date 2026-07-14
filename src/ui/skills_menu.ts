@@ -24,9 +24,11 @@ export class SkillsMenu {
     this.#onPick = onPick;
     this.chips = document.createElement("div");
     this.chips.className = "skill-chips";
+    this.chips.setAttribute("part", "skill-chips");
     this.chips.hidden = true;
     this.palette = document.createElement("div");
     this.palette.className = "skill-palette";
+    this.palette.setAttribute("part", "skill-palette");
     this.palette.setAttribute("role", "listbox");
     this.palette.hidden = true;
   }
@@ -137,6 +139,7 @@ export class SkillsMenu {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "skill-chip";
+      button.setAttribute("part", "skill-chip");
       button.textContent = skill.title;
       button.addEventListener("click", () => this.#pick(skill));
       this.chips.appendChild(button);
@@ -149,17 +152,20 @@ export class SkillsMenu {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "skill-item";
+      item.setAttribute("part", "skill-item");
       item.setAttribute("role", "option");
       item.setAttribute("aria-selected", index === this.#activeIndex ? "true" : "false");
 
       const title = document.createElement("span");
       title.className = "skill-item-title";
+      title.setAttribute("part", "skill-item-title");
       title.textContent = skill.title;
       item.appendChild(title);
 
       if (skill.description !== undefined) {
         const desc = document.createElement("span");
         desc.className = "skill-item-desc";
+        desc.setAttribute("part", "skill-item-desc");
         desc.textContent = skill.description;
         item.appendChild(desc);
       }

@@ -1296,6 +1296,7 @@ export class AgUiChat extends HTMLElement {
     });
 
     this.#skillHint.className = "skill-hint";
+    this.#skillHint.setAttribute("part", "skill-hint");
     this.#skillHint.hidden = true;
 
     // File-upload affordance: a 📎 button (hidden until `data-attachments-url`

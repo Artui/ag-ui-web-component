@@ -860,17 +860,28 @@ ag-ui-chat::part(tool-card) { font-family: var(--my-mono); }
 
 Available parts: `panel`, `header`, `title`, `icon`, `header-controls`, `header-button`
 (plus `history-button` / `new-button` / `collapse-button` / `theme-toggle`), `messages`,
-`answer` (the per-turn group), `thoughts` (plus `thoughts-toggle` / `thoughts-body`), `message`
-(plus `message-user` / `message-assistant`), `empty`, `pending`, `tool-card`
+`answer` (the per-turn group), `thoughts` (plus `thoughts-toggle` / `thoughts-body` /
+`thoughts-label`), `message`
+(plus `message-user` / `message-assistant`), `empty`, `pending`, `stopped` (the "⏹ Stopped" note),
+`tool-card`
 (plus `tool-card-head` / `-icon` / `-name` / `-status` / `-args` / `-toggle` / `-result`),
 `confirm` (plus `confirm-body` /
 `-args` / `-actions` / `-button` / `-cancel` / `-confirm`),
 `approval` (plus `approval-body` / `-actions` / `-button` / `-approve` / `-deny`),
-`question` (plus `question-body` / `-options` / `-choice` / `-radio` / `-input` / `-actions` /
-`-button`), `composer`, `input`, `send`,
-`attach-button`, `voice-button`, `attachment-tray`, `launcher`, `launcher-icon`, and the drawer parts
+`question` (plus `question-body` / `-options` / `-choice` / `-choice-text` / `-radio` / `-input` /
+`-actions` / `-button`), `composer`, `input`, `send`,
+`attach-button`, `voice-button`,
+the attachment chips — `attachment-tray` and `attachment-chips` (the read-only chips on sent
+bubbles) with the shared chip parts `attachment-chip` (plus `-icon` / `-name` / `-size` / `-bar` /
+`-bar-fill` / `-retry` / `-remove`),
+the skills UI (`skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`,
+`skill-item-desc`, and the missing-placeholder `skill-hint`),
+`launcher`, `launcher-icon`, and the drawer parts
 (`drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`,
-`drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`).
+`drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`,
+`drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`,
+`drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`,
+`drawer-confirm-yes`, `drawer-confirm-no`).
 
 Coarse **slots** let you replace whole regions with your own markup (project light-DOM children
 with a matching `slot=`):
