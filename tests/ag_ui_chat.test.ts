@@ -10,6 +10,7 @@ import type {
 import { SessionStorageStore } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { RemoteConversationStore } from "../src/core/remote_conversation_store.js";
+import type { ApprovalRequest } from "../src/ui/approval_card.js";
 import type { QuestionRequest } from "../src/ui/question_card.js";
 import { type Emit, type FakeRunParams, makeFakeAgent } from "./helpers/fake_agent.js";
 
@@ -520,6 +521,46 @@ describe("AgUiChat", () => {
     ]);
     const card = shadow(el).querySelector<HTMLElement>(".tool-call");
     expect(card?.getAttribute("data-status")).toBe("declined");
+  });
+
+  it("lets approvalRenderer fully replace the approval UI", async () => {
+    let seen: ApprovalRequest | null = null;
+    let sawSignal = false;
+    const { el, handle } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.toolCall("call-1", "delete_thing", { target: "x" });
+        emit.interrupt([
+          {
+            id: "int-call-1",
+            reason: "tool_call",
+            toolCallId: "call-1",
+            message: "Approve delete_thing?",
+          } as never,
+        ]);
+      } else {
+        emit.toolResult("call-1", "deleted x");
+        emit.runEnd();
+      }
+    });
+    el.approvalRenderer = async (request, { signal }) => {
+      seen = request;
+      sawSignal = signal instanceof AbortSignal;
+      return true; // approve
+    };
+
+    sendNoWait(el, "delete x");
+    await flush();
+
+    // The built-in approval card is not rendered; the host renderer owns the UI.
+    expect(shadow(el).querySelector(".approval")).toBeNull();
+    expect(sawSignal).toBe(true);
+    // The tool name is derived from the pending tool-call card and handed over.
+    expect(seen).toMatchObject({ message: "Approve delete_thing?", toolName: "delete_thing" });
+    // Approving resumed the run with the answer.
+    expect(handle.runParams).toHaveLength(2);
+    expect(handle.runParams[1]?.resume).toEqual([
+      { interruptId: "int-call-1", status: "resolved", payload: { approved: true } },
+    ]);
   });
 
   it("offers the built-in ask_user tool when enabled and returns the chosen answer", async () => {

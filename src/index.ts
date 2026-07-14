@@ -102,6 +102,7 @@ export {
 export { createStateHookTools, type StateHook } from "./tools/state_hook.js";
 export {
   type ApprovalOptions,
+  type ApprovalRenderer,
   type ApprovalRequest,
   requestApproval,
 } from "./ui/approval_card.js";

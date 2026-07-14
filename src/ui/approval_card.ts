@@ -35,6 +35,21 @@ export interface ApprovalOptions {
 }
 
 /**
+ * A fully custom renderer for a server-side-tool approval, set via
+ * `AgUiChat.approvalRenderer`. Receives the {@link ApprovalRequest} (the
+ * interrupt's message + tool name) and an `AbortSignal` that fires when the run
+ * is stopped, and resolves `true` to approve or `false` to deny. When provided
+ * it **replaces** the built-in {@link requestApproval} card entirely — the host
+ * owns the DOM, so it can render a native modal, a framework component, or
+ * anything else. See the `strings` / `::part()` seams for styling the built-in
+ * card instead of replacing it.
+ */
+export type ApprovalRenderer = (
+  request: ApprovalRequest,
+  options: { signal: AbortSignal },
+) => Promise<boolean>;
+
+/**
  * Append an inline **approval** card to ``host`` and resolve when the user
  * decides whether a gated *server-side* tool may run.
  *

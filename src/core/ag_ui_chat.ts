@@ -20,7 +20,11 @@ import { createPageMapContext, type PageMap } from "../tools/page_map.js";
 import { parseToolCatalog } from "../tools/parse_tool_catalog.js";
 import { createRouteTools, type RouteMap } from "../tools/route_map.js";
 import { createStateHookTools, type StateHook } from "../tools/state_hook.js";
-import { type ApprovalRequest, requestApproval } from "../ui/approval_card.js";
+import {
+  type ApprovalRenderer,
+  type ApprovalRequest,
+  requestApproval,
+} from "../ui/approval_card.js";
 import { renderAttachmentChips } from "../ui/attachment_chips.js";
 import { AttachmentTray } from "../ui/attachment_tray.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
@@ -126,6 +130,17 @@ export class AgUiChat extends HTMLElement {
    * `question*` CSS `::part()`s. Requires {@link askUser} to be enabled.
    */
   askUserRenderer: QuestionRenderer | null = null;
+
+  /**
+   * Optional full replacement for the server-side-tool approval UI. When set, an
+   * approval interrupt invokes this instead of the built-in inline approval
+   * card: the host renders whatever it likes and resolves `true` to approve /
+   * `false` to deny. Unset (default) uses the built-in {@link requestApproval}
+   * card — style that via the `strings` override and the `approval*` CSS
+   * `::part()`s. The gate itself is enabled server-side; this only changes how
+   * the decision is collected.
+   */
+  approvalRenderer: ApprovalRenderer | null = null;
 
   /**
    * Optional per-call confirmation predicate. When set, it is authoritative:
@@ -1605,10 +1620,17 @@ export class AgUiChat extends HTMLElement {
       }
       const card =
         interrupt.toolCallId !== undefined ? this.#toolCards.get(interrupt.toolCallId) : undefined;
-      const approved = await requestApproval(this.#ensureGroup(), request, {
-        signal: this.#confirmAbort.signal,
-        strings: this.#strings,
-      });
+      const toolName = card?.element.getAttribute("data-tool-name");
+      if (toolName !== null && toolName !== undefined) {
+        request.toolName = toolName;
+      }
+      const signal = this.#confirmAbort.signal;
+      // A host-supplied renderer takes full control of the approval UI;
+      // otherwise the built-in inline card renders into the current answer group.
+      const approved =
+        this.approvalRenderer !== null
+          ? await this.approvalRenderer(request, { signal })
+          : await requestApproval(this.#ensureGroup(), request, { signal, strings: this.#strings });
       this.#updateEmptyState();
       this.#messages.scrollTop = this.#messages.scrollHeight;
       if (approved) {

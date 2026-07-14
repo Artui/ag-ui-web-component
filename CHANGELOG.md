@@ -20,7 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `cancelled` answer so the model learns it was declined and the card settles
   as declined. No `@ag-ui/*` dependency bump — the interrupt/resume types already
   ship in the pinned `0.0.x`. `AgUiClient` gains a `resolveInterrupts` config hook
-  and exports `InterruptResponse` / `ResolveInterrupts`.
+  and exports `InterruptResponse` / `ResolveInterrupts`. The card is fully
+  customizable: `strings` (`approveAction` / `approvalPrompt` / `approve` /
+  `deny`), a `::part()` surface (`approval`, `-body`, `-actions`, `-button`,
+  `-approve`, `-deny`), and an `approvalRenderer` hook that fully replaces the UI
+  (given the request + a Stop `AbortSignal`, resolves approve/deny). Exports
+  `ApprovalRenderer`.
 - **`ask_user` — a built-in typed-question frontend tool (opt-in).** Set
   `askUser = true` on `<ag-ui-chat>` to offer the agent an `ask_user(question,
   options?, allow_custom?)` tool: calling it renders an inline **question card**

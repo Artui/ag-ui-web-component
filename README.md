@@ -329,6 +329,17 @@ This uses the AG-UI protocol's own interrupt/resume mechanism (`RunAgentInput.re
 wire stays vanilla AG-UI. A **Stop** while an approval card is open denies every open card and
 cancels the run. No configuration is needed on the client; the gate is enabled server-side.
 
+Like the question card, the approval card is customizable at three levels: **text** (`strings`:
+`approveAction` / `approvalPrompt` / `approve` / `deny`), **CSS** (`::part()`: `approval`,
+`approval-body`, `approval-actions`, `approval-button`, `approval-approve`, `approval-deny`), and
+**full replacement** via `chat.approvalRenderer` — given the request (`message` + `toolName`) and
+a Stop `AbortSignal`, render your own UI and resolve `true`/`false`:
+
+```js
+chat.approvalRenderer = (request, { signal }) =>
+  myConfirmDialog(request.message ?? `Run ${request.toolName}?`, { signal });
+```
+
 ### Asking the user a question (`ask_user`)
 
 Set `chat.askUser = true` to offer the agent a built-in `ask_user` frontend tool. When the agent
