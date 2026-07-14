@@ -113,6 +113,7 @@ export {
 export { prettifyToolName } from "./ui/prettify_tool_name.js";
 export {
   type QuestionOptions,
+  type QuestionRenderer,
   type QuestionRequest,
   requestQuestion,
 } from "./ui/question_card.js";

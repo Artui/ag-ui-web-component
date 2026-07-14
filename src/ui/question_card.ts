@@ -28,6 +28,21 @@ export interface QuestionOptions {
   strings?: UiStrings;
 }
 
+/**
+ * A fully custom renderer for the `ask_user` question, set via
+ * `AgUiChat.askUserRenderer`. Receives the parsed {@link QuestionRequest} and an
+ * `AbortSignal` that fires when the run is stopped, and resolves with the user's
+ * answer (an empty string signals "no answer", e.g. on abort). When provided it
+ * **replaces** the built-in {@link requestQuestion} card entirely — the host owns
+ * the DOM, so it can render a native modal, a framework component, or anything
+ * else. See the `strings` / `::part()` seams for styling the built-in card
+ * instead of replacing it.
+ */
+export type QuestionRenderer = (
+  request: QuestionRequest,
+  options: { signal: AbortSignal },
+) => Promise<string>;
+
 /** A single custom-answer text field. */
 function answerInput(placeholder: string): HTMLInputElement {
   const input = document.createElement("input");
@@ -88,6 +103,7 @@ export function requestQuestion(
       radio.type = "radio";
       radio.name = group;
       radio.value = choice;
+      radio.setAttribute("part", "question-radio");
       const text = document.createElement("span");
       text.textContent = choice;
       label.append(radio, text);
@@ -108,6 +124,7 @@ export function requestQuestion(
         otherRadio.type = "radio";
         otherRadio.name = group;
         otherRadio.value = "";
+        otherRadio.setAttribute("part", "question-radio");
         const text = document.createElement("span");
         text.textContent = strings.otherOption;
         label.append(otherRadio, text);

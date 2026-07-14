@@ -27,7 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`requestQuestion` — radio choices and/or a free-text field) and returns the
   chosen or typed answer as the tool result, reusing the existing frontend-tool
   path (no new protocol). Off by default, like the other built-in tool groups, so
-  the advertised catalog is unchanged until a host opts in.
+  the advertised catalog is unchanged until a host opts in. The card is **fully
+  customizable**: localized `strings` (`askUserAction` / `otherOption` /
+  `answerPlaceholder` / `submit`), a full `::part()` surface (`question`,
+  `question-body`, `-options`, `-choice`, `-radio`, `-input`, `-actions`,
+  `-button`), and a `askUserRenderer` hook that fully replaces the UI with a
+  host-supplied renderer (given the request + a Stop `AbortSignal`, resolves the
+  answer). Exports `QuestionRenderer`.
 
 ## [0.10.0] — 2026-07-02
 

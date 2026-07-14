@@ -10,6 +10,7 @@ import type {
 import { SessionStorageStore } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { RemoteConversationStore } from "../src/core/remote_conversation_store.js";
+import type { QuestionRequest } from "../src/ui/question_card.js";
 import { type Emit, type FakeRunParams, makeFakeAgent } from "./helpers/fake_agent.js";
 
 /** Mount the element with a fake agent factory and an optional run script. */
@@ -556,6 +557,40 @@ describe("AgUiChat", () => {
     expect(el.getTools().some((t) => t.name === "ask_user")).toBe(false);
     el.askUser = true;
     expect(el.getTools().some((t) => t.name === "ask_user")).toBe(true);
+  });
+
+  it("lets askUserRenderer fully replace the question UI", async () => {
+    let round = 0;
+    let seen: QuestionRequest | null = null;
+    let sawSignal = false;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("q1", "ask_user", {
+          question: "Pick",
+          options: ["a", "b"],
+          allow_custom: true,
+        });
+      }
+      round += 1;
+    });
+    el.askUser = true;
+    el.askUserRenderer = async (request, { signal }) => {
+      seen = request;
+      sawSignal = signal instanceof AbortSignal;
+      return "from-custom-ui";
+    };
+
+    sendNoWait(el, "ask");
+    await flush();
+
+    // The built-in card is not rendered; the host renderer owns the UI.
+    expect(shadow(el).querySelector(".question")).toBeNull();
+    expect(sawSignal).toBe(true);
+    expect(seen).toMatchObject({ question: "Pick", options: ["a", "b"], allowCustom: true });
+    // The renderer's answer rides back as the tool result.
+    expect(handle.messages.find((m) => m.role === "tool")).toMatchObject({
+      content: '"from-custom-ui"',
+    });
   });
 
   it("resolves an interrupt that carries no tool call id", async () => {

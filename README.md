@@ -344,6 +344,27 @@ field when `allow_custom` is set (or when no options are given), and feeds the c
 answer back through the normal frontend-tool path — no new protocol. A **Stop** dismisses an open
 question with an empty answer.
 
+The question card is **fully customizable** at three levels:
+
+- **Text** — every label is a `strings` key: `askUserAction` (the card's `aria-label`),
+  `otherOption`, `answerPlaceholder`, `submit`.
+- **CSS** — every element exposes a `::part()`: `question`, `question-body`, `question-options`,
+  `question-choice`, `question-radio`, `question-input`, `question-actions`, `question-button`
+  (plus the `--ag-ui-*` theme variables). No shadow piercing.
+- **Full replacement** — set `chat.askUserRenderer` to own the entire UI. Given the parsed request
+  and an `AbortSignal` (fired on Stop), render anything — a native modal, a framework component —
+  and resolve with the answer (empty string = no answer). The built-in card is bypassed entirely.
+
+```js
+// Level 1+2: restyle the built-in card.
+chat.strings = { submit: "Answer", answerPlaceholder: "Type here…" };
+// ag-ui-chat::part(question) { border-radius: 0; }
+
+// Level 3: replace the card with your own UI.
+chat.askUserRenderer = (request, { signal }) =>
+  myModal.ask(request.question, request.options, { allowCustom: request.allowCustom, signal });
+```
+
 ### DOM-driver and animation primitives
 
 So the agent can visibly drive the host page, the package ships generic, framework-free
@@ -832,7 +853,10 @@ Available parts: `panel`, `header`, `title`, `icon`, `header-controls`, `header-
 (plus `message-user` / `message-assistant`), `empty`, `pending`, `tool-card`
 (plus `tool-card-head` / `-icon` / `-name` / `-status` / `-args` / `-toggle` / `-result`),
 `confirm` (plus `confirm-body` /
-`-args` / `-actions` / `-button` / `-cancel` / `-confirm`), `composer`, `input`, `send`,
+`-args` / `-actions` / `-button` / `-cancel` / `-confirm`),
+`approval` (plus `approval-body` / `-actions` / `-button` / `-approve` / `-deny`),
+`question` (plus `question-body` / `-options` / `-choice` / `-radio` / `-input` / `-actions` /
+`-button`), `composer`, `input`, `send`,
 `attach-button`, `voice-button`, `attachment-tray`, `launcher`, `launcher-icon`, and the drawer parts
 (`drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`,
 `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`).

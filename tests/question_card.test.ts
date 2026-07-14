@@ -138,6 +138,31 @@ describe("requestQuestion (inline card)", () => {
     expect(node.querySelector(".question")?.getAttribute("data-resolved")).toBe("answered");
   });
 
+  it("exposes a styling part on every element for ::part() theming", async () => {
+    const node = host();
+    const controller = new AbortController();
+    const done = requestQuestion(
+      node,
+      { question: "Q", options: ["a"], allowCustom: true },
+      { signal: controller.signal },
+    );
+    const parts = [...node.querySelectorAll("[part]")].map((n) => n.getAttribute("part"));
+    for (const part of [
+      "question",
+      "question-body",
+      "question-options",
+      "question-choice",
+      "question-radio",
+      "question-input",
+      "question-actions",
+      "question-button",
+    ]) {
+      expect(parts).toContain(part);
+    }
+    controller.abort();
+    await done;
+  });
+
   it("an already-aborted signal cancels immediately", async () => {
     const node = host();
     const controller = new AbortController();

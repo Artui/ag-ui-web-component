@@ -25,7 +25,11 @@ import { renderAttachmentChips } from "../ui/attachment_chips.js";
 import { AttachmentTray } from "../ui/attachment_tray.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
-import { type QuestionRequest, requestQuestion } from "../ui/question_card.js";
+import {
+  type QuestionRenderer,
+  type QuestionRequest,
+  requestQuestion,
+} from "../ui/question_card.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
 import { wrapWords } from "../ui/reveal_words.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
@@ -112,6 +116,16 @@ export class AgUiChat extends HTMLElement {
    * change the advertised catalog until a host asks for it.
    */
   askUser = false;
+
+  /**
+   * Optional full replacement for the `ask_user` question UI. When set, calling
+   * `ask_user` invokes this instead of the built-in inline card: the host
+   * renders whatever it likes (a native modal, a framework component, …) and
+   * resolves with the answer. Unset (default) uses the built-in
+   * {@link requestQuestion} card — style that via the `strings` override and the
+   * `question*` CSS `::part()`s. Requires {@link askUser} to be enabled.
+   */
+  askUserRenderer: QuestionRenderer | null = null;
 
   /**
    * Optional per-call confirmation predicate. When set, it is authoritative:
@@ -505,11 +519,17 @@ export class AgUiChat extends HTMLElement {
     // The run is suspended on the card; a Stop aborts the controller, resolving
     // it with an empty answer (the run is then cancelled).
     this.#confirmAbort = new AbortController();
+    const signal = this.#confirmAbort.signal;
     this.#hidePending();
-    const answer = await requestQuestion(this.#ensureGroup(), request, {
-      signal: this.#confirmAbort.signal,
-      strings: this.#strings,
-    });
+    // A host-supplied renderer takes full control of the UI; otherwise the
+    // built-in inline card renders into the current answer group.
+    const answer =
+      this.askUserRenderer !== null
+        ? await this.askUserRenderer(request, { signal })
+        : await requestQuestion(this.#ensureGroup(), request, {
+            signal,
+            strings: this.#strings,
+          });
     this.#confirmAbort = null;
     this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
