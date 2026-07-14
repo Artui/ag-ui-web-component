@@ -171,7 +171,7 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` / `embedded`. |
 
 **Properties** (JS only, not attributes): `headers`, `allowImages`, `autoConfirm`,
-`confirmPredicate`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
+`confirmPredicate`, `askUser`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
 `getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`,
 `navigationResult`, `skillContext`, `toolSummaries`, `strings`, `resolvePageTarget`, plus the
 mirrors `endpoint` / `toolDisplay` / `collapsed`.
@@ -234,7 +234,8 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
   round starts. A frontend tool handler already running completes, but its result doesn't trigger
   a re-run.
 - An **open confirmation card is declined** (`data-resolved="declined"`) — cancelling the run
-  answers the pending question.
+  answers the pending question. Likewise an open **approval card** is denied and an open
+  **question card** (`ask_user`) resolves with an empty answer.
 - The new `onCancelled()` handler fires instead of `onError()`; `onSettled()` still follows
   (the terminal-rest guarantee), returning the button to **Send**.
 
@@ -307,6 +308,41 @@ chat.registerTool({
   handler: async () => await api.activate(),
 });
 ```
+
+The confirmation card gates **client-registered** tools *before* they run. A **server-side**
+tool runs on the server, so the browser can't intercept it the same way — that is what the
+approval card below is for.
+
+### Server-side tool approval (interrupts)
+
+When the server gates a destructive tool (e.g. django-ag-ui's `ToolGuard`), the tool **defers**
+instead of executing and the run finishes on an AG-UI *interrupt*. The element then appends an
+**inline approval card** (a `<div class="approval">`) via
+[`requestApproval`](src/ui/approval_card.ts), next to the pending tool-call card:
+
+- **Approve** → the run resumes and the server runs the tool; its result streams back into the
+  same card.
+- **Deny** → the run resumes carrying a `cancelled` answer, so the model learns the tool was
+  declined; the pending card settles as declined.
+
+This uses the AG-UI protocol's own interrupt/resume mechanism (`RunAgentInput.resume[]`) — the
+wire stays vanilla AG-UI. A **Stop** while an approval card is open denies every open card and
+cancels the run. No configuration is needed on the client; the gate is enabled server-side.
+
+### Asking the user a question (`ask_user`)
+
+Set `chat.askUser = true` to offer the agent a built-in `ask_user` frontend tool. When the agent
+calls it, the element renders an **inline question card** (a `<div class="question">`) via
+[`requestQuestion`](src/ui/question_card.ts) and returns the user's answer as the tool result:
+
+```js
+chat.askUser = true; // opt in; off by default so the tool catalog is unchanged otherwise
+```
+
+`ask_user(question, options?, allow_custom?)` renders `options` as radio buttons, adds a free-text
+field when `allow_custom` is set (or when no options are given), and feeds the chosen or typed
+answer back through the normal frontend-tool path — no new protocol. A **Stop** dismisses an open
+question with an empty answer.
 
 ### DOM-driver and animation primitives
 

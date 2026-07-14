@@ -1,4 +1,4 @@
-import type { Context, Tool } from "@ag-ui/core";
+import type { Context, Interrupt, Tool } from "@ag-ui/core";
 import { describe, expect, it } from "vitest";
 import { MAX_TOOL_ROUNDS } from "../src/constants.js";
 import {
@@ -522,6 +522,82 @@ describe("AgUiClient", () => {
       await client.send("hello"); // the stale flag must not mark this run cancelled
       expect(handlers.calls).toContain("end:ok");
       expect(handlers.calls).not.toContain("cancelled");
+    });
+  });
+
+  describe("server-side tool approval (interrupts)", () => {
+    const interrupt = (id: string, toolCallId: string): Interrupt =>
+      ({ id, reason: "tool_call", toolCallId, message: `Approve ${toolCallId}?` }) as Interrupt;
+
+    it("resolves the interrupt and resumes the run carrying the answers", async () => {
+      const fake = makeFakeAgent({
+        script: (emit, params) => {
+          if (params.resume === undefined) {
+            emit.toolCall("call-1", "delete_thing", { target: "x" });
+            emit.interrupt([interrupt("int-call-1", "call-1")]);
+          } else {
+            emit.toolResult("call-1", "deleted x");
+            emit.runEnd();
+          }
+        },
+      });
+      const seen: Interrupt[][] = [];
+      const client = new AgUiClient({
+        agent: fake.agent,
+        handlers: recordingHandlers(),
+        resolveInterrupts: async (interrupts) => {
+          seen.push([...interrupts]);
+          return { "int-call-1": { status: "resolved", payload: { approved: true } } };
+        },
+      });
+
+      await client.send("delete x");
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.[0]?.id).toBe("int-call-1");
+      // Two runs: the interrupt run + the resume run carrying the answers.
+      expect(fake.runParams).toHaveLength(2);
+      expect(fake.runParams[0]?.resume).toBeUndefined();
+      expect(fake.runParams[1]?.resume).toEqual([
+        { interruptId: "int-call-1", status: "resolved", payload: { approved: true } },
+      ]);
+    });
+
+    it("ends the loop unanswered when no resolver is configured", async () => {
+      const fake = makeFakeAgent({
+        script: (emit) => {
+          emit.toolCall("call-1", "delete_thing", {});
+          emit.interrupt([interrupt("int-call-1", "call-1")]);
+        },
+      });
+      const client = new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() });
+
+      await client.send("x");
+
+      expect(fake.runParams).toHaveLength(1); // no resume run
+    });
+
+    it("stops without resuming when cancelled during resolution", async () => {
+      const fake = makeFakeAgent({
+        script: (emit) => {
+          emit.toolCall("call-1", "delete_thing", {});
+          emit.interrupt([interrupt("int-call-1", "call-1")]);
+        },
+      });
+      const handlers = recordingHandlers();
+      const client: AgUiClient = new AgUiClient({
+        agent: fake.agent,
+        handlers,
+        resolveInterrupts: async () => {
+          client.cancel(); // Stop pressed while an approval card is open
+          return { "int-call-1": { status: "cancelled" } };
+        },
+      });
+
+      await client.send("x");
+
+      expect(fake.runParams).toHaveLength(1); // no resume run after cancel
+      expect(handlers.calls).toContain("cancelled");
     });
   });
 });

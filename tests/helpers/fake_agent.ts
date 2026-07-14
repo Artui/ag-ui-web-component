@@ -1,4 +1,5 @@
 import type { AbstractAgent, AgentSubscriber } from "@ag-ui/client";
+import type { Interrupt } from "@ag-ui/core";
 
 /** A scripted emitter handed to a fake agent's run script. */
 export interface Emit {
@@ -11,6 +12,11 @@ export interface Emit {
   reasoning(buffer: string): void;
   reasoningEnd(): void;
   error(message: string): void;
+  /**
+   * Finish the run on an *interrupt* outcome (RUN_FINISHED with pending
+   * approvals) — the terminal event a gated server-side tool produces.
+   */
+  interrupt(interrupts: Interrupt[]): void;
   runEnd(): void;
 }
 
@@ -43,6 +49,10 @@ function emitter(s: AgentSubscriber, state: EmitState): Emit {
       state.terminal = true;
       void s.onRunErrorEvent?.({ event: { message } } as never);
     },
+    interrupt: (interrupts) => {
+      state.terminal = true;
+      void s.onRunFinishedEvent?.({ event: {}, outcome: "interrupt", interrupts } as never);
+    },
     runEnd: () => {
       state.terminal = true;
       void s.onRunFinalized?.({} as never);
@@ -52,7 +62,7 @@ function emitter(s: AgentSubscriber, state: EmitState): Emit {
 
 export interface FakeAgentOptions {
   isRunning?: boolean;
-  script?: (emit: Emit) => void | Promise<void>;
+  script?: (emit: Emit, params: FakeRunParams) => void | Promise<void>;
   throwOnRun?: Error;
   /**
    * Simulate a dropped stream: skip the implicit `RUN_FINISHED` the fake emits
@@ -66,9 +76,18 @@ export interface FakeAgentOptions {
 export interface FakeAgentHandle {
   agent: AbstractAgent;
   messages: ReadonlyArray<{ id: string; role: string; content: string; toolCallId?: string }>;
-  lastRunParams: { tools?: unknown; context?: unknown } | null;
+  lastRunParams: FakeRunParams | null;
+  /** Every run's params in order — lets a test assert the resume follow-up. */
+  runParams: FakeRunParams[];
   /** How many times abortRun() was called (the protocol-level cancel). */
   abortRuns: number;
+}
+
+/** The subset of `RunAgentParameters` the fake records / hands to the script. */
+export interface FakeRunParams {
+  tools?: unknown;
+  context?: unknown;
+  resume?: unknown;
 }
 
 /** Build a minimal fake AG-UI agent that drives the client's subscriber. */
@@ -77,28 +96,31 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
   const handle: FakeAgentHandle = {
     messages,
     lastRunParams: null,
+    runParams: [],
     abortRuns: 0,
     agent: undefined as unknown as AbstractAgent,
   };
   const agent = {
     isRunning: opts.isRunning ?? false,
     messages,
+    // Interrupts a run finished on, mirroring @ag-ui/client's field. The client
+    // reads interrupts off the RUN_FINISHED event, not this — present only so
+    // the fake structurally resembles a real agent.
+    pendingInterrupts: [] as unknown[],
     addMessage(message: { id: string; role: string; content: string; toolCallId?: string }): void {
       messages.push(message);
     },
     abortRun(): void {
       handle.abortRuns += 1;
     },
-    async runAgent(
-      params: { tools?: unknown; context?: unknown },
-      subscriber: AgentSubscriber,
-    ): Promise<unknown> {
+    async runAgent(params: FakeRunParams, subscriber: AgentSubscriber): Promise<unknown> {
       handle.lastRunParams = params;
+      handle.runParams.push(params);
       if (opts.throwOnRun !== undefined) {
         throw opts.throwOnRun;
       }
       const state: EmitState = { terminal: false };
-      await opts.script?.(emitter(subscriber, state));
+      await opts.script?.(emitter(subscriber, state), params);
       // A real run that streamed cleanly ends with RUN_FINISHED; mirror that so
       // the client's dropped-stream detection only trips when asked to.
       if (!state.terminal && opts.dropStream !== true) {

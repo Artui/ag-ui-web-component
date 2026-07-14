@@ -1,4 +1,4 @@
-import type { Context, Message, Tool } from "@ag-ui/core";
+import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
 import {
   DEFAULT_ATTACHMENT_MAX_BYTES,
   MESSAGE_ROLE,
@@ -20,10 +20,12 @@ import { createPageMapContext, type PageMap } from "../tools/page_map.js";
 import { parseToolCatalog } from "../tools/parse_tool_catalog.js";
 import { createRouteTools, type RouteMap } from "../tools/route_map.js";
 import { createStateHookTools, type StateHook } from "../tools/state_hook.js";
+import { type ApprovalRequest, requestApproval } from "../ui/approval_card.js";
 import { renderAttachmentChips } from "../ui/attachment_chips.js";
 import { AttachmentTray } from "../ui/attachment_tray.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
+import { type QuestionRequest, requestQuestion } from "../ui/question_card.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
 import { wrapWords } from "../ui/reveal_words.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
@@ -37,6 +39,7 @@ import {
   AgUiClient,
   type AgUiClientHandlers,
   type AgUiToolCall,
+  type InterruptResponse,
   type ToolExecution,
 } from "./agui_client.js";
 import { type AttachmentRef, messageAttachments } from "./attachment.js";
@@ -100,6 +103,15 @@ export class AgUiChat extends HTMLElement {
 
   /** When true, destructive tools execute without a confirmation modal. */
   autoConfirm = false;
+
+  /**
+   * When true, the built-in `ask_user` frontend tool is offered to the agent:
+   * calling it renders an inline question card (radio choices and/or a free-text
+   * field) and returns the user's answer. Off by default — like the other
+   * built-in tool groups (route / page-action), it is opt-in so it doesn't
+   * change the advertised catalog until a host asks for it.
+   */
+  askUser = false;
 
   /**
    * Optional per-call confirmation predicate. When set, it is authoritative:
@@ -430,9 +442,78 @@ export class AgUiChat extends HTMLElement {
     return createPageActionTools(enabled, (target) => this.resolvePageTarget(target));
   }
 
-  /** All built-in (route + page + page-action) frontend tools. */
+  /** All built-in (route + page + page-action + ask_user) frontend tools. */
   #builtinTools(): ClientTool[] {
-    return [...this.#routeTools(), ...this.#pageTools(), ...this.#pageActionTools()];
+    return [
+      ...this.#routeTools(),
+      ...this.#pageTools(),
+      ...this.#pageActionTools(),
+      ...this.#askUserTool(),
+    ];
+  }
+
+  /**
+   * The built-in `ask_user` frontend tool, or `[]` when {@link askUser} is off.
+   *
+   * A generic "ask the user a typed question" primitive: the agent calls it, the
+   * client executes it locally via the normal frontend-tool path (rendering a
+   * {@link requestQuestion} card), and the chosen/typed answer flows back as the
+   * tool result — no new protocol, reusing the machinery already in place.
+   */
+  #askUserTool(): ClientTool[] {
+    if (!this.askUser) {
+      return [];
+    }
+    return [
+      {
+        name: "ask_user",
+        description:
+          "Ask the user a question and wait for their answer. Provide `options` for a " +
+          "multiple-choice prompt; set `allow_custom` to also accept a free-text answer.",
+        parameters: {
+          type: "object",
+          properties: {
+            question: { type: "string", description: "The question to ask the user." },
+            options: {
+              type: "array",
+              items: { type: "string" },
+              description: "Preset choices offered as radio buttons.",
+            },
+            allow_custom: {
+              type: "boolean",
+              description: "Allow a free-text answer in addition to any options.",
+            },
+          },
+          required: ["question"],
+        },
+        handler: (args) => this.#askUser(args),
+      },
+    ];
+  }
+
+  /** Render the `ask_user` question card and resolve with the user's answer. */
+  async #askUser(args: Record<string, unknown>): Promise<string> {
+    const question = typeof args["question"] === "string" ? args["question"] : "";
+    const request: QuestionRequest = { question };
+    const rawOptions = args["options"];
+    if (Array.isArray(rawOptions)) {
+      request.options = rawOptions.filter((option): option is string => typeof option === "string");
+    }
+    if (args["allow_custom"] === true) {
+      request.allowCustom = true;
+    }
+    // The run is suspended on the card; a Stop aborts the controller, resolving
+    // it with an empty answer (the run is then cancelled).
+    this.#confirmAbort = new AbortController();
+    this.#hidePending();
+    const answer = await requestQuestion(this.#ensureGroup(), request, {
+      signal: this.#confirmAbort.signal,
+      strings: this.#strings,
+    });
+    this.#confirmAbort = null;
+    this.#updateEmptyState();
+    this.#messages.scrollTop = this.#messages.scrollHeight;
+    return answer;
   }
 
   /** Resolve a tool by name: built-in tools first, then the registry. */
@@ -1388,6 +1469,7 @@ export class AgUiChat extends HTMLElement {
         getTools: () => this.getTools(),
         getContext: () => this.getContext(),
         executeTool: (call) => this.#executeTool(call),
+        resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
         onPersist: (messages) => this.conversationStore.saveMessages(this.#threadId, messages),
         connectionLostMessage: this.#strings.connectionLost,
       });
@@ -1476,6 +1558,50 @@ export class AgUiChat extends HTMLElement {
       this.#showPending();
       return { content: `Error: ${message}`, error: message };
     }
+  }
+
+  /**
+   * Render an approval card per server-side-tool interrupt and collect the
+   * user's decisions (approve → run it, deny → decline it).
+   *
+   * The run is suspended on these cards; a Stop while any is open aborts the
+   * shared {@link #confirmAbort} controller, resolving every still-open card as
+   * denied (and the client loop then sees the cancellation and stops). An
+   * approved tool runs on the follow-up (resume) run and streams its result
+   * back into the same pending card; a denied one is settled here, since no
+   * result will ever arrive for it.
+   */
+  async #resolveInterrupts(
+    interrupts: readonly Interrupt[],
+  ): Promise<Record<string, InterruptResponse>> {
+    const responses: Record<string, InterruptResponse> = {};
+    // One controller covers the whole batch: a single Stop denies all of them.
+    this.#confirmAbort = new AbortController();
+    this.#hidePending();
+    for (const interrupt of interrupts) {
+      const request: ApprovalRequest = {};
+      if (interrupt.message !== undefined) {
+        request.message = interrupt.message;
+      }
+      const card =
+        interrupt.toolCallId !== undefined ? this.#toolCards.get(interrupt.toolCallId) : undefined;
+      const approved = await requestApproval(this.#ensureGroup(), request, {
+        signal: this.#confirmAbort.signal,
+        strings: this.#strings,
+      });
+      this.#updateEmptyState();
+      this.#messages.scrollTop = this.#messages.scrollHeight;
+      if (approved) {
+        responses[interrupt.id] = { status: "resolved", payload: { approved: true } };
+      } else {
+        responses[interrupt.id] = { status: "cancelled" };
+        // No TOOL_CALL_RESULT will stream for a denied tool — settle its pending
+        // card now rather than leaving it hanging until the onSettled sweep.
+        card?.settle(TOOL_CALL_STATUS.DECLINED, this.#strings.declinedAction);
+      }
+    }
+    this.#confirmAbort = null;
+    return responses;
   }
 
   #handlers(): AgUiClientHandlers {

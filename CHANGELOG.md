@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.0] — 2026-07-02
+### Added
+
+- **Server-side tool approval — the browser half of the human-in-the-loop gate.**
+  When a gated server-side tool defers instead of executing, the run finishes on
+  an AG-UI *interrupt*; the client now renders an inline **approval card**
+  (`requestApproval`, next to the pending tool-call card) and, on the user's
+  decision, resumes the run with the answer via the protocol's `resume[]`.
+  Approve runs the tool (its result streams back into the same card); deny sends
+  a `cancelled` answer so the model learns it was declined and the card settles
+  as declined. No `@ag-ui/*` dependency bump — the interrupt/resume types already
+  ship in the pinned `0.0.x`. `AgUiClient` gains a `resolveInterrupts` config hook
+  and exports `InterruptResponse` / `ResolveInterrupts`.
+- **`ask_user` — a built-in typed-question frontend tool (opt-in).** Set
+  `askUser = true` on `<ag-ui-chat>` to offer the agent an `ask_user(question,
+  options?, allow_custom?)` tool: calling it renders an inline **question card**
+  (`requestQuestion` — radio choices and/or a free-text field) and returns the
+  chosen or typed answer as the tool result, reusing the existing frontend-tool
+  path (no new protocol). Off by default, like the other built-in tool groups, so
+  the advertised catalog is unchanged until a host opts in.
 
 ### Added
 

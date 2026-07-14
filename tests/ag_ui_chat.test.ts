@@ -10,11 +10,11 @@ import type {
 import { SessionStorageStore } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { RemoteConversationStore } from "../src/core/remote_conversation_store.js";
-import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
+import { type Emit, type FakeRunParams, makeFakeAgent } from "./helpers/fake_agent.js";
 
 /** Mount the element with a fake agent factory and an optional run script. */
 function mountWithAgent(
-  script: (emit: Emit) => void | Promise<void>,
+  script: (emit: Emit, params: FakeRunParams) => void | Promise<void>,
   extra: { tools?: Tool[]; context?: Context[] } = {},
 ): { el: AgUiChat; handle: ReturnType<typeof makeFakeAgent> } {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
@@ -452,6 +452,154 @@ describe("AgUiChat", () => {
     const card = shadow(el).querySelector<HTMLElement>(".tool-call");
     expect(card?.getAttribute("data-status")).toBe("declined");
     expect(card?.querySelector(".tool-call-result")?.textContent).toBe("User declined the action.");
+  });
+
+  it("gates a server-side tool behind an approval card and resumes on approve", async () => {
+    const { el, handle } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.toolCall("call-1", "delete_thing", { target: "widget-1" });
+        emit.interrupt([
+          {
+            id: "int-call-1",
+            reason: "tool_call",
+            toolCallId: "call-1",
+            message: "Approve delete_thing?",
+          } as never,
+        ]);
+      } else {
+        emit.toolResult("call-1", "deleted widget-1");
+        emit.runEnd();
+      }
+    });
+
+    sendNoWait(el, "delete widget-1");
+    await flush();
+    const approval = shadow(el).querySelector<HTMLElement>(".approval");
+    expect(approval?.querySelector(".approval-body")?.textContent).toBe("Approve delete_thing?");
+
+    shadow(el).querySelector<HTMLButtonElement>(".approval-btn--approve")?.click();
+    await flush();
+
+    expect(approval?.getAttribute("data-resolved")).toBe("approved");
+    // The follow-up run carried the resume answers, and the tool result settled
+    // the pending tool-call card.
+    expect(handle.runParams).toHaveLength(2);
+    expect(handle.runParams[1]?.resume).toEqual([
+      { interruptId: "int-call-1", status: "resolved", payload: { approved: true } },
+    ]);
+    const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+    expect(card?.querySelector(".tool-call-result")?.textContent).toBe("deleted widget-1");
+  });
+
+  it("denies a gated server-side tool, settles its card, and tells the server", async () => {
+    const { el, handle } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.toolCall("call-1", "delete_thing", {});
+        emit.interrupt([{ id: "int-call-1", reason: "tool_call", toolCallId: "call-1" } as never]);
+      } else {
+        // The server is told of the denial and the model responds accordingly.
+        emit.text("Okay, I won't.");
+        emit.textEnd("Okay, I won't.");
+        emit.runEnd();
+      }
+    });
+
+    sendNoWait(el, "delete it");
+    await flush();
+    shadow(el).querySelector<HTMLButtonElement>(".approval-btn--deny")?.click();
+    await flush();
+
+    expect(shadow(el).querySelector(".approval")?.getAttribute("data-resolved")).toBe("denied");
+    // Deny is not "stop": the run resumes carrying a `cancelled` answer so the
+    // model learns the tool was denied — but the pending tool card is settled as
+    // declined here, since no TOOL_CALL_RESULT will arrive for it.
+    expect(handle.runParams).toHaveLength(2);
+    expect(handle.runParams[1]?.resume).toEqual([
+      { interruptId: "int-call-1", status: "cancelled" },
+    ]);
+    const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("declined");
+  });
+
+  it("offers the built-in ask_user tool when enabled and returns the chosen answer", async () => {
+    let round = 0;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("q1", "ask_user", {
+          question: "Pick one",
+          options: ["a", "b"],
+          allow_custom: true,
+        });
+      }
+      round += 1;
+    });
+    el.askUser = true; // opt in
+    expect(el.getTools().some((t) => t.name === "ask_user")).toBe(true);
+
+    sendNoWait(el, "ask me");
+    await flush();
+    const question = shadow(el).querySelector<HTMLElement>(".question");
+    expect(question?.querySelector(".question-body")?.textContent).toBe("Pick one");
+    const radio = question?.querySelectorAll<HTMLInputElement>(".question-choice input")[1];
+    radio?.click();
+    radio?.dispatchEvent(new Event("change"));
+    shadow(el).querySelector<HTMLButtonElement>(".question-btn")?.click();
+    await flush();
+
+    // The answer rode back as the tool result, and the loop re-ran.
+    expect(handle.messages.find((m) => m.role === "tool")).toMatchObject({ content: '"b"' });
+    expect(handle.runParams.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("withholds ask_user by default (opt-in)", () => {
+    const { el } = mountWithAgent(() => {});
+    expect(el.getTools().some((t) => t.name === "ask_user")).toBe(false);
+    el.askUser = true;
+    expect(el.getTools().some((t) => t.name === "ask_user")).toBe(true);
+  });
+
+  it("resolves an interrupt that carries no tool call id", async () => {
+    const { el, handle } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.interrupt([{ id: "int-x", reason: "tool_call", message: "Proceed?" } as never]);
+      } else {
+        emit.runEnd();
+      }
+    });
+
+    sendNoWait(el, "go");
+    await flush();
+    shadow(el).querySelector<HTMLButtonElement>(".approval-btn--approve")?.click();
+    await flush();
+
+    expect(handle.runParams).toHaveLength(2);
+    expect(handle.runParams[1]?.resume).toEqual([
+      { interruptId: "int-x", status: "resolved", payload: { approved: true } },
+    ]);
+  });
+
+  it("handles an ask_user call with no question as a free-text prompt", async () => {
+    let round = 0;
+    const { el, handle } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("q1", "ask_user", {}); // model omitted the question
+      }
+      round += 1;
+    });
+    el.askUser = true;
+
+    sendNoWait(el, "ask");
+    await flush();
+    const input = shadow(el).querySelector<HTMLInputElement>(".question-input");
+    expect(input).not.toBeNull(); // no options → free text
+    if (input) {
+      input.value = "hi";
+      input.dispatchEvent(new Event("input"));
+    }
+    shadow(el).querySelector<HTMLButtonElement>(".question-btn")?.click();
+    await flush();
+
+    expect(handle.messages.find((m) => m.role === "tool")).toMatchObject({ content: '"hi"' });
   });
 
   it("renders an error bubble and re-enables send", async () => {
