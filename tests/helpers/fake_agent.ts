@@ -17,6 +17,12 @@ export interface Emit {
    * approvals) — the terminal event a gated server-side tool produces.
    */
   interrupt(interrupts: Interrupt[]): void;
+  /**
+   * Apply an AG-UI `STATE_SNAPSHOT`. Mirrors what `@ag-ui/client` does with the
+   * real event: replace `agent.state`, then notify subscribers — the client
+   * never sees the event itself, only the applied result.
+   */
+  state(snapshot: Record<string, unknown>): void;
   runEnd(): void;
 }
 
@@ -25,7 +31,7 @@ interface EmitState {
   terminal: boolean;
 }
 
-function emitter(s: AgentSubscriber, state: EmitState): Emit {
+function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals): Emit {
   // The subscriber callbacks require full AgentSubscriberParams; tests only
   // exercise the fields the client reads, so minimal objects are cast through
   // ``never`` (which is assignable to any parameter type).
@@ -53,6 +59,9 @@ function emitter(s: AgentSubscriber, state: EmitState): Emit {
       state.terminal = true;
       void s.onRunFinishedEvent?.({ event: {}, outcome: "interrupt", interrupts } as never);
     },
+    state: (snapshot) => {
+      agent.applyState(snapshot);
+    },
     runEnd: () => {
       state.terminal = true;
       void s.onRunFinalized?.({} as never);
@@ -71,6 +80,8 @@ export interface FakeAgentOptions {
    * opt out.
    */
   dropStream?: boolean;
+  /** Seed for `agent.state`, as `@ag-ui/client`'s `initialState` would. */
+  initialState?: Record<string, unknown>;
 }
 
 export interface FakeAgentHandle {
@@ -81,6 +92,11 @@ export interface FakeAgentHandle {
   runParams: FakeRunParams[];
   /** How many times abortRun() was called (the protocol-level cancel). */
   abortRuns: number;
+}
+
+/** What the emitter needs from the agent to apply state the way the real one does. */
+interface FakeAgentInternals {
+  applyState(snapshot: Record<string, unknown>): void;
 }
 
 /** The subset of `RunAgentParameters` the fake records / hands to the script. */
@@ -100,9 +116,28 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
     abortRuns: 0,
     agent: undefined as unknown as AbstractAgent,
   };
+  const subscribers: AgentSubscriber[] = [];
+  const applyState = (snapshot: Record<string, unknown>): void => {
+    agent.state = { ...snapshot };
+    for (const subscriber of subscribers) {
+      subscriber.onStateChanged?.({ state: agent.state } as never);
+    }
+  };
   const agent = {
     isRunning: opts.isRunning ?? false,
     messages,
+    state: { ...(opts.initialState ?? {}) } as Record<string, unknown>,
+    subscribe(subscriber: AgentSubscriber): { unsubscribe: () => void } {
+      subscribers.push(subscriber);
+      return {
+        unsubscribe: () => {
+          subscribers.splice(subscribers.indexOf(subscriber), 1);
+        },
+      };
+    },
+    setState(next: Record<string, unknown>): void {
+      applyState(next);
+    },
     // Interrupts a run finished on, mirroring @ag-ui/client's field. The client
     // reads interrupts off the RUN_FINISHED event, not this — present only so
     // the fake structurally resembles a real agent.
@@ -120,7 +155,7 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
         throw opts.throwOnRun;
       }
       const state: EmitState = { terminal: false };
-      await opts.script?.(emitter(subscriber, state), params);
+      await opts.script?.(emitter(subscriber, state, { applyState }), params);
       // A real run that streamed cleanly ends with RUN_FINISHED; mirror that so
       // the client's dropped-stream detection only trips when asked to.
       if (!state.terminal && opts.dropStream !== true) {

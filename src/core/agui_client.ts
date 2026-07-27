@@ -132,6 +132,13 @@ export interface AgUiClientConfig extends AgUiRunInputs {
    */
   onPersist?: (messages: readonly Message[]) => void;
   /**
+   * Called whenever AG-UI shared state changes — the server streamed a
+   * `STATE_SNAPSHOT` / `STATE_DELTA`, or {@link AgUiClient.setState} was
+   * called. `@ag-ui/client` owns applying those events; this only forwards
+   * the result so a host can react.
+   */
+  onStateChanged?: (state: Readonly<Record<string, unknown>>) => void;
+  /**
    * Error text surfaced to {@link AgUiClientHandlers.onError} when a run's
    * stream closes without a terminal AG-UI event (`RUN_FINISHED`/`RUN_ERROR`) —
    * a dropped connection. Defaults to `"Connection lost"`; the host passes its
@@ -182,6 +189,27 @@ export class AgUiClient {
     this.#resolveInterrupts = config.resolveInterrupts ?? null;
     this.#onPersist = config.onPersist ?? (() => {});
     this.#connectionLostMessage = config.connectionLostMessage ?? "Connection lost";
+    const onStateChanged = config.onStateChanged;
+    if (onStateChanged !== undefined) {
+      // The agent applies STATE_SNAPSHOT / STATE_DELTA itself; subscribing is
+      // how we learn the result rather than re-deriving it from the event
+      // stream. Lives for the agent's lifetime, which is this client's.
+      this.#agent.subscribe({
+        onStateChanged: ({ state }) => {
+          onStateChanged(state as Record<string, unknown>);
+        },
+      });
+    }
+  }
+
+  /** The current AG-UI shared state, as the agent last applied it. */
+  get state(): Readonly<Record<string, unknown>> {
+    return this.#agent.state as Record<string, unknown>;
+  }
+
+  /** Replace the shared state; the next run sends it as `RunAgentInput.state`. */
+  setState(state: Readonly<Record<string, unknown>>): void {
+    this.#agent.setState({ ...state });
   }
 
   /** Whether a run is currently in flight. */

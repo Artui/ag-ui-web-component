@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **AG-UI shared state.** `<ag-ui-chat>` now speaks the protocol's own state
+  channel: assign `chat.sharedState = {...}` to seed it, listen for the
+  `ag-ui-state` event (`detail.state`) to react when the agent changes it.
+  State rides `RunAgentInput.state` on every run and is replaced in place when
+  the server streams `STATE_SNAPSHOT` / `STATE_DELTA`.
+  - **Adoption, not implementation.** `@ag-ui/client` already applies both
+    events to `agent.state` and exposes an `onStateChanged` subscriber hook;
+    what was missing was seeding it (`initialState`) and surfacing it to the
+    host. Deriving state from the raw event stream ourselves would have
+    duplicated — and eventually contradicted — the client's own handling,
+    including its JSON-Patch delta application.
+  - Assigning **after** the conversation has started pushes through to the live
+    agent rather than waiting for a new one, so a host that seeds state late
+    isn't silently stranded.
+  - The event is `composed: true`, so a host listening on `document` receives it
+    through the shadow boundary.
+  - **Distinct from `registerPageState`**, which exposes host state to the agent
+    as ordinary *tools*. Use shared state when agent and page edit the same
+    object; use page-state tools when the agent should *ask* — a tool call is
+    visible in the transcript and can be gated by a confirmation card, which
+    state events cannot.
+
 ### Changed
 
 - **`registerStateHook` is now `registerPageState`** (and `createStateHookTools` /

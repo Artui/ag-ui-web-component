@@ -18,6 +18,12 @@ export interface HttpAgentOptions {
   threadId?: string;
   /** Rehydrated history to seed the agent with (durable conversation). */
   initialMessages?: readonly Message[];
+  /**
+   * AG-UI shared state to seed the agent with. `@ag-ui/client` sends it as
+   * `RunAgentInput.state` on every run and replaces it in place when the
+   * server streams `STATE_SNAPSHOT` / `STATE_DELTA`.
+   */
+  initialState?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -31,6 +37,7 @@ export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
   return new HttpAgent({
     url: options.endpoint,
     headers: options.headers ?? {},
+    initialState: { ...(options.initialState ?? {}) },
     // HttpAgent invokes its configured fetch as a method (`this.fetch(...)`),
     // which would rebind the global `fetch` to the agent instance and trigger
     // "Illegal invocation" in browsers. Wrap it so `fetch` is always called as
