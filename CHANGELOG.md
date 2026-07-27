@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`registerStateHook` is now `registerPageState`** (and `createStateHookTools` /
+  `StateHook` are `createPageStateTools` / `PageState`). **The old names implied a
+  feature that does not exist**: they read as AG-UI shared-state sync —
+  `STATE_SNAPSHOT` / `STATE_DELTA`, the protocol events that carry a state object
+  between agent and client — which neither this component nor `django-ag-ui`
+  implements. What the method actually does is generate two ordinary client tools
+  (`read_<name>` / `set_<name>`) over host page state, which the agent calls like
+  any other tool. `page` matches the vocabulary already used throughout the
+  component (`page_map`, `page_action_tools`, `route_map`, the DOM driver).
+  - **Not a hard break.** The old spellings are kept as deprecated aliases and
+    behave identically; they will be removed in a future major. A rename is only
+    ever cheaper the earlier it happens, which is why this ships now rather than
+    waiting for state support to exist.
+
+### Documentation
+
+- **The AG-UI shared-state gap is now stated plainly** in the README rather than
+  being obscured by the old method name. `STATE_SNAPSHOT` / `STATE_DELTA` are not
+  implemented; the agent reads and writes host state by *calling a tool*.
+
 ## [0.12.0] — 2026-07-27
 
 ### Added

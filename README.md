@@ -191,7 +191,7 @@ the django-ag-ui `@tool` registry), whose schema never reaches the browser — e
 labels are fetched automatically — per card, `x-summary` → an explicit
 `toolSummaries` entry → the fetched catalog → the raw name.
 
-**Methods**: `registerTool`, `registerStateHook`, `setSkills`, `appendMessage`, `newChat`,
+**Methods**: `registerTool`, `registerPageState`, `setSkills`, `appendMessage`, `newChat`,
 `setCollapsed`, `toggleCollapsed`.
 
 A self-contained live playground lives in [`demo/`](demo/) — run `make demo` to serve it against a
@@ -621,18 +621,25 @@ so it reflects the page the agent is currently looking at:
 chat.getPageMap = () => ({ fields: introspectForm(), buttons: visibleButtons() });
 ```
 
-**`registerStateHook({ name, read, write?, schema? })`** — ergonomic sugar over `registerTool` for
+**`registerPageState({ name, read, write?, schema? })`** — ergonomic sugar over `registerTool` for
 SPA app state (Redux/Zustand/signals). It auto-generates a `read_<name>` (read-only) tool and, when
 `write` is supplied, a `set_<name>` tool stamped `x-destructive`:
 
 ```js
-chat.registerStateHook({
+chat.registerPageState({
   name: "cart",
   read: () => store.getState().cart,
   write: ({ items }) => store.dispatch(setCart(items)),
   schema: { type: "object", properties: { items: { type: "array" } } },
 });
 ```
+
+**This is not AG-UI shared state.** The protocol's `STATE_SNAPSHOT` / `STATE_DELTA` events — which
+carry a state object between agent and client — are **not implemented**, here or in
+`django-ag-ui`. `registerPageState` generates two ordinary client tools; the agent reads or writes
+your store by *calling a tool*, not by exchanging state events. The method was called
+`registerStateHook` through 0.12, a name that read as protocol state sync; the old spelling still
+works and is deprecated.
 
 **`navigate(path): void`** *(optional)* — a host routing callback. **This single seam is what
 distinguishes an SPA from an MPA.** When set, `navigate_to_route` routes client-side (no reload) and
@@ -798,8 +805,8 @@ re-export point. Internal modules import from leaf paths.
 | `RouteWithParams` | type | A route resolved with `:param` path segments + leftover query params. |
 | `createPageMapContext(...)` | function | Build the per-run `page_map` context entry. |
 | `PageMap` | type | The compact page-surface shape. |
-| `createStateHookTools(hook)` | function | Build `read_<name>` / `set_<name>` tools. |
-| `StateHook` | type | A state-binding declaration. |
+| `createPageStateTools(binding)` | function | Build `read_<name>` / `set_<name>` tools. |
+| `PageState` | type | A page-state binding declaration. |
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
 
 ### Durability

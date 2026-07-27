@@ -1475,7 +1475,7 @@ describe("AgUiChat", () => {
     spy.mockRestore();
   });
 
-  it("registerStateHook exposes read/write tools the agent can call", async () => {
+  it("registerPageState exposes read/write tools the agent can call", async () => {
     let round = 0;
     const { el, handle } = mountWithAgent((emit) => {
       if (round === 0) {
@@ -1483,7 +1483,7 @@ describe("AgUiChat", () => {
       }
       round += 1;
     });
-    el.registerStateHook({ name: "cart", read: () => ({ items: 3 }) });
+    el.registerPageState({ name: "cart", read: () => ({ items: 3 }) });
     expect(el.getTools().map((t) => t.name)).toContain("read_cart");
 
     await send(el, "read the cart");
@@ -1491,6 +1491,15 @@ describe("AgUiChat", () => {
     expect(handle.messages.find((m) => m.role === "tool")?.content).toBe(
       JSON.stringify({ items: 3 }),
     );
+  });
+
+  it("registerStateHook still works, so the rename is not a hard break", async () => {
+    // The old name read as AG-UI shared-state sync, which this component does
+    // not implement — but a consumer on the old spelling must keep working.
+    const { el } = mountWithAgent(() => {});
+    el.registerStateHook({ name: "cart", read: () => ({ items: 3 }) });
+
+    expect(el.getTools().map((t) => t.name)).toContain("read_cart");
   });
 
   it("injects the compact page map into the run context", async () => {
