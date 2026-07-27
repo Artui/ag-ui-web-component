@@ -93,6 +93,16 @@ export {
   type ResolvePageTarget,
 } from "./tools/page_action_tools.js";
 export { createPageMapContext, type PageMap } from "./tools/page_map.js";
+/**
+ * @deprecated Renamed to `createPageStateTools` / `PageState`. The old names
+ * read as AG-UI shared-state sync, which this component does not implement.
+ */
+export {
+  createPageStateTools,
+  createStateHookTools,
+  type PageState,
+  type StateHook,
+} from "./tools/page_state.js";
 export { parseToolCatalog, type ToolCatalogEntry } from "./tools/parse_tool_catalog.js";
 export {
   createRouteTools,
@@ -100,7 +110,6 @@ export {
   type RouteMap,
   type RouteWithParams,
 } from "./tools/route_map.js";
-export { createStateHookTools, type StateHook } from "./tools/state_hook.js";
 export {
   type ApprovalOptions,
   type ApprovalRenderer,

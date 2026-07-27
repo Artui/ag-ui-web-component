@@ -17,9 +17,9 @@ import { isDestructive } from "../tools/is_destructive.js";
 import { isNavigates } from "../tools/is_navigates.js";
 import { createPageActionTools, type ResolvePageTarget } from "../tools/page_action_tools.js";
 import { createPageMapContext, type PageMap } from "../tools/page_map.js";
+import { createPageStateTools, type PageState } from "../tools/page_state.js";
 import { parseToolCatalog } from "../tools/parse_tool_catalog.js";
 import { createRouteTools, type RouteMap } from "../tools/route_map.js";
-import { createStateHookTools, type StateHook } from "../tools/state_hook.js";
 import {
   type ApprovalRenderer,
   type ApprovalRequest,
@@ -158,7 +158,7 @@ export class AgUiChat extends HTMLElement {
   /**
    * Per-run frontend tool catalog provider. Defaults to the built-in
    * `route.*` tools (when a {@link routeMap} is set) plus the tools registered
-   * via {@link registerTool} / {@link registerStateHook}; override to supply a
+   * via {@link registerTool} / {@link registerPageState}; override to supply a
    * fully custom catalog.
    */
   getTools: () => Tool[] = () => [
@@ -479,11 +479,22 @@ export class AgUiChat extends HTMLElement {
     this.#toolRegistry.register(tool);
   }
 
-  /** Bind a piece of host state to `read_<name>` / `set_<name>` tools. */
-  registerStateHook(hook: StateHook): void {
-    for (const tool of createStateHookTools(hook)) {
+  /** Bind a piece of host page state to `read_<name>` / `set_<name>` tools. */
+  registerPageState(binding: PageState): void {
+    for (const tool of createPageStateTools(binding)) {
       this.#toolRegistry.register(tool);
     }
+  }
+
+  /**
+   * @deprecated Renamed to {@link registerPageState}. The old name read as
+   * AG-UI shared-state sync (`STATE_SNAPSHOT` / `STATE_DELTA`), which this
+   * component does not implement — these are ordinary client tools over host
+   * page state. Behaviour is unchanged; this alias will be removed in a future
+   * major.
+   */
+  registerStateHook(binding: PageState): void {
+    this.registerPageState(binding);
   }
 
   /** The built-in `route.*` tools, present only when a route map is set. */
