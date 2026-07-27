@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Resume or fork a run — the checkpoint UI.** With `data-runs-url` pointed at
+  django-ag-ui's run index (`RunsView`, 0.23+), a ⭯ button appears in the header
+  opening a *Continue a run* panel. Type the next turn, pick a row, and the run
+  continues from its last server-side checkpoint — **Resume** to carry on,
+  **Fork** to branch without touching the original. The client half of durable
+  step persistence, whose server half shipped in django-ag-ui 0.20.0.
+  - **Only continuable runs are offered.** The server reports whether a run has
+    a snapshot to seed from; one that never reached a provider-valid boundary
+    has none, so resuming it would start from nothing. Rows show when the run
+    started (id on hover, for correlating with server logs) and mark a branched
+    run so a fork doesn't read as a duplicate of its parent.
+  - **One URL configures three endpoints.** `resume/<id>/` and `fork/<id>/` are
+    siblings of the index — the server mounts all three together — so they are
+    derived rather than configured, and a half-configured set isn't expressible.
+  - **The client contract is structural, not a rule to remember.** Those
+    endpoints require a *fresh run id* and *only the new turn*, because the
+    server supplies prior turns from the snapshot and re-sending them would
+    duplicate the conversation. A continuation therefore runs on its own
+    short-lived agent, pointed at the resume endpoint and seeded with **no**
+    history — so the new turn is the only thing it *can* send, the fresh run id
+    comes free, and the main agent's history is never touched.
+  - A resumed run is otherwise a normal run: frontend tools execute, approval
+    interrupts render, and `headers` are re-read per request so a rotated
+    token still reaches the endpoint. An unreachable index shows the panel's
+    empty state rather than an error.
+  - New exports: `RunIndex` / `RunRow`, `CheckpointMenu` / `CheckpointVerb`, and
+    five UI strings (`checkpoints`, `noCheckpoints`, `resumeRun`, `forkRun`,
+    `forkedRun`) for localization.
+
 ## [0.11.0] — 2026-07-14
 
 ### Added

@@ -27,6 +27,7 @@ import {
 } from "../ui/approval_card.js";
 import { renderAttachmentChips } from "../ui/attachment_chips.js";
 import { AttachmentTray } from "../ui/attachment_tray.js";
+import { CheckpointMenu, type CheckpointVerb } from "../ui/checkpoint_menu.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
 import {
@@ -58,6 +59,7 @@ import {
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
+import { RunIndex } from "./run_index.js";
 import { type TranscribeHandler, transcribeAudio } from "./transcribe_audio.js";
 import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
 
@@ -295,6 +297,10 @@ export class AgUiChat extends HTMLElement {
   readonly #title: HTMLSpanElement;
   readonly #skillsMenu: SkillsMenu;
   readonly #drawer: ThreadDrawer;
+  /** Checkpoint panel; rows load only when `data-runs-url` is set. */
+  readonly #checkpoints: CheckpointMenu;
+  /** Built lazily from `data-runs-url`; `null` when the host didn't opt in. */
+  #runIndex: RunIndex | null = null;
   readonly #skillHint: HTMLDivElement;
   /** File-picker button + hidden input + tray slot; the tray mounts on connect. */
   readonly #attachButton: HTMLButtonElement;
@@ -387,6 +393,73 @@ export class AgUiChat extends HTMLElement {
         this.#deleteThread(threadId);
       },
     });
+    this.#checkpoints = new CheckpointMenu((runId, verb) => {
+      void this.#continueRun(runId, verb);
+    });
+  }
+
+  /** The run index, built once from `data-runs-url`; `null` when unset. */
+  #runs(): RunIndex | null {
+    const url = this.getAttribute("data-runs-url");
+    if (url === null || url === "") {
+      return null;
+    }
+    if (this.#runIndex === null) {
+      this.#runIndex = new RunIndex(url, () => this.headers);
+    }
+    return this.#runIndex;
+  }
+
+  /**
+   * Continue `runId` as a **new** run, seeded server-side from its snapshot.
+   *
+   * Uses a short-lived agent pointed at the resume / fork endpoint and seeded
+   * with **no** history, so the request carries only the turn typed here — the
+   * contract those endpoints assume, since the server supplies the prior turns
+   * from the snapshot and re-sending them would duplicate. Building a separate
+   * agent makes that structural: the main agent keeps its own history, and
+   * "only the new turn" can't be got wrong by forgetting to clear it. The
+   * fresh `run_id` the endpoints also require comes free — a new agent mints
+   * one per run.
+   *
+   * Handlers are the element's own, so the continuation streams into the same
+   * transcript the user is looking at.
+   */
+  async #continueRun(runId: string, verb: CheckpointVerb): Promise<void> {
+    const index = this.#runs();
+    if (index === null) {
+      return;
+    }
+    const content = this.#input.value.trim();
+    if (content === "") {
+      return;
+    }
+    this.#input.value = "";
+    const endpoint = verb === "resume" ? index.resumeUrl(runId) : index.forkUrl(runId);
+    const agent = this.agentFactory({
+      endpoint,
+      headers: this.headers,
+      getHeaders: () => this.headers,
+      threadId: this.#threadId,
+      // The seed the endpoints assume: nothing. The snapshot is the history.
+      initialMessages: [],
+    });
+    const client = new AgUiClient({
+      agent,
+      handlers: this.#handlers(),
+      getTools: () => this.getTools(),
+      getContext: () => this.getContext(),
+      executeTool: (call) => this.#executeTool(call),
+      resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
+      connectionLostMessage: this.#strings.connectionLost,
+    });
+    await client.send(content);
+  }
+
+  /** Load the checkpoint panel with the runs that can actually be continued. */
+  async #refreshCheckpoints(): Promise<void> {
+    const index = this.#runs();
+    this.#checkpoints.setRuns(index === null ? [] : await index.continuable());
   }
 
   /** Attributes whose late changes must reflect in already-rendered chrome. */
@@ -610,6 +683,7 @@ export class AgUiChat extends HTMLElement {
     }
     this.#render();
     this.#drawer.setStrings(this.#strings);
+    this.#checkpoints.setStrings(this.#strings);
     if (this.#readScopedItem(COLLAPSED_KEY) === "1") {
       this.setAttribute("collapsed", "");
     }
@@ -1229,13 +1303,28 @@ export class AgUiChat extends HTMLElement {
       this.#drawer.open();
     });
 
+    const checkpoints = this.#headerButton("checkpoints", this.#strings.checkpoints, "⭯");
+    checkpoints.addEventListener("click", () => {
+      void this.#refreshCheckpoints();
+      this.#checkpoints.open();
+    });
+
     const newChat = this.#headerButton("new", this.#strings.newChat, "✚");
     newChat.addEventListener("click", () => this.newChat());
 
     const collapse = this.#headerButton("collapse", this.#strings.collapse, "—");
     collapse.addEventListener("click", () => this.toggleCollapsed());
 
-    controls.append(history, newChat);
+    // Only offered when the server actually indexes runs — without
+    // `data-runs-url` there is nothing to continue and the button would open
+    // a permanently empty panel. Asks `#runs()` rather than re-testing the
+    // attribute, so "configured" means one thing everywhere (an empty value
+    // is unset, not a relative URL to the current page).
+    if (this.#runs() !== null) {
+      controls.append(history, checkpoints, newChat);
+    } else {
+      controls.append(history, newChat);
+    }
     // Optional built-in theme toggle: off unless the host opts in, so
     // it never competes with a host-supplied switch in `slot="header-actions"`.
     if (this.getAttribute("data-theme-toggle") !== null) {
@@ -1339,6 +1428,7 @@ export class AgUiChat extends HTMLElement {
       inputRow,
       footer,
       this.#drawer.element,
+      this.#checkpoints.element,
     );
 
     // The collapsed-sidebar rail: a slim edge strip (the expand affordance),
