@@ -45,6 +45,7 @@ export {
 } from "./core/create_http_agent.js";
 export { defineAgUiChat } from "./core/define_ag_ui_chat.js";
 export { RemoteConversationStore } from "./core/remote_conversation_store.js";
+export { RunIndex, type RunRow } from "./core/run_index.js";
 export {
   type TranscribeHandler,
   type TranscribeOptions,
@@ -106,6 +107,7 @@ export {
   type ApprovalRequest,
   requestApproval,
 } from "./ui/approval_card.js";
+export { CheckpointMenu, type CheckpointVerb } from "./ui/checkpoint_menu.js";
 export {
   type ConfirmationOptions,
   type ConfirmationRequest,

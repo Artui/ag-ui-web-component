@@ -155,6 +155,7 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `data-skills-url` | — | URL of a JSON skill catalog (fetched with `headers`). |
 | `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with `headers`; labels tool-call cards for server-side tools. |
 | `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
+| `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's ⭯ *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
 | `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's 📎 picker + drag-and-drop. |
 | `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
 | `data-attachment-max-bytes` | — | Client-side upload size cap in bytes (default 10 MiB; `0` disables). The server stays authoritative. |
@@ -646,6 +647,56 @@ chat.navigate = (path) => router.push(path); // SPA: in-page, no reload
 
 Route map + `navigate()` and the reload model are the same feature seen from two ends.
 
+## Resuming a run
+
+When the server persists run checkpoints (django-ag-ui's `step_store`), a run
+that stopped part-way can be **continued** rather than restarted. Point the
+component at the run index and a ⭯ button appears in the header:
+
+```html
+<ag-ui-chat endpoint="/agent/" data-runs-url="/agent/runs/"></ag-ui-chat>
+```
+
+The panel lists runs the server marked **continuable** — those with a saved
+snapshot to seed from. A run that never reached a provider-valid boundary has
+none, so it isn't offered: resuming it would start from nothing. Each row shows
+when the run started (the id is on hover, for correlating with server logs) and
+marks a run that branched from another, so a fork doesn't read as a duplicate
+of its parent.
+
+Type the next turn in the composer, then pick a row:
+
+- **Resume** — continue that run.
+- **Fork** — branch it, leaving the original untouched.
+
+Both send to the matching server endpoint and stream into the same transcript.
+
+### One URL, three endpoints
+
+`data-runs-url` is the only thing to configure. `resume/<id>/` and `fork/<id>/`
+are siblings of the index — django-ag-ui mounts all three under one prefix
+whenever a step store is set — so they're derived, and there's no way to end up
+with a half-configured set.
+
+### The client contract, handled for you
+
+Those endpoints expect a request carrying a **fresh run id** and **only the new
+turn**: the server supplies the prior turns from the snapshot, so re-sending
+them would duplicate the conversation.
+
+The component satisfies that structurally rather than by remembering a rule. A
+continuation runs on its own short-lived agent, built pointing at the resume
+endpoint and seeded with **no** history — so "only the new turn" is the only
+thing it *can* send, and the fresh run id comes free because a new agent mints
+one. Your main agent's history is never touched.
+
+A resumed run is a normal run in every other respect: frontend tools execute,
+approval interrupts render their card, and `headers` are re-read per request so
+a rotated CSRF token or JWT still reaches the endpoint.
+
+If the index can't be reached, the panel shows its empty state rather than an
+error — a history affordance that fails is empty, not broken.
+
 ## File uploads
 
 Set **`data-attachments-url`** (django-ag-ui's `AttachmentsView`) to let the user attach files
@@ -760,6 +811,10 @@ re-export point. Internal modules import from leaf paths.
 | `ClientConversationStore` | type | The persistence seam. |
 | `ThreadMeta` | type | A thread-drawer row (`{ threadId, title, updatedAt, preview }`). |
 | `NavigationCheckpoint` | type | The pre-reload checkpoint marker. |
+| `RunIndex` | class | Reads a `data-runs-url` run index and derives its resume / fork endpoints. |
+| `RunRow` | type | One run index row (`{ run_id, thread_id, parent_run_id, started_at, continuable }`). |
+| `CheckpointMenu` | class | The *Continue a run* panel. |
+| `CheckpointVerb` | type | `"resume" | "fork"`. |
 
 ### Attachments
 

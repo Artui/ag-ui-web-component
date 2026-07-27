@@ -1229,6 +1229,82 @@ export const STYLES = `
   display: none;
 }
 
+.checkpoints {
+  position: absolute;
+  inset-block-start: 3rem;
+  inset-inline: 0.75rem;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid var(--agui-border, #d7d7dc);
+  border-radius: 0.5rem;
+  background: var(--agui-surface, #fff);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
+  max-height: 60%;
+  overflow-y: auto;
+}
+
+.checkpoints[hidden] {
+  display: none;
+}
+
+.checkpoints-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.checkpoints-empty {
+  padding: 0.5rem 0.25rem;
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+.checkpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem;
+  border-radius: 0.375rem;
+}
+
+.checkpoint-row:hover {
+  background: var(--agui-hover, #f3f3f5);
+}
+
+.checkpoint-label {
+  flex: 1;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.checkpoint-branch {
+  font-size: 0.6875rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--agui-hover, #f3f3f5);
+  opacity: 0.8;
+}
+
+.checkpoint-action {
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--agui-border, #d7d7dc);
+  border-radius: 0.375rem;
+  background: transparent;
+  color: inherit;
+}
+
+.checkpoint-action:hover {
+  background: var(--agui-hover, #f3f3f5);
+}
+
 .drawer-backdrop {
   position: absolute;
   inset: 0;

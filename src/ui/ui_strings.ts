@@ -157,6 +157,16 @@ export interface UiStrings {
   minutesAgo: string;
   /** Hours ago. Token: `{n}`. */
   hoursAgo: string;
+  /** Title of the checkpoint panel. */
+  checkpoints: string;
+  /** Empty state when no run can be continued. */
+  noCheckpoints: string;
+  /** Action: continue a run from its last checkpoint. */
+  resumeRun: string;
+  /** Action: branch a run without touching the original. */
+  forkRun: string;
+  /** Badge on a run that branched from another. */
+  forkedRun: string;
   /** Days ago. Token: `{n}`. */
   daysAgo: string;
   /** Weeks ago. Token: `{n}`. */
@@ -171,6 +181,11 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   collapse: "Collapse",
   expand: "Expand",
   toggleTheme: "Toggle theme",
+  checkpoints: "Continue a run",
+  noCheckpoints: "Nothing to continue yet.",
+  resumeRun: "Resume",
+  forkRun: "Fork",
+  forkedRun: "branched",
 
   conversation: "Conversation",
   thinking: "Assistant is thinking…",
