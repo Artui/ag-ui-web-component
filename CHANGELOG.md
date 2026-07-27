@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-07-27
+
 ### Added
 
 - **Resume or fork a run — the checkpoint UI.** With `data-runs-url` pointed at
@@ -526,7 +528,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.8.1...v0.9.0
