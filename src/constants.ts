@@ -19,6 +19,16 @@ export const SUBMIT_EVENT = "ag-ui-submit";
  */
 export const TOGGLE_EVENT = "ag-ui-toggle";
 
+/**
+ * Event dispatched by `<ag-ui-chat>` when AG-UI **shared state** changes — the
+ * server streamed a `STATE_SNAPSHOT` / `STATE_DELTA`, or the host assigned
+ * {@link AgUiChat.sharedState}. `detail` carries `{ state }`.
+ *
+ * This is the protocol's own state channel, distinct from `registerPageState`,
+ * which exposes host state to the agent as ordinary *tools*.
+ */
+export const STATE_EVENT = "ag-ui-state";
+
 /** Roles a chat message can take. */
 export const MESSAGE_ROLE = {
   USER: "user",

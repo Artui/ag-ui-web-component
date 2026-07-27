@@ -2,6 +2,7 @@ import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
 import {
   DEFAULT_ATTACHMENT_MAX_BYTES,
   MESSAGE_ROLE,
+  STATE_EVENT,
   SUBMIT_EVENT,
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
@@ -71,6 +72,11 @@ export interface SubmitDetail {
   readonly content: string;
   /** Durable refs for the files attached to this message (empty when none). */
   readonly attachments: readonly AttachmentRef[];
+}
+
+/** `detail` shape of the {@link STATE_EVENT} CustomEvent. */
+export interface StateDetail {
+  readonly state: Readonly<Record<string, unknown>>;
 }
 
 /** `detail` shape of the {@link TOGGLE_EVENT} CustomEvent. */
@@ -322,6 +328,10 @@ export class AgUiChat extends HTMLElement {
   #runAttachments: readonly AttachmentRef[] = [];
 
   #client: AgUiClient | null = null;
+  // Seed for the next client. Once one exists it owns the live value (the
+  // agent applies STATE_SNAPSHOT / STATE_DELTA into it), so this is only the
+  // starting point — `sharedState` reads through to the client when present.
+  #sharedState: Record<string, unknown> = {};
   // Whether an interaction is in flight (first onRunStart → onSettled). Drives
   // the Send⇄Stop button: `agent.isRunning` is false between frontend-tool
   // rounds, but the user must still be able to stop there.
@@ -477,6 +487,28 @@ export class AgUiChat extends HTMLElement {
   /** Declare a frontend tool the agent may call. */
   registerTool(tool: ClientTool): void {
     this.#toolRegistry.register(tool);
+  }
+
+  /**
+   * AG-UI **shared state** for this conversation — the protocol's own state
+   * channel, sent as `RunAgentInput.state` on every run and replaced in place
+   * when the server streams `STATE_SNAPSHOT` / `STATE_DELTA`. Assigning seeds
+   * the next run; reading returns whatever the agent last applied.
+   *
+   * Listen for {@link STATE_EVENT} to react to server-driven changes.
+   *
+   * Not to be confused with {@link registerPageState}, which exposes host
+   * state to the agent as ordinary *tools*.
+   */
+  get sharedState(): Readonly<Record<string, unknown>> {
+    return this.#client?.state ?? this.#sharedState;
+  }
+
+  set sharedState(state: Readonly<Record<string, unknown>>) {
+    this.#sharedState = { ...state };
+    // A client already exists for this conversation — push it through so the
+    // next run sends it, rather than silently waiting for a new conversation.
+    this.#client?.setState(this.#sharedState);
   }
 
   /** Bind a piece of host page state to `read_<name>` / `set_<name>` tools. */
@@ -1599,6 +1631,7 @@ export class AgUiChat extends HTMLElement {
         getHeaders: () => this.headers,
         threadId: this.#threadId,
         initialMessages: this.#initialMessages,
+        initialState: this.#sharedState,
       });
       this.#client = new AgUiClient({
         agent,
@@ -1608,10 +1641,23 @@ export class AgUiChat extends HTMLElement {
         executeTool: (call) => this.#executeTool(call),
         resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
         onPersist: (messages) => this.conversationStore.saveMessages(this.#threadId, messages),
+        onStateChanged: (state) => this.#onSharedStateChanged(state),
         connectionLostMessage: this.#strings.connectionLost,
       });
     }
     return this.#client;
+  }
+
+  /** Mirror the agent's applied state and tell the host it moved. */
+  #onSharedStateChanged(state: Readonly<Record<string, unknown>>): void {
+    this.#sharedState = { ...state };
+    this.dispatchEvent(
+      new CustomEvent<StateDetail>(STATE_EVENT, {
+        detail: { state: this.#sharedState },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   /** Whether ``call`` should be gated behind the confirmation card. */

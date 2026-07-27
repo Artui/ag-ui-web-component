@@ -4,6 +4,7 @@ export {
   ELEMENT_TAG,
   MAX_TOOL_ROUNDS,
   MESSAGE_ROLE,
+  STATE_EVENT,
   SUBMIT_EVENT,
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
@@ -16,6 +17,7 @@ export {
 export {
   AgUiChat,
   type MessageRole,
+  type StateDetail,
   type SubmitDetail,
   type ToggleDetail,
 } from "./core/ag_ui_chat.js";

@@ -191,6 +191,8 @@ the django-ag-ui `@tool` registry), whose schema never reaches the browser — e
 labels are fetched automatically — per card, `x-summary` → an explicit
 `toolSummaries` entry → the fetched catalog → the raw name.
 
+**Properties** (selected): `sharedState` — AG-UI shared state (documented under Tools & state).
+
 **Methods**: `registerTool`, `registerPageState`, `setSkills`, `appendMessage`, `newChat`,
 `setCollapsed`, `toggleCollapsed`.
 
@@ -634,12 +636,41 @@ chat.registerPageState({
 });
 ```
 
-**This is not AG-UI shared state.** The protocol's `STATE_SNAPSHOT` / `STATE_DELTA` events — which
-carry a state object between agent and client — are **not implemented**, here or in
-`django-ag-ui`. `registerPageState` generates two ordinary client tools; the agent reads or writes
-your store by *calling a tool*, not by exchanging state events. The method was called
-`registerStateHook` through 0.12, a name that read as protocol state sync; the old spelling still
-works and is deprecated.
+**This is not AG-UI shared state** — that is `sharedState`, below. `registerPageState` generates two
+ordinary client tools; the agent reads or writes your store by *calling a tool*. The method was
+called `registerStateHook` through 0.12, a name that read as protocol state sync; the old spelling
+still works and is deprecated.
+
+**`sharedState`** *(property)* — AG-UI **shared state**: the protocol's own state channel, sent as
+`RunAgentInput.state` on every run and replaced in place when the server streams `STATE_SNAPSHOT` /
+`STATE_DELTA`. Assign to seed it, listen for `ag-ui-state` to react:
+
+```js
+chat.sharedState = { document: "" };
+
+chat.addEventListener("ag-ui-state", (e) => {
+  editor.value = e.detail.state.document;   // the agent rewrote it
+});
+```
+
+Server-side, a tool mutates `ctx.deps.state` and returns the snapshot as `ToolReturn` metadata —
+pydantic-ai does not emit deltas for you:
+
+```python
+@tool(registry)
+async def write_document(ctx: RunContext[AgentDeps], body: str) -> ToolReturn:
+    """Replace the shared document."""
+    ctx.deps.state = {**(ctx.deps.state or {}), "document": body}
+    return ToolReturn(
+        return_value="written",
+        metadata=[StateSnapshotEvent(type=EventType.STATE_SNAPSHOT, snapshot=ctx.deps.state)],
+    )
+```
+
+Use this when the agent and the page are editing **the same object** (a document, a form, a
+canvas). Use `registerPageState` when the agent should *ask* for a value or *request* a change —
+the tool call is visible in the transcript and can be gated by a confirmation card, which state
+events cannot.
 
 **`navigate(path): void`** *(optional)* — a host routing callback. **This single seam is what
 distinguishes an SPA from an MPA.** When set, `navigate_to_route` routes client-side (no reload) and
