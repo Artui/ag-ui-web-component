@@ -49,9 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- **The AG-UI shared-state gap is now stated plainly** in the README rather than
-  being obscured by the old method name. `STATE_SNAPSHOT` / `STATE_DELTA` are not
-  implemented; the agent reads and writes host state by *calling a tool*.
+- **The README now distinguishes the two state mechanisms**, which the old
+  method name conflated. `sharedState` is the protocol's state channel;
+  `registerPageState` generates ordinary client tools. The rename and the
+  feature landed together, so the docs answer "which one" rather than leaving
+  two similar names side by side.
 
 ## [0.12.0] — 2026-07-27
 
