@@ -1,6 +1,8 @@
 import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
 import {
+  COMPACTION_ACTIVITY_TYPE,
   DEFAULT_ATTACHMENT_MAX_BYTES,
+  LOAD_CAPABILITY_TOOL,
   MESSAGE_ROLE,
   STATE_EVENT,
   SUBMIT_EVENT,
@@ -38,6 +40,7 @@ import {
 } from "../ui/question_card.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
 import { wrapWords } from "../ui/reveal_words.js";
+import { renderRunNotice } from "../ui/run_notice.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
 import { STYLES } from "../ui/styles.js";
 import { ThoughtsBlock } from "../ui/thoughts_block.js";
@@ -1211,11 +1214,18 @@ export class AgUiChat extends HTMLElement {
       const toolCalls = message.toolCalls;
       if (toolCalls !== undefined) {
         for (const call of toolCalls) {
-          this.#cardFor({
+          const restored = {
             id: call.id,
             name: call.function.name,
             args: this.#parseArgs(call.function.arguments),
-          });
+          };
+          // Restored history goes through the same interception as the live
+          // stream — otherwise a reload resurrects the raw `load_capability`
+          // card the live path deliberately replaced.
+          if (this.#noticeIfSkillLoad(restored)) {
+            continue;
+          }
+          this.#cardFor(restored);
         }
       }
       return;
@@ -1672,6 +1682,12 @@ export class AgUiChat extends HTMLElement {
   }
 
   async #executeTool(call: AgUiToolCall): Promise<ToolExecution | null> {
+    // A skill load already rendered as a notice on the stream; it is never a
+    // client tool and its result is pydantic-ai's business, so it must not
+    // acquire a card here on the way to the no-result fallback below.
+    if (skillNameFrom(call) !== null) {
+      return null;
+    }
     const card = this.#cardFor(call);
     this.#toolCards.delete(call.id);
     const tool = this.#resolveTool(call.name);
@@ -1837,7 +1853,29 @@ export class AgUiChat extends HTMLElement {
       },
       onToolCall: (call) => {
         this.#hidePending();
+        // A skill activation is an ordinary `load_capability` tool call — the
+        // deferred-capability mechanism pydantic-ai already uses — so it arrives
+        // here rather than on a channel of its own. Render it as a notice and
+        // *return*: falling through would show a raw tool card beside the chip,
+        // which is worse than the card alone.
+        if (this.#noticeIfSkillLoad(call)) {
+          return;
+        }
         this.#cardFor(call);
+      },
+      onActivity: (activityType, content) => {
+        if (activityType !== COMPACTION_ACTIVITY_TYPE) {
+          return;
+        }
+        const removed = compactionRemoved(content);
+        if (removed === null) {
+          return;
+        }
+        this.#appendNotice(
+          "🗜",
+          this.#strings.historyCompacted.replace("{count}", String(removed)),
+          "compaction",
+        );
       },
       onToolResult: (toolCallId, content) => {
         const card = this.#toolCards.get(toolCallId);
@@ -1969,6 +2007,34 @@ export class AgUiChat extends HTMLElement {
    * {@link AgUiClientHandlers.onToolCall} creates the card (pending) during the
    * run; {@link #executeTool} later retrieves the same card to settle it.
    */
+  /**
+   * Append an ambient run notice to the current group.
+   *
+   * Goes through {@link #ensureGroup} like a tool card so it lands *inside* the
+   * assistant turn it annotates rather than floating between turns, and shares
+   * the same pending-hide / scroll behaviour.
+   */
+  /**
+   * Render a skill notice for a `load_capability` call; ``true`` when handled.
+   *
+   * Shared by the live stream and history replay so the transcript looks the
+   * same before and after a reload.
+   */
+  #noticeIfSkillLoad(call: AgUiToolCall): boolean {
+    const skill = skillNameFrom(call);
+    if (skill === null) {
+      return false;
+    }
+    this.#appendNotice("✨", this.#strings.usingSkill.replace("{name}", skill), "skill");
+    return true;
+  }
+
+  #appendNotice(icon: string, text: string, kind: string): void {
+    this.#ensureGroup().appendChild(renderRunNotice(icon, text, kind));
+    this.#updateEmptyState();
+    this.#messages.scrollTop = this.#messages.scrollHeight;
+  }
+
   #cardFor(call: AgUiToolCall): ToolCallCard {
     const existing = this.#toolCards.get(call.id);
     if (existing !== undefined) {
@@ -1991,4 +2057,28 @@ export class AgUiChat extends HTMLElement {
     this.#messages.scrollTop = this.#messages.scrollHeight;
     return card;
   }
+}
+
+/**
+ * The skill name a `load_capability` call activated, or `null` when the call is
+ * something else.
+ *
+ * Every deferred capability loads through this one tool, so the id is only a
+ * *skill* name when the project wired agent skills — a project deferring some
+ * other capability would surface its id here too. That is acceptable for a
+ * muted notice and preferable to inventing a parallel signal: the id is exactly
+ * what the model selected, which is what the notice reports.
+ */
+function skillNameFrom(call: AgUiToolCall): string | null {
+  if (call.name !== LOAD_CAPABILITY_TOOL) {
+    return null;
+  }
+  const id = (call.args as { id?: unknown } | null | undefined)?.id;
+  return typeof id === "string" && id !== "" ? id : null;
+}
+
+/** The `removed` count from a compaction activity payload, or `null` if absent. */
+function compactionRemoved(content: unknown): number | null {
+  const removed = (content as { removed?: unknown } | null | undefined)?.removed;
+  return typeof removed === "number" ? removed : null;
 }

@@ -117,3 +117,21 @@ export const TOOL_DISPLAY = {
   COMPACT: "compact",
   FULL: "full",
 } as const;
+
+/**
+ * `activityType` of the AG-UI `ACTIVITY_SNAPSHOT` event `django-ag-ui` emits
+ * when a compaction capability trimmed the message history. Its `content`
+ * carries `{ removed, before, after }`.
+ */
+export const COMPACTION_ACTIVITY_TYPE = "compaction";
+
+/**
+ * Pydantic-AI's built-in tool the model calls to load a *deferred* capability,
+ * with `{ id }` naming it. Agent skills are deferred capabilities whose id is
+ * the skill name, so a call to this tool is how "the agent picked skill X"
+ * reaches the client — there is no separate event for it.
+ *
+ * Not to be confused with the host-provided {@link Skill} catalog, which is a
+ * *human* affordance (a prompt the user launches from the `/`-palette).
+ */
+export const LOAD_CAPABILITY_TOOL = "load_capability";

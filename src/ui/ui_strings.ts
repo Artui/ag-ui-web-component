@@ -49,6 +49,10 @@ export interface UiStrings {
   navigating: string;
   /** Missing-placeholder skill hint. Tokens: `{title}`, `{fields}`. */
   skillNeeds: string;
+  /** Notice shown when the agent condensed earlier turns. Token: `{count}`. */
+  historyCompacted: string;
+  /** Notice shown when the agent loads an agent skill. Token: `{name}`. */
+  usingSkill: string;
 
   // ── Composer ────────────────────────────────────────────────────────────────
   /** `aria-label` of the message textarea. */
@@ -195,6 +199,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   noResult: "No result returned.",
   declinedAction: "User declined the action.",
   navigating: "Navigating…",
+  historyCompacted: "Earlier turns condensed to fit the context window ({count} removed)",
+  usingSkill: "Using skill {name}",
   skillNeeds: "“{title}” needs: {fields}",
 
   message: "Message",

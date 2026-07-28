@@ -79,6 +79,12 @@ export interface AgUiClientHandlers {
    * their result itself — so this is the channel for server-executed output.
    */
   onToolResult(toolCallId: string, content: string): void;
+  /**
+   * Fired for AG-UI activity events — ambient notices about what the *run* did,
+   * as opposed to work the agent asked for. `django-ag-ui` emits one with
+   * `activityType: "compaction"` when it condensed the history.
+   */
+  onActivity(activityType: string, content: unknown): void;
   /** Fired when a reasoning model starts emitting its chain-of-thought. */
   onReasoningStart(): void;
   /** Fired on every reasoning token; ``buffer`` is the full reasoning text so far. */
@@ -412,6 +418,9 @@ export class AgUiClient {
       },
       onToolCallResultEvent({ event }) {
         h.onToolResult(event.toolCallId, event.content);
+      },
+      onActivitySnapshotEvent({ event }) {
+        h.onActivity(event.activityType, event.content);
       },
       // Reasoning. `@ag-ui/client` already maps the deprecated
       // THINKING_* events onto these REASONING_* callbacks, so handling the

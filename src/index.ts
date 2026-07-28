@@ -1,7 +1,9 @@
 // Public surface re-exports. Per CLAUDE.md, this is the only re-export point.
 
 export {
+  COMPACTION_ACTIVITY_TYPE,
   ELEMENT_TAG,
+  LOAD_CAPABILITY_TOOL,
   MAX_TOOL_ROUNDS,
   MESSAGE_ROLE,
   STATE_EVENT,

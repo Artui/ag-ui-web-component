@@ -48,6 +48,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
 - [New chat and collapse](#new-chat-and-collapse)
 - [Tool-call display modes](#tool-call-display-modes)
 - [Markdown rendering](#markdown-rendering)
+- [Run notices: compaction and agent skills](#run-notices-compaction-and-agent-skills)
 - [Skills: prompt chips and slash palette](#skills-prompt-chips-and-slash-palette)
 - [MPA durability: surviving full page reloads](#mpa-durability-surviving-full-page-reloads)
 - [Host seams: the SPA story](#host-seams-the-spa-story)
@@ -516,6 +517,37 @@ reveal). It honours `prefers-reduced-motion` (collapsing to instant).
 ```
 
 ---
+
+## Run notices: compaction and agent skills
+
+Some things a run does are neither text nor a tool the user asked for — the server condensed
+earlier turns to fit the context window, or the model pulled in an agent skill. Those render as
+**run notices**: a muted one-line annotation inline in the transcript, styleable via the
+`run-notice`, `run-notice-icon` and `run-notice-text` `part`s.
+
+> **Two different things are called "skills".**
+> The [prompt chips and slash palette](#skills-prompt-chips-and-slash-palette) below are a
+> **human** affordance — prompts *the user* launches. An **agent skill** is a folder of
+> instructions *the model* chooses to load mid-run. Only the second produces a run notice.
+
+Neither notice needs configuration here — both appear when the server is set up to produce them.
+
+**Compaction.** `django-ag-ui` emits a standard AG-UI `ACTIVITY_SNAPSHOT` with
+`activityType: "compaction"` when a compaction capability trimmed the history; the notice reports
+how many messages went. Server side, that means wrapping the capability in `CompactionObserver` —
+see [django-ag-ui's compaction guide](https://artui.github.io/django-ag-ui/compaction/). Activity
+events of any other type pass through untouched, so another producer on that channel is not
+mistaken for a compaction.
+
+**Agent skills.** There is no dedicated event for these: loading a deferred capability *is* an
+ordinary `load_capability` tool call, which is what reaches the client. The component recognises
+it, renders `Using skill <id>`, and suppresses the raw tool card that would otherwise appear
+beside it — on the live stream and on restored history alike, so a reload shows the same
+transcript. A `load_capability` call with no usable id falls back to a normal tool card rather
+than being dropped, since it is still real activity.
+
+Both strings are overridable like every other — `historyCompacted` (token `{count}`) and
+`usingSkill` (token `{name}`).
 
 ## Skills: prompt chips and slash palette
 

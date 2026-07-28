@@ -8,6 +8,8 @@ export interface Emit {
   textEnd(buffer: string): void;
   toolCall(id: string, name: string, args: Record<string, unknown>): void;
   toolResult(toolCallId: string, content: string): void;
+  /** Emit an AG-UI `ACTIVITY_SNAPSHOT` (the run-notice channel). */
+  activity(activityType: string, content: unknown): void;
   reasoningStart(): void;
   reasoning(buffer: string): void;
   reasoningEnd(): void;
@@ -47,6 +49,8 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
       } as never),
     toolResult: (toolCallId, content) =>
       void s.onToolCallResultEvent?.({ event: { toolCallId, content } } as never),
+    activity: (activityType, content) =>
+      void s.onActivitySnapshotEvent?.({ event: { activityType, content } } as never),
     reasoningStart: () => void s.onReasoningStartEvent?.({ event: {} } as never),
     reasoning: (reasoningMessageBuffer) =>
       void s.onReasoningMessageContentEvent?.({ reasoningMessageBuffer } as never),
