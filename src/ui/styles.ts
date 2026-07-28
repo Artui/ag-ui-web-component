@@ -886,6 +886,32 @@ export const STYLES = `
   margin-top: 6px;
 }
 
+.run-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  margin: 2px 0;
+  padding: 3px 10px;
+  border: 1px dashed var(--ag-ui-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ag-ui-muted);
+  font-size: 0.8em;
+  line-height: 1.4;
+}
+
+.run-notice-icon {
+  flex: none;
+  opacity: 0.75;
+}
+
+.run-notice-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .attachment-chip {
   display: inline-flex;
   align-items: center;

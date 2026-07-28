@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Run notices — a muted inline annotation for things the *run* did**, as
+  opposed to work the user asked for. Styleable via the `run-notice`,
+  `run-notice-icon` and `run-notice-text` parts; announced with `role="status"`
+  so a screen reader hears it politely rather than mid-sentence.
+  - **Compaction.** A standard AG-UI `ACTIVITY_SNAPSHOT` with
+    `activityType: "compaction"` (emitted by django-ag-ui 0.26+ when a
+    compaction capability trimmed the history) renders as "earlier turns
+    condensed", with the count. Activity events of any other type pass through
+    untouched, so another producer on that channel isn't mistaken for one.
+  - **Agent skills.** There is no dedicated event: loading a deferred capability
+    *is* an ordinary `load_capability` tool call, which is what reaches the
+    client. It now renders as `Using skill <id>` **instead of** the raw tool
+    card it would otherwise produce.
+
+    ⚠ Not to be confused with the existing `Skill` catalog — that is a *human*
+    affordance (a prompt the user launches from the chip row or `/`-palette).
+    An agent skill is chosen by the model mid-run. Only the latter emits a
+    notice.
+  - **Suppression covers all three paths a card can come from** — the live
+    stream, the client's tool-execution loop, and **restored history** — so a
+    reload shows the same transcript rather than resurrecting the raw
+    `load_capability` card.
+  - A `load_capability` call with **no usable id** falls back to a normal tool
+    card rather than being dropped: a malformed call is still real activity, and
+    hiding it would be worse than showing it plainly.
+- **`onActivity(activityType, content)`** on `AgUiClientHandlers`, forwarding
+  AG-UI activity events to the host element. `COMPACTION_ACTIVITY_TYPE` and
+  `LOAD_CAPABILITY_TOOL` are exported from `constants`.
+- **Two new overridable strings**: `historyCompacted` (token `{count}`) and
+  `usingSkill` (token `{name}`).
+
 ## [0.13.0] — 2026-07-27
 
 ### Added
