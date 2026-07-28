@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-07-28
+
 ### Added
 
 - **Run notices — a muted inline annotation for things the *run* did**, as
@@ -611,7 +613,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.10.0...v0.11.0
