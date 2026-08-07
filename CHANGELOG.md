@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] — 2026-08-07
+
+### Security
+
+- **Five advisories closed**: `vite` → 7.3.6 (HIGH + MEDIUM), `postcss` → 8.5.26
+  (HIGH), `brace-expansion` → 2.1.4 (HIGH), `esbuild` → 0.28.1 (LOW). All four
+  are transitive, so they are pinned through `overrides` — there is no direct
+  dependency to bump.
+
+  ⚠ **`overrides` now live in `pnpm-workspace.yaml`**, not the `pnpm` field in
+  `package.json`; pnpm 11 ignores the latter and only warns. And an override
+  must be scoped to its major — an unbounded `brace-expansion: ">=2.1.2"`
+  resolves to 5.x, whose export shape `minimatch` cannot call, breaking `glob`
+  at runtime.
+
+- ⛔ **Four `dompurify` advisories are knowingly left open** (three LOW, one
+  MEDIUM), and the dependency is now pinned to **exactly `3.4.7`** rather than
+  `^3.4.7`.
+
+  3.4.8 through 3.4.13 **mis-sanitise under happy-dom**: `<script>` and `<img>`
+  pass straight through, which `tests/render_markdown.test.ts` catches. Verified
+  again against dompurify 3.4.13 with happy-dom 20.11.1 — moving the test DOM
+  forward does not fix it.
+
+  ⭐ **The pin was previously a caret range**, so the hold existed only in the
+  lockfile and nowhere in the manifest, undocumented — a `pnpm update` would
+  have silently disabled sanitisation. It is now exact, explained at the import
+  site in `src/ui/render_markdown.ts`, and recorded in `CLAUDE.md`.
+
+  The trade is deliberate: those advisories describe narrow bypasses, while
+  taking them costs *all* sanitisation under the only DOM the suite can run in.
+  `tests/render_markdown.test.ts` is the acceptance check for lifting it.
+
 ## [0.14.0] — 2026-07-28
 
 ### Added
@@ -613,7 +646,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.11.0...v0.12.0
