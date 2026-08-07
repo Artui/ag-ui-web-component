@@ -1,13 +1,30 @@
 // DOMPurify is exercised in a **real browser** by the `chromium` project in
-// vitest.config.ts, not by the happy-dom suite. That is deliberate: 3.4.8+ does
+// vitest.config.ts, not by the happy-dom suite. That is deliberate: 3.4.8+ do
 // not sanitise under happy-dom at all — `<script>` and `<img>` pass straight
 // through — so a happy-dom-only suite can go green while this module ships no
 // sanitisation whatsoever.
 //
-// Verified 2026-08-07 that the failure is happy-dom's DOM emulation and not a
-// DOMPurify regression: 3.4.13 sanitises correctly in Chromium. That is why the
-// dependency is a normal caret range again rather than an exact pin, and why
-// five held advisories could finally be taken.
+// **Root cause, upstream, and both are refusing to move.** DOMPurify 3.4.8
+// changed one line, reading the tag name through
+// `lookupGetter(Node.prototype, "nodeName")` instead of `currentNode.nodeName`
+// (cure53/DOMPurify 3.4.7...3.4.8). happy-dom defines an *own* `nodeName`
+// getter on **both** `Node.prototype` (returning `""`) and `Element.prototype`,
+// so grabbing the base one defeats the dispatch and every element resolves to
+// `tagName === ""`. Not in ALLOWED_TAGS, so the wrapper is stripped and its
+// children are re-inserted as clones the NodeIterator never revisits — which is
+// why nested payloads come back *entirely* unsanitised. Real browsers and jsdom
+// define `nodeName` only on `Node.prototype` and are unaffected.
+//
+//   happy-dom bug:      capricorn86/happy-dom#2182 (open)
+//   working fix:        capricorn86/happy-dom#2183 (closed, never merged)
+//   DOMPurify's answer: cure53/DOMPurify#1457, #1496 (closed, wontfix —
+//                       "happy-dom is not supported")
+//
+// ⚠ DOMPurify's README names happy-dom as **not safe**: combining them "will
+// likely lead to XSS". jsdom is the only non-browser DOM it supports. So the
+// old exact pin at 3.4.7 was never the safety it looked like — cure53 notes it
+// "doesn't really work, it just appears so". Running these assertions in
+// Chromium is the fix; the pin was a placebo.
 //
 // ⚠ If you ever move these assertions back under happy-dom to make them faster,
 // you remove the only check that this module does anything at all.
