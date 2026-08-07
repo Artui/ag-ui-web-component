@@ -180,6 +180,24 @@ green happy-dom run is therefore compatible with the sanitiser doing nothing.
 Verified 2026-08-07: 3.4.13 sanitises correctly in Chromium, so the defect is
 happy-dom's DOM emulation, not DOMPurify.
 
+**Root cause, confirmed upstream.** DOMPurify 3.4.8 began reading the tag name
+via `lookupGetter(Node.prototype, "nodeName")`. happy-dom defines an *own*
+`nodeName` getter on **both** `Node.prototype` (returning `""`) and
+`Element.prototype`, so the base getter wins and every element resolves to
+`tagName === ""` — stripped, with children re-inserted as clones the
+NodeIterator never revisits. Tracked as
+[happy-dom#2182](https://github.com/capricorn86/happy-dom/issues/2182) (open);
+a working fix, [#2183](https://github.com/capricorn86/happy-dom/pull/2183), was
+closed unmerged. DOMPurify closed the mirror reports
+([#1457](https://github.com/cure53/DOMPurify/issues/1457),
+[#1496](https://github.com/cure53/DOMPurify/issues/1496)) as wontfix — its
+README names happy-dom as **not safe** and supports jsdom only.
+
+⚠ So the old exact pin at 3.4.7 was never the safety it appeared to be; cure53
+notes it "doesn't really work, it just appears so". Neither side has a fix in
+flight, which is why the browser project is the durable answer rather than a
+version constraint.
+
 ⚠ **Do not move `tests/browser/**` back under happy-dom to save the ~2s of
 browser startup.** Those are the only assertions that this component sanitises
 at all. CI installs Chromium explicitly for the same reason — without it the
