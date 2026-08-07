@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] — 2026-08-07
+
 ### Security
 
 - **Five advisories closed**: `vite` → 7.3.6 (HIGH + MEDIUM), `postcss` → 8.5.26
@@ -644,7 +646,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.11.0...v0.12.0
