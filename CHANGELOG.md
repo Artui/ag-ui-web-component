@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Sanitisation is now tested in a real browser.** `vitest.config.ts` defines
+  two projects: **happy-dom** for the bulk of the suite, and **Chromium**
+  (Playwright) for the tests whose subject is sanitisation. Coverage stays
+  unified at 100% across both.
+
+  ⚠ **A correctness requirement, not an optimisation.** DOMPurify 3.4.8+
+  silently stops sanitising under happy-dom — `<script>` and `<img>` pass
+  straight through, and ordinary markdown loses its `<p>` wrapper. A
+  happy-dom-only suite can therefore go green while this component ships no
+  sanitisation at all, which is the one failure it must never ship.
+
+  ⭐ **The experiment settles what the pin never could**: dompurify 3.4.13
+  sanitises correctly in Chromium. The defect is happy-dom's DOM emulation, not
+  a DOMPurify regression — so **consumers were never exposed**, and the risk was
+  confined to the test environment the whole time.
+
+  The browser run also *removes* a workaround instead of carrying it: happy-dom
+  eagerly **executed** inline `<script>` while DOMPurify parsed into its scratch
+  document, so the suite had to stub `alert`. A real browser parses into an
+  inert context.
+
+### Security
+
+- **`dompurify` is a normal caret range again** (`^3.4.13`), lifting the
+  exact-version pin — and with it the **five advisories** that pin was holding
+  open (three LOW, two MEDIUM). The browser project is what made that safe, and
+  is the standing acceptance check.
+
 ## [0.14.1] — 2026-08-07
 
 ### Security

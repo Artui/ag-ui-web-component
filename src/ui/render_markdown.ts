@@ -1,13 +1,16 @@
-// ⚠ ``dompurify`` is pinned at exactly 3.4.7 in package.json — not a caret
-// range. 3.4.8 through at least 3.4.13 mis-sanitise under happy-dom: the
-// sanitiser silently passes ``<script>`` and ``<img>`` straight through, which
-// this module's own tests catch. Verified again 2026-08-07 against happy-dom
-// 20.11.1, so it is not fixed by moving the test DOM forward either.
+// DOMPurify is exercised in a **real browser** by the `chromium` project in
+// vitest.config.ts, not by the happy-dom suite. That is deliberate: 3.4.8+ does
+// not sanitise under happy-dom at all — `<script>` and `<img>` pass straight
+// through — so a happy-dom-only suite can go green while this module ships no
+// sanitisation whatsoever.
 //
-// That leaves four open dompurify advisories (three LOW, one MEDIUM) knowingly
-// unpatched. The trade is deliberate: those advisories describe narrow bypasses,
-// while taking them costs *all* sanitisation under the only DOM we can test in.
-// Revisit whenever either project moves; the tests are the acceptance check.
+// Verified 2026-08-07 that the failure is happy-dom's DOM emulation and not a
+// DOMPurify regression: 3.4.13 sanitises correctly in Chromium. That is why the
+// dependency is a normal caret range again rather than an exact pin, and why
+// five held advisories could finally be taken.
+//
+// ⚠ If you ever move these assertions back under happy-dom to make them faster,
+// you remove the only check that this module does anything at all.
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
 
