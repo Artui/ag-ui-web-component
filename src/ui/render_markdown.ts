@@ -1,3 +1,13 @@
+// ⚠ ``dompurify`` is pinned at exactly 3.4.7 in package.json — not a caret
+// range. 3.4.8 through at least 3.4.13 mis-sanitise under happy-dom: the
+// sanitiser silently passes ``<script>`` and ``<img>`` straight through, which
+// this module's own tests catch. Verified again 2026-08-07 against happy-dom
+// 20.11.1, so it is not fixed by moving the test DOM forward either.
+//
+// That leaves four open dompurify advisories (three LOW, one MEDIUM) knowingly
+// unpatched. The trade is deliberate: those advisories describe narrow bypasses,
+// while taking them costs *all* sanitisation under the only DOM we can test in.
+// Revisit whenever either project moves; the tests are the acceptance check.
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
 

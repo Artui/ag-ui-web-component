@@ -167,3 +167,19 @@ gh pr create
 2. **`@artooi` npm org** — must exist and the publishing identity must be a member.
 3. **GitHub Environment** — create an `npm` environment under `Settings → Environments` (no
    secrets needed; OIDC handles auth).
+
+## Pinned dependencies that must not float
+
+- **`dompurify` is pinned to an exact version (3.4.7), not a caret range.**
+  3.4.8+ mis-sanitise under happy-dom — `<script>` and `<img>` pass straight
+  through — so a float silently disables sanitisation in every test run.
+  Re-verified 2026-08-07 against dompurify 3.4.13 + happy-dom 20.11.1: still
+  broken, and not fixed by moving happy-dom forward. Four dompurify advisories
+  are knowingly left open as a result; see the comment in
+  `src/ui/render_markdown.ts`. `tests/render_markdown.test.ts` is the
+  acceptance check — if it goes green on a newer dompurify, the pin can lift.
+
+- **`overrides` live in `pnpm-workspace.yaml`, not the `pnpm` field in
+  `package.json`** — pnpm 11 ignores the latter and only warns. Scope any
+  override to its major (`brace-expansion@2: ">=2.1.2 <3"`); an unbounded
+  `>=` crosses a major and broke `minimatch` at runtime.

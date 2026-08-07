@@ -3,3 +3,15 @@
 # binary; it's a trusted build dependency.
 allowBuilds:
   esbuild: true
+
+# Transitive-only security advisories: nothing here is a direct dependency, so
+# there is no manifest entry to bump — the minimum patched version is pinned
+# instead. Scoped to the affected major where the tree carries more than one
+# (brace-expansion ships both 2.x and 5.x; only the 2.x line is affected).
+overrides:
+  vite: ">=7.3.5 <8"
+  postcss: ">=8.5.18"
+  # ⚠ Upper bound is load-bearing: brace-expansion 5.x changed its export
+  # shape, and minimatch@9 calls it as a CJS default export. An unbounded
+  # ">=2.1.2" resolves to 5.x and breaks glob at runtime.
+  brace-expansion@2: ">=2.1.2 <3"
