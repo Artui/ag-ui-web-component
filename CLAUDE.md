@@ -168,18 +168,23 @@ gh pr create
 3. **GitHub Environment** — create an `npm` environment under `Settings → Environments` (no
    secrets needed; OIDC handles auth).
 
-## Pinned dependencies that must not float
+## Sanitisation is tested in a real browser, not happy-dom
 
-- **`dompurify` is pinned to an exact version (3.4.7), not a caret range.**
-  3.4.8+ mis-sanitise under happy-dom — `<script>` and `<img>` pass straight
-  through — so a float silently disables sanitisation in every test run.
-  Re-verified 2026-08-07 against dompurify 3.4.13 + happy-dom 20.11.1: still
-  broken, and not fixed by moving happy-dom forward. Four dompurify advisories
-  are knowingly left open as a result; see the comment in
-  `src/ui/render_markdown.ts`. `tests/render_markdown.test.ts` is the
-  acceptance check — if it goes green on a newer dompurify, the pin can lift.
+`vitest.config.ts` defines two projects. **happy-dom** runs the bulk of the
+suite; **chromium** (Playwright) runs the sanitisation tests, and that split is
+a correctness requirement rather than an optimisation.
 
-- **`overrides` live in `pnpm-workspace.yaml`, not the `pnpm` field in
-  `package.json`** — pnpm 11 ignores the latter and only warns. Scope any
-  override to its major (`brace-expansion@2: ">=2.1.2 <3"`); an unbounded
-  `>=` crosses a major and broke `minimatch` at runtime.
+DOMPurify 3.4.8+ **silently stops sanitising under happy-dom** — `<script>` and
+`<img>` pass straight through, and ordinary markdown loses its `<p>` wrapper. A
+green happy-dom run is therefore compatible with the sanitiser doing nothing.
+Verified 2026-08-07: 3.4.13 sanitises correctly in Chromium, so the defect is
+happy-dom's DOM emulation, not DOMPurify.
+
+⚠ **Do not move `tests/browser/**` back under happy-dom to save the ~2s of
+browser startup.** Those are the only assertions that this component sanitises
+at all. CI installs Chromium explicitly for the same reason — without it the
+tests cannot start, and the suite would pass having skipped what matters most.
+
+`dompurify` is consequently a normal caret range. It was pinned to an exact
+version until the browser project existed, which is what kept five advisories
+open.

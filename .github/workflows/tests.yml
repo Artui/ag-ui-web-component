@@ -66,6 +66,12 @@ jobs:
           cache: "pnpm"
       - name: Install
         run: pnpm install --frozen-lockfile
+      # The sanitisation tests run in real Chromium (the `chromium` project in
+      # vitest.config.ts), because DOMPurify does not sanitise under happy-dom.
+      # Without this step those tests cannot start, and the suite would go green
+      # having skipped exactly the assertions that matter most.
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
       - name: Test
         run: pnpm test
       - name: Upload coverage artifact

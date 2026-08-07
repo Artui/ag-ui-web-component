@@ -1,14 +1,24 @@
-import { beforeAll, describe, expect, it } from "vitest";
-import { renderMarkdown } from "../src/ui/render_markdown.js";
+import { describe, expect, it } from "vitest";
+import { renderMarkdown } from "../../src/ui/render_markdown.js";
 
-// happy-dom eagerly executes inline <script> while DOMPurify parses the input
-// into its scratch document — a real browser uses an inert context, so this
-// never happens in production. Stub `alert` so the env doesn't throw; the
-// assertions below verify the script is stripped from the *output* regardless.
-beforeAll(() => {
-  (globalThis as unknown as { alert: () => void }).alert = () => {};
-});
-
+/**
+ * Runs in Chromium (the `chromium` project in `vitest.config.ts`), not
+ * happy-dom, and that is a correctness requirement rather than an optimisation.
+ *
+ * DOMPurify 3.4.8+ **silently stops sanitising under happy-dom**: `<script>`
+ * and `<img>` pass straight through, and even ordinary markdown loses its `<p>`
+ * wrapper. A green happy-dom run is therefore compatible with the sanitiser
+ * doing nothing at all — the one failure this module must never ship.
+ *
+ * Verified 2026-08-07: dompurify 3.4.13 sanitises correctly here and not at all
+ * under happy-dom, so the defect is happy-dom's DOM emulation rather than a
+ * DOMPurify regression. That is what let the exact-version pin lift.
+ *
+ * It also removes a workaround this file used to need: happy-dom *eagerly
+ * executed* inline `<script>` while DOMPurify parsed input into its scratch
+ * document, so the suite had to stub `alert`. A real browser parses into an
+ * inert context, so nothing executes and no stub is required.
+ */
 describe("renderMarkdown", () => {
   it("renders a single paragraph to clean, trimmed HTML", () => {
     expect(renderMarkdown("hello")).toBe("<p>hello</p>");

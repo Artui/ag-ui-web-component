@@ -1,9 +1,25 @@
 import { defineConfig } from "vitest/config";
 
+/**
+ * Two projects, one coverage report.
+ *
+ * **happy-dom** runs the bulk of the suite: fast, and perfectly adequate for
+ * DOM plumbing, events and component lifecycle.
+ *
+ * **chromium** runs the sanitisation tests, and it is not an optimisation —
+ * it is a correctness requirement. DOMPurify 3.4.8+ silently stops sanitising
+ * under happy-dom: `<script>` and `<img>` pass straight through, and even
+ * ordinary markdown loses its `<p>` wrapper. A green happy-dom run is
+ * therefore compatible with the sanitiser doing nothing at all, which is the
+ * one failure this component must never ship.
+ *
+ * Verified 2026-08-07: dompurify 3.4.13 sanitises correctly in Chromium and
+ * not at all under happy-dom — so the bug is happy-dom's DOM emulation, not a
+ * DOMPurify regression, and consumers were never exposed. That is what let the
+ * exact-version pin on `dompurify` lift.
+ */
 export default defineConfig({
   test: {
-    environment: "happy-dom",
-    include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
@@ -15,5 +31,27 @@ export default defineConfig({
         statements: 100,
       },
     },
+    projects: [
+      {
+        test: {
+          name: "happy-dom",
+          environment: "happy-dom",
+          include: ["tests/**/*.test.ts"],
+          exclude: ["tests/browser/**"],
+        },
+      },
+      {
+        test: {
+          name: "chromium",
+          include: ["tests/browser/**/*.browser.test.ts"],
+          browser: {
+            enabled: true,
+            provider: "playwright",
+            headless: true,
+            instances: [{ browser: "chromium" }],
+          },
+        },
+      },
+    ],
   },
 });
