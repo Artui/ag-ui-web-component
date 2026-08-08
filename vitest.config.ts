@@ -1,3 +1,4 @@
+import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -46,7 +47,11 @@ export default defineConfig({
           include: ["tests/browser/**/*.browser.test.ts"],
           browser: {
             enabled: true,
-            provider: "playwright",
+            // Vitest 4 takes a provider *instance* from its own package rather
+            // than the string `"playwright"`. With v8 coverage the string form
+            // is a hard error, not a deprecation — so this is the only spelling
+            // that keeps one unified coverage report across both projects.
+            provider: playwright(),
             headless: true,
             instances: [{ browser: "chromium" }],
           },

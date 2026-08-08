@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Toolchain majors: Vitest 3 → 4 and TypeScript 5.9 → 7**, plus `marked`
+  18.0.9, Biome 2.5.7, `@types/node` 26.1.2. All development dependencies — the
+  emitted `.d.ts` files are **byte-identical** to the 5.9 output (verified by
+  building both and diffing; only the source maps move), so consumers see no
+  change.
+
+  ⚠ **Vitest 4 takes a provider *instance*, not the string `"playwright"`.**
+  The provider moved to its own package (`@vitest/browser-playwright`) and, with
+  v8 coverage, the old string form is a hard error rather than a deprecation.
+
+  ⚠ **TypeScript 7 requires `rootDir` explicitly** (TS5011) instead of
+  inferring it from the common source directory. Set to the value 5.x inferred,
+  so the published layout is unchanged.
+
+### Fixed
+
+- **Six branches that were never actually covered.** Vitest 4's v8 provider
+  remaps coverage more precisely, and the 100% gate stopped being satisfiable —
+  not because anything regressed, but because v3 had been crediting six
+  branches and three callbacks that no test reached. Each is now genuinely
+  tested: the paperclip button opening the file picker, the built-in
+  transcription handler (every prior voice test supplied its own), a page-action
+  tool resolving through `resolvePageTarget`, a non-`Enter` keystroke in a
+  question card, a submit click with no answer, a non-string `error` in a
+  transcription error body, and a restored history message with an unrecognised
+  role.
+
+  ⭐ **One was a flaw in the test harness, not a missing test.** `makeFakeAgent`
+  ended a clean run by calling `onRunFinalized` alone, so the client's
+  `RUN_FINISHED` path could only ever be reached through `emit.interrupt()` —
+  the ordinary success outcome every real run carries was never exercised. The
+  fake now emits both events, in the order a real agent does.
+
+  `route_map`'s unreachable guard was restructured away rather than tested: its
+  regex capture group is mandatory, so the `undefined` case existed only to
+  satisfy `noUncheckedIndexedAccess` and no test could ever have reached it.
+
 ## [0.15.0] — 2026-08-08
 
 ### Changed

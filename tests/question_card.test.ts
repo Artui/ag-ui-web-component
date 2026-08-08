@@ -107,6 +107,51 @@ describe("requestQuestion (inline card)", () => {
     expect(await answer).toBe("x");
   });
 
+  it("an ordinary keystroke neither submits nor is swallowed", async () => {
+    const node = host();
+    let resolved = false;
+    const answer = requestQuestion(node, { question: "Your name?" }).then((a) => {
+      resolved = true;
+      return a;
+    });
+    const input = node.querySelector<HTMLInputElement>(".question-input");
+    const keystroke = new KeyboardEvent("keydown", { key: "a", cancelable: true });
+    input?.dispatchEvent(keystroke);
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    // Only Enter is intercepted; anything else must reach the field normally.
+    expect(keystroke.defaultPrevented).toBe(false);
+    if (input) {
+      input.value = "x";
+      input.dispatchEvent(new Event("input"));
+    }
+    node.querySelector<HTMLButtonElement>(".question-btn")?.click();
+    expect(await answer).toBe("x");
+  });
+
+  it("a click on the submit button with no answer yet does nothing", async () => {
+    // The button is disabled until an answer exists, so this can only be
+    // reached programmatically — but the guard is what stops a stray dispatch
+    // resolving the question with nothing.
+    const node = host();
+    let resolved = false;
+    const answer = requestQuestion(node, { question: "Your name?" }).then((a) => {
+      resolved = true;
+      return a;
+    });
+    const submit = node.querySelector<HTMLButtonElement>(".question-btn");
+    submit?.dispatchEvent(new Event("click"));
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    const input = node.querySelector<HTMLInputElement>(".question-input");
+    if (input) {
+      input.value = "x";
+      input.dispatchEvent(new Event("input"));
+    }
+    submit?.click();
+    expect(await answer).toBe("x");
+  });
+
   it("aborting resolves with an empty answer and marks it cancelled", async () => {
     const node = host();
     const controller = new AbortController();
