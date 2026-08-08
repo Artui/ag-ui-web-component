@@ -34,6 +34,15 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # `release-publish-prepare` runs the full suite as its final gate, and the
+      # suite's `chromium` project needs a real browser. This mirrors the same
+      # step in tests.yml deliberately: the release gate is a *second* place the
+      # tests run, so it needs its own browsers. Without it the browser project
+      # cannot start, coverage lands at 0%, and the release fails — which is
+      # exactly what happened on the 0.15.0 attempt.
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Prepare release (version check, test, build dist)
         id: prepare
         run: make release-publish-prepare
