@@ -33,14 +33,11 @@ const PATH_PARAM_RE = /:([A-Za-z_][A-Za-z0-9_]*)/g;
 
 /** The `:name` path-parameter names declared in a path template, in order. */
 function pathParamNames(path: string): string[] {
-  const names: string[] = [];
-  for (const match of path.matchAll(PATH_PARAM_RE)) {
-    const name = match[1];
-    if (name !== undefined) {
-      names.push(name);
-    }
-  }
-  return names;
+  // Slicing the ":" off the whole match rather than reading the capture group:
+  // the group is mandatory, so under `noUncheckedIndexedAccess` indexing it
+  // forces an `undefined` guard on a case the regex cannot produce — an
+  // unreachable branch no test can ever cover.
+  return [...path.matchAll(PATH_PARAM_RE)].map((match) => match[0].slice(1));
 }
 
 /**

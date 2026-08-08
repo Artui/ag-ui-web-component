@@ -160,9 +160,13 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
       }
       const state: EmitState = { terminal: false };
       await opts.script?.(emitter(subscriber, state, { applyState }), params);
-      // A real run that streamed cleanly ends with RUN_FINISHED; mirror that so
-      // the client's dropped-stream detection only trips when asked to.
+      // A real run that streamed cleanly emits RUN_FINISHED with an ordinary
+      // outcome and *then* finalizes — both, in that order. Emitting only the
+      // finalize left the client's normal RUN_FINISHED path unreached: the fake
+      // could produce that event solely via `emit.interrupt()`, so the one
+      // outcome every successful run actually carries was never exercised.
       if (!state.terminal && opts.dropStream !== true) {
+        subscriber.onRunFinishedEvent?.({ event: {}, outcome: "success" } as never);
         subscriber.onRunFinalized?.({} as never);
       }
       return {};

@@ -257,6 +257,39 @@ describe("AgUiChat — UX & customization", () => {
       expect(toolNames(el)).not.toContain("drag_and_drop");
     });
 
+    it("a page-action tool resolves its target through resolvePageTarget", async () => {
+      // The other tests here only assert that the tools are *registered*. This
+      // one runs one, which is the only way to reach the closure the element
+      // hands the factory — the seam a host overrides to bound what the agent
+      // can touch.
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      el.setAttribute("data-page-actions", "scroll");
+      const asked: string[] = [];
+      const target = document.createElement("div");
+      target.scrollIntoView = () => {};
+      el.resolvePageTarget = (selector) => {
+        asked.push(selector);
+        return target;
+      };
+      const handle = makeFakeAgent({
+        script: (emit) => {
+          emit.toolCall("tc1", "scroll_to", { target: "#somewhere" });
+        },
+      });
+      el.agentFactory = () => handle.agent;
+      document.body.appendChild(el);
+
+      const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
+      if (input === null) {
+        throw new Error("expected an input");
+      }
+      input.value = "scroll down";
+      shadow(el).querySelector<HTMLButtonElement>(".send")?.click();
+      await flush();
+      expect(asked).toEqual(["#somewhere"]);
+    });
+
     it("default resolvePageTarget queries the document", () => {
       const el = mount();
       const target = document.createElement("div");
@@ -306,6 +339,35 @@ describe("AgUiChat — UX & customization", () => {
         e.transcribeHandler = async () => "x";
       });
       expect(shadow(el).querySelector(".voice-btn")).not.toBeNull();
+    });
+
+    it("the built-in handler posts the clip to data-transcribe-url", async () => {
+      // Every other voice test supplies its own `transcribeHandler`, so this is
+      // the only one that exercises the handler the element builds when only
+      // the url is given — the default path most consumers actually take.
+      const media = installFakeMedia();
+      const original = globalThis.fetch;
+      const seen: { url: string; audio: unknown }[] = [];
+      globalThis.fetch = (async (url: string, init: RequestInit) => {
+        seen.push({ url, audio: (init.body as FormData).get("audio") });
+        return new Response(JSON.stringify({ text: "spoken words" }), { status: 200 });
+      }) as unknown as typeof fetch;
+      try {
+        const el = mount({ "data-transcribe-url": "/agent/transcribe/" });
+        const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
+        const mic = shadow(el).querySelector<HTMLButtonElement>(".voice-btn");
+        mic?.click(); // start
+        await flush();
+        mic?.click(); // stop → transcribe
+        await flush();
+        expect(seen).toHaveLength(1);
+        expect(seen[0]?.url).toBe("/agent/transcribe/");
+        expect(seen[0]?.audio).toBeInstanceOf(Blob);
+        expect(input?.value).toBe("spoken words");
+      } finally {
+        globalThis.fetch = original;
+        media.restore();
+      }
     });
 
     it("drops a transcript into the composer, appending to typed text", async () => {
