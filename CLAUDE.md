@@ -209,6 +209,11 @@ browser startup.** Those are the only assertions that this component sanitises
 at all. CI installs Chromium explicitly for the same reason — without it the
 tests cannot start, and the suite would pass having skipped what matters most.
 
+⚠ **Both `tests.yml` and `release.yml` need the `playwright install` step.**
+The release gate runs the suite a second time, so it needs its own browsers;
+the 0.15.0 release failed at 0% coverage because only `tests.yml` had the step.
+Any future workflow that runs `pnpm test` needs it too.
+
 `dompurify` is consequently a normal caret range. It was pinned to an exact
 version until the browser project existed, which is what kept five advisories
 open.
