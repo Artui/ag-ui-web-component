@@ -77,7 +77,7 @@
     "esbuild": "^0.28.1",
     "happy-dom": "^20.11.1",
     "playwright": "^1.62.1",
-    "typescript": "^5.7.0",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
   "packageManager": "pnpm@11.2.2"

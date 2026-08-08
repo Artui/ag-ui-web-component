@@ -44,6 +44,12 @@ The AG-UI stack design doc (`django-ag-ui-plan.md`) lives in the private ecosyst
 | `make lint` | `biome check .` + `tsc --noEmit` |
 | `make format` | `biome format --write .` |
 | `make build` | esbuild bundle + `tsc` declarations into `dist/` |
+
+`tsconfig.build.json` sets `rootDir: "./src"` explicitly: TypeScript 7 no longer
+infers it from the common source directory (TS5011). It is the value 5.x
+inferred, so the published layout stays `dist/index.d.ts` rather than
+`dist/src/index.d.ts`. The tsconfigs carry no comments — pre-commit's
+`check-json` parses them as strict JSON, not JSONC.
 | `make release-bump VERSION=X.Y.Z` | rewrite `src/version.ts` + `package.json` + CHANGELOG |
 | `make release-publish` | end-to-end workstation release |
 
