@@ -229,6 +229,23 @@ describe("AgUiChat — attachments", () => {
     expect(shadow(el).querySelector(".attachment-chip")).toBeNull();
   });
 
+  it("the paperclip button opens the hidden file input", () => {
+    // The button is the only way to reach the picker with a keyboard or a
+    // click; the input itself is permanently hidden.
+    const { el } = mount();
+    const input = shadow(el).querySelector<HTMLInputElement>(".attach-input");
+    const button = shadow(el).querySelector<HTMLButtonElement>(".attach-btn");
+    if (input == null || button == null) {
+      throw new Error("no attach control");
+    }
+    let opened = 0;
+    input.click = () => {
+      opened += 1;
+    };
+    button.click();
+    expect(opened).toBe(1);
+  });
+
   it("queues files picked through the hidden input and resets it", () => {
     const { el } = mount();
     const input = shadow(el).querySelector<HTMLInputElement>(".attach-input");

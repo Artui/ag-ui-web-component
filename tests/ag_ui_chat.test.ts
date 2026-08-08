@@ -1233,6 +1233,10 @@ describe("AgUiChat", () => {
       { id: "3", role: "assistant", content: "" }, // empty → skipped
       { id: "4", role: "tool", content: "tool out", toolCallId: "x" }, // no matching card → skipped
       { id: "5", role: "assistant" }, // no content → skipped
+      // A role the transcript renders nothing for. A stored history can carry
+      // one (a system prompt, a future protocol role); it must fall off the end
+      // of the dispatch quietly rather than throw or render a stray bubble.
+      { id: "6", role: "system", content: "you are helpful" },
     ] as never);
 
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;

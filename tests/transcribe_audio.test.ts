@@ -61,6 +61,18 @@ describe("transcribeAudio", () => {
     );
   });
 
+  it("falls back to the status code when the error field is not a string", async () => {
+    // A well-formed JSON error body whose `error` is a nested object — DRF's
+    // own validation-error shape. Only a string is safe to surface verbatim.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ error: { audio: ["too large"] } }, false, 400)),
+    );
+    await expect(transcribeAudio(new Blob(["x"]), { url: "/agent/transcribe/" })).rejects.toThrow(
+      "transcription failed (400)",
+    );
+  });
+
   it("rejects when the success body has no text field", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ nope: 1 })));
     await expect(transcribeAudio(new Blob(["x"]), { url: "/agent/transcribe/" })).rejects.toThrow(

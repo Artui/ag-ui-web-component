@@ -40,7 +40,8 @@ describe("VoiceInput", () => {
     await flush();
     // A clip was handed to the transcriber, the text delivered, button back to idle.
     expect(transcribe).toHaveBeenCalledOnce();
-    expect((transcribe.mock.calls[0]?.[0] as Blob).type).toBe("audio/webm");
+    const clip = transcribe.mock.calls[0]?.[0] as Blob | undefined;
+    expect(clip?.type).toBe("audio/webm");
     expect(got).toEqual(["transcribed words"]);
     expect(voice.element.dataset["state"]).toBe("idle");
     expect(voice.element.getAttribute("aria-pressed")).toBe("false");

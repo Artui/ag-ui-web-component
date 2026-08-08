@@ -92,7 +92,7 @@ export class RemoteConversationStore implements ClientConversationStore {
   }
 
   async loadMessages(threadId: string): Promise<readonly Message[] | null> {
-    const response = await this.#get(this.#url + encodeURIComponent(threadId) + "/");
+    const response = await this.#get(`${this.#url}${encodeURIComponent(threadId)}/`);
     if (response === null || !response.ok) {
       return this.#local.loadMessages(threadId);
     }
@@ -156,7 +156,7 @@ export class RemoteConversationStore implements ClientConversationStore {
   ): Promise<void> {
     const headers = this.#headers();
     try {
-      await fetch(this.#url + encodeURIComponent(threadId) + "/", {
+      await fetch(`${this.#url}${encodeURIComponent(threadId)}/`, {
         method,
         headers: body === undefined ? headers : { ...headers, "content-type": "application/json" },
         body: body === undefined ? null : JSON.stringify(body),
