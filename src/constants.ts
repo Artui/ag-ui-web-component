@@ -66,6 +66,16 @@ export const X_SUMMARY_KEY = "x-summary";
  */
 export const X_NAVIGATES_KEY = "x-navigates";
 
+/**
+ * Name of the built-in tool that re-reads the current page.
+ *
+ * Registered only when a page-map provider is set. Named here because it is
+ * also the documented recovery from a stale page, so the stale-page guard has
+ * to exempt it — refusing the very call that would refresh the agent's view
+ * would be a deadlock.
+ */
+export const READ_PAGE_TOOL = "read_page";
+
 /** Upper bound on frontend tool-call → re-run rounds within one send. */
 export const MAX_TOOL_ROUNDS = 10;
 

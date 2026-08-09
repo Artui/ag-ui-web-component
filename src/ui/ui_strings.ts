@@ -53,6 +53,10 @@ export interface UiStrings {
   historyCompacted: string;
   /** Notice shown when the agent loads an agent skill. Token: `{name}`. */
   usingSkill: string;
+  /** Notice shown on mount when the previous run never produced a response. */
+  runInterrupted: string;
+  /** Tool-result content (and card text) when the page moved mid-run. */
+  pageMoved: string;
 
   // ── Composer ────────────────────────────────────────────────────────────────
   /** `aria-label` of the message textarea. */
@@ -201,6 +205,9 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   navigating: "Navigating…",
   historyCompacted: "Earlier turns condensed to fit the context window ({count} removed)",
   usingSkill: "Using skill {name}",
+  runInterrupted: "The previous response didn’t finish — the page changed before it arrived.",
+  pageMoved:
+    "The page changed since you last looked at it. Call read_page to see the current page, then retry.",
   skillNeeds: "“{title}” needs: {fields}",
 
   message: "Message",

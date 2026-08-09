@@ -648,12 +648,23 @@ chat.routeMap = [
 
 **`getPageMap(): PageMap`** — a per-run provider returning the current page's compact actionable
 surface (field names/types/labels, button labels+handles — *not* values). It is auto-injected into
-each run's `context` as a `page_map` entry (toggle with `autoInjectPageMap`). Recomputed every run
-so it reflects the page the agent is currently looking at:
+each run's `context` as a `page_map` entry (toggle with `autoInjectPageMap`):
 
 ```js
 chat.getPageMap = () => ({ fields: introspectForm(), buttons: visibleButtons() });
 ```
+
+It is recomputed at the top of **every tool round**, not once per `send()` — so after the agent
+acts, the next round already sees the resulting page. Within a round the agent can pull a fresh
+view at any time with the built-in `read_page` tool, which is registered whenever this provider is
+set.
+
+That leaves one window: the page can move *after* a round's context was built but *before* the
+agent's tool call arrives — the user clicks a link, or presses back. Calls landing in that window
+are **refused** with a result telling the agent to call `read_page` and retry. Most would have
+missed anyway; the guard exists for the case where a same-named control on the new page matches and
+the agent would otherwise act on the wrong page without either side noticing. `read_page` and tools
+marked `x-navigates` are exempt, and the guard is inert when no `getPageMap` is set.
 
 **`registerPageState({ name, read, write?, schema? })`** — ergonomic sugar over `registerTool` for
 SPA app state (Redux/Zustand/signals). It auto-generates a `read_<name>` (read-only) tool and, when
