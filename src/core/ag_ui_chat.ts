@@ -4,6 +4,7 @@ import {
   DEFAULT_ATTACHMENT_MAX_BYTES,
   LOAD_CAPABILITY_TOOL,
   MESSAGE_ROLE,
+  READ_PAGE_TOOL,
   STATE_EVENT,
   SUBMIT_EVENT,
   TOGGLE_EVENT,
@@ -339,6 +340,10 @@ export class AgUiChat extends HTMLElement {
   // the Send⇄Stop button: `agent.isRunning` is false between frontend-tool
   // rounds, but the user must still be able to stop there.
   #running = false;
+  // The page the current round's context describes, captured when that context
+  // was built. `null` until the first round. Compared in `#executeTool` to
+  // catch a page that moved under a round still in flight.
+  #contextHref: string | null = null;
   // Aborting this dismisses (declines) an open confirmation card when the run
   // is cancelled while the card awaits a decision. One controller per card.
   #confirmAbort: AbortController | null = null;
@@ -461,7 +466,7 @@ export class AgUiChat extends HTMLElement {
       agent,
       handlers: this.#handlers(),
       getTools: () => this.getTools(),
-      getContext: () => this.getContext(),
+      getContext: () => this.#buildContext(),
       executeTool: (call) => this.#executeTool(call),
       resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
       connectionLostMessage: this.#strings.connectionLost,
@@ -555,7 +560,7 @@ export class AgUiChat extends HTMLElement {
     }
     return [
       {
-        name: "read_page",
+        name: READ_PAGE_TOOL,
         description:
           "Read the current page's structure (fields, buttons, route). Call after " +
           "acting to observe the result within the same turn.",
@@ -1181,7 +1186,62 @@ export class AgUiChat extends HTMLElement {
     const checkpoint = this.conversationStore.loadCheckpoint(this.#threadId);
     if (checkpoint !== null) {
       await this.#resumeFrom(checkpoint);
+      return;
     }
+    this.#noticeIfRunUnfinished(messages);
+  }
+
+  /**
+   * Notice a previous run that never produced a response.
+   *
+   * {@link AgUiClient.send} persists the user's message *before* starting the
+   * run, so a transcript whose last entry is that user message means nothing
+   * ever came back: the page navigated or reloaded mid-run, the tab closed, or
+   * the process died. No extra persistence is needed to detect it — the shape
+   * of the transcript already says so, which is why this needs no
+   * {@link ClientConversationStore} method and no `pagehide` listener (neither
+   * of which fires on a crash or a force-quit anyway).
+   *
+   * The *agent*-initiated reload is not this case: a navigating tool leaves a
+   * checkpoint and resumes, which is why the caller returns early on one before
+   * reaching here.
+   *
+   * Deliberately a notice and never a resume. AG-UI has no
+   * resume-an-aborted-run primitive; re-sending the accumulated messages is
+   * semantically a **new** run, so any server-side tool the agent had already
+   * executed before the interruption would run a second time. Saying plainly
+   * that the answer was lost is the honest option, and the user can re-ask.
+   */
+  /**
+   * Build a round's context, recording which page it describes.
+   *
+   * The AG-UI client re-invokes this at the top of **every** tool round, not
+   * once per `send()`, so the page map the agent sees is already refreshed
+   * between rounds and the href captured here is the page it was shown for
+   * *this* round. {@link #executeTool} compares against it to catch a page that
+   * moved under a round still in flight.
+   */
+  #buildContext(): Context[] {
+    this.#contextHref = window.location.href;
+    return this.getContext();
+  }
+
+  /**
+   * Whether the page moved since the current round's context was built.
+   *
+   * `null` means no round has built context yet (nothing to compare), which is
+   * not a move.
+   */
+  #pageMoved(): boolean {
+    return this.#contextHref !== null && this.#contextHref !== window.location.href;
+  }
+
+  #noticeIfRunUnfinished(messages: readonly Message[] | null): void {
+    const last = messages?.at(-1);
+    if (last === undefined || last.role !== MESSAGE_ROLE.USER) {
+      return;
+    }
+    this.#appendNotice("⚠", this.#strings.runInterrupted, "interrupted");
   }
 
   /**
@@ -1647,7 +1707,7 @@ export class AgUiChat extends HTMLElement {
         agent,
         handlers: this.#handlers(),
         getTools: () => this.getTools(),
-        getContext: () => this.getContext(),
+        getContext: () => this.#buildContext(),
         executeTool: (call) => this.#executeTool(call),
         resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
         onPersist: (messages) => this.conversationStore.saveMessages(this.#threadId, messages),
@@ -1703,6 +1763,29 @@ export class AgUiChat extends HTMLElement {
         card.settle(TOOL_CALL_STATUS.DONE, this.#strings.noResult);
       }
       return null;
+    }
+    // The page moved under this round. Acting now would target whatever
+    // happens to match on the *new* page — usually nothing, which the handler
+    // would report as a miss anyway, but occasionally a same-named control that
+    // matches silently. That last case is the one worth preventing: it is the
+    // only way the agent acts on the wrong page without either side noticing.
+    //
+    // Placed before the confirmation prompt so the user is never asked to
+    // approve an action that is about to be refused. Navigating tools are
+    // exempt (moving the page is their job — including re-navigating after a
+    // move), as is `read_page`, which is the documented recovery. Gated on a
+    // page-map provider: without one there is no `read_page` to recommend and
+    // the host's tools are not page-scoped in the first place.
+    if (
+      this.getPageMap !== null &&
+      call.name !== READ_PAGE_TOOL &&
+      !isNavigates(tool.parameters) &&
+      this.#pageMoved()
+    ) {
+      const message = this.#strings.pageMoved;
+      card.settle(TOOL_CALL_STATUS.ERROR, message);
+      this.#showPending();
+      return { content: `Error: ${message}`, error: message };
     }
     if (await this.#needsConfirmation(call, tool)) {
       const request: ConfirmationRequest = { toolName: call.name, args: call.args };

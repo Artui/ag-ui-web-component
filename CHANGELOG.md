@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A stale-page guard on frontend tool calls.** A round's context records the
+  page it describes; if the page moves before the agent's tool call arrives, the
+  call is refused with a result telling the agent to call `read_page` and retry,
+  instead of running the handler. Most stale calls would simply miss and report
+  a failure — the case this prevents is the other one, where a same-named
+  control on the *new* page matches and the agent silently acts on the wrong
+  page. `read_page` itself and tools marked `x-navigates` are exempt, and the
+  guard is inert unless a `getPageMap` provider is set.
+- **New `UiStrings` keys `runInterrupted` and `pageMoved`**, both overridable
+  like every other string.
+
 ### Changed
 
 - **Toolchain majors: Vitest 3 → 4 and TypeScript 5.9 → 7**, plus `marked`
@@ -24,6 +37,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so the published layout is unchanged.
 
 ### Fixed
+
+- **A run interrupted by navigation no longer vanishes silently.** If the page
+  navigates or reloads while a run is in flight — routine in an MPA — the
+  element is destroyed with it, and on the next mount the transcript replayed
+  with the answer simply missing and no indication anything had gone wrong. The
+  element now reports it as an inline notice. Detected from the shape of the
+  transcript (`send()` persists the user turn *before* starting the run, so a
+  history ending on that turn means nothing came back), which is why it needs no
+  `ClientConversationStore` change and no `pagehide` listener — neither of which
+  would fire on a crash or a force-quit anyway.
+
+  It is deliberately **a notice, not a resume**: AG-UI has no
+  resume-an-aborted-run primitive, so re-sending the accumulated messages is
+  semantically a new run and would re-execute any server-side tool the agent had
+  already performed. The agent-initiated case is unaffected — a navigating tool
+  still checkpoints and resumes exactly as before.
 
 - **Six branches that were never actually covered.** Vitest 4's v8 provider
   remaps coverage more precisely, and the 100% gate stopped being satisfiable —
