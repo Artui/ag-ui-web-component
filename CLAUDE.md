@@ -93,6 +93,14 @@ inferred, so the published layout stays `dist/index.d.ts` rather than
     inline confirmation card reads it; the registry forwards it verbatim to `RunAgentInput.tools`.
     Don't invent a parallel metadata channel.
 
+## `styles.ts` is a template literal, not a stylesheet
+
+The shadow styles are a single tagged JS template string, so **backticks and
+`${` inside CSS comments terminate it**. The failure is badly misattributed:
+`tsc` reports `TS2349: This expression is not callable` at the *top* of the
+file and a dozen unrelated test files fail, none of them near the edit. Write
+CSS comments in plain prose — no backtick-quoted identifiers.
+
 ## No module-level mutable state
 
 State lives on Custom Element instances (private class fields) — never at module scope. No

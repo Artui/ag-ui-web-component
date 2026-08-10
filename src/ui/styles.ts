@@ -11,6 +11,7 @@ export const STYLES = `
   --ag-ui-user-bg: #4f46e5;
   --ag-ui-user-fg: #ffffff;
   --ag-ui-assistant-bg: #f1f1f6;
+  --ag-ui-hover: #e7e7ee;
   --ag-ui-input-bg: var(--ag-ui-bg);
   --ag-ui-tool-bg: var(--ag-ui-assistant-bg);
   --ag-ui-tool-fg: var(--ag-ui-accent);
@@ -80,6 +81,7 @@ export const STYLES = `
   --ag-ui-bg: #15151f;
   --ag-ui-fg: #e8e8f2;
   --ag-ui-assistant-bg: #25253a;
+  --ag-ui-hover: #303049;
   --ag-ui-header-bg: #1f1f30;
   --ag-ui-header-fg: #e8e8f2;
   --ag-ui-border: #33334a;
@@ -92,6 +94,7 @@ export const STYLES = `
     --ag-ui-bg: #15151f;
     --ag-ui-fg: #e8e8f2;
     --ag-ui-assistant-bg: #25253a;
+    --ag-ui-hover: #303049;
     --ag-ui-header-bg: #1f1f30;
     --ag-ui-header-fg: #e8e8f2;
     --ag-ui-border: #33334a;
@@ -107,6 +110,7 @@ export const STYLES = `
   --ag-ui-accent: #3fb950;
   --ag-ui-user-bg: #238636;
   --ag-ui-assistant-bg: #161b22;
+  --ag-ui-hover: #21262d;
   --ag-ui-header-bg: #010409;
   --ag-ui-header-fg: #c9d1d9;
   --ag-ui-border: #30363d;
@@ -512,6 +516,34 @@ export const STYLES = `
   padding-left: 10px;
   border-left: 3px solid var(--ag-ui-border);
   color: var(--ag-ui-muted);
+}
+
+/* Markdown tables. table/thead/tbody/tr/th/td are all in
+   the sanitizer's ALLOWED_TAGS, so an agent emitting one renders it — and until
+   now rendered it entirely unstyled, overflowing the bubble. A wide table
+   scrolls inside its own box rather than stretching the message: the bubble is
+   width-constrained, so without this the columns either crush or push the
+   layout sideways. */
+.message--assistant table {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.message--assistant th,
+.message--assistant td {
+  padding: 6px 10px;
+  border: 1px solid var(--ag-ui-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.message--assistant th {
+  background: var(--ag-ui-hover);
+  font-weight: 600;
 }
 
 .pending {
@@ -1264,9 +1296,9 @@ export const STYLES = `
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.5rem;
-  border: 1px solid var(--agui-border, #d7d7dc);
+  border: 1px solid var(--ag-ui-border);
   border-radius: 0.5rem;
-  background: var(--agui-surface, #fff);
+  background: var(--ag-ui-assistant-bg);
   box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
   max-height: 60%;
   overflow-y: auto;
@@ -1297,7 +1329,7 @@ export const STYLES = `
 }
 
 .checkpoint-row:hover {
-  background: var(--agui-hover, #f3f3f5);
+  background: var(--ag-ui-hover);
 }
 
 .checkpoint-label {
@@ -1312,7 +1344,7 @@ export const STYLES = `
   font-size: 0.6875rem;
   padding: 0 0.375rem;
   border-radius: 999px;
-  background: var(--agui-hover, #f3f3f5);
+  background: var(--ag-ui-hover);
   opacity: 0.8;
 }
 
@@ -1321,14 +1353,14 @@ export const STYLES = `
   font-size: 0.75rem;
   cursor: pointer;
   padding: 0.125rem 0.5rem;
-  border: 1px solid var(--agui-border, #d7d7dc);
+  border: 1px solid var(--ag-ui-border);
   border-radius: 0.375rem;
   background: transparent;
   color: inherit;
 }
 
 .checkpoint-action:hover {
-  background: var(--agui-hover, #f3f3f5);
+  background: var(--ag-ui-hover);
 }
 
 .drawer-backdrop {

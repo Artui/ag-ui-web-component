@@ -1668,6 +1668,22 @@ export class AgUiChat extends HTMLElement {
       bubble.appendChild(renderAttachmentChips(attachments));
     }
     this.#input.value = "";
+    // A file still uploading does not ride along — `readyRefs()` returns only
+    // settled ones, and `clearReady()` deliberately keeps the rest for a
+    // follow-up. Nothing said so, which is the whole defect: attachments are
+    // frequently the entire point of the message, and the user had no way to
+    // tell theirs had been left behind. Say it before dropping the chips,
+    // while `hasPending()` still describes this send.
+    if (this.#attachTray?.hasPending() === true) {
+      this.#appendNotice(
+        "\u{1F4CE}",
+        this.#strings.attachmentsStillUploading.replace(
+          "{n}",
+          String(this.#attachTray.pendingCount()),
+        ),
+        "attachment-pending",
+      );
+    }
     // The refs are now on the bubble; drop the settled chips, keep any still
     // uploading for a follow-up message.
     this.#attachTray?.clearReady();
