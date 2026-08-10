@@ -26,6 +26,8 @@ export class CheckpointMenu {
   readonly #onPick: (runId: string, verb: CheckpointVerb) => void;
   readonly #list: HTMLDivElement;
   readonly #heading: HTMLSpanElement;
+  /** What had focus before the panel opened, restored on close. */
+  #lastFocused: HTMLElement | null = null;
   #strings: UiStrings;
   #runs: readonly RunRow[] = [];
 
@@ -41,6 +43,10 @@ export class CheckpointMenu {
     this.element.setAttribute("part", "checkpoints");
     this.element.setAttribute("role", "dialog");
     this.element.setAttribute("aria-label", strings.checkpoints);
+    // Focusable as a fallback: with no continuable runs the panel holds no
+    // controls at all, and a dialog that cannot take focus strands the
+    // keyboard user outside it with no way back except Tab-ing blind.
+    this.element.tabIndex = -1;
     this.element.hidden = true;
 
     const header = document.createElement("div");
@@ -57,12 +63,7 @@ export class CheckpointMenu {
     this.#list.setAttribute("part", "checkpoints-list");
 
     this.element.append(header, this.#list);
-    this.element.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        this.close();
-      }
-    });
+    this.element.addEventListener("keydown", (event) => this.#onKeydown(event));
   }
 
   /** Replace the rows. The host passes only `continuable` runs. */
@@ -80,11 +81,61 @@ export class CheckpointMenu {
   }
 
   open(): void {
+    if (this.open_) {
+      return;
+    }
+    // Remember what had focus so it is restored on close, then move focus into
+    // the panel so a keyboard user lands inside the dialog rather than being
+    // left behind it. The thread drawer already does this; a dialog that takes
+    // no focus is one a keyboard user cannot reach and a screen reader does not
+    // announce, however correct its role and label.
+    this.#lastFocused = this.#activeElement() as HTMLElement | null;
     this.element.hidden = false;
+    (this.#focusables()[0] ?? this.element).focus();
   }
 
   close(): void {
+    if (!this.open_) {
+      return;
+    }
     this.element.hidden = true;
+    this.#lastFocused?.focus();
+    this.#lastFocused = null;
+  }
+
+  /** The focused element within this panel's root (shadow-aware). */
+  #activeElement(): Element | null {
+    return (this.element.getRootNode() as Document | ShadowRoot).activeElement;
+  }
+
+  /** The panel's tabbable controls, in document order. */
+  #focusables(): HTMLElement[] {
+    return Array.from(this.element.querySelectorAll<HTMLElement>("button, [tabindex]")).filter(
+      (el) => !el.hidden,
+    );
+  }
+
+  /** Escape closes; Tab is trapped so focus cannot wander behind the dialog. */
+  #onKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      this.close();
+      return;
+    }
+    if (event.key !== "Tab") {
+      return;
+    }
+    const focusables = this.#focusables();
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = this.#activeElement();
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first?.focus();
+    }
   }
 
   get open_(): boolean {

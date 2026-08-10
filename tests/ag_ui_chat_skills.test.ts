@@ -146,3 +146,24 @@ describe("AgUiChat skills", () => {
     expect(shadow(el).querySelectorAll(".skill-chip")).toHaveLength(0);
   });
 });
+
+describe("opt-in flag attributes", () => {
+  it("treats a bare data-prompt-chips as on", () => {
+    // Written bare — the spelling every native boolean attribute uses — these
+    // were compared against the string "true", so the attribute silently
+    // disabled the feature it names, with nothing to say why.
+    const el = mount({ "data-skills": embed([SUM]), "data-prompt-chips": "" });
+    expect(shadow(el).querySelectorAll(".skill-chip")).toHaveLength(1);
+  });
+
+  it("treats a bare data-slash-commands as on", () => {
+    const el = mount({ "data-skills": embed([SUM]), "data-slash-commands": "" });
+    typeQuery(el, "/");
+    expect(shadow(el).querySelectorAll(".skill-item")).toHaveLength(1);
+  });
+
+  it("still honours an explicit false", () => {
+    const el = mount({ "data-skills": embed([SUM]), "data-prompt-chips": "false" });
+    expect(shadow(el).querySelectorAll(".skill-chip")).toHaveLength(0);
+  });
+});
