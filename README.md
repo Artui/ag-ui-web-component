@@ -194,8 +194,35 @@ labels are fetched automatically — per card, `x-summary` → an explicit
 
 **Properties** (selected): `sharedState` — AG-UI shared state (documented under Tools & state).
 
-**Methods**: `registerTool`, `registerPageState`, `setSkills`, `appendMessage`, `newChat`,
-`setCollapsed`, `toggleCollapsed`.
+**Methods**: `registerTool`, `registerPageState`, `setSkills`, `sendMessage`, `attachFile`,
+`appendMessage`, `newChat`, `setCollapsed`, `toggleCollapsed`.
+
+### Sending from your own UI
+
+`sendMessage(content, attachments?)` sends as if the user had typed it — user bubble,
+`ag-ui-submit` event, run started. Use it for an "Ask about this order" button, a command
+palette, or a composer of your own replacing the built-in one. It no-ops while a run is in
+flight and for an entirely empty message, and unlike the built-in Send it does **not** consult
+the attachment tray: what you pass is what is sent, so your composer stays in charge of its
+own state.
+
+`attachFile(file)` queues a file into the tray exactly as the picker and drag-and-drop do, with
+the same validation and progress chip. It returns `false` when uploads are not configured
+(no `data-attachments-url` and no `uploadHandler`) — the only way to tell, since with no tray
+there is nothing to report through.
+
+Uploading is asynchronous, so watch `ag-ui-attachments` for the result. Its `detail` carries
+`{ attachments, pending }`: the durable refs of everything that has finished, and how many are
+still in flight. Send once `pending` is `0`, or you will leave files behind.
+
+```js
+chat.addEventListener("ag-ui-attachments", (e) => {
+  const { attachments, pending } = e.detail;
+  sendButton.disabled = pending > 0;
+  sendButton.onclick = () => chat.sendMessage(input.value, attachments);
+});
+chat.attachFile(fileInput.files[0]);
+```
 
 A self-contained live playground lives in [`demo/`](demo/) — run `make demo` to serve it against a
 mock AG-UI server.

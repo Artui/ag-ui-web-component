@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`sendMessage(content, attachments?)`** — send as if the user had typed it:
+  user bubble, `ag-ui-submit`, run started. The programmatic half of the
+  composer, for an "Ask about this order" button, a command palette, or a
+  composer of your own replacing the built-in one. The built-in Send now reads
+  the composer, clears it, and calls this, so the two paths cannot drift.
+
+  It no-ops while a run is in flight — a second concurrent run would orphan the
+  first — and for an entirely empty message. ⚠ Unlike the built-in Send it does
+  **not** consult the attachment tray: what you pass is what is sent, so a host
+  composer stays in charge of its own state.
+
+- **`attachFile(file)`** — queue a file into the tray exactly as the picker and
+  drag-and-drop do, with the same validation and progress chip. Returns `false`
+  when uploads are not configured (no `data-attachments-url`, no
+  `uploadHandler`), which is the only way for a host to tell: with no tray there
+  is nothing to report through, and silence would read as a queued file that
+  never uploads.
+
+- **`ag-ui-attachments` event**, dispatched whenever the tray changes — a file
+  queued, an upload finishing or failing, a chip removed, the tray cleared after
+  a send. `detail` carries `{ attachments, pending }`: the durable refs of
+  everything settled, and how many are still in flight.
+
+  ⭐ **This is what makes `sendMessage` usable with files at all.** The tray only
+  ever spoke to the built-in Send button, so a host composer had no way to tell a
+  settled upload from one still uploading — the same information the built-in
+  Send needs, which was simply not exposed. The tray's `onChange` hook already
+  existed and nothing was wired to it.
+
+### Changed
+
+- **Assigning a connect-time-only attribute after the element has connected now
+  warns**, instead of being silently ignored: `data-attachments-url`,
+  `data-attachment-accept`, `data-attachment-max-bytes`, `data-transcribe-url`,
+  `data-threads-url`, `data-tools-url`, `data-skills-url`, `data-skills`,
+  `data-prompt-chips`, `data-slash-commands`, `data-theme-toggle`,
+  `data-strings`, `data-icon-url`.
+
+  Each is read once while connecting, to decide what chrome exists at all, and
+  no later read revisits the decision. ⚠ **The symptom is an affordance that
+  simply never appears** — which reads as a broken component rather than a
+  mis-timed assignment, and it is the common React/Vue shape: the element mounts
+  on the first render pass and the framework patches attributes in on the next.
+
+  Set them before the element enters the DOM, or remove and re-insert it to
+  apply a new value. ⭐ The attributes that genuinely *are* re-read per use —
+  `data-runs-url`, `data-page-actions`, `data-text-animation`,
+  `data-tool-display`, `endpoint`, and CSS-reactive `theme` / `collapsed` — are
+  deliberately excluded, since a late change works there and a warning would be
+  wrong.
+
 ### Fixed
 
 - **The checkpoint panel now follows the theme.** Its rules read `--agui-surface`
