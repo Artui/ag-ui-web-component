@@ -102,6 +102,11 @@ export class AttachmentTray {
     return this.#items.some((item) => item.status === ATTACHMENT_STATUS.UPLOADING);
   }
 
+  /** How many chips are still uploading — the count a send-time notice names. */
+  pendingCount(): number {
+    return this.#items.filter((item) => item.status === ATTACHMENT_STATUS.UPLOADING).length;
+  }
+
   /** Whether the tray holds no chips. */
   isEmpty(): boolean {
     return this.#items.length === 0;

@@ -57,6 +57,8 @@ export interface UiStrings {
   runInterrupted: string;
   /** Tool-result content (and card text) when the page moved mid-run. */
   pageMoved: string;
+  /** Notice when Send ran while a file was still uploading. Token: `{n}`. */
+  attachmentsStillUploading: string;
 
   // ── Composer ────────────────────────────────────────────────────────────────
   /** `aria-label` of the message textarea. */
@@ -208,6 +210,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   runInterrupted: "The previous response didn’t finish — the page changed before it arrived.",
   pageMoved:
     "The page changed since you last looked at it. Call read_page to see the current page, then retry.",
+  attachmentsStillUploading:
+    "{n} file still uploading — it was not sent with this message and is still attached.",
   skillNeeds: "“{title}” needs: {fields}",
 
   message: "Message",

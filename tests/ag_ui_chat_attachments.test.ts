@@ -320,4 +320,57 @@ describe("AgUiChat — attachments", () => {
     el.remove(); // disconnectedCallback → tray.dispose → abort the upload XHR
     expect(xhr.last().aborted).toBe(true);
   });
+
+  it("says so when Send runs while a file is still uploading", async () => {
+    // `readyRefs()` returns only settled uploads and `clearReady()` deliberately
+    // keeps the rest for a follow-up, so the file is not lost — but the message
+    // went without it, and nothing said so. Attachments are frequently the
+    // entire point of the message, which is what made the silence the defect.
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.uploadHandler = () => new Promise(() => {}); // never settles: stays uploading
+    el.agentFactory = () => makeFakeAgent({ script: (emit: Emit) => emit.runEnd() }).agent;
+    document.body.appendChild(el);
+
+    drop(el, [file()]);
+    await flush();
+    expect(shadow(el).querySelector(".attachment-chip--ready")).toBeNull();
+
+    const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
+    if (input === null) {
+      throw new Error("expected an input");
+    }
+    input.value = "here is the file";
+    shadow(el).querySelector<HTMLButtonElement>(".send")?.click();
+    await flush();
+
+    const notice = shadow(el).querySelector(".run-notice--attachment-pending");
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent).toContain("1");
+    // Still attached, ready for a follow-up — the notice reports, it does not discard.
+    expect(shadow(el).querySelectorAll(".attachment-chip")).toHaveLength(1);
+  });
+
+  it("stays quiet when every attachment settled before Send", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.uploadHandler = (f, onProgress) => {
+      onProgress(1);
+      return Promise.resolve({ id: "a1", name: f.name, mime: f.type, size: f.size });
+    };
+    el.agentFactory = () => makeFakeAgent({ script: (emit: Emit) => emit.runEnd() }).agent;
+    document.body.appendChild(el);
+
+    drop(el, [file()]);
+    await flush();
+    const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
+    if (input === null) {
+      throw new Error("expected an input");
+    }
+    input.value = "here is the file";
+    shadow(el).querySelector<HTMLButtonElement>(".send")?.click();
+    await flush();
+
+    expect(shadow(el).querySelector(".run-notice--attachment-pending")).toBeNull();
+  });
 });

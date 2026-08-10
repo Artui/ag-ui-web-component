@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sending while a file is still uploading now says so.** `readyRefs()` returns
+  only settled uploads and `clearReady()` deliberately keeps the rest for a
+  follow-up message — so the file was never lost, but the message went without
+  it and nothing indicated that. Attachments are frequently the entire point of
+  the message, which is what made the silence the defect. An inline notice now
+  names how many are still uploading and that they remain attached.
+
+  Send is deliberately **not** disabled while uploads are pending: that would
+  fight the tray's documented "keep for a follow-up" behaviour and could wedge
+  on an upload that never settles.
+
 ## [0.16.0] — 2026-08-09
 
 ### Added
