@@ -48,6 +48,7 @@ export class CheckpointMenu {
     header.setAttribute("part", "checkpoints-header");
     this.#heading = document.createElement("span");
     this.#heading.className = "checkpoints-title";
+    this.#heading.setAttribute("part", "checkpoints-title");
     this.#heading.textContent = strings.checkpoints;
     header.append(this.#heading);
 
@@ -112,6 +113,7 @@ export class CheckpointMenu {
 
     const label = document.createElement("span");
     label.className = "checkpoint-label";
+    label.setAttribute("part", "checkpoint-label");
     // A run id is opaque to a person, so the time is the identifying detail;
     // the id rides `title` for anyone who needs to correlate with server logs.
     label.textContent =

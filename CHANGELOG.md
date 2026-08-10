@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The checkpoint panel now follows the theme.** Its rules read `--agui-surface`
+  / `--agui-border` / `--agui-hover` — note `--agui-`, not the `--ag-ui-`
+  namespace every other rule uses — each with a hardcoded light-mode fallback.
+  So the panel ignored `theme="dark"` entirely and rendered light-on-dark unless
+  a host happened to set three variables documented nowhere. Now derived from the
+  real theme tokens, with a new theme-aware `--ag-ui-hover` defined in every
+  theme block. ⭐ The fallbacks are what hid it: they made an unthemed panel look
+  deliberate.
+
+  `checkpoints-title` and `checkpoint-label` also gain `part` attributes — they
+  carried classes only, so neither could be styled from outside the shadow root.
+
+- **Markdown tables are styled.** `table` / `thead` / `tbody` / `tr` / `th` /
+  `td` are all in the sanitizer's `ALLOWED_TAGS`, so an agent emitting a table
+  rendered it — completely unstyled, overflowing its bubble. Wide tables now
+  scroll inside their own box rather than pushing the layout sideways.
+
 - **Sending while a file is still uploading now says so.** `readyRefs()` returns
   only settled uploads and `clearReady()` deliberately keeps the rest for a
   follow-up message — so the file was never lost, but the message went without
