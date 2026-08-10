@@ -1,5 +1,6 @@
 import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
 import {
+  ATTACHMENT_EVENT,
   COMPACTION_ACTIVITY_TYPE,
   DEFAULT_ATTACHMENT_MAX_BYTES,
   LOAD_CAPABILITY_TOOL,
@@ -78,6 +79,14 @@ export interface SubmitDetail {
   readonly attachments: readonly AttachmentRef[];
 }
 
+/** `detail` shape of the {@link ATTACHMENT_EVENT} CustomEvent. */
+export interface AttachmentsDetail {
+  /** Durable refs for every file that has finished uploading. */
+  readonly attachments: readonly AttachmentRef[];
+  /** How many files are still uploading; a send now would leave these behind. */
+  readonly pending: number;
+}
+
 /** `detail` shape of the {@link STATE_EVENT} CustomEvent. */
 export interface StateDetail {
   readonly state: Readonly<Record<string, unknown>>;
@@ -87,6 +96,35 @@ export interface StateDetail {
 export interface ToggleDetail {
   readonly collapsed: boolean;
 }
+
+/**
+ * Attributes read once while connecting, to decide what chrome exists at all.
+ *
+ * Changing one afterwards is silently ignored: the tray, the mic, the skills
+ * menu and the header icon are built (or not) during connect, and no later read
+ * revisits the decision. Observed only so the element can say so — see
+ * `attributeChangedCallback`.
+ *
+ * Deliberately excludes the attributes that *are* re-read per use, where a late
+ * change works and a warning would be wrong: `data-runs-url`,
+ * `data-page-actions`, `data-text-animation`, `data-tool-display`, `endpoint`,
+ * and the CSS-reactive `theme` / `collapsed`.
+ */
+const CONNECT_TIME_ATTRIBUTES = [
+  "data-attachments-url",
+  "data-attachment-accept",
+  "data-attachment-max-bytes",
+  "data-transcribe-url",
+  "data-threads-url",
+  "data-tools-url",
+  "data-skills-url",
+  "data-skills",
+  "data-prompt-chips",
+  "data-slash-commands",
+  "data-theme-toggle",
+  "data-strings",
+  "data-icon-url",
+] as const;
 
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
@@ -328,6 +366,9 @@ export class AgUiChat extends HTMLElement {
   readonly #voiceSlot: HTMLSpanElement;
   /** Voice-input control; created on connect when transcription is available. */
   #voice: VoiceInput | null = null;
+  /** Whether the element is currently in the DOM; gates the connect-time warning. */
+  #connected = false;
+
   /** Refs attached to the message currently being sent (the context manifest). */
   #runAttachments: readonly AttachmentRef[] = [];
 
@@ -480,16 +521,36 @@ export class AgUiChat extends HTMLElement {
     this.#checkpoints.setRuns(index === null ? [] : await index.continuable());
   }
 
-  /** Attributes whose late changes must reflect in already-rendered chrome. */
+  /** Attributes the element reacts to after it has been connected. */
   static get observedAttributes(): string[] {
-    return ["title-text"];
+    return ["title-text", ...CONNECT_TIME_ATTRIBUTES];
   }
 
-  attributeChangedCallback(_name: string, _previous: string | null, value: string | null): void {
-    // Only `title-text` is observed (other attributes are read at use-time or
-    // are CSS-reactive), so update the header title directly. `#strings` is the
-    // resolved table once connected, the English defaults before then.
-    this.#title.textContent = value ?? this.#strings.title;
+  attributeChangedCallback(name: string, previous: string | null, value: string | null): void {
+    if (name === "title-text") {
+      // `#strings` is the resolved table once connected, the English defaults
+      // before then.
+      this.#title.textContent = value ?? this.#strings.title;
+      return;
+    }
+    // Everything else here is read once, in connectedCallback, to build chrome
+    // that then exists (or does not). Setting it afterwards is silently
+    // ignored, and the symptom is an affordance that simply never appears —
+    // which reads as a broken component rather than a mis-timed assignment.
+    // This is the common React/Vue shape: the element mounts on the first
+    // render pass and the framework patches attributes in on the next one.
+    // Observed purely so this can be said out loud.
+    if (previous === value || !this.#connected) {
+      return;
+    }
+    console.warn(
+      `<ag-ui-chat>: "${name}" was changed after the element connected, and is ` +
+        "read only while connecting — this assignment has no effect. Set it " +
+        "before the element enters the DOM (in the markup, or on the element " +
+        "before appending it); frameworks that patch attributes after mount " +
+        "should bind it at creation. To apply a new value now, remove and " +
+        "re-insert the element.",
+    );
   }
 
   /** Declare a frontend tool the agent may call. */
@@ -751,6 +812,9 @@ export class AgUiChat extends HTMLElement {
     this.#wireVoice();
     this.#threadId = this.conversationStore.threadId();
     void this.#rehydrate();
+    // Last: everything above reads (and some of it sets) attributes, and none
+    // of that should trip the connect-time warning.
+    this.#connected = true;
   }
 
   /**
@@ -762,6 +826,7 @@ export class AgUiChat extends HTMLElement {
    * `MediaRecorder`.
    */
   disconnectedCallback(): void {
+    this.#connected = false;
     this.#cancelRun();
     this.#attachTray?.dispose();
     this.#voice?.dispose();
@@ -798,12 +863,20 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     const accept = this.getAttribute("data-attachment-accept") ?? "";
-    this.#attachTray = new AttachmentTray({
+    // Bound to the local rather than the field: the hook can only fire from a
+    // tray that exists, so passing it removes a null check no caller can reach.
+    const tray: AttachmentTray = new AttachmentTray({
       upload,
       maxBytes: this.#attachmentMaxBytes(),
       accept,
       strings: this.#strings,
+      // The tray's change hook, surfaced to the host as an event. A host
+      // driving its own composer could otherwise not tell a settled upload from
+      // one still in flight, which is the state sendMessage() has to be called
+      // with knowledge of.
+      onChange: () => this.#dispatchAttachments(tray),
     });
+    this.#attachTray = tray;
     this.#attachSlot.appendChild(this.#attachTray.element);
     this.#fileInput.accept = accept;
     this.#attachButton.hidden = false;
@@ -1663,10 +1736,6 @@ export class AgUiChat extends HTMLElement {
     if (content === "" && attachments.length === 0) {
       return;
     }
-    const bubble = this.appendMessage(MESSAGE_ROLE.USER, content);
-    if (attachments.length > 0) {
-      bubble.appendChild(renderAttachmentChips(attachments));
-    }
     this.#input.value = "";
     // A file still uploading does not ride along — `readyRefs()` returns only
     // settled ones, and `clearReady()` deliberately keeps the rest for a
@@ -1684,9 +1753,38 @@ export class AgUiChat extends HTMLElement {
         "attachment-pending",
       );
     }
-    // The refs are now on the bubble; drop the settled chips, keep any still
-    // uploading for a follow-up message.
+    // The refs ride the message from here; drop the settled chips, keep any
+    // still uploading for a follow-up message.
     this.#attachTray?.clearReady();
+    await this.sendMessage(content, attachments);
+  }
+
+  /**
+   * Send a message as if the user had typed it — renders the user bubble,
+   * dispatches {@link SUBMIT_EVENT}, and starts the run.
+   *
+   * The programmatic half of the composer, for a host driving its own input
+   * (a "Ask about this order" button, a command palette, a custom composer
+   * replacing the built-in one). Everything the built-in Send does happens
+   * here; Send itself now reads the composer, clears it, and calls this.
+   *
+   * `attachments` are durable {@link AttachmentRef}s — the shape
+   * {@link attachFile}'s upload resolves to, and the shape
+   * {@link ATTACHMENT_EVENT} reports. Pass them to attach files to the message.
+   *
+   * No-ops while a run is in flight (a second concurrent run would orphan the
+   * first) and for an entirely empty message. Unlike the built-in Send, this
+   * does **not** consult the tray: what you pass is what is sent, so a host
+   * composer stays in charge of its own state.
+   */
+  async sendMessage(content: string, attachments: readonly AttachmentRef[] = []): Promise<void> {
+    if (this.#running || (content === "" && attachments.length === 0)) {
+      return;
+    }
+    const bubble = this.appendMessage(MESSAGE_ROLE.USER, content);
+    if (attachments.length > 0) {
+      bubble.appendChild(renderAttachmentChips(attachments));
+    }
     // Surfaced to the run via the context manifest until the run settles.
     this.#runAttachments = attachments;
     this.dispatchEvent(
@@ -1697,6 +1795,37 @@ export class AgUiChat extends HTMLElement {
       }),
     );
     await this.#client_send(content, attachments);
+  }
+
+  /**
+   * Queue a file for upload into the attachment tray, exactly as the file
+   * picker and drag-and-drop do — validation, progress chip, and all.
+   *
+   * Returns `false` when uploads are not configured (no `data-attachments-url`
+   * and no {@link uploadHandler}), which is the only way for a host to tell;
+   * the tray does not exist to report anything in that case.
+   *
+   * Uploading is asynchronous: watch {@link ATTACHMENT_EVENT} for the resulting
+   * {@link AttachmentRef}, and pass it to {@link sendMessage} once `pending`
+   * reaches zero.
+   */
+  attachFile(file: File): boolean {
+    if (this.#attachTray === null) {
+      return false;
+    }
+    this.#attachTray.add(file);
+    return true;
+  }
+
+  /** Tell the host what the tray now holds — see {@link ATTACHMENT_EVENT}. */
+  #dispatchAttachments(tray: AttachmentTray): void {
+    this.dispatchEvent(
+      new CustomEvent<AttachmentsDetail>(ATTACHMENT_EVENT, {
+        detail: { attachments: tray.readyRefs(), pending: tray.pendingCount() },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   async #client_send(content: string, attachments: readonly AttachmentRef[]): Promise<void> {

@@ -29,6 +29,19 @@ export const TOGGLE_EVENT = "ag-ui-toggle";
  */
 export const STATE_EVENT = "ag-ui-state";
 
+/**
+ * Event dispatched by `<ag-ui-chat>` whenever the attachment tray changes — a
+ * file queued, an upload finishing or failing, a chip removed, the tray
+ * cleared after a send. `detail` carries `{ attachments, pending }`:
+ * the durable refs of everything that has finished uploading, and how many are
+ * still in flight.
+ *
+ * This is the seam for a host that drives its own composer: without it the tray
+ * only ever spoke to the built-in Send button, so a custom send had no way to
+ * know whether a file was ready or still uploading.
+ */
+export const ATTACHMENT_EVENT = "ag-ui-attachments";
+
 /** Roles a chat message can take. */
 export const MESSAGE_ROLE = {
   USER: "user",

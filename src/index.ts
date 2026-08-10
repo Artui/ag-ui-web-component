@@ -1,6 +1,7 @@
 // Public surface re-exports. Per CLAUDE.md, this is the only re-export point.
 
 export {
+  ATTACHMENT_EVENT,
   COMPACTION_ACTIVITY_TYPE,
   ELEMENT_TAG,
   LOAD_CAPABILITY_TOOL,
@@ -18,6 +19,7 @@ export {
 } from "./constants.js";
 export {
   AgUiChat,
+  type AttachmentsDetail,
   type MessageRole,
   type StateDetail,
   type SubmitDetail,
