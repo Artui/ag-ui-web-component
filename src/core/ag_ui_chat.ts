@@ -30,6 +30,7 @@ import {
   type ApprovalRequest,
   requestApproval,
 } from "../ui/approval_card.js";
+import { attachCopyButtons } from "../ui/attach_copy_buttons.js";
 import { renderAttachmentChips } from "../ui/attachment_chips.js";
 import { AttachmentTray } from "../ui/attachment_tray.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/checkpoint_menu.js";
@@ -832,6 +833,23 @@ export class AgUiChat extends HTMLElement {
     this.#voice?.dispose();
   }
 
+  /**
+   * Read an opt-in flag attribute the way HTML reads a boolean attribute.
+   *
+   * Present means on — bare (`data-prompt-chips`), empty
+   * (`data-prompt-chips=""`) or any value except the literal `"false"`. These
+   * were compared against the string `"true"`, so writing the attribute bare —
+   * the spelling every native boolean attribute uses, and the one a reader
+   * reaches for first — silently *disabled* the feature it names, with nothing
+   * to indicate why the chips never appeared.
+   *
+   * `="false"` still turns it off, so an explicit opt-out keeps working.
+   */
+  #flag(name: string): boolean {
+    const value = this.getAttribute(name);
+    return value !== null && value !== "false";
+  }
+
   /** Parse the inline `data-strings` JSON overrides (empty when absent/malformed). */
   #readStringOverrides(): Partial<UiStrings> {
     const raw = this.getAttribute("data-strings");
@@ -1032,8 +1050,8 @@ export class AgUiChat extends HTMLElement {
 
   /** Wire the skill surfaces: opt-in flags, embedded catalog, optional fetch. */
   #initSkills(): void {
-    this.#skillsMenu.enableChips(this.getAttribute("data-prompt-chips") === "true");
-    this.#skillsMenu.enableSlash(this.getAttribute("data-slash-commands") === "true");
+    this.#skillsMenu.enableChips(this.#flag("data-prompt-chips"));
+    this.#skillsMenu.enableSlash(this.#flag("data-slash-commands"));
     this.#embedSkills = this.#readEmbeddedSkills();
     this.#recomputeSkills();
     void this.#fetchSkills();
@@ -1419,6 +1437,9 @@ export class AgUiChat extends HTMLElement {
     bubble.setAttribute("part", `message message-${role}`);
     if (role === MESSAGE_ROLE.ASSISTANT) {
       bubble.innerHTML = renderMarkdown(content, { allowImages: this.allowImages });
+      // A finished bubble: rehydrated history, or a whole message appended at
+      // once. The streaming bubble gets its buttons in onTextEnd instead.
+      attachCopyButtons(bubble, this.#strings);
       this.#ensureGroup().appendChild(bubble);
     } else {
       this.#currentGroup = null;
@@ -2077,6 +2098,7 @@ export class AgUiChat extends HTMLElement {
         if (this.#streamDeltas <= 1) {
           this.#revealWords(bubble);
         }
+        attachCopyButtons(bubble, this.#strings);
         this.#streamingBubble = null;
       },
       onToolCall: (call) => {

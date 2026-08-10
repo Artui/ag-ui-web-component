@@ -150,8 +150,8 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `title-text` | — | Header label; defaults to `"Assistant"`. The only **observed** attribute (live-updates the header). |
 | `data-tool-display` | `toolDisplay` | Tool-call card detail: `inline` / `minimal` / `compact` / `full` (default `full`). |
 | `data-text-animation` | — | Incoming-text reveal: `none` (default) / `fade` / `word`. |
-| `data-prompt-chips` | — | `"true"` to surface skills as chips. |
-| `data-slash-commands` | — | `"true"` to enable the `/`-command palette. |
+| `data-prompt-chips` | — | Present (bare, or any value but `"false"`) to surface skills as chips. |
+| `data-slash-commands` | — | Present (bare, or any value but `"false"`) to enable the `/`-command palette. |
 | `data-skills` | — | Inline JSON skill catalog. |
 | `data-skills-url` | — | URL of a JSON skill catalog (fetched with `headers`). |
 | `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with `headers`; labels tool-call cards for server-side tools. |
@@ -193,6 +193,10 @@ labels are fetched automatically — per card, `x-summary` → an explicit
 `toolSummaries` entry → the fetched catalog → the raw name.
 
 **Properties** (selected): `sharedState` — AG-UI shared state (documented under Tools & state).
+
+Code blocks in an agent's answer carry a **copy button**, revealed on hover or
+keyboard focus and styleable via the `code-copy` part. Override its labels with
+the `copyCode` / `copied` / `copyFailed` strings.
 
 **Methods**: `registerTool`, `registerPageState`, `setSkills`, `sendMessage`, `attachFile`,
 `appendMessage`, `newChat`, `setCollapsed`, `toggleCollapsed`.
@@ -1189,9 +1193,13 @@ This produces, into `dist/`:
   them.
 - `ag-ui-web-component.bundle.js` — the **vendored** ESM bundle, every dependency inlined and
   minified, suitable for direct `<script type="module">` embedding.
-- `ag-ui-web-component.bundle.css` — the extracted CSS sidecar.
 - `index.d.ts` (+ source maps) — type declarations; emitted `.js` import specifiers are preserved
   so consumers resolve types without extra flags.
+
+There is **no CSS file to load**. The styles are a template literal injected into
+the shadow root at construction, so they ship inside the JS and cannot leak into
+the host page. Restyle through the [CSS custom properties](#theming-density-and-placement) and the
+`part` attributes, not a stylesheet override.
 
 Other workflow targets (all identical in name to the sibling Python packages):
 

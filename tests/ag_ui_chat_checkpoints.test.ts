@@ -270,3 +270,84 @@ describe("a resumed run behaves like any other", () => {
     expect(shadow(el).querySelector(".approval")).not.toBeNull();
   });
 });
+
+describe("checkpoint panel focus management", () => {
+  it("moves focus into the panel and restores it on close", async () => {
+    // The thread drawer already did this; the checkpoint panel declared
+    // role="dialog" and took no focus, so a keyboard user was left behind it.
+    const { el } = mount();
+    await flush();
+    const toggle = shadow(el).querySelector<HTMLButtonElement>(".header-btn--checkpoints");
+    toggle?.focus();
+
+    toggle?.click();
+    await flush();
+
+    const panel = shadow(el).querySelector<HTMLElement>(".checkpoints");
+    expect(panel?.hidden).toBe(false);
+    expect(panel?.contains(shadow(el).activeElement)).toBe(true);
+
+    shadow(el)
+      .querySelector<HTMLElement>(".checkpoints")
+      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await flush();
+
+    expect(panel?.hidden).toBe(true);
+    expect(shadow(el).activeElement).toBe(toggle);
+  });
+
+  it("traps Tab inside the panel once it has rows", async () => {
+    // Without the trap, Tab walks out of an open dialog into the transcript
+    // behind it — reachable, invisible, and impossible to get back from.
+    const { el } = mount();
+    await flush();
+    stubRuns([row()]);
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+
+    const panel = shadow(el).querySelector<HTMLElement>(".checkpoints");
+    const buttons = [...(panel?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+    expect(buttons.length).toBeGreaterThan(1);
+
+    buttons[buttons.length - 1]?.focus();
+    panel?.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    expect(shadow(el).activeElement).toBe(buttons[0]);
+
+    buttons[0]?.focus();
+    panel?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }),
+    );
+    expect(shadow(el).activeElement).toBe(buttons[buttons.length - 1]);
+  });
+
+  it("lets Tab move normally in the middle of the panel", async () => {
+    // Only the edges wrap; trapping every Tab would stop a user reaching the
+    // second row at all.
+    const { el } = mount();
+    await flush();
+    stubRuns([row(), row({ run_id: "r2" })]);
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+    const panel = shadow(el).querySelector<HTMLElement>(".checkpoints");
+    const buttons = [...(panel?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+
+    buttons[1]?.focus();
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    panel?.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(shadow(el).activeElement).toBe(buttons[1]);
+  });
+
+  it("ignores other keys", async () => {
+    const { el } = mount();
+    await flush();
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+    const panel = shadow(el).querySelector<HTMLElement>(".checkpoints");
+
+    panel?.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+
+    expect(panel?.hidden).toBe(false);
+  });
+});

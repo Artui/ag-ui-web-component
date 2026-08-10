@@ -168,6 +168,12 @@ export interface UiStrings {
   /** Hours ago. Token: `{n}`. */
   hoursAgo: string;
   /** Title of the checkpoint panel. */
+  /** Label on a code block's copy button. */
+  copyCode: string;
+  /** Shown on the copy button after the code reached the clipboard. */
+  copied: string;
+  /** Shown when the clipboard was unavailable or refused the write. */
+  copyFailed: string;
   checkpoints: string;
   /** Empty state when no run can be continued. */
   noCheckpoints: string;
@@ -191,6 +197,9 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   collapse: "Collapse",
   expand: "Expand",
   toggleTheme: "Toggle theme",
+  copyCode: "Copy",
+  copied: "Copied",
+  copyFailed: "Copy failed",
   checkpoints: "Continue a run",
   noCheckpoints: "Nothing to continue yet.",
   resumeRun: "Resume",

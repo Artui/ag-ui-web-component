@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-08-10
+
+### Added
+
+- **A copy button on code blocks in agent answers.** An agent answering with
+  code is answering with something the reader means to *use*, and selecting it
+  by hand out of a scrolling transcript — inside a shadow root, in a narrow
+  sidebar — was the one interaction the chat surface made harder than the page
+  around it.
+
+  Revealed on hover **and keyboard focus** (hidden-until-hover is invisible to a
+  keyboard user), styleable via the `code-copy` part, with `copyCode` /
+  `copied` / `copyFailed` in `UiStrings`.
+
+  ⚠ **It reports failure rather than always claiming success.** The Clipboard
+  API needs a secure context and is simply absent in some embeddings; a button
+  that always says "Copied" sends the reader off to paste stale clipboard
+  content and find out somewhere else entirely.
+
+### Fixed
+
+- **A bare `data-prompt-chips` or `data-slash-commands` now enables the
+  feature**, instead of silently disabling it. Both were compared against the
+  string `"true"`, so writing the attribute bare — the spelling every native
+  boolean attribute uses, and the one a reader reaches for first — turned off
+  the thing it names, with nothing to indicate why the chips never appeared.
+  `="false"` still turns them off.
+
+- **The checkpoint panel manages focus.** It declared `role="dialog"` and took
+  no focus at all, so a keyboard user was left behind an open dialog; the thread
+  drawer had done this correctly all along. Focus now moves in on open, is
+  restored on close, and Tab is trapped while it is open.
+
+  ⚠ **With no continuable runs the panel holds no controls**, so the panel
+  itself is focusable as the fallback — otherwise "move focus to the first
+  control" silently does nothing in exactly the case where the user has least to
+  go on.
+
+- **The README described a `dist/ag-ui-web-component.bundle.css` that the build
+  has never emitted.** The styles are a template literal injected into the
+  shadow root, so there is no sidecar to load — and a reader looking for the
+  file to override was looking for the wrong seam. Documented as CSS custom
+  properties and `part` attributes instead.
+
 ## [0.17.0] — 2026-08-10
 
 ### Added
@@ -833,7 +877,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.14.1...v0.15.0

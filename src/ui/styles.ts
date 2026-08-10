@@ -512,6 +512,52 @@ export const STYLES = `
   padding: 0;
 }
 
+/* The copy button sits inside the block, so it scrolls with wide code rather
+   than floating over the bubble. Positioning is on the pre; the button only
+   appears once one has been attached. */
+.message--assistant pre.has-copy {
+  position: relative;
+}
+
+.code-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 0.75em;
+  line-height: 1.6;
+  color: var(--ag-ui-muted);
+  background: var(--ag-ui-surface);
+  border: 1px solid var(--ag-ui-border);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+/* Revealed on hover or keyboard focus. Focus matters as much as hover here:
+   hidden-until-hover is invisible to a keyboard user otherwise. */
+.message--assistant pre.has-copy:hover .code-copy,
+.code-copy:focus-visible {
+  opacity: 1;
+}
+
+.code-copy:hover {
+  color: var(--ag-ui-text);
+  background: var(--ag-ui-hover);
+}
+
+.code-copy[data-state="copied"] {
+  opacity: 1;
+  color: var(--ag-ui-text);
+}
+
+.code-copy[data-state="failed"] {
+  opacity: 1;
+  color: var(--ag-ui-danger, var(--ag-ui-text));
+}
+
 .message--assistant blockquote {
   padding-left: 10px;
   border-left: 3px solid var(--ag-ui-border);
