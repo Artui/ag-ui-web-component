@@ -89,6 +89,10 @@ export interface UiStrings {
   toolError: string;
   /** Status pill on a declined call. */
   toolDeclined: string;
+  /** Note on a tool card whose call a human approved. */
+  decisionApproved: string;
+  /** Note on a tool card whose call a human declined. */
+  decisionDeclined: string;
   /** Heading over a tool card's arguments region. */
   argumentsLabel: string;
   /** Heading over a tool card's result region when the call succeeded. */
@@ -239,6 +243,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   toolDone: "✓ done",
   toolError: "⚠ error",
   toolDeclined: "⊘ declined",
+  decisionApproved: "approved by you",
+  decisionDeclined: "declined by you",
   argumentsLabel: "Arguments",
   resultLabel: "Result",
   errorLabel: "Error",

@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A tool card's arguments and its result are now two labelled regions, not one
+  block.** Compact mode emitted `args: {...}` and the result into a single
+  `<pre>` separated by a blank line, with nothing marking where the call ended
+  and the answer began. Both payloads now have their own heading, their own
+  `part` (`tool-card-args` / `tool-card-result`, headings via
+  `tool-card-section-label`, body via `tool-card-body`), and are pretty-printed.
+
+  ⚠ Breaking for anyone styling `tool-card-result` as a single combined block.
+  A call with no arguments no longer renders an empty `{}` in a box of its own.
+
+- ⭐ **`data-tool-display` is now live.** Changing it restyles every card already
+  in the transcript, the way `data-answer-well` always has. The modes are pure
+  visibility over **one DOM shape**, selected by the shadow CSS from the host
+  attribute; previously each card baked its structure at construction from the
+  value read at that moment, so a change reached only cards created afterwards
+  and the setting appeared not to work until the next conversation.
+
+  `ToolCallCard`'s constructor consequently no longer takes a mode argument.
+
+- **The confirmation card leaves once it is answered.** It stayed in the
+  transcript as a spent form with its buttons disabled, which read as an
+  outstanding question rather than a settled one. A prompt and a record are
+  different objects: the record is the tool card it gates, which settles to the
+  outcome and scrolls with the rest of the transcript.
+
+- ⛔ **The confirmation card was appended to the wrong parent**, and it is the
+  reason it drifted to the foot of a turn. Every other inline card — tool,
+  approval, `ask_user`, run notices — goes into the turn's answer group; this
+  one went into the message list, so it became a sibling *after* the group and
+  anything that streamed afterwards rendered above it. It now joins the group
+  like its siblings.
+
+### Added
+
+- **A gated call records the decision.** The tool card carries `approved by you`
+  / `declined by you` (part `tool-card-decision`, attribute `data-decision`).
+  Previously only a *refusal* left a trace — an approved call simply ran, making
+  a gated call's transcript identical to one that was never gated.
+
+- **Each header control takes its own icon slot** — `icon-history`,
+  `icon-checkpoints`, `icon-new`, `icon-collapse` — with the built-in glyph as
+  the fallback, so existing embeds are unchanged. The glyph used to be the
+  button's own `textContent`: a host could restyle a control through its `part`,
+  or swap one character for another with a CSS `content` override, but could
+  never supply a brand `<img>` or `<svg>`.
+
+- **`argumentsLabel`, `decisionApproved` and `decisionDeclined`** in `UiStrings`.
+  `resultLabel` / `errorLabel` / `declinedLabel` are now the result region's
+  heading rather than a toggle label, and `details` labels the toggle in every
+  mode.
+
+### Fixed
+
+- **The demo harness reused message ids**, which produced three symptoms that
+  all read as component bugs and were none of them. It streamed every follow-up
+  answer under a hardcoded id, and `@ag-ui/client` appends to a message id
+  already in its history rather than starting a new one — so repeating a prompt
+  grew a single entry, that entry replayed out of order after a reload (sitting
+  where it was first created, with the later prompts after it), and the
+  unfinished-run notice then fired correctly over the corrupted history. Fresh
+  ids per message, as a real server issues.
+
 ## [0.18.0] — 2026-08-10
 
 ### Added

@@ -1597,7 +1597,12 @@ describe("AgUiChat", () => {
       shadow(el).querySelector<HTMLButtonElement>(".send")?.click(); // Stop
       await flush();
 
-      expect(shadow(el).querySelector(".confirm")?.getAttribute("data-resolved")).toBe("declined");
+      // Stop answers the prompt on the user's behalf, so the prompt leaves;
+      // the tool card it gated carries the outcome.
+      expect(shadow(el).querySelector(".confirm")).toBeNull();
+      expect(shadow(el).querySelector(".tool-call")?.getAttribute("data-decision")).toBe(
+        "declined",
+      );
       expect(handle.abortRuns).toBe(1);
       expect(round).toBe(1); // the declined result did not start another round
       expect(shadow(el).querySelector(".stopped-note")).not.toBeNull();

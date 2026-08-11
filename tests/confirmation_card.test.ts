@@ -22,8 +22,10 @@ describe("requestConfirmation (inline card)", () => {
 
     node.querySelector<HTMLButtonElement>(".confirm-btn--confirm")?.click();
     expect(await decision).toBe(true);
-    expect(card?.getAttribute("data-resolved")).toBe("confirmed");
-    expect(node.querySelector<HTMLButtonElement>(".confirm-btn--confirm")?.disabled).toBe(true);
+    // Answering removes the prompt. The record of what was decided belongs to
+    // the tool card it gates, which stays in the transcript in order; a spent
+    // form left in place read as an outstanding question.
+    expect(node.querySelector(".confirm")).toBeNull();
   });
 
   it("resolves false on cancel and marks the card declined", async () => {
@@ -31,7 +33,7 @@ describe("requestConfirmation (inline card)", () => {
     const decision = requestConfirmation(node, { toolName: "x", args: {} });
     node.querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
     expect(await decision).toBe(false);
-    expect(node.querySelector(".confirm")?.getAttribute("data-resolved")).toBe("declined");
+    expect(node.querySelector(".confirm")).toBeNull();
   });
 
   it("shows a custom x-confirm message when provided", async () => {
@@ -56,8 +58,7 @@ describe("requestConfirmation (inline card)", () => {
     );
     controller.abort(); // the Stop control dismisses the pending card
     expect(await decision).toBe(false);
-    expect(node.querySelector(".confirm")?.getAttribute("data-resolved")).toBe("declined");
-    expect(node.querySelector<HTMLButtonElement>(".confirm-btn--confirm")?.disabled).toBe(true);
+    expect(node.querySelector(".confirm")).toBeNull();
   });
 
   it("a user decision before the abort wins; the late abort does not overwrite it", async () => {
@@ -71,7 +72,7 @@ describe("requestConfirmation (inline card)", () => {
     node.querySelector<HTMLButtonElement>(".confirm-btn--confirm")?.click();
     controller.abort();
     expect(await decision).toBe(true);
-    expect(node.querySelector(".confirm")?.getAttribute("data-resolved")).toBe("confirmed");
+    expect(node.querySelector(".confirm")).toBeNull();
   });
 
   it("an already-aborted signal declines immediately", async () => {
@@ -84,6 +85,12 @@ describe("requestConfirmation (inline card)", () => {
       { signal: controller.signal },
     );
     expect(await decision).toBe(false);
-    expect(node.querySelector(".confirm")?.getAttribute("data-resolved")).toBe("declined");
+    expect(node.querySelector(".confirm")).toBeNull();
+  });
+
+  it("omits the argument block for a call that takes none", () => {
+    const node = host();
+    void requestConfirmation(node, { toolName: "refresh", args: {} });
+    expect(node.querySelector<HTMLElement>(".confirm-args")?.hidden).toBe(true);
   });
 });

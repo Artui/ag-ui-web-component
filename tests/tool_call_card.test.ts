@@ -146,6 +146,28 @@ describe("ToolCallCard", () => {
     ).toBe("Declined");
   });
 
+  it("records a human decision on a gated call", () => {
+    // Approval used to leave no trace: a declined call became a tool result
+    // saying so, while an approved one simply ran, making a gated call's
+    // transcript identical to one that was never gated.
+    const approved = new ToolCallCard("delete_user", { id: 7 });
+    approved.recordDecision("approved");
+    expect(approved.element.getAttribute("data-decision")).toBe("approved");
+    expect(approved.element.querySelector(".tool-call-decision")?.textContent).toBe(
+      "approved by you",
+    );
+
+    const declined = new ToolCallCard("delete_user", { id: 7 });
+    declined.recordDecision("declined");
+    expect(declined.element.getAttribute("data-decision")).toBe("declined");
+  });
+
+  it("carries no decision note on a call nobody was asked about", () => {
+    const card = new ToolCallCard("count_users", {});
+    expect(card.element.querySelector<HTMLElement>(".tool-call-decision")?.hidden).toBe(true);
+    expect(card.element.hasAttribute("data-decision")).toBe(false);
+  });
+
   it("shows the x-summary label instead of the tool name when given", () => {
     const card = new ToolCallCard("query_model", { model: "Order" }, "Query orders");
     expect(card.element.querySelector(".tool-call-name")?.textContent).toBe("Query orders");

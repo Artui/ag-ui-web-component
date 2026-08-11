@@ -826,6 +826,15 @@ export const STYLES = `
   color: var(--ag-ui-muted);
 }
 
+/* The record of a human decision on a gated call. An approved call used to
+   look exactly like one that was never gated. */
+.tool-call-decision {
+  flex: none;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ag-ui-muted);
+}
+
 .tool-call-args,
 .tool-call-result {
   margin: 0;

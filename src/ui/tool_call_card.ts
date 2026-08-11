@@ -70,6 +70,7 @@ export class ToolCallCard {
   readonly element: HTMLDivElement;
 
   readonly #status: HTMLSpanElement;
+  readonly #decision: HTMLSpanElement;
   readonly #toggle: HTMLButtonElement;
   readonly #resultSection: HTMLDivElement;
   readonly #resultLabel: HTMLSpanElement;
@@ -115,7 +116,12 @@ export class ToolCallCard {
     this.#status.setAttribute("part", "tool-card-status");
     this.#status.textContent = statusLabels(strings)[TOOL_CALL_STATUS.PENDING];
 
-    head.append(icon, label, this.#status);
+    this.#decision = document.createElement("span");
+    this.#decision.className = "tool-call-decision";
+    this.#decision.setAttribute("part", "tool-card-decision");
+    this.#decision.hidden = true;
+
+    head.append(icon, label, this.#status, this.#decision);
 
     const argsSection = this.#section("args", strings.argumentsLabel);
     argsSection.body.textContent = JSON.stringify(args, null, 2);
@@ -145,6 +151,21 @@ export class ToolCallCard {
     body.append(argsSection.root, resultSection.root);
 
     this.element.append(head, this.#toggle, body);
+  }
+
+  /**
+   * Record that a human approved or declined this call, as a line in the card.
+   *
+   * Approval used to leave no trace at all: a declined call became a tool
+   * result saying so, while an approved one simply ran, making the transcript
+   * of a gated call byte-identical to one that was never gated. The prompt is
+   * gone once answered, so this is where the decision lives.
+   */
+  recordDecision(kind: "approved" | "declined"): void {
+    this.element.setAttribute("data-decision", kind);
+    this.#decision.textContent =
+      kind === "approved" ? this.#strings.decisionApproved : this.#strings.decisionDeclined;
+    this.#decision.hidden = false;
   }
 
   /** Whether {@link settle} has already run (so a terminal sweep can skip it). */

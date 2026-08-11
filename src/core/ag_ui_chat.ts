@@ -1655,7 +1655,17 @@ export class AgUiChat extends HTMLElement {
     this.#root.append(style, this.#chat, this.#rail);
   }
 
-  /** Build a header control button (icon glyph + localized title/aria). */
+  /**
+   * Build a header control button: a named slot a host can project markup into,
+   * with the built-in glyph as the slot's fallback.
+   *
+   * The glyph used to be the button's own `textContent`, which left a host able
+   * to restyle the control through its `part` but unable to replace it — a CSS
+   * `content` override could swap one character for another, and nothing could
+   * supply a brand `<img>` or `<svg>`. This is the same slot-with-fallback
+   * idiom the header icon already uses, so existing embeds render exactly as
+   * before.
+   */
   #headerButton(modifier: string, label: string, glyph: string): HTMLButtonElement {
     const button = document.createElement("button");
     button.type = "button";
@@ -1663,7 +1673,10 @@ export class AgUiChat extends HTMLElement {
     button.setAttribute("part", `header-button ${modifier}-button`);
     button.title = label;
     button.setAttribute("aria-label", label);
-    button.textContent = glyph;
+    const slot = document.createElement("slot");
+    slot.name = `icon-${modifier}`;
+    slot.append(document.createTextNode(glyph));
+    button.append(slot);
     return button;
   }
 
@@ -1966,7 +1979,11 @@ export class AgUiChat extends HTMLElement {
       // The run loop is suspended on this card; a Stop while it's open aborts
       // the controller, resolving the decision as declined.
       this.#confirmAbort = new AbortController();
-      const decision = requestConfirmation(this.#messages, request, {
+      // Into the turn's answer group, like every other inline card. Appending
+      // to the message list made it a sibling *after* the group, so anything
+      // that streamed afterwards rendered above it and the prompt drifted to
+      // the foot of the turn no matter when it was asked.
+      const decision = requestConfirmation(this.#ensureGroup(), request, {
         signal: this.#confirmAbort.signal,
         strings: this.#strings,
       });
@@ -1974,6 +1991,7 @@ export class AgUiChat extends HTMLElement {
       this.#messages.scrollTop = this.#messages.scrollHeight;
       const accepted = await decision;
       this.#confirmAbort = null;
+      card.recordDecision(accepted ? "approved" : "declined");
       if (!accepted) {
         const message = this.#strings.declinedAction;
         card.settle(TOOL_CALL_STATUS.DECLINED, message);
