@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-08-11
+
 Ten findings from a real embed — a cross-origin, cookie-authenticated React host.
 Six of them are one defect: **the component assumed it owned the page.** It had
 only ever been embedded in its own playground and in `django-admin-agent`, two
@@ -85,6 +87,35 @@ hosts that both arrange the page the way it expects.
   request is deliberately **not** deferred: a deferred replay can land after a
   `sendMessage()` and duplicate the transcript. Configure before you insert, or
   call `reload()`; the new React recipe in the README shows both.
+
+### Fixed
+
+- **The resize grip now sits on the corner that actually moves.** The element
+  measures which edges its host's layout holds still and stamps them as
+  `data-resize-anchor="<y>-<x>"`, but the rules meant to read it were written as
+  `[data-resize-anchor~="left"]` — and `~=` matches whitespace-separated words
+  while the stamped value is a single hyphenated token, so they could never
+  match. ⚠ **The cursor rules used `=` and did match**, so the pointer followed
+  the measurement while the grip stayed where `placement` had guessed: for any
+  host that aligns the panel the other way, the cursor promised a diagonal the
+  grip was not on, and the grip sat on the corner that stays put.
+
+  Each anchor rule now sets **both** sides of its axis. One that flipped a
+  single way could not undo a placement guess that had flipped the other, which
+  put the grip back on the anchored corner for an embedded panel its host
+  right-aligns.
+
+- **`placement="page"` gutters its composer to the same reading column as its
+  messages.** The rule was unscoped, which tied it on specificity with the base
+  `.input-row` rule that sets the `padding` shorthand later in the stylesheet;
+  source order decided and the shorthand won. ⇒ *No placement ever got the
+  gutter* — least of all the one it was written for, where the messages sat in a
+  centred column and the composer spanned the full width.
+
+  A duplicated copy of the whole resize block also sat earlier in the file,
+  welded to the preceding rule by a comment left between a selector and its
+  subject; it parsed as `:host([placement="page"]) .resize-handle`, scoping the
+  grip's base positioning to the one placement that hides it.
 
 ## [0.20.1] — 2026-08-11
 
@@ -1140,7 +1171,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.18.0...v0.19.0
