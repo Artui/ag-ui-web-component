@@ -89,13 +89,15 @@ export interface UiStrings {
   toolError: string;
   /** Status pill on a declined call. */
   toolDeclined: string;
-  /** Toggle label revealing a successful result (full mode). */
+  /** Heading over a tool card's arguments region. */
+  argumentsLabel: string;
+  /** Heading over a tool card's result region when the call succeeded. */
   resultLabel: string;
-  /** Toggle label revealing an error (full mode). */
+  /** Heading over a tool card's result region when the call failed. */
   errorLabel: string;
-  /** Toggle label revealing a declined call (full mode). */
+  /** Heading over a tool card's result region when the call was declined. */
   declinedLabel: string;
-  /** Toggle label revealing args + result together (compact mode). */
+  /** Label on the toggle that expands a tool card's body. */
   details: string;
 
   // ── Confirmation card ───────────────────────────────────────────────────────
@@ -237,6 +239,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   toolDone: "✓ done",
   toolError: "⚠ error",
   toolDeclined: "⊘ declined",
+  argumentsLabel: "Arguments",
   resultLabel: "Result",
   errorLabel: "Error",
   declinedLabel: "Declined",

@@ -760,7 +760,11 @@ export class AgUiChat extends HTMLElement {
 
   /**
    * How much detail tool-call cards show, from the `data-tool-display`
-   * attribute (`minimal` / `compact` / `full`). Defaults to `full`.
+   * attribute (`minimal` / `inline` / `compact` / `full`). Defaults to `full`.
+   *
+   * Applied by the shadow CSS from the attribute itself, so changing it
+   * restyles every card already in the transcript rather than only the ones
+   * built afterwards.
    */
   get toolDisplay(): ToolDisplayMode {
     const attr = this.getAttribute("data-tool-display");
@@ -2300,7 +2304,7 @@ export class AgUiChat extends HTMLElement {
         : (this.toolSummaries[call.name] ??
           this.#toolCatalog[call.name] ??
           prettifyToolName(call.name));
-    const card = new ToolCallCard(call.name, call.args, this.toolDisplay, summary, this.#strings);
+    const card = new ToolCallCard(call.name, call.args, summary, this.#strings);
     this.#toolCards.set(call.id, card);
     this.#ensureGroup().appendChild(card.element);
     this.#updateEmptyState();
