@@ -1,4 +1,4 @@
-import { TOOL_CALL_STATUS, TOOL_DISPLAY } from "../constants.js";
+import { TOOL_CALL_STATUS, type TOOL_DISPLAY } from "../constants.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
 /** Any state a tool-call card can be in. */
@@ -20,7 +20,7 @@ function statusLabels(strings: UiStrings): Record<ToolCallStatus, string> {
   };
 }
 
-/** Toggle-button label for each settled outcome's collapsible body (full mode). */
+/** Section-heading text for each settled outcome's result region. */
 function resultLabels(strings: UiStrings): Record<SettledStatus, string> {
   return {
     [TOOL_CALL_STATUS.DONE]: strings.resultLabel,
@@ -29,19 +29,32 @@ function resultLabels(strings: UiStrings): Record<SettledStatus, string> {
   };
 }
 
+/** Pretty-print a JSON payload; fall back to the raw text if it isn't JSON. */
+function formatPayload(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
+
 /**
  * A live tool-call card for the chat transcript.
  *
- * Construction renders a status icon, the tool name, and a `running…` status
- * pill; in `full` mode it also shows the pretty-printed arguments inline.
- * {@link settle} later flips the pill to the outcome and — depending on the
- * {@link ToolDisplayMode} — appends a collapsible body:
+ * Construction renders a status icon, the tool name, a `running…` pill, and the
+ * card's body: an **arguments** region and a **result** region, each with its own
+ * heading and its own `part`. {@link settle} fills in the result and flips the
+ * pill. Both payloads are pretty-printed, and the two are never concatenated —
+ * the previous compact layout ran `args: {...}` and the result together in one
+ * `<pre>`, leaving no way to see where the call ended and the answer began.
  *
- * - `inline` — no args; the result behind its own toggle (like `full` but with
- *   the card chrome stripped to a single light row).
- * - `minimal` — pill only; nothing to expand.
- * - `compact` — one "Details" toggle revealing args *and* result together.
- * - `full` — the result (or error / decline message) behind its own toggle.
+ * **The card renders one DOM shape in every display mode, and CSS decides what
+ * shows.** That is what makes `data-tool-display` behave like `data-answer-well`
+ * — flip it on the host and every card already on screen re-reads it. Building a
+ * different structure per mode meant only cards created *after* the change
+ * picked it up, so the setting appeared not to work until the next conversation.
+ * Visibility is selected from the host attribute rather than a value copied onto
+ * the card at construction, for the same reason.
  *
  * The leading icon carries no text of its own: its glyph/spinner is drawn by
  * the shadow CSS keyed off the card's `data-status`, so a host themes it via
@@ -57,20 +70,20 @@ export class ToolCallCard {
   readonly element: HTMLDivElement;
 
   readonly #status: HTMLSpanElement;
-  readonly #mode: ToolDisplayMode;
-  readonly #args: Record<string, unknown>;
+  readonly #decision: HTMLSpanElement;
+  readonly #toggle: HTMLButtonElement;
+  readonly #resultSection: HTMLDivElement;
+  readonly #resultLabel: HTMLSpanElement;
+  readonly #resultBody: HTMLPreElement;
   readonly #strings: UiStrings;
   #settled = false;
 
   constructor(
     name: string,
     args: Record<string, unknown>,
-    mode: ToolDisplayMode = TOOL_DISPLAY.FULL,
     summary?: string,
     strings: UiStrings = DEFAULT_UI_STRINGS,
   ) {
-    this.#mode = mode;
-    this.#args = args;
     this.#strings = strings;
 
     this.element = document.createElement("div");
@@ -78,7 +91,7 @@ export class ToolCallCard {
     this.element.setAttribute("part", "tool-card");
     this.element.setAttribute("data-tool-name", name);
     this.element.setAttribute("data-status", TOOL_CALL_STATUS.PENDING);
-    this.element.setAttribute("data-display", mode);
+    this.element.setAttribute("data-expanded", "false");
 
     const head = document.createElement("div");
     head.className = "tool-call-head";
@@ -103,16 +116,56 @@ export class ToolCallCard {
     this.#status.setAttribute("part", "tool-card-status");
     this.#status.textContent = statusLabels(strings)[TOOL_CALL_STATUS.PENDING];
 
-    head.append(icon, label, this.#status);
-    this.element.append(head);
+    this.#decision = document.createElement("span");
+    this.#decision.className = "tool-call-decision";
+    this.#decision.setAttribute("part", "tool-card-decision");
+    this.#decision.hidden = true;
 
-    if (mode === TOOL_DISPLAY.FULL) {
-      const argsEl = document.createElement("pre");
-      argsEl.className = "tool-call-args";
-      argsEl.setAttribute("part", "tool-card-args");
-      argsEl.textContent = JSON.stringify(args, null, 2);
-      this.element.append(argsEl);
-    }
+    head.append(icon, label, this.#status, this.#decision);
+
+    const argsSection = this.#section("args", strings.argumentsLabel);
+    argsSection.body.textContent = JSON.stringify(args, null, 2);
+    // A call with no arguments renders an empty object in a box of its own,
+    // which is a frame around nothing. Drop the region instead.
+    argsSection.root.hidden = Object.keys(args).length === 0;
+
+    const resultSection = this.#section("result", strings.resultLabel);
+    this.#resultSection = resultSection.root;
+    this.#resultLabel = resultSection.label;
+    this.#resultBody = resultSection.body;
+    // Nothing to show until `settle` supplies it; a pending card would
+    // otherwise expand onto an empty region.
+    resultSection.root.hidden = true;
+
+    this.#toggle = document.createElement("button");
+    this.#toggle.type = "button";
+    this.#toggle.className = "tool-call-toggle";
+    this.#toggle.setAttribute("part", "tool-card-toggle");
+    this.#toggle.setAttribute("aria-expanded", "false");
+    this.#toggle.textContent = strings.details;
+    this.#toggle.addEventListener("click", () => this.#setExpanded(!this.#expanded()));
+
+    const body = document.createElement("div");
+    body.className = "tool-call-body";
+    body.setAttribute("part", "tool-card-body");
+    body.append(argsSection.root, resultSection.root);
+
+    this.element.append(head, this.#toggle, body);
+  }
+
+  /**
+   * Record that a human approved or declined this call, as a line in the card.
+   *
+   * Approval used to leave no trace at all: a declined call became a tool
+   * result saying so, while an approved one simply ran, making the transcript
+   * of a gated call byte-identical to one that was never gated. The prompt is
+   * gone once answered, so this is where the decision lives.
+   */
+  recordDecision(kind: "approved" | "declined"): void {
+    this.element.setAttribute("data-decision", kind);
+    this.#decision.textContent =
+      kind === "approved" ? this.#strings.decisionApproved : this.#strings.decisionDeclined;
+    this.#decision.hidden = false;
   }
 
   /** Whether {@link settle} has already run (so a terminal sweep can skip it). */
@@ -121,50 +174,55 @@ export class ToolCallCard {
   }
 
   /**
-   * Flip the status pill to ``status`` and, unless in `minimal` mode, append a
-   * collapsed body behind a click-to-expand toggle: the result alone (`full` /
-   * `inline`), or the args + result together (`compact`).
+   * Flip the status pill to `status` and fill in the result region, whose
+   * heading names the outcome (result / error / declined).
    */
   settle(status: SettledStatus, text: string): void {
     // Idempotent: a duplicate `TOOL_CALL_RESULT`, or a replayed tool message
-    // for an already-settled card, must not append a second toggle+body. The
-    // first settle wins; later calls are ignored.
+    // for an already-settled card, must not overwrite the first outcome.
     if (this.#settled) {
       return;
     }
     this.#settled = true;
     this.element.setAttribute("data-status", status);
     this.#status.textContent = statusLabels(this.#strings)[status];
+    this.#resultLabel.textContent = resultLabels(this.#strings)[status];
+    this.#resultBody.textContent = formatPayload(text);
+    this.#resultSection.hidden = false;
+  }
 
-    if (this.#mode === TOOL_DISPLAY.MINIMAL) {
-      return;
-    }
+  /** Build one labelled region of the body: a heading plus a payload block. */
+  #section(
+    kind: string,
+    labelText: string,
+  ): {
+    root: HTMLDivElement;
+    label: HTMLSpanElement;
+    body: HTMLPreElement;
+  } {
+    const root = document.createElement("div");
+    root.className = `tool-call-section tool-call-section--${kind}`;
+    root.setAttribute("part", `tool-card-section tool-card-${kind}-section`);
 
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "tool-call-toggle";
-    toggle.setAttribute("part", "tool-card-toggle");
-    toggle.setAttribute("aria-expanded", "false");
+    const label = document.createElement("span");
+    label.className = "tool-call-section-label";
+    label.setAttribute("part", `tool-card-section-label tool-card-${kind}-label`);
+    label.textContent = labelText;
 
-    const output = document.createElement("pre");
-    output.className = "tool-call-result";
-    output.setAttribute("part", "tool-card-result");
-    output.hidden = true;
+    const body = document.createElement("pre");
+    body.className = `tool-call-${kind}`;
+    body.setAttribute("part", `tool-card-${kind}`);
 
-    if (this.#mode === TOOL_DISPLAY.COMPACT) {
-      toggle.textContent = this.#strings.details;
-      output.textContent = `args: ${JSON.stringify(this.#args)}\n\n${text}`;
-    } else {
-      toggle.textContent = resultLabels(this.#strings)[status];
-      output.textContent = text;
-    }
+    root.append(label, body);
+    return { root, label, body };
+  }
 
-    toggle.addEventListener("click", () => {
-      const expand = output.hidden;
-      output.hidden = !expand;
-      toggle.setAttribute("aria-expanded", String(expand));
-    });
+  #expanded(): boolean {
+    return this.element.getAttribute("data-expanded") === "true";
+  }
 
-    this.element.append(toggle, output);
+  #setExpanded(expand: boolean): void {
+    this.element.setAttribute("data-expanded", String(expand));
+    this.#toggle.setAttribute("aria-expanded", String(expand));
   }
 }

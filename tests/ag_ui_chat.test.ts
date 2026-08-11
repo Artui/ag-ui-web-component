@@ -746,7 +746,9 @@ describe("AgUiChat", () => {
     const card = shadow(el).querySelector(".tool-call");
     expect(card?.getAttribute("data-status")).toBe("done");
     const result = card?.querySelector(".tool-call-result")?.textContent;
-    expect(result).toContain('{"projects":3}');
+    // Pretty-printed: the card formats a JSON payload rather than echoing the
+    // wire string.
+    expect(result).toContain('"projects": 3');
     // The streamed result already settled it, so the executeTool sweep must
     // not overwrite with the fallback.
     expect(result).not.toContain("No result returned.");
@@ -856,7 +858,7 @@ describe("AgUiChat", () => {
     expect(shadow(el).querySelectorAll(".tool-call")).toHaveLength(2);
     const srv = shadow(el).querySelector<HTMLElement>('.tool-call[data-tool-name="server_tool"]');
     const srvResult = srv?.querySelector(".tool-call-result")?.textContent;
-    expect(srvResult).toContain('{"found":1}');
+    expect(srvResult).toContain('"found": 1');
     expect(srvResult).not.toContain("No result returned.");
     const ui = shadow(el).querySelector<HTMLElement>('.tool-call[data-tool-name="fill_field"]');
     expect(ui?.querySelector(".tool-call-result")?.textContent).toContain("filled-ok");
@@ -1595,7 +1597,12 @@ describe("AgUiChat", () => {
       shadow(el).querySelector<HTMLButtonElement>(".send")?.click(); // Stop
       await flush();
 
-      expect(shadow(el).querySelector(".confirm")?.getAttribute("data-resolved")).toBe("declined");
+      // Stop answers the prompt on the user's behalf, so the prompt leaves;
+      // the tool card it gated carries the outcome.
+      expect(shadow(el).querySelector(".confirm")).toBeNull();
+      expect(shadow(el).querySelector(".tool-call")?.getAttribute("data-decision")).toBe(
+        "declined",
+      );
       expect(handle.abortRuns).toBe(1);
       expect(round).toBe(1); // the declined result did not start another round
       expect(shadow(el).querySelector(".stopped-note")).not.toBeNull();

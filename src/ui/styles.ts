@@ -772,10 +772,9 @@ export const STYLES = `
   }
 }
 
-/* Inline display mode: the lightest card — drop the box chrome so the
-   status row reads as one line of the answer; the result toggle still expands
-   below it. */
-.tool-call[data-display="inline"] {
+/* Inline display mode: the lightest card. Drop the box chrome so the status row
+   reads as one line of the answer; the result toggle still expands below it. */
+:host([data-tool-display="inline"]) .tool-call {
   max-width: 100%;
   background: transparent;
   border: none;
@@ -805,6 +804,37 @@ export const STYLES = `
   color: var(--ag-ui-muted);
 }
 
+.tool-call-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-call-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* The heading that tells the two payloads apart. Without it the arguments and
+   the result were one run of text and a reader had to guess the boundary. */
+.tool-call-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ag-ui-muted);
+}
+
+/* The record of a human decision on a gated call. An approved call used to
+   look exactly like one that was never gated. */
+.tool-call-decision {
+  flex: none;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ag-ui-muted);
+}
+
 .tool-call-args,
 .tool-call-result {
   margin: 0;
@@ -817,6 +847,43 @@ export const STYLES = `
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--ag-ui-fg);
+}
+
+/* Display modes are pure visibility over one DOM shape, selected from the host
+   attribute rather than a value stamped on the card when it was built. That is
+   what lets a host flip data-tool-display and have every card already on screen
+   re-read it, the way data-answer-well behaves. Baking the structure per mode
+   meant the setting only reached cards created afterwards.
+
+   Default (no attribute) is the full mode: arguments always visible, result
+   behind the toggle. */
+.tool-call[data-expanded="false"] .tool-call-section--result {
+  display: none;
+}
+
+/* Compact: one toggle over both regions, so a settled card is a single line
+   until asked. */
+:host([data-tool-display="compact"]) .tool-call[data-expanded="false"] .tool-call-section {
+  display: none;
+}
+
+/* Inline: the result only; the call's arguments are noise at this density. */
+:host([data-tool-display="inline"]) .tool-call .tool-call-section--args {
+  display: none;
+}
+
+/* Minimal: the status row and nothing else, so there is no toggle to press. */
+:host([data-tool-display="minimal"]) .tool-call .tool-call-toggle,
+:host([data-tool-display="minimal"]) .tool-call .tool-call-body {
+  display: none;
+}
+
+/* A pending card has no result yet, and in the modes where the arguments are
+   hidden too there is nothing behind the toggle. Hide the control rather than
+   offer one that expands onto nothing. */
+.tool-call[data-status="pending"] .tool-call-toggle,
+:host([data-tool-display="inline"]) .tool-call[data-status="pending"] .tool-call-toggle {
+  display: none;
 }
 
 .tool-call-toggle {

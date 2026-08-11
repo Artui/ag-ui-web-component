@@ -27,6 +27,18 @@ const THEME_ASSETS = new Map([
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Fresh ids per message and per tool call, as a real server issues.
+//
+// This mattered more than it looks. The scripted answers used to stream under
+// fixed ids ("m-done", "tc1"...), and @ag-ui/client keys assistant messages by
+// messageId: a TEXT_MESSAGE_START for an id already in the history appends to
+// that message rather than starting a new one. So repeating the same prompt
+// concatenated every answer onto one entry, which then replayed out of order on
+// reload (a single grown message sitting where it was first created, with the
+// later prompts after it) and tripped the unfinished-run notice. Three symptoms
+// that all read as component bugs, from one line of harness.
+const id = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+
 function emit(res, event) {
   res.write(`data: ${JSON.stringify(event)}\n\n`);
 }
@@ -74,31 +86,31 @@ async function handleAgent(res, body) {
 
   const isFollowUp = messages.some((m) => m.role === "tool");
   if (isFollowUp) {
-    await streamText(res, "m-done", [
+    await streamText(res, id("msg"), [
       "Done — ",
       "the article ",
       "is filled in ",
       "and saved. ✅",
     ]);
   } else {
-    await streamReasoning(res, "r-intro", [
+    await streamReasoning(res, id("reasoning"), [
       "The user wants the article filled. ",
       "I'll set the title and slug, ",
       "publish it, mark it featured, ",
       "then save.",
     ]);
-    const parent = "m-intro";
+    const parent = id("msg");
     await streamText(res, parent, [
       "On it — ",
       "filling in ",
       "the article form ",
       "now.",
     ]);
-    emitToolCall(res, "tc1", "fill_field", { field: "title", value: "Hello, AG-UI" }, parent);
-    emitToolCall(res, "tc2", "fill_field", { field: "slug", value: "hello-ag-ui" }, parent);
-    emitToolCall(res, "tc3", "select_option", { field: "status", value: "published" }, parent);
-    emitToolCall(res, "tc4", "toggle_checkbox", { field: "featured", value: true }, parent);
-    emitToolCall(res, "tc5", "click_save", {}, parent);
+    emitToolCall(res, id("call"), "fill_field", { field: "title", value: "Hello, AG-UI" }, parent);
+    emitToolCall(res, id("call"), "fill_field", { field: "slug", value: "hello-ag-ui" }, parent);
+    emitToolCall(res, id("call"), "select_option", { field: "status", value: "published" }, parent);
+    emitToolCall(res, id("call"), "toggle_checkbox", { field: "featured", value: true }, parent);
+    emitToolCall(res, id("call"), "click_save", {}, parent);
   }
 
   emit(res, { type: "RUN_FINISHED", threadId, runId });

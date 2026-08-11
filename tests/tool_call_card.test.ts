@@ -2,49 +2,82 @@ import { describe, expect, it } from "vitest";
 import { ToolCallCard } from "../src/ui/tool_call_card.js";
 import { mergeUiStrings } from "../src/ui/ui_strings.js";
 
+const args = (card: ToolCallCard) => card.element.querySelector<HTMLElement>(".tool-call-args");
+const result = (card: ToolCallCard) => card.element.querySelector<HTMLElement>(".tool-call-result");
+const toggle = (card: ToolCallCard) =>
+  card.element.querySelector<HTMLButtonElement>(".tool-call-toggle");
+const section = (card: ToolCallCard, kind: string) =>
+  card.element.querySelector<HTMLElement>(`.tool-call-section--${kind}`);
+
 describe("ToolCallCard", () => {
-  it("renders the tool name, args, and a pending status", () => {
+  it("renders the tool name, pretty-printed args, and a pending status", () => {
     const card = new ToolCallCard("fill_field", { name: "city", value: "Paris" });
     expect(card.element.getAttribute("data-tool-name")).toBe("fill_field");
     expect(card.element.getAttribute("data-status")).toBe("pending");
     expect(card.element.getAttribute("part")).toBe("tool-card");
     expect(card.element.querySelector(".tool-call-name")?.textContent).toBe("fill_field");
     expect(card.element.querySelector(".tool-call-status")?.textContent).toContain("running");
-    expect(card.element.querySelector(".tool-call-args")?.textContent).toContain(
-      '"value": "Paris"',
+    expect(args(card)?.textContent).toContain('"value": "Paris"');
+  });
+
+  it("labels both regions, so the args and the result cannot run together", () => {
+    // The defect this rework closes: compact mode used to emit
+    // `args: {...}\n\n<result>` into one block, with nothing marking where the
+    // call ended and the answer began.
+    const card = new ToolCallCard("count_users", { active: true });
+    card.settle("done", "42");
+
+    const labels = [...card.element.querySelectorAll(".tool-call-section-label")].map(
+      (el) => el.textContent,
     );
-    // No result body until settled.
-    expect(card.element.querySelector(".tool-call-result")).toBeNull();
+    expect(labels).toEqual(["Arguments", "Result"]);
+    expect(args(card)?.textContent).not.toContain("42");
+    expect(result(card)?.textContent).not.toContain("active");
+  });
+
+  it("renders one DOM shape regardless of display mode", () => {
+    // Both regions exist on every card; which of them shows is decided by the
+    // shadow CSS from the host's `data-tool-display`. That is what lets the
+    // setting reach cards already on screen instead of only later ones.
+    const card = new ToolCallCard("count_users", { active: true });
+    card.settle("done", "42");
+    expect(section(card, "args")).not.toBeNull();
+    expect(section(card, "result")).not.toBeNull();
+    expect(toggle(card)).not.toBeNull();
+  });
+
+  it("pretty-prints a JSON result and passes plain text through", () => {
+    const structured = new ToolCallCard("q", {});
+    structured.settle("done", '{"count":42}');
+    expect(result(structured)?.textContent).toBe('{\n  "count": 42\n}');
+
+    const plain = new ToolCallCard("q", {});
+    plain.settle("done", "not json at all");
+    expect(result(plain)?.textContent).toBe("not json at all");
+  });
+
+  it("omits the arguments region for a call that takes none", () => {
+    // An empty object in a box of its own is a frame around nothing.
+    const card = new ToolCallCard("ping", {});
+    expect(section(card, "args")?.hidden).toBe(true);
+  });
+
+  it("hides the result region until the call settles", () => {
+    const card = new ToolCallCard("count_users", { active: true });
+    expect(section(card, "result")?.hidden).toBe(true);
+    card.settle("done", "42");
+    expect(section(card, "result")?.hidden).toBe(false);
   });
 
   it("renders a status icon element keyed off data-status (themed by CSS)", () => {
     const card = new ToolCallCard("fill_field", {});
     const icon = card.element.querySelector(".tool-call-icon");
-    expect(icon).not.toBeNull();
     expect(icon?.getAttribute("part")).toBe("tool-card-icon");
     // The icon carries no text of its own — the glyph/spinner is pure CSS.
     expect(icon?.textContent).toBe("");
-    // Its appearance follows the card's status, which the CSS selects on.
-    expect(card.element.getAttribute("data-status")).toBe("pending");
     card.settle("done", "ok");
     expect(card.element.getAttribute("data-status")).toBe("done");
     expect(icon?.textContent).toBe("");
-  });
-
-  it("inline mode shows no args but keeps a collapsible result", () => {
-    const card = new ToolCallCard("count_users", { active: true }, "inline");
-    expect(card.element.getAttribute("data-display")).toBe("inline");
-    // Like minimal/compact, args aren't shown inline…
-    expect(card.element.querySelector(".tool-call-args")).toBeNull();
-    card.settle("done", "42");
-    // …but unlike minimal, the result is reachable behind its own toggle.
-    const toggle = card.element.querySelector<HTMLButtonElement>(".tool-call-toggle");
-    const output = card.element.querySelector<HTMLElement>(".tool-call-result");
-    expect(toggle?.textContent).toBe("Result");
-    expect(output?.textContent).toBe("42");
-    expect(output?.hidden).toBe(true);
-    // Result only — no args bundled in (that's compact's behaviour).
-    expect(output?.textContent).not.toContain("args:");
   });
 
   it("reports its settled state for the terminal sweep", () => {
@@ -54,112 +87,91 @@ describe("ToolCallCard", () => {
     expect(card.settled).toBe(true);
   });
 
-  it("marks a minimal-mode card settled even with no body", () => {
-    const card = new ToolCallCard("ping", {}, "minimal");
-    card.settle("done", "pong");
-    expect(card.settled).toBe(true);
-    expect(card.element.querySelector(".tool-call-result")).toBeNull();
-  });
-
-  it("ignores a second settle: no duplicate body, first outcome wins", () => {
+  it("ignores a second settle: first outcome wins", () => {
     const card = new ToolCallCard("count_users", {});
     card.settle("done", "42");
-    // A duplicate TOOL_CALL_RESULT or a replayed tool message must not append a
-    // second toggle+result section or overwrite the first outcome.
+    // A duplicate TOOL_CALL_RESULT, or a replayed tool message for a card that
+    // already settled, must not overwrite the first outcome.
     card.settle("error", "kaboom");
-    expect(card.element.querySelectorAll(".tool-call-toggle")).toHaveLength(1);
-    expect(card.element.querySelectorAll(".tool-call-result")).toHaveLength(1);
     expect(card.element.getAttribute("data-status")).toBe("done");
-    expect(card.element.querySelector(".tool-call-result")?.textContent).toBe("42");
+    expect(result(card)?.textContent).toBe("42");
   });
 
   it("draws all visible text from the string table", () => {
     const strings = mergeUiStrings({
       toolRunning: "läuft…",
       toolDone: "fertig",
+      argumentsLabel: "Argumente",
       resultLabel: "Ergebnis",
+      details: "Einzelheiten",
     });
-    const card = new ToolCallCard("count_users", {}, "full", undefined, strings);
+    const card = new ToolCallCard("count_users", { a: 1 }, undefined, strings);
     expect(card.element.querySelector(".tool-call-status")?.textContent).toBe("läuft…");
+    expect(card.element.querySelector(".tool-call-section-label")?.textContent).toBe("Argumente");
+    expect(toggle(card)?.textContent).toBe("Einzelheiten");
     card.settle("done", "42");
     expect(card.element.querySelector(".tool-call-status")?.textContent).toBe("fertig");
-    expect(card.element.querySelector(".tool-call-toggle")?.textContent).toBe("Ergebnis");
+    expect(section(card, "result")?.querySelector(".tool-call-section-label")?.textContent).toBe(
+      "Ergebnis",
+    );
   });
 
-  it("settles to done with a collapsed result body", () => {
+  it("expands and collapses the body when the toggle is clicked", () => {
     const card = new ToolCallCard("count_users", {});
     card.settle("done", "42");
-    expect(card.element.getAttribute("data-status")).toBe("done");
-    expect(card.element.querySelector(".tool-call-status")?.textContent).toContain("done");
-    const toggle = card.element.querySelector<HTMLButtonElement>(".tool-call-toggle");
-    const output = card.element.querySelector<HTMLElement>(".tool-call-result");
-    expect(toggle?.textContent).toBe("Result");
-    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-    expect(output?.textContent).toBe("42");
-    expect(output?.hidden).toBe(true);
+    expect(card.element.getAttribute("data-expanded")).toBe("false");
+    expect(toggle(card)?.getAttribute("aria-expanded")).toBe("false");
+
+    toggle(card)?.click();
+    expect(card.element.getAttribute("data-expanded")).toBe("true");
+    expect(toggle(card)?.getAttribute("aria-expanded")).toBe("true");
+
+    toggle(card)?.click();
+    expect(card.element.getAttribute("data-expanded")).toBe("false");
   });
 
-  it("expands and collapses the result when the toggle is clicked", () => {
+  it("names the outcome in the result heading", () => {
+    const failed = new ToolCallCard("boom", {});
+    failed.settle("error", "kaboom");
+    expect(failed.element.getAttribute("data-status")).toBe("error");
+    expect(section(failed, "result")?.querySelector(".tool-call-section-label")?.textContent).toBe(
+      "Error",
+    );
+
+    const declined = new ToolCallCard("delete_user", { id: 7 });
+    declined.settle("declined", "User declined the action.");
+    expect(declined.element.getAttribute("data-status")).toBe("declined");
+    expect(
+      section(declined, "result")?.querySelector(".tool-call-section-label")?.textContent,
+    ).toBe("Declined");
+  });
+
+  it("records a human decision on a gated call", () => {
+    // Approval used to leave no trace: a declined call became a tool result
+    // saying so, while an approved one simply ran, making a gated call's
+    // transcript identical to one that was never gated.
+    const approved = new ToolCallCard("delete_user", { id: 7 });
+    approved.recordDecision("approved");
+    expect(approved.element.getAttribute("data-decision")).toBe("approved");
+    expect(approved.element.querySelector(".tool-call-decision")?.textContent).toBe(
+      "approved by you",
+    );
+
+    const declined = new ToolCallCard("delete_user", { id: 7 });
+    declined.recordDecision("declined");
+    expect(declined.element.getAttribute("data-decision")).toBe("declined");
+  });
+
+  it("carries no decision note on a call nobody was asked about", () => {
     const card = new ToolCallCard("count_users", {});
-    card.settle("done", "42");
-    const toggle = card.element.querySelector<HTMLButtonElement>(".tool-call-toggle");
-    const output = card.element.querySelector<HTMLElement>(".tool-call-result");
-
-    toggle?.click();
-    expect(output?.hidden).toBe(false);
-    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-
-    toggle?.click();
-    expect(output?.hidden).toBe(true);
-    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-  });
-
-  it("labels an error outcome", () => {
-    const card = new ToolCallCard("boom", {});
-    card.settle("error", "kaboom");
-    expect(card.element.getAttribute("data-status")).toBe("error");
-    expect(card.element.querySelector(".tool-call-status")?.textContent).toContain("error");
-    expect(card.element.querySelector(".tool-call-toggle")?.textContent).toBe("Error");
-    expect(card.element.querySelector(".tool-call-result")?.textContent).toBe("kaboom");
-  });
-
-  it("labels a declined outcome", () => {
-    const card = new ToolCallCard("delete_user", { id: 7 });
-    card.settle("declined", "User declined the action.");
-    expect(card.element.getAttribute("data-status")).toBe("declined");
-    expect(card.element.querySelector(".tool-call-status")?.textContent).toContain("declined");
-    expect(card.element.querySelector(".tool-call-toggle")?.textContent).toBe("Declined");
+    expect(card.element.querySelector<HTMLElement>(".tool-call-decision")?.hidden).toBe(true);
+    expect(card.element.hasAttribute("data-decision")).toBe(false);
   });
 
   it("shows the x-summary label instead of the tool name when given", () => {
-    const card = new ToolCallCard("query_model", { model: "Order" }, "full", "Query orders");
+    const card = new ToolCallCard("query_model", { model: "Order" }, "Query orders");
     expect(card.element.querySelector(".tool-call-name")?.textContent).toBe("Query orders");
     // The raw name is still on the data attribute for selectors.
     expect(card.element.getAttribute("data-tool-name")).toBe("query_model");
-  });
-
-  it("minimal mode shows only the name + pill, no args or result body", () => {
-    const card = new ToolCallCard("count_users", { active: true }, "minimal");
-    expect(card.element.getAttribute("data-display")).toBe("minimal");
-    expect(card.element.querySelector(".tool-call-args")).toBeNull();
-    card.settle("done", "42");
-    expect(card.element.getAttribute("data-status")).toBe("done");
-    expect(card.element.querySelector(".tool-call-toggle")).toBeNull();
-    expect(card.element.querySelector(".tool-call-result")).toBeNull();
-  });
-
-  it("compact mode hides args until a single Details toggle reveals args + result", () => {
-    const card = new ToolCallCard("count_users", { active: true }, "compact");
-    expect(card.element.getAttribute("data-display")).toBe("compact");
-    expect(card.element.querySelector(".tool-call-args")).toBeNull();
-    card.settle("done", "42");
-    const toggle = card.element.querySelector<HTMLButtonElement>(".tool-call-toggle");
-    const output = card.element.querySelector<HTMLElement>(".tool-call-result");
-    expect(toggle?.textContent).toBe("Details");
-    expect(output?.hidden).toBe(true);
-    expect(output?.textContent).toContain('args: {"active":true}');
-    expect(output?.textContent).toContain("42");
-    toggle?.click();
-    expect(output?.hidden).toBe(false);
   });
 });

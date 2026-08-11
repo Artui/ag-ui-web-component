@@ -40,8 +40,14 @@ export interface ConfirmationOptions {
  * Unlike a modal overlay, the card lives in the transcript right where the
  * action is — it reads naturally after the assistant's explanation and never
  * steals focus from the page. Resolves ``true`` on confirm, ``false`` on
- * cancel. The card stays in the transcript as a resolved record (buttons
- * disabled, `data-resolved` set) rather than vanishing.
+ * cancel.
+ *
+ * **Answering it removes it.** A prompt and a record are two different objects:
+ * the prompt owns the user's attention until it is answered, and the record of
+ * what was decided belongs in the transcript, in order, scrolling with
+ * everything else. The tool card this gates is that record — it settles to
+ * `done` or `declined` and carries the decision. Leaving the spent form in
+ * place made an answered question read as outstanding.
  */
 export function requestConfirmation(
   host: Node & ParentNode,
@@ -66,6 +72,8 @@ export function requestConfirmation(
     args.className = "confirm-args";
     args.setAttribute("part", "confirm-args");
     args.textContent = JSON.stringify(request.args, null, 2);
+    // A call with no arguments rendered the string "{}" in a box of its own.
+    args.hidden = Object.keys(request.args).length === 0;
 
     const actions = document.createElement("div");
     actions.className = "confirm-actions";
@@ -80,9 +88,11 @@ export function requestConfirmation(
         return;
       }
       settled = true;
-      cancel.disabled = true;
-      confirm.disabled = true;
-      card.setAttribute("data-resolved", accepted ? "confirmed" : "declined");
+      // The prompt leaves once it has been answered. What stays is the tool
+      // card next to it, which settles to the outcome and scrolls with the rest
+      // of the transcript -- a record of the action rather than a spent form
+      // sitting there as a standing reminder of one.
+      card.remove();
       resolve(accepted);
     };
 

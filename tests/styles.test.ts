@@ -174,8 +174,21 @@ describe("STYLES", () => {
     expect(STYLES).toContain("prefers-reduced-motion: reduce");
   });
 
-  it("strips the box chrome in inline tool-display mode", () => {
-    expect(STYLES).toContain('.tool-call[data-display="inline"]');
+  it("selects tool-display modes from the host attribute, not a per-card copy", () => {
+    // This is what makes data-tool-display reactive the way data-answer-well
+    // is: flip it on the host and cards already on screen re-read it. Selecting
+    // on a value stamped onto each card at construction reached only the ones
+    // built afterwards.
+    expect(STYLES).toContain(':host([data-tool-display="inline"]) .tool-call');
+    expect(STYLES).toContain(':host([data-tool-display="compact"]) .tool-call');
+    expect(STYLES).toContain(':host([data-tool-display="minimal"]) .tool-call');
+    // Default (no attribute) is the full mode: args visible, result collapsed.
+    expect(STYLES).toContain('.tool-call[data-expanded="false"] .tool-call-section--result');
+  });
+
+  it("labels and separates the two payload regions on a tool card", () => {
+    expect(STYLES).toContain(".tool-call-section-label");
+    expect(STYLES).toContain(".tool-call-body");
   });
 
   it("styles the collapsible thoughts region and pulses it while streaming", () => {

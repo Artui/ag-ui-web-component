@@ -439,3 +439,20 @@ describe("AgUiChat — UX & customization", () => {
     });
   });
 });
+
+describe("header control icons", () => {
+  it("exposes a named slot per control, with the built-in glyph as fallback", async () => {
+    // The glyph used to be the button's own textContent, so a host could
+    // restyle a control but never replace it with a brand icon.
+    const el = mount();
+    const buttons = [...shadow(el).querySelectorAll<HTMLButtonElement>(".header-btn")];
+    const slots = buttons.map((b) => b.querySelector("slot")?.name);
+    expect(slots).toContain("icon-history");
+    expect(slots).toContain("icon-new");
+    expect(slots).toContain("icon-collapse");
+    // Existing embeds are untouched: the glyph is the slot's fallback content.
+    const history = buttons.find((b) => b.classList.contains("header-btn--history"));
+    expect(history?.querySelector("slot")?.textContent).toBe("☰");
+    expect(history?.getAttribute("part")).toBe("header-button history-button");
+  });
+});

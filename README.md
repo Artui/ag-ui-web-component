@@ -164,6 +164,16 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | `data-theme-toggle` | — | Boolean: show a built-in header light⇄dark toggle (persists per tab). Off by default. See [Theme toggle](#theme-toggle). |
 | `data-strings` | `strings` | Partial JSON override of the UI string table (localization). The property wins key-by-key over the attribute; see [Internationalization](#internationalization-i18n). |
 | `data-icon-url` | — | Header (and sidebar-rail) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
+
+Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
+`icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
+brand `<img>` or `<svg>` rather than only restyling the character:
+
+```html
+<ag-ui-chat endpoint="/agent/">
+  <svg slot="icon-new" width="16" height="16"><!-- ... --></svg>
+</ag-ui-chat>
+```
 | `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
@@ -506,8 +516,23 @@ property), one of `inline` / `minimal` / `compact` / `full` (default `full`):
   result behind its own toggle. Reads as one line of the answer — pairs with [the answer
   well](#the-answer-well).
 - `minimal` — tool name + status pill only.
-- `compact` — name + status, with args *and* result behind a single collapsed "Details" toggle.
-- `full` — args inline, result behind its own toggle (the original behaviour).
+- `compact` — name + status, with arguments *and* result behind a single collapsed toggle.
+- `full` — arguments visible, result behind the toggle (the default).
+
+Whichever mode is on, a settled card's body holds **two labelled regions** — `Arguments` and
+`Result` (or `Error` / `Declined`) — each with its own part and each pretty-printed. They are
+never run together into one block, so where the call ends and the answer begins is always
+visible. Style them via the `tool-card-args` / `tool-card-result` parts, their headings via
+`tool-card-section-label`, and the whole body via `tool-card-body`.
+
+**The attribute is live.** Changing `data-tool-display` restyles every card already in the
+transcript, the way `data-answer-well` does — the modes are pure visibility over one DOM shape,
+selected by the shadow CSS from the host attribute.
+
+A call gated behind the confirmation card also carries the decision (`approved by you` /
+`declined by you`, part `tool-card-decision`, attribute `data-decision`). The prompt itself
+disappears once answered: a prompt and a record are different objects, and the record is the
+card.
 
 If a tool's schema carries an `x-summary` string (use `X_SUMMARY_KEY`), the card shows it on the
 label instead of the raw tool name.
