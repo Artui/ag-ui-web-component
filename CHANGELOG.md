@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-08-11
+
 ### Fixed
 
 - ⛔ **`placement="side"` (and `sidebar`) stopped being full height once the
@@ -1059,7 +1061,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.17.0...v0.18.0
