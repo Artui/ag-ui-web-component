@@ -11,9 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **The panel is resizable.** A drag handle on the leading corner (or leading
-  edge when docked), with the size persisted per tab and restored before the
-  first paint. Arrow keys resize from the keyboard, since a pointer-only control
+- **The panel is resizable.** A drag handle on the corner the layout grows
+  toward (or the inner edge when docked), with the size persisted per tab and
+  restored before the first paint. Arrow keys resize from the keyboard, since a pointer-only control
   has no equivalent elsewhere in the UI; style it via the `resize-handle` part.
 
   Which axes are draggable is the placement's call: `full` and `page` get no
@@ -116,6 +116,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mode.
 
 ### Fixed
+
+- **The demo playground covers the surface it is meant to demonstrate.** The
+  scripted agent now dispatches on the latest turn — a server-resolved skill, a
+  tool that throws, an `ask_user` question, or the form-filling script — instead
+  of replaying one script for everything, and the page gained header-icon,
+  German-strings and reset-size controls plus a short "what to try" guide.
+
+  ⚠ Two harness defects were making the component look broken. Its follow-up
+  detection matched **any** tool message in the thread, so once a conversation
+  had run a single tool every later turn answered "Done" to everything. And the
+  page forced `flex: 1` on the element, which silently outranks the width a
+  resize writes — the drag worked and nothing moved.
 
 - **The demo harness reused message ids**, which produced three symptoms that
   all read as component bugs and were none of them. It streamed every follow-up
