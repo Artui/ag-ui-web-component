@@ -74,6 +74,36 @@ export const STYLES = `
   --_icon-size: var(--ag-ui-icon-size, 22px);
   --_icon-radius: var(--ag-ui-icon-radius, 4px);
 
+  /* Composer — one bordered surface holding the field and its tool row. */
+  --_composer-radius: var(--ag-ui-composer-radius, 14px);
+  --_composer-max-height: var(--ag-ui-composer-max-height, 40vh);
+  --_tool-btn-size: var(--ag-ui-tool-btn-size, 30px);
+  --_send-size: var(--ag-ui-send-size, 30px);
+  --_glyph-size: var(--ag-ui-glyph-size, 18px);
+  --_glyph-stroke: var(--ag-ui-glyph-stroke, 1.75);
+
+  /* Unread badge on the launcher. */
+  --_badge-bg: var(--ag-ui-badge-bg, var(--_danger));
+  --_badge-fg: var(--ag-ui-badge-fg, #ffffff);
+  --_badge-size: var(--ag-ui-badge-size, 18px);
+  --_badge-font-size: var(--ag-ui-badge-font-size, 11px);
+
+  /* The floating launcher a collapsed widget shrinks to. */
+  --_launcher-size: var(--ag-ui-launcher-size, 56px);
+  --_launcher-bg: var(--ag-ui-launcher-bg, var(--_header-bg));
+  --_launcher-fg: var(--ag-ui-launcher-fg, var(--_header-fg));
+  --_launcher-radius: var(--ag-ui-launcher-radius, 50%);
+  --_launcher-icon-size: var(--ag-ui-launcher-icon-size, 26px);
+  --_launcher-inset: var(--ag-ui-launcher-inset, auto 0 0 auto);
+
+  /* Motion. One duration and two curves drive every collapse, expand and
+     slide-over, so the whole widget accelerates and settles as one thing.
+     The default curve is a long-tailed ease-out (a fast start that decelerates
+     into place); the pop curve overshoots slightly, for something arriving. */
+  --_motion: var(--ag-ui-motion, 0.28s);
+  --_ease: var(--ag-ui-ease, cubic-bezier(0.32, 0.72, 0, 1));
+  --_ease-pop: var(--ag-ui-ease-pop, cubic-bezier(0.34, 1.36, 0.64, 1));
+
   /* Spacing — the density preset overrides these. */
   --_space: var(--ag-ui-space, 10px);
   --_pad: var(--ag-ui-pad, 16px);
@@ -238,56 +268,161 @@ export const STYLES = `
   --_height: var(--ag-ui-height, 100vh);
   --_max-height: var(--ag-ui-max-height, 100vh);
   --_radius: var(--ag-ui-radius, 0);
-  transition: width 0.28s ease;
+  transition: width var(--_motion) var(--_ease);
 }
 
 :host([placement="sidebar"][data-side="left"]) {
   --_inset: var(--ag-ui-inset, 0 auto 0 0);
 }
 
+/* The docked panel is pinned to the edge it docks against rather than filling
+   the host as a flex child. Collapsing shrinks the host to the rail width, and
+   a flex child would be squashed to 52px on the way out instead of sliding out
+   at full width. */
 :host([placement="sidebar"]) .chat {
-  transition: transform 0.28s ease;
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: var(--_width);
+  transform-origin: right center;
 }
 
-/* Collapsed sidebar: shrink the host to the rail width, hide the panel, and
-   reveal the rail. Higher specificity than the generic collapse rules, so it
-   wins regardless of source order. */
+:host([placement="sidebar"][data-side="left"]) .chat {
+  inset: 0 auto 0 0;
+  transform-origin: left center;
+}
+
+/* Collapsed sidebar: shrink the host to the rail width and slide the panel out
+   through the edge it docks against. Higher specificity than the generic
+   collapse rules, so it wins regardless of source order. */
 :host([placement="sidebar"][collapsed]) {
   width: var(--_rail-width);
   height: 100vh;
   max-height: 100vh;
   bottom: 0;
+  pointer-events: auto;
 }
 
 :host([placement="sidebar"][collapsed]) .chat {
-  display: none;
+  transform: translateX(100%);
 }
 
-/* The rail is a sibling of the panel (so it survives the panel being hidden);
-   shown only for a collapsed sidebar. */
-.rail {
-  display: none;
-  border: none;
-  font: inherit;
-}
-
-:host([placement="sidebar"][collapsed]) .rail {
-  display: flex;
-  position: absolute;
-  inset: 0;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 16px;
-  border: 1px solid var(--_border);
-  background: var(--_header-bg);
-  color: var(--_header-fg);
-  cursor: pointer;
+:host([placement="sidebar"][data-side="left"][collapsed]) .chat {
+  transform: translateX(-100%);
 }
 
 @media (prefers-reduced-motion: reduce) {
   :host([placement="sidebar"]),
   :host([placement="sidebar"]) .chat {
     transition: none;
+  }
+}
+
+/* ── Launcher ───────────────────────────────────────────────────────────────
+   What a collapsed widget shrinks to: a round floating button by default, the
+   sidebar's slim edge rail under that placement. A sibling of the panel, so it
+   survives the panel being hidden, and the only part of a collapsed widget
+   that takes pointer events. */
+.launcher {
+  display: flex;
+  position: absolute;
+  inset: var(--_launcher-inset);
+  align-items: center;
+  justify-content: center;
+  width: var(--_launcher-size);
+  height: var(--_launcher-size);
+  padding: 0;
+  border: none;
+  border-radius: var(--_launcher-radius);
+  background: var(--_launcher-bg);
+  color: var(--_launcher-fg);
+  box-shadow: var(--_shadow);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transform: scale(0.4);
+  visibility: hidden;
+  transition:
+    opacity var(--_motion) var(--_ease),
+    transform var(--_motion) var(--_ease-pop),
+    visibility var(--_motion) var(--_ease);
+}
+
+/* The launcher grows out of the corner the panel shrank into.
+   It is laid out at rest rather than display:none, which is what lets it
+   animate in *and* out: an element that was not rendered has no before-change
+   style to transition from, and one whose display flips to none cannot
+   transition at all. visibility keeps it unpaintable, untabbable and
+   unclickable in between -- the expanded panel's own controls sit under it and
+   must stay reachable. */
+:host([collapsed]) .launcher {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+}
+
+:host([collapsed]) .launcher:hover {
+  transform: scale(1.06);
+}
+
+:host([collapsed]) .launcher:active {
+  transform: scale(0.94);
+}
+
+.launcher .icon-holder {
+  width: var(--_launcher-icon-size);
+  height: var(--_launcher-icon-size);
+}
+
+/* The unread badge rides the launcher's top-right corner. The ring in the
+   widget's own background is what separates it from the launcher underneath,
+   whatever colour the host themes either one. */
+.launcher-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: var(--_badge-size);
+  height: var(--_badge-size);
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--_badge-bg);
+  color: var(--_badge-fg);
+  font-size: var(--_badge-font-size);
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--_bg);
+}
+
+.launcher-badge[hidden] {
+  display: none;
+}
+
+/* The sidebar collapses to an edge rail instead: full height, square, flush
+   against the dock. It slides in with the panel rather than popping. */
+:host([placement="sidebar"][collapsed]) .launcher {
+  inset: 0;
+  width: auto;
+  height: auto;
+  align-items: flex-start;
+  padding-top: 16px;
+  border: 1px solid var(--_border);
+  border-radius: 0;
+  background: var(--_header-bg);
+  color: var(--_header-fg);
+  box-shadow: none;
+  transform: none;
+}
+
+/* Every transition in this file is timed by --_motion, so collapsing it to a
+   frame is the whole reduced-motion story: states still change (and display
+   still flips at the end of its discrete transition), nothing travels. */
+@media (prefers-reduced-motion: reduce) {
+  :host {
+    --_motion: var(--ag-ui-motion, 0.001s);
   }
 }
 
@@ -378,27 +513,78 @@ export const STYLES = `
   background: rgba(255, 255, 255, 0.18);
 }
 
-/* Collapsed: keep just the header bar — hide the whole body, and let the host
-   shrink to the header. (A host can also fully hide the element itself.) */
+/* ── Collapse ───────────────────────────────────────────────────────────────
+   Collapsing shrinks the widget to the round floating launcher: the panel
+   scales down toward the launcher's corner and fades out, the launcher pops in
+   from that same point. Both halves are transform and opacity only, so the
+   morph runs on the compositor and never reflows the host page.
+
+   The host box keeps its expanded size. Animating it would animate layout, and
+   a dragged --ag-ui-width would then fight the launcher's own size. Nothing
+   paints there once the panel is gone, so the box only has to stop swallowing
+   clicks: pointer events go to none, and the launcher takes them back.
+
+   Two placements collapse to something else and restore what they need:
+   "sidebar" slides to its rail (below), while "embedded" and "page" keep the
+   original header bar — embedded is laid out by the host page, where a
+   floating circle would escape the layout, and page is a full-screen route
+   with no corner to float in. */
 :host([collapsed]) {
+  pointer-events: none;
+}
+
+:host([collapsed]) .chat {
+  opacity: 0;
+  transform: scale(0.94);
+  visibility: hidden;
+}
+
+/* visibility is what keeps the panel out of the tab order and the a11y tree at
+   rest without display:none killing the transition. It interpolates so that any
+   progress below 1 still counts as visible: the panel stays on screen for the
+   whole collapse and flips hidden exactly at the end, and on expand it is
+   visible from the first frame. */
+.chat {
+  transform-origin: bottom right;
+  transition:
+    opacity var(--_motion) var(--_ease),
+    transform var(--_motion) var(--_ease),
+    visibility var(--_motion) var(--_ease);
+}
+
+:host([placement="bottom-left"]) .chat {
+  transform-origin: bottom left;
+}
+
+/* The two in-flow placements keep the original collapse: hide the body, let
+   the host shrink to the header bar. */
+:host([collapsed]:is([placement="embedded"], [placement="page"])) {
   height: auto;
   max-height: none;
+  pointer-events: auto;
 }
 
-:host([collapsed]) .messages,
-:host([collapsed]) .input-row,
-:host([collapsed]) .skill-chips,
-:host([collapsed]) .skill-palette,
-:host([collapsed]) .skill-hint {
+:host([collapsed]:is([placement="embedded"], [placement="page"])) .chat {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+}
+
+/* These two keep the header bar, so the launcher must stay out of the way —
+   an embedded host is position: static, which would otherwise leave an
+   absolutely-positioned circle to escape the layout entirely and land against
+   whatever the page happens to position. */
+:host([collapsed]:is([placement="embedded"], [placement="page"])) .launcher {
+  visibility: hidden;
+  opacity: 0;
+}
+
+:host([collapsed]:is([placement="embedded"], [placement="page"])) .messages,
+:host([collapsed]:is([placement="embedded"], [placement="page"])) .input-row,
+:host([collapsed]:is([placement="embedded"], [placement="page"])) .skill-chips,
+:host([collapsed]:is([placement="embedded"], [placement="page"])) .skill-palette,
+:host([collapsed]:is([placement="embedded"], [placement="page"])) .skill-hint {
   display: none;
-}
-
-/* Edge-docked placements pin top *and* bottom, which would otherwise keep the
-   panel full-height when collapsed; unpin the bottom so it shrinks to the
-   header. (Floating/bottom-left pin only the bottom, so they already shrink.) */
-:host([collapsed][placement="side"]),
-:host([collapsed][placement="full"]) {
-  bottom: auto;
 }
 
 .messages {
@@ -1071,100 +1257,185 @@ export const STYLES = `
   opacity: 0.35;
 }
 
+/* ── Composer ───────────────────────────────────────────────────────────────
+   One surface owns the border, the background and the focus ring; the field and
+   its tool row sit inside it. The row used to be four siblings stretched to the
+   textarea's height, which gave a paperclip the same visual weight as the field
+   and turned Send into a full-height slab. */
 .input-row {
   display: flex;
-  gap: 8px;
   padding: 12px;
   border-top: 1px solid var(--_border);
 }
 
-.input {
+.composer {
   flex: 1;
-  resize: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 6px 6px 10px;
   background: var(--_input-bg);
   border: 1px solid var(--_border);
-  border-radius: 8px;
-  padding: 8px 10px;
+  border-radius: var(--_composer-radius);
+  transition: border-color var(--_motion) var(--_ease);
+}
+
+.composer:focus-within {
+  border-color: var(--_accent);
+}
+
+/* The field grows with its content (sized by #autoGrow) up to the ceiling,
+   then scrolls. border-box keeps that measurement stable: with content-box the
+   padding would be added to every scrollHeight read and the field would creep
+   taller on each keystroke. */
+.input {
+  box-sizing: border-box;
+  resize: none;
+  max-height: var(--_composer-max-height);
+  overflow-y: auto;
+  padding: 6px 4px 2px;
+  background: transparent;
+  border: none;
   font: inherit;
   color: inherit;
   outline: none;
 }
 
-.input:focus {
-  border-color: var(--_accent);
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
-.send {
+/* Icon buttons: quiet at rest, so the field is what the eye lands on. */
+.attach-btn,
+.voice-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--_tool-btn-size);
+  height: var(--_tool-btn-size);
+  padding: 0;
   border: none;
   border-radius: 8px;
-  padding: 0 16px;
-  background: var(--_accent);
-  color: #ffffff;
+  background: transparent;
+  color: var(--_muted);
   font: inherit;
-  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
+  transition:
+    background-color var(--_motion) var(--_ease),
+    color var(--_motion) var(--_ease);
 }
 
-.send:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* The composer button doubles as the Stop control while a run is in flight. */
-.send[data-state="running"] {
-  background: var(--_muted);
-}
-
-/* ── File attachments ───────────────────────────────────────────────────── */
-/* The 📎 picker button sits left of the input; hidden until data-attachments-url. */
-.attach-btn {
-  border: 1px solid var(--_border);
-  border-radius: 8px;
-  padding: 0 10px;
-  background: var(--_input-bg);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.attach-btn:hover {
-  border-color: var(--_accent);
-}
-
-.attach-input {
-  display: none;
-}
-
-/* The 🎤 mic button; shown only once #wireVoice mounts it. */
-.voice-slot {
-  display: contents;
-}
-
-.voice-btn {
-  border: 1px solid var(--_border);
-  border-radius: 8px;
-  padding: 0 10px;
-  background: var(--_input-bg);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
+.attach-btn:hover,
 .voice-btn:hover {
-  border-color: var(--_accent);
+  background: var(--_hover);
+  color: var(--_fg);
 }
 
+.attach-btn:disabled,
 .voice-btn:disabled {
   cursor: default;
   opacity: 0.6;
 }
 
+/* Send closes the row on the right: a circle, the only filled control in the
+   composer, so "the thing that acts" reads at a glance. */
+.send {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--_send-size);
+  height: var(--_send-size);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--_accent);
+  color: #ffffff;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color var(--_motion) var(--_ease),
+    transform var(--_motion) var(--_ease-pop);
+}
+
+.send:hover {
+  transform: scale(1.08);
+}
+
+.send:active {
+  transform: scale(0.92);
+}
+
+.send:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+/* The composer button doubles as the Stop control while a run is in flight —
+   same circle, different glyph, so nothing moves when a run starts. */
+.send[data-state="running"] {
+  background: var(--_muted);
+}
+
+.send[data-state="idle"] .send-stop,
+.send[data-state="running"] .send-send {
+  display: none;
+}
+
+/* Glyphs — one class, painted from the button's own colour so every state
+   (hover, recording, running) carries the icon with it. */
+.glyph {
+  width: var(--_glyph-size);
+  height: var(--_glyph-size);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--_glyph-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.glyph--solid {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* In an icon holder (header brand, launcher) the glyph takes the holder's size
+   rather than the composer's. */
+.icon-holder .glyph {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── File attachments ───────────────────────────────────────────────────── */
+/* The picker button sits in the composer's tool row; hidden until
+   data-attachments-url. */
+.attach-input {
+  display: none;
+}
+
+/* The mic button's mount point; filled only once #wireVoice mounts the
+   control. */
+.voice-slot {
+  display: contents;
+}
+
 /* Recording: a red tint + a gentle pulse so it's clearly "live". */
 .voice-btn[data-state="recording"] {
-  border-color: var(--_danger);
   background: var(--_danger);
   color: #ffffff;
   animation: ag-ui-voice-pulse 1.2s ease-in-out infinite;
+}
+
+.voice-btn[data-state="recording"]:hover {
+  background: var(--_danger);
+  color: #ffffff;
 }
 
 @keyframes ag-ui-voice-pulse {
@@ -1557,16 +1828,35 @@ export const STYLES = `
   color: var(--_danger);
 }
 
-/* Chat-history drawer — a slide-over within the chat panel. */
+/* Chat-history drawer — a slide-over within the chat panel.
+   The hidden attribute stays the single source of truth for open/closed (no
+   JS-driven animation state): display is transitioned discretely, so on close
+   the drawer stays displayed for the whole exit and is removed only at the end,
+   which is what lets the backdrop fade and the panel slide out. */
 .drawer {
   position: absolute;
   inset: 0;
   z-index: 5;
   display: flex;
+  transition: visibility var(--_motion) var(--_ease);
 }
 
+/* Closed. The overlay keeps its box (display, not none) so the backdrop and
+   panel inside it stay rendered and can transition both ways; visibility is
+   what takes the whole subtree out of the tab order, the a11y tree and hit
+   testing at rest, and it holds off until the slide has finished. */
 .drawer[hidden] {
-  display: none;
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.drawer[hidden] .drawer-backdrop {
+  opacity: 0;
+}
+
+.drawer[hidden] .drawer-panel {
+  transform: translateX(-100%);
 }
 
 .checkpoints {
@@ -1584,10 +1874,21 @@ export const STYLES = `
   box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
   max-height: 60%;
   overflow-y: auto;
+  transform-origin: top center;
+  transition:
+    opacity var(--_motion) var(--_ease),
+    transform var(--_motion) var(--_ease),
+    visibility var(--_motion) var(--_ease);
 }
 
+/* Same idiom as the drawer: laid out at rest, hidden by visibility, so the
+   popover can animate open and closed. */
 .checkpoints[hidden] {
-  display: none;
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.96) translateY(-6px);
 }
 
 .checkpoints-title {
@@ -1649,6 +1950,8 @@ export const STYLES = `
   position: absolute;
   inset: 0;
   background: rgba(20, 20, 50, 0.32);
+  opacity: 1;
+  transition: opacity var(--_motion) var(--_ease);
 }
 
 .drawer-panel {
@@ -1661,6 +1964,8 @@ export const STYLES = `
   border-right: 1px solid var(--_border);
   box-shadow: var(--_shadow);
   overflow: hidden;
+  transform: none;
+  transition: transform var(--_motion) var(--_ease);
 }
 
 .drawer-header {

@@ -219,6 +219,7 @@
         <select id="cfg-placement">
           <option value="floating">floating</option>
           <option value="bottom-left">bottom-left</option>
+          <option value="sidebar">sidebar (rail)</option>
           <option value="side">side</option>
           <option value="full">full</option>
           <option value="page">page (centred column)</option>
@@ -254,6 +255,11 @@
         >Deutsch
         <input type="checkbox" id="cfg-i18n" />
       </label>
+      <label
+        >Unread badge
+        <input type="checkbox" id="cfg-badge" checked />
+      </label>
+      <button type="button" id="cfg-ping">Collapse + ping</button>
       <button type="button" id="cfg-reset-size">Reset size</button>
     </header>
 
@@ -290,6 +296,23 @@
               <strong>Server-resolved skill.</strong> The <em>Triage this article</em>
               chip ships no prompt: it sends <code>/triage</code> and the server answers.
               Watch the request — the wording is never in this page.
+            </li>
+            <li>
+              <strong>Collapse.</strong> Hit the header's <em>—</em>: the panel
+              scales into the round launcher in the corner, and the launcher
+              expands it again. <em>sidebar</em> slides to an edge rail instead;
+              <em>embedded</em> and <em>page</em> keep the header bar.
+            </li>
+            <li>
+              <strong>Chat history.</strong> The <em>☰</em> drawer slides in over
+              the panel and back out — the same motion tokens drive both.
+            </li>
+            <li>
+              <strong>Unread badge.</strong> <em>Collapse + ping</em> collapses the
+              widget and sends, so the answer lands behind the launcher and the
+              badge counts it. Expanding marks it read. Uncheck
+              <em>Unread badge</em> to see the opt-out — the count still runs
+              (watch <code>ag-ui-unread</code>), only the dot is gone.
             </li>
             <li>
               <strong>Resize.</strong> Drag the panel's top-left grip. Switch
@@ -347,6 +370,7 @@
           data-slash-commands="true"
           data-prompt-chips="true"
           data-transcribe-url="/transcribe/"
+          data-attachments-url="/attachments/"
           data-theme-toggle=""
         ></ag-ui-chat>
       </div>

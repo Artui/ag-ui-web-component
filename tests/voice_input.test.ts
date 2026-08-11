@@ -22,7 +22,8 @@ describe("VoiceInput", () => {
     expect(voice.element.getAttribute("part")).toBe("voice-button");
     expect(voice.element.dataset["state"]).toBe("idle");
     expect(voice.element.getAttribute("aria-label")).toBe("Record voice");
-    expect(voice.element.textContent).toBe("🎤");
+    // The glyph is slotted, so a host can project its own mic mark.
+    expect(voice.element.querySelector('slot[name="icon-voice"] svg')).not.toBeNull();
   });
 
   it("records, transcribes on stop, and delivers the text", async () => {

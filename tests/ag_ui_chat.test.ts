@@ -1,7 +1,7 @@
 import type { Context, Message, Tool } from "@ag-ui/core";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT } from "../src/constants.js";
-import type { AgUiChat, SubmitDetail } from "../src/core/ag_ui_chat.js";
+import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT, UNREAD_EVENT } from "../src/constants.js";
+import type { AgUiChat, SubmitDetail, UnreadDetail } from "../src/core/ag_ui_chat.js";
 import type {
   ClientConversationStore,
   NavigationCheckpoint,
@@ -354,18 +354,135 @@ describe("AgUiChat", () => {
       emit.runStart();
       const button = shadow(el).querySelector<HTMLButtonElement>(".send");
       midRun = {
-        label: button?.textContent ?? null,
+        label: button?.title ?? null,
         aria: button?.getAttribute("aria-label") ?? null,
         state: button?.dataset["state"],
       };
       emit.runEnd();
     });
     await send(el, "go");
+    // The button is icon-only: the state swaps its glyph (via data-state) and
+    // its accessible name, never any text.
     expect(midRun).toEqual({ label: "Stop", aria: "Stop", state: "running" });
     const button = shadow(el).querySelector<HTMLButtonElement>(".send");
-    expect(button?.textContent).toBe("Send");
+    expect(button?.title).toBe("Send");
     expect(button?.getAttribute("aria-label")).toBe("Send");
     expect(button?.dataset["state"]).toBe("idle");
+  });
+
+  describe("unread badge", () => {
+    /** Stream one finished answer through a mounted element. */
+    async function answer(el: AgUiChat): Promise<void> {
+      await send(el, "hi");
+    }
+
+    function badge(el: AgUiChat): HTMLElement {
+      const found = shadow(el).querySelector<HTMLElement>(".launcher-badge");
+      if (found === null) {
+        throw new Error("expected a .launcher-badge");
+      }
+      return found;
+    }
+
+    function mountAnswering(): AgUiChat {
+      const { el } = mountWithAgent((emit) => {
+        emit.runStart();
+        emit.textEnd("an answer");
+        emit.runEnd();
+      });
+      return el;
+    }
+
+    it("counts answers that land while collapsed and shows them on the launcher", async () => {
+      const el = mountAnswering();
+      el.setCollapsed(true);
+
+      await answer(el);
+      await answer(el);
+
+      expect(el.unread).toBe(2);
+      expect(badge(el).hidden).toBe(false);
+      expect(badge(el).textContent).toBe("2");
+    });
+
+    it("stays silent while the widget is open — nothing there is unread", async () => {
+      const el = mountAnswering();
+
+      await answer(el);
+
+      expect(el.unread).toBe(0);
+      expect(badge(el).hidden).toBe(true);
+    });
+
+    it("caps the badge at 9+, where the exact number stops being information", async () => {
+      const el = mountAnswering();
+      el.setCollapsed(true);
+      for (let i = 0; i < 10; i += 1) {
+        await answer(el);
+      }
+
+      expect(el.unread).toBe(10);
+      expect(badge(el).textContent).toBe("9+");
+    });
+
+    it("marks them read on expand, and announces the count on the launcher", async () => {
+      const el = mountAnswering();
+      el.setCollapsed(true);
+      await answer(el);
+      const launcher = shadow(el).querySelector(".launcher");
+      expect(launcher?.getAttribute("aria-label")).toBe("Expand — 1 unread");
+
+      el.setCollapsed(false);
+
+      expect(el.unread).toBe(0);
+      expect(badge(el).hidden).toBe(true);
+      expect(launcher?.getAttribute("aria-label")).toBe("Expand");
+    });
+
+    it("emits ag-ui-unread on every change, so a host can render its own", async () => {
+      const el = mountAnswering();
+      const seen: number[] = [];
+      el.addEventListener(UNREAD_EVENT, (event) => {
+        seen.push((event as CustomEvent<UnreadDetail>).detail.unread);
+      });
+      el.setCollapsed(true);
+      await answer(el);
+      el.setCollapsed(false);
+
+      expect(seen).toEqual([0, 1, 0]);
+    });
+
+    it("keeps counting with the badge off, so a host chrome stays truthful", async () => {
+      const el = mountAnswering();
+      el.setAttribute("data-unread-badge", "false");
+      el.setCollapsed(true);
+
+      await answer(el);
+
+      expect(el.unread).toBe(1);
+      expect(badge(el).hidden).toBe(true);
+      // The label follows the badge: a launcher that shows no count must not
+      // announce one either.
+      expect(shadow(el).querySelector(".launcher")?.getAttribute("aria-label")).toBe("Expand");
+    });
+
+    it("clears the count when the thread is discarded", async () => {
+      const el = mountAnswering();
+      el.setCollapsed(true);
+      await answer(el);
+
+      el.newChat();
+
+      expect(el.unread).toBe(0);
+      expect(badge(el).hidden).toBe(true);
+    });
+  });
+
+  it("mounts both composer glyphs, so a slotted mark survives the state swap", () => {
+    const { el } = mountWithAgent(() => {});
+    const button = shadow(el).querySelector<HTMLButtonElement>(".send");
+    expect(button?.querySelector('slot[name="icon-send"]')).not.toBeNull();
+    expect(button?.querySelector('slot[name="icon-stop"]')).not.toBeNull();
   });
 
   it("renders a tool-call card with name, args, and a status", async () => {
@@ -1552,7 +1669,7 @@ describe("AgUiChat", () => {
       expect(shadow(el).querySelector(".stopped-note")?.textContent).toBe("⏹ Stopped");
       expect(shadow(el).textContent).not.toContain("⚠️");
       // Back to rest: the button returned to Send.
-      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.textContent).toBe("Send");
+      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.title).toBe("Send");
     });
 
     it("Escape in the composer cancels a running run", async () => {
@@ -1622,7 +1739,7 @@ describe("AgUiChat", () => {
       await flush();
 
       expect(handle.abortRuns).toBe(1);
-      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.textContent).toBe("Send");
+      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.title).toBe("Send");
     });
   });
 

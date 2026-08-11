@@ -80,7 +80,7 @@ describe("AgUiChat — UX & customization", () => {
       expect(shadow(el).querySelector<HTMLTextAreaElement>(".input")?.placeholder).toBe(
         "Frag mich…",
       );
-      expect(shadow(el).querySelector(".send")?.textContent).toBe("Senden");
+      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.title).toBe("Senden");
       expect(shadow(el).querySelector(".header-btn--history")?.getAttribute("aria-label")).toBe(
         "Verlauf",
       );
@@ -88,7 +88,7 @@ describe("AgUiChat — UX & customization", () => {
 
     it("reads overrides from the `data-strings` JSON attribute", () => {
       const el = mount({ "data-strings": JSON.stringify({ send: "Go" }) });
-      expect(shadow(el).querySelector(".send")?.textContent).toBe("Go");
+      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.title).toBe("Go");
     });
 
     it("lets the property win over the attribute key-by-key", () => {
@@ -98,7 +98,7 @@ describe("AgUiChat — UX & customization", () => {
           e.strings = { send: "Prop" };
         },
       );
-      expect(shadow(el).querySelector(".send")?.textContent).toBe("Prop");
+      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.title).toBe("Prop");
       expect(shadow(el).querySelector(".header-btn--collapse")?.getAttribute("aria-label")).toBe(
         "Zu",
       );
@@ -113,7 +113,7 @@ describe("AgUiChat — UX & customization", () => {
 
     it("ignores a non-object `data-strings` payload", () => {
       const el = mount({ "data-strings": "42" });
-      expect(shadow(el).querySelector(".send")?.textContent).toBe("Send");
+      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.title).toBe("Send");
     });
 
     it("renders no default literals under a full override (regression guard)", () => {
@@ -138,7 +138,7 @@ describe("AgUiChat — UX & customization", () => {
         expect(html).not.toContain(literal);
       }
       // The overrides are what render instead.
-      expect(shadow(el).querySelector(".send")?.textContent).toBe(fullOverride.send);
+      expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.title).toBe(fullOverride.send);
       expect(shadow(el).querySelector<HTMLTextAreaElement>(".input")?.placeholder).toBe(
         fullOverride.inputPlaceholder,
       );
@@ -207,30 +207,47 @@ describe("AgUiChat — UX & customization", () => {
     });
   });
 
-  describe("sliding sidebar & rail", () => {
-    it("renders the rail and reflects collapsed on aria-expanded", () => {
-      const el = mount({ placement: "sidebar" });
-      const rail = shadow(el).querySelector<HTMLButtonElement>(".rail");
-      expect(rail).not.toBeNull();
-      expect(rail?.getAttribute("aria-expanded")).toBe("true");
+  describe("launcher", () => {
+    it("renders the launcher and reflects collapsed on aria-expanded", () => {
+      const el = mount();
+      const launcher = shadow(el).querySelector<HTMLButtonElement>(".launcher");
+      expect(launcher).not.toBeNull();
+      expect(launcher?.getAttribute("aria-expanded")).toBe("true");
       el.setCollapsed(true);
-      expect(rail?.getAttribute("aria-expanded")).toBe("false");
+      expect(launcher?.getAttribute("aria-expanded")).toBe("false");
     });
 
-    it("expands the sidebar when the rail is clicked", () => {
+    it("expands the widget when the launcher is clicked", () => {
       const el = mount({ placement: "sidebar" });
       el.setCollapsed(true);
       expect(el.collapsed).toBe(true);
-      shadow(el).querySelector<HTMLButtonElement>(".rail")?.click();
+      shadow(el).querySelector<HTMLButtonElement>(".launcher")?.click();
       expect(el.collapsed).toBe(false);
-      expect(shadow(el).querySelector(".rail")?.getAttribute("aria-expanded")).toBe("true");
+      expect(shadow(el).querySelector(".launcher")?.getAttribute("aria-expanded")).toBe("true");
     });
 
-    it("gives the rail a launcher part with a default glyph", () => {
-      const el = mount({ placement: "sidebar" });
-      const rail = shadow(el).querySelector(".rail");
-      expect(rail?.getAttribute("part")).toBe("launcher");
-      expect(rail?.querySelector('slot[name="launcher"]')?.textContent).toBe("💬");
+    it("gives the launcher a part and a default glyph", () => {
+      const el = mount();
+      const launcher = shadow(el).querySelector(".launcher");
+      expect(launcher?.getAttribute("part")).toBe("launcher");
+      expect(launcher?.querySelector('slot[name="launcher"] svg')).not.toBeNull();
+    });
+
+    it("takes its own icon url, so the launcher mark can differ from the header's", () => {
+      const el = mount({ "data-icon-url": "/logo.png", "data-launcher-icon-url": "/mark.png" });
+      expect(
+        shadow(el).querySelector<HTMLImageElement>(".header .icon-img")?.getAttribute("src"),
+      ).toBe("/logo.png");
+      expect(
+        shadow(el).querySelector<HTMLImageElement>(".launcher .icon-img")?.getAttribute("src"),
+      ).toBe("/mark.png");
+    });
+
+    it("falls back to the header icon url when no launcher-specific one is set", () => {
+      const el = mount({ "data-icon-url": "/logo.png" });
+      expect(
+        shadow(el).querySelector<HTMLImageElement>(".launcher .icon-img")?.getAttribute("src"),
+      ).toBe("/logo.png");
     });
   });
 

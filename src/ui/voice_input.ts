@@ -1,3 +1,4 @@
+import { ICON_VOICE } from "../constants.js";
 import type { TranscribeHandler } from "../core/transcribe_audio.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
@@ -49,7 +50,12 @@ export class VoiceInput {
     this.element.type = "button";
     this.element.className = "voice-btn";
     this.element.setAttribute("part", "voice-button");
-    this.element.textContent = "🎤";
+    // The mic glyph, in a slot so a host can project its own mark. Author-written
+    // constant markup, never user or server data.
+    const glyph = document.createElement("slot");
+    glyph.name = "icon-voice";
+    glyph.innerHTML = ICON_VOICE;
+    this.element.append(glyph);
     this.#setState("idle");
     this.element.addEventListener("click", () => {
       void this.toggle();

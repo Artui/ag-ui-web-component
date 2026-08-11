@@ -3,6 +3,10 @@ import {
   ATTACHMENT_EVENT,
   COMPACTION_ACTIVITY_TYPE,
   DEFAULT_ATTACHMENT_MAX_BYTES,
+  ICON_ATTACH,
+  ICON_LAUNCHER,
+  ICON_SEND,
+  ICON_STOP,
   LOAD_CAPABILITY_TOOL,
   MESSAGE_ROLE,
   READ_PAGE_TOOL,
@@ -11,6 +15,7 @@ import {
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
+  UNREAD_EVENT,
   X_CONFIRM_KEY,
   X_SUMMARY_KEY,
 } from "../constants.js";
@@ -103,6 +108,11 @@ export interface StateDetail {
 /** `detail` shape of the {@link TOGGLE_EVENT} CustomEvent. */
 export interface ToggleDetail {
   readonly collapsed: boolean;
+}
+
+/** `detail` shape of the {@link UNREAD_EVENT} CustomEvent. */
+export interface UnreadDetail {
+  readonly unread: number;
 }
 
 /**
@@ -404,8 +414,12 @@ export class AgUiChat extends HTMLElement {
   readonly #attachSlot: HTMLDivElement;
   /** Optional built-in header theme toggle; shown only with `data-theme-toggle`. */
   readonly #themeToggle: HTMLButtonElement;
-  /** The collapsed-sidebar rail (an expand affordance; shown only for `placement="sidebar"`). */
-  readonly #rail: HTMLButtonElement;
+  /** What the collapsed widget shrinks to: the floating launcher, or the sidebar rail. */
+  readonly #launcher: HTMLButtonElement;
+  /** The launcher's unread badge; hidden at zero, and when the host opts out. */
+  readonly #badge: HTMLSpanElement;
+  // Answers that finished while the widget was collapsed. Expanding clears it.
+  #unread = 0;
   /** Empty-state region at the top of the message list; hidden once anything renders. */
   readonly #emptyWrap: HTMLDivElement;
   /** Upload tray; created on connect only when `data-attachments-url` is set. */
@@ -481,7 +495,8 @@ export class AgUiChat extends HTMLElement {
     this.#attachSlot = document.createElement("div");
     this.#voiceSlot = document.createElement("span");
     this.#themeToggle = document.createElement("button");
-    this.#rail = document.createElement("button");
+    this.#launcher = document.createElement("button");
+    this.#badge = document.createElement("span");
     this.#emptyWrap = document.createElement("div");
     this.#skillsMenu = new SkillsMenu((skill) => this.#applySkill(skill));
     this.#drawer = new ThreadDrawer({
@@ -546,6 +561,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     this.#input.value = "";
+    this.#autoGrow();
     const endpoint = verb === "resume" ? index.resumeUrl(runId) : index.forkUrl(runId);
     const agent = this.agentFactory({
       endpoint,
@@ -964,7 +980,7 @@ export class AgUiChat extends HTMLElement {
     if (this.#readScopedItem(COLLAPSED_KEY) === "1") {
       this.setAttribute("collapsed", "");
     }
-    this.#syncRail();
+    this.#syncLauncher();
     this.#initSkills();
     // Namespace the built-in default store too (a host-injected store is used
     // verbatim). Must precede #wireThreadStore, which wraps the current store.
@@ -1370,12 +1386,14 @@ export class AgUiChat extends HTMLElement {
         .replace("{fields}", missing.join(", "));
       this.#skillHint.hidden = false;
       this.#input.value = text;
+      this.#autoGrow();
       this.#input.focus();
       this.#selectFirstPlaceholder(text);
       return;
     }
     this.#skillHint.hidden = true;
     this.#input.value = text;
+    this.#autoGrow();
     if (skill.sendImmediately === false) {
       this.#input.focus();
       return;
@@ -1420,7 +1438,9 @@ export class AgUiChat extends HTMLElement {
       this.removeAttribute("collapsed");
     }
     sessionStorage.setItem(this.#storageKey(COLLAPSED_KEY), collapsed ? "1" : "0");
-    this.#syncRail();
+    // Expanding is what marks the waiting answers read; collapsing starts a
+    // fresh count. Either way the badge is cleared and the host told.
+    this.#setUnread(0);
     this.dispatchEvent(
       new CustomEvent<ToggleDetail>(TOGGLE_EVENT, {
         detail: { collapsed },
@@ -1428,6 +1448,16 @@ export class AgUiChat extends HTMLElement {
         composed: true,
       }),
     );
+  }
+
+  /**
+   * Answers that finished while the widget was collapsed, and that the user has
+   * therefore not seen. Expanding (or {@link newChat}) clears it. The launcher's
+   * badge renders this; {@link UNREAD_EVENT} announces every change, so a host
+   * chrome can render its own instead.
+   */
+  get unread(): number {
+    return this.#unread;
   }
 
   /** Flip the collapsed state. Bound to the built-in header toggle. */
@@ -1644,6 +1674,7 @@ export class AgUiChat extends HTMLElement {
     this.#resetState();
     this.#threadId = this.conversationStore.threadId();
     this.#setRunning(false);
+    this.#setUnread(0);
   }
 
   /** Drop the in-memory run + transcript, leaving the thread id untouched. */
@@ -2007,18 +2038,35 @@ export class AgUiChat extends HTMLElement {
     inputRow.className = "input-row";
     inputRow.setAttribute("part", "composer");
 
+    // One bordered surface holds the field and the tool row under it, so the
+    // icon buttons stop competing with the field for weight.
+    const composer = document.createElement("div");
+    composer.className = "composer";
+    composer.setAttribute("part", "composer-surface");
+
+    const tools = document.createElement("div");
+    tools.className = "composer-tools";
+    tools.setAttribute("part", "composer-tools");
+
     this.#input.className = "input";
     this.#input.setAttribute("part", "input");
     this.#input.setAttribute("aria-label", this.#strings.message);
-    this.#input.rows = 2;
+    this.#input.rows = 1;
     this.#input.placeholder = this.#strings.inputPlaceholder;
     this.#input.addEventListener("keydown", (event) => this.#onKeydown(event));
     this.#input.addEventListener("input", () => this.#onInput());
 
+    // Icon-only, with both glyphs mounted at once and CSS showing the one the
+    // state calls for — swapping a single glyph would leave a host that slotted
+    // its own Send mark holding a stop icon mid-run.
     this.#send.className = "send";
     this.#send.type = "button";
     this.#send.setAttribute("part", "send");
-    this.#send.textContent = this.#strings.send;
+    this.#send.append(
+      this.#glyphSlot("icon-send", "send-send", ICON_SEND),
+      this.#glyphSlot("icon-stop", "send-stop", ICON_STOP),
+    );
+    this.#send.title = this.#strings.send;
     this.#send.setAttribute("aria-label", this.#strings.send);
     this.#send.dataset["state"] = "idle";
     this.#send.addEventListener("click", () => {
@@ -2035,13 +2083,13 @@ export class AgUiChat extends HTMLElement {
     this.#skillHint.setAttribute("part", "skill-hint");
     this.#skillHint.hidden = true;
 
-    // File-upload affordance: a 📎 button (hidden until `data-attachments-url`
-    // is wired) opening a hidden multi-file input. Drag-and-drop covers the
-    // whole shell (wired in #enableDragAndDrop).
+    // File-upload affordance: a paperclip button (hidden until
+    // `data-attachments-url` is wired) opening a hidden multi-file input.
+    // Drag-and-drop covers the whole shell (wired in #enableDragAndDrop).
     this.#attachButton.className = "attach-btn";
     this.#attachButton.type = "button";
     this.#attachButton.setAttribute("part", "attach-button");
-    this.#attachButton.textContent = "📎";
+    this.#attachButton.append(this.#glyphSlot("icon-attach", "attach-glyph", ICON_ATTACH));
     this.#attachButton.title = this.#strings.attachFiles;
     this.#attachButton.setAttribute("aria-label", this.#strings.attachFiles);
     this.#attachButton.hidden = true;
@@ -2062,7 +2110,9 @@ export class AgUiChat extends HTMLElement {
     const footer = document.createElement("slot");
     footer.name = "footer";
 
-    inputRow.append(this.#attachButton, this.#voiceSlot, this.#input, this.#send, this.#fileInput);
+    tools.append(this.#attachButton, this.#voiceSlot, this.#send);
+    composer.append(this.#input, tools);
+    inputRow.append(composer, this.#fileInput);
     // Skill surfaces sit just above the input: palette (opens on `/`), chips,
     // the missing-placeholder hint, and the pending-attachments tray.
     this.#chat.append(
@@ -2078,15 +2128,24 @@ export class AgUiChat extends HTMLElement {
       this.#checkpoints.element,
     );
 
-    // The collapsed-sidebar rail: a slim edge strip (the expand affordance),
-    // sibling of the panel so it survives the panel being hidden. CSS shows it
-    // only for `placement="sidebar"` + `collapsed`.
-    this.#rail.className = "rail";
-    this.#rail.type = "button";
-    this.#rail.setAttribute("part", "launcher");
-    this.#rail.setAttribute("aria-label", this.#strings.expand);
-    this.#rail.append(this.#iconElement("launcher", "launcher-icon", "💬"));
-    this.#rail.addEventListener("click", () => this.setCollapsed(false));
+    // What a collapsed widget shrinks to: a round floating button, or the slim
+    // edge rail under `placement="sidebar"` — one element, shaped by CSS.
+    // A sibling of the panel, so it survives the panel being hidden.
+    this.#launcher.className = "launcher";
+    this.#launcher.type = "button";
+    this.#launcher.setAttribute("part", "launcher");
+    this.#launcher.setAttribute("aria-label", this.#strings.expand);
+    this.#badge.className = "launcher-badge";
+    this.#badge.setAttribute("part", "launcher-badge");
+    // The count is announced through the launcher's own label, so the badge is
+    // decoration to a screen reader rather than a second, context-free number.
+    this.#badge.setAttribute("aria-hidden", "true");
+    this.#badge.hidden = true;
+    this.#launcher.append(
+      this.#iconElement("launcher", "launcher-icon", ICON_LAUNCHER, this.#launcherIconUrl()),
+      this.#badge,
+    );
+    this.#launcher.addEventListener("click", () => this.setCollapsed(false));
 
     this.#chat.append(
       createResizeHandle({
@@ -2104,7 +2163,7 @@ export class AgUiChat extends HTMLElement {
         label: this.#strings.resizePanel,
       }),
     );
-    this.#root.append(style, this.#chat, this.#rail);
+    this.#root.append(style, this.#chat, this.#launcher);
   }
 
   /**
@@ -2133,16 +2192,44 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * An icon holder wrapping a `<slot>` so a host can project custom markup; with
-   * a `data-icon-url` `<img>` as the slot's fallback, or a glyph when given.
+   * A `<slot>` a host can project its own mark into, falling back to one of the
+   * built-in glyphs. The markup is an author-written constant, never user or
+   * server data, so it is assigned directly rather than sanitised.
    */
-  #iconElement(slotName: string, part: string, fallbackGlyph: string | null): HTMLSpanElement {
+  #glyphSlot(slotName: string, className: string, markup: string): HTMLSlotElement {
+    const slot = document.createElement("slot");
+    slot.name = slotName;
+    slot.className = className;
+    slot.innerHTML = markup;
+    return slot;
+  }
+
+  /**
+   * The launcher's own image URL. `data-launcher-icon-url` lets the collapsed
+   * button carry a different mark from the header's — a product logo reads at
+   * 22px in a header bar but rarely at 26px in a circle — and falls back to the
+   * header icon so a single `data-icon-url` still feeds both.
+   */
+  #launcherIconUrl(): string | null {
+    return this.getAttribute("data-launcher-icon-url") ?? this.getAttribute("data-icon-url");
+  }
+
+  /**
+   * An icon holder wrapping a `<slot>` so a host can project custom markup;
+   * with an `<img>` as the slot's fallback when an icon URL is configured, or
+   * the given glyph markup when it is not.
+   */
+  #iconElement(
+    slotName: string,
+    part: string,
+    fallbackGlyph: string | null,
+    iconUrl: string | null = this.getAttribute("data-icon-url"),
+  ): HTMLSpanElement {
     const holder = document.createElement("span");
     holder.className = "icon-holder";
     holder.setAttribute("part", part);
     const slot = document.createElement("slot");
     slot.name = slotName;
-    const iconUrl = this.getAttribute("data-icon-url");
     if (iconUrl !== null) {
       const img = document.createElement("img");
       img.className = "icon-img";
@@ -2150,15 +2237,71 @@ export class AgUiChat extends HTMLElement {
       img.alt = "";
       slot.append(img);
     } else if (fallbackGlyph !== null) {
-      slot.append(document.createTextNode(fallbackGlyph));
+      slot.innerHTML = fallbackGlyph;
     }
     holder.append(slot);
     return holder;
   }
 
-  /** Reflect the collapsed state on the rail's `aria-expanded`. */
-  #syncRail(): void {
-    this.#rail.setAttribute("aria-expanded", String(!this.collapsed));
+  /**
+   * Reflect the collapsed state and the unread count on the launcher.
+   *
+   * The count is also the launcher's accessible name: a badge that only exists
+   * as a coloured dot says nothing to a screen reader, and "Expand" alone would
+   * be a lie once answers are waiting behind it.
+   */
+  #syncLauncher(): void {
+    this.#launcher.setAttribute("aria-expanded", String(!this.collapsed));
+    const unread = this.#unread;
+    // Past 9 the exact number stops being information and starts being a
+    // layout problem — the badge is a circle, not a field.
+    this.#badge.textContent = unread > 9 ? "9+" : String(unread);
+    this.#badge.hidden = unread === 0 || !this.#badgeEnabled();
+    const label = this.#badge.hidden
+      ? this.#strings.expand
+      : this.#strings.expandUnread.replace("{count}", String(unread));
+    this.#launcher.setAttribute("aria-label", label);
+    this.#launcher.title = label;
+  }
+
+  /**
+   * The unread badge, unlike every other affordance here, is on by default:
+   * a collapsed widget is the one state where an answer can arrive with nothing
+   * on screen to say so. `data-unread-badge="false"` turns it off for a host
+   * that drives its own chrome from the `ag-ui-unread` event.
+   */
+  #badgeEnabled(): boolean {
+    return this.getAttribute("data-unread-badge") !== "false";
+  }
+
+  /**
+   * Set the unread count, repaint the badge, and tell the host.
+   *
+   * The count is kept whether or not the badge renders it, so `unread` stays
+   * truthful for a host chrome and switching the badge on mid-session doesn't
+   * start from a number that was never counted.
+   */
+  #setUnread(count: number): void {
+    this.#unread = count;
+    this.#syncLauncher();
+    this.dispatchEvent(
+      new CustomEvent<UnreadDetail>(UNREAD_EVENT, {
+        detail: { unread: count },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /**
+   * Count an answer the user cannot have seen: one that finished while the
+   * widget was collapsed. Expanding is what marks them read.
+   */
+  #noteUnread(): void {
+    if (!this.collapsed) {
+      return;
+    }
+    this.#setUnread(this.#unread + 1);
   }
 
   /** Hide the empty-state region once the message list holds anything else. */
@@ -2170,6 +2313,7 @@ export class AgUiChat extends HTMLElement {
   #onInput(): void {
     this.#skillsMenu.onInput(this.#input.value);
     this.#skillHint.hidden = true;
+    this.#autoGrow();
   }
 
   #onKeydown(event: KeyboardEvent): void {
@@ -2202,13 +2346,32 @@ export class AgUiChat extends HTMLElement {
     this.#client?.cancel();
   }
 
-  /** Swap the composer button between Send (idle) and Stop (running). */
+  /**
+   * Swap the composer button between Send (idle) and Stop (running).
+   *
+   * The glyph is swapped by CSS from `data-state` — both are mounted — so this
+   * only has to move the accessible name, which is the button's whole label now
+   * that it carries no text.
+   */
   #setRunning(running: boolean): void {
     this.#running = running;
     const label = running ? this.#strings.stop : this.#strings.send;
-    this.#send.textContent = label;
+    this.#send.title = label;
     this.#send.setAttribute("aria-label", label);
     this.#send.dataset["state"] = running ? "running" : "idle";
+  }
+
+  /**
+   * Size the field to its content: one row when empty, growing with what is
+   * typed until the CSS ceiling takes over and it scrolls.
+   *
+   * Resetting to `auto` first is what makes it shrink again — `scrollHeight`
+   * never reports less than the current height, so measuring without the reset
+   * would ratchet the composer taller and never back down.
+   */
+  #autoGrow(): void {
+    this.#input.style.height = "auto";
+    this.#input.style.height = `${this.#input.scrollHeight}px`;
   }
 
   async #submit(): Promise<void> {
@@ -2227,6 +2390,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     this.#input.value = "";
+    this.#autoGrow();
     // A file still uploading does not ride along — `readyRefs()` returns only
     // settled ones, and `clearReady()` deliberately keeps the rest for a
     // follow-up. Nothing said so, which is the whole defect: attachments are
@@ -2581,6 +2745,7 @@ export class AgUiChat extends HTMLElement {
         }
         attachCopyButtons(bubble, this.#strings);
         this.#streamingBubble = null;
+        this.#noteUnread();
       },
       onToolCall: (call) => {
         this.#hidePending();

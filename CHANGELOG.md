@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-08-11
+
+Two complaints about how the widget *feels*, and both turned out to be structural
+rather than cosmetic.
+
+### Changed
+
+- **The composer is one surface, not four boxes.** The input row was a flat flex
+  row — attach, mic, textarea, send — with every sibling stretched to the
+  textarea's two-row height. That gave a paperclip the same visual weight as the
+  field it sits next to and made Send a full-height filled slab. The border,
+  background and focus ring now belong to a wrapping `composer-surface`: the
+  field is borderless and **grows with what is typed** (from one row up to
+  `--ag-ui-composer-max-height`, then scrolls), and a `composer-tools` row
+  underneath carries the paperclip and mic as quiet icon buttons with a circular
+  Send closing the right-hand end.
+
+  Send is now icon-only. Its accessible name still comes from the `send` /
+  `stop` strings (`aria-label` + `title`), and the run state swaps its glyph
+  rather than its text, so nothing moves when a run starts. A host that sized
+  `::part(send)` by its padding should switch to `--ag-ui-send-size`.
+
+- **Collapsing goes to a round floating launcher.** `collapsed` used to leave the
+  full-width header bar sitting on the page, which is most of a chat widget's
+  footprint for none of its use. The panel now scales down into a launcher in the
+  corner it already occupies and the launcher grows back out of that point;
+  `transform` and `opacity` are all that animate, so the morph is
+  compositor-only and cannot reflow the host page. `placement="sidebar"` keeps
+  its edge rail (and now genuinely *slides* out through the edge it docks
+  against — the transition was declared but never wired to a transform), and
+  `embedded` / `page` keep the header bar, being host-laid-out and full-screen
+  respectively.
+
+  This changes what an existing floating embed looks like when collapsed. The
+  collapsed host keeps its box with `pointer-events: none`, so the page beneath
+  stays interactive and the launcher takes the clicks.
+
+- **The chat-history drawer and the checkpoints panel slide.** Both were toggled
+  with `hidden` alone, which snaps. They now keep their box and hide with
+  `visibility`, which is what lets a surface animate *in and out* — an element
+  that was never rendered has no before-change style to animate from, and one
+  whose `display` flips to `none` cannot animate at all.
+
+- **The chrome's glyphs are inline SVG** (send, stop, paperclip, mic, launcher)
+  rather than emoji, each in a slot with the mark as its fallback:
+  `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`, `launcher`.
+
+### Added
+
+- **An unread badge on the launcher.** A collapsed widget is the one state where
+  an answer can arrive with nothing on screen to say so, so the launcher now
+  counts the answers that finished while it was closed (capped at `9+`) and
+  expanding marks them read. It is the only affordance here that is **on by
+  default**; `data-unread-badge="false"` turns the badge off, and the count keeps
+  running so a host chrome can render its own from the new `ag-ui-unread` event
+  (`UNREAD_EVENT` / `UnreadDetail`, plus a `chat.unread` getter). The count is
+  also the launcher's accessible name — a coloured dot says nothing to a screen
+  reader — via the new `expandUnread` string. Tokens:
+  `--ag-ui-badge-{bg,fg,size,font-size}`; part `launcher-badge`.
+
+- **`data-launcher-icon-url`** — an icon for the collapsed launcher when it should
+  differ from the header's. Falls back to `data-icon-url`, so one attribute still
+  feeds both.
+
+- **Motion tokens** — `--ag-ui-motion`, `--ag-ui-ease`, `--ag-ui-ease-pop`. One
+  duration and two curves drive every collapse, expand and slide-over. Under
+  `prefers-reduced-motion` the duration collapses to a frame; `--ag-ui-motion: 0s`
+  switches the animation off outright.
+
+- **Launcher and composer tokens** — `--ag-ui-launcher-{size,bg,fg,radius,icon-size,inset}`,
+  `--ag-ui-composer-{radius,max-height}`, `--ag-ui-send-size`, `--ag-ui-tool-btn-size`,
+  `--ag-ui-glyph-{size,stroke}`; parts `composer-surface` and `composer-tools`.
+
+- **Motion tests that run in a real browser.** happy-dom runs no transitions, so
+  every assertion about this would pass on a stylesheet where nothing animates.
+  The Chromium project now asserts on `getAnimations()` — that the browser
+  actually *started* the transitions a collapse, an expand and a drawer open are
+  supposed to start.
+
 ## [0.21.0] — 2026-08-11
 
 Ten findings from a real embed — a cross-origin, cookie-authenticated React host.
@@ -1171,7 +1250,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.19.0...v0.20.0

@@ -24,8 +24,15 @@ export interface UiStrings {
   newChat: string;
   /** Collapse button. */
   collapse: string;
-  /** Expand affordance (the sidebar rail toggle). */
+  /** Expand affordance (the launcher, and the sidebar rail). */
   expand: string;
+  /**
+   * The launcher's label while unread answers are waiting behind it, with
+   * `{count}` replaced by how many. It replaces {@link expand} rather than
+   * appending to it, so a translation can order the two parts as its language
+   * needs.
+   */
+  expandUnread: string;
   /** Built-in header theme toggle (light ⇄ dark). */
   toggleTheme: string;
 
@@ -204,6 +211,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   newChat: "New chat",
   collapse: "Collapse",
   expand: "Expand",
+  expandUnread: "Expand — {count} unread",
   toggleTheme: "Toggle theme",
   copyCode: "Copy",
   copied: "Copied",

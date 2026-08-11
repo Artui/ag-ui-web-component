@@ -47,6 +47,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
   - [DOM-driver and animation primitives](#dom-driver-and-animation-primitives)
   - [Page-action tools](#page-action-tools)
 - [New chat and collapse](#new-chat-and-collapse)
+  - [Collapsing to the launcher](#collapsing-to-the-launcher)
 - [Tool-call display modes](#tool-call-display-modes)
 - [Markdown rendering](#markdown-rendering)
 - [Run notices: compaction and agent skills](#run-notices-compaction-and-agent-skills)
@@ -163,17 +164,20 @@ another origin, add `credentials="include"` too; see
 | `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with the element's headers and cookie policy; labels tool-call cards for server-side tools. |
 | `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
 | `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's ⭯ *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
-| `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's 📎 picker + drag-and-drop. |
+| `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's paperclip picker + drag-and-drop. |
 | `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
 | `data-attachment-max-bytes` | — | Client-side upload size cap in bytes (default 10 MiB; `0` disables). The server stays authoritative. |
-| `data-transcribe-url` | — | URL of the voice-transcription endpoint (django-ag-ui's `TranscribeView`); reveals the composer's 🎤 mic button. See [Voice input](#voice-input). |
+| `data-transcribe-url` | — | URL of the voice-transcription endpoint (django-ag-ui's `TranscribeView`); reveals the composer's mic button. See [Voice input](#voice-input). |
 | `data-theme-toggle` | — | Boolean: show a built-in header light⇄dark toggle (persists per tab). Off by default. See [Theme toggle](#theme-toggle). |
 | `data-strings` | `strings` | Partial JSON override of the UI string table (localization). The property wins key-by-key over the attribute; see [Internationalization](#internationalization-i18n). |
-| `data-icon-url` | — | Header (and sidebar-rail) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
+| `data-icon-url` | — | Header (and launcher) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
+| `data-launcher-icon-url` | — | Icon image URL for the collapsed launcher only, when it should differ from the header's. Falls back to `data-icon-url`; a slotted `slot="launcher"` wins over both. |
+| `data-unread-badge` | — | **On by default.** `="false"` hides the launcher's unread badge; the count and the `ag-ui-unread` event keep running. See [Collapsing to the launcher](#collapsing-to-the-launcher). |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
 `icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
-brand `<img>` or `<svg>` rather than only restyling the character:
+brand `<img>` or `<svg>` rather than only restyling the character. The composer's glyphs work the
+same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 
 ```html
 <ag-ui-chat endpoint="/agent/">
@@ -183,7 +187,7 @@ brand `<img>` or `<svg>` rather than only restyling the character:
 | `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
-| `collapsed` | `collapsed` | Reflected boolean; collapses the widget (to a rail under `placement="sidebar"`). Persisted per-tab in `sessionStorage`. |
+| `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded` / `page`). Persisted per-tab in `sessionStorage`. |
 | `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
 | `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` / `embedded`. |
@@ -686,6 +690,71 @@ chat.toggleCollapsed();
 chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
 ```
 
+### Collapsing to the launcher
+
+A collapsed widget shrinks to a round **floating launcher** in the corner it already occupies: the
+panel scales down into it and fades, the launcher grows out of the same point, and clicking the
+launcher reverses it. Only `transform` and `opacity` animate, so the motion is compositor-only and
+never reflows your page. Two placements collapse to something else instead — `sidebar` slides out
+to its [edge rail](#sidebar-placement), and `embedded` / `page` keep the header bar, since one is
+laid out by your page and the other is a full-screen route.
+
+The launcher's mark comes from the same seam as the header icon, most specific first: a slotted
+`slot="launcher"` child, then `data-launcher-icon-url`, then `data-icon-url`, then the built-in
+speech bubble.
+
+```html
+<ag-ui-chat endpoint="/agent/" data-launcher-icon-url="/mark.svg"></ag-ui-chat>
+
+<!-- or any markup at all -->
+<ag-ui-chat endpoint="/agent/">
+  <svg slot="launcher" width="26" height="26"><!-- ... --></svg>
+</ag-ui-chat>
+```
+
+```css
+ag-ui-chat {
+  --ag-ui-launcher-size: 56px;
+  --ag-ui-launcher-radius: 50%;   /* 12px for a squircle */
+  --ag-ui-launcher-bg: #14532d;   /* defaults to the header background */
+  --ag-ui-launcher-fg: #ffffff;
+  --ag-ui-launcher-icon-size: 26px;
+  --ag-ui-launcher-inset: auto 0 0 auto;  /* which corner of the widget's box */
+}
+```
+
+> **The collapsed host keeps its box.** Animating the element's own width and height would animate
+> layout; instead the box stays put with `pointer-events: none`, and the launcher takes the clicks.
+> A host measuring `getBoundingClientRect()` on a collapsed widget still sees the panel's
+> footprint — nothing there paints or takes input.
+
+#### The unread badge
+
+A collapsed widget is the one state where an answer can arrive with nothing on screen to say so,
+so the launcher carries a count of the answers that finished while it was closed (capped at `9+`).
+Expanding — or `newChat()` — marks them read. It is the only affordance here that is **on by
+default**; `data-unread-badge="false"` turns the badge off.
+
+The count is also the launcher's accessible name (`Expand — 2 unread`, from the `expandUnread`
+string), because a coloured dot says nothing to a screen reader.
+
+```js
+chat.unread; // 2
+
+// Every change, whether or not the badge renders it — so a host that hides the
+// badge can put the count in its own chrome.
+chat.addEventListener("ag-ui-unread", (e) => setDockBadge(e.detail.unread));
+```
+
+```css
+ag-ui-chat {
+  --ag-ui-badge-bg: #b91c1c;   /* defaults to --ag-ui-danger */
+  --ag-ui-badge-fg: #ffffff;
+  --ag-ui-badge-size: 18px;
+  --ag-ui-badge-font-size: 11px;
+}
+```
+
 ---
 
 ## Tool-call display modes
@@ -1149,6 +1218,7 @@ re-export point. Internal modules import from leaf paths.
 | `MessageRole` | type | Role of a rendered chat message. |
 | `SubmitDetail` | type | `detail` shape of the submit event. |
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
+| `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
 
 ### AG-UI client & agent
 
@@ -1236,6 +1306,7 @@ re-export point. Internal modules import from leaf paths.
 | `ELEMENT_TAG` | The registered tag name (`ag-ui-chat`). |
 | `SUBMIT_EVENT` | The submit CustomEvent name. |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
+| `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `MESSAGE_ROLE` | Message role constants. |
 | `TOOL_CALL_STATUS` | Tool-call card status constants. |
 | `TOOL_DISPLAY` | Tool-call display-mode constants (`minimal` / `compact` / `full`). |
@@ -1364,14 +1435,14 @@ Available parts: `panel`, `header`, `title`, `icon`, `header-controls`, `header-
 `-args` / `-actions` / `-button` / `-cancel` / `-confirm`),
 `approval` (plus `approval-body` / `-actions` / `-button` / `-approve` / `-deny`),
 `question` (plus `question-body` / `-options` / `-choice` / `-choice-text` / `-radio` / `-input` /
-`-actions` / `-button`), `composer`, `input`, `send`,
+`-actions` / `-button`), `composer` (plus `composer-surface` / `composer-tools`), `input`, `send`,
 `attach-button`, `voice-button`,
 the attachment chips — `attachment-tray` and `attachment-chips` (the read-only chips on sent
 bubbles) with the shared chip parts `attachment-chip` (plus `-icon` / `-name` / `-size` / `-bar` /
 `-bar-fill` / `-retry` / `-remove`),
 the skills UI (`skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`,
 `skill-item-desc`, and the missing-placeholder `skill-hint`),
-`launcher`, `launcher-icon`, and the drawer parts
+`launcher`, `launcher-icon`, `launcher-badge`, and the drawer parts
 (`drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`,
 `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`,
 `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`,
@@ -1407,7 +1478,10 @@ with a matching `slot=`):
 | `header-actions` | Extra controls between the title and the built-in buttons. |
 | `empty` | The empty-state shown before any message. |
 | `footer` | Below the composer. |
-| `launcher` | The collapsed sidebar rail's content. |
+| `launcher` | The collapsed widget's mark — the floating launcher, or the sidebar rail. |
+| `icon-send` / `icon-stop` | The composer button's two glyphs (idle and mid-run). |
+| `icon-attach` / `icon-voice` | The paperclip and mic glyphs. |
+| `icon-history` / `icon-checkpoints` / `icon-new` / `icon-collapse` | The header controls' glyphs. |
 
 ```html
 <ag-ui-chat endpoint="/agent/">
@@ -1430,9 +1504,11 @@ stays icon-less. The same icon seam feeds the collapsed sidebar rail. Size it vi
 ### Sidebar placement
 
 `placement="sidebar"` is a full-height **docked** panel that slides open/closed and collapses to a
-slim **icon rail** (rather than the floating launcher). It docks right by default; `data-side="left"`
-docks it left. Collapse state reuses the `collapsed` attribute (persisted per-tab), and the rail
-carries `aria-expanded`. The slide honours `prefers-reduced-motion`.
+slim **icon rail** rather than the [floating launcher](#collapsing-to-the-launcher) — the same
+element, shaped by the placement. It docks right by default; `data-side="left"` docks it left. The
+panel slides out through the edge it docks against. Collapse state reuses the `collapsed` attribute
+(persisted per-tab), and the rail carries `aria-expanded`. The slide honours
+`prefers-reduced-motion`.
 
 ```html
 <ag-ui-chat endpoint="/agent/" placement="sidebar" data-side="left"></ag-ui-chat>
@@ -1476,9 +1552,48 @@ web component handles the `REASONING_*` event family (and the deprecated `THINKI
 `@ag-ui/client` maps onto it), so no client config is needed — the thoughts appear whenever the
 server forwards reasoning.
 
+### The composer
+
+The composer is one bordered surface (part `composer-surface`) that owns the border and the focus
+ring: the field sits on top and grows with what is typed until it hits its ceiling and scrolls,
+and a tool row (part `composer-tools`) sits underneath with the paperclip and mic as quiet icon
+buttons on the left and a circular **Send** on the right. Send is icon-only — its accessible name
+still comes from the `send` / `stop` [strings](#internationalization-i18n) — and it becomes the
+Stop control mid-run by swapping its glyph, so nothing moves when a run starts.
+
+```css
+ag-ui-chat {
+  --ag-ui-composer-radius: 14px;
+  --ag-ui-composer-max-height: 40vh;  /* where the growing field starts scrolling */
+  --ag-ui-tool-btn-size: 30px;        /* the paperclip / mic hit targets */
+  --ag-ui-send-size: 30px;            /* the send circle */
+  --ag-ui-glyph-size: 18px;
+  --ag-ui-glyph-stroke: 1.75;
+}
+```
+
+Every glyph is a slot with the built-in mark as its fallback (`icon-send`, `icon-stop`,
+`icon-attach`, `icon-voice`), so projecting your own icon set never means restyling a character.
+
+### Motion
+
+One duration and two curves drive every collapse, expand and slide-over, so the whole widget
+settles as one thing:
+
+```css
+ag-ui-chat {
+  --ag-ui-motion: 0.28s;
+  --ag-ui-ease: cubic-bezier(0.32, 0.72, 0, 1);      /* the settle */
+  --ag-ui-ease-pop: cubic-bezier(0.34, 1.36, 0.64, 1); /* the arrival, with overshoot */
+}
+```
+
+Under `prefers-reduced-motion: reduce` the duration collapses to a single frame: states still
+change, nothing travels. Set `--ag-ui-motion: 0s` to switch the animation off outright.
+
 ### Voice input
 
-Set `data-transcribe-url` (django-ag-ui's `TranscribeView`) to reveal a 🎤 mic button in the
+Set `data-transcribe-url` (django-ag-ui's `TranscribeView`) to reveal a mic button in the
 composer (part `voice-button`). Click it to record via `MediaRecorder`, click again to stop — the
 clip is POSTed to the endpoint and the returned transcript is dropped into the textarea. Swap the
 transport with a custom `transcribeHandler` — `(audio: Blob) => Promise<string>` — to use a
