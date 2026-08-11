@@ -59,3 +59,7 @@ demo/shot-*.png
 demo/*.png
 demo/themes/*.png
 .playwright-mcp/
+
+# Generated when a browser test fails.
+.vitest-attachments/
+tests/browser/__screenshots__/
