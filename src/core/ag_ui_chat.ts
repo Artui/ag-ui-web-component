@@ -42,7 +42,12 @@ import {
   requestQuestion,
 } from "../ui/question_card.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
-import { createResizeHandle, type ResizeAxis, type ResizeSize } from "../ui/resize_handle.js";
+import {
+  createResizeHandle,
+  type ResizeAnchor,
+  type ResizeAxis,
+  type ResizeSize,
+} from "../ui/resize_handle.js";
 import { wrapWords } from "../ui/reveal_words.js";
 import { renderRunNotice } from "../ui/run_notice.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
@@ -528,10 +533,16 @@ export class AgUiChat extends HTMLElement {
 
   /** Attributes the element reacts to after it has been connected. */
   static get observedAttributes(): string[] {
-    return ["title-text", ...CONNECT_TIME_ATTRIBUTES];
+    return ["title-text", "placement", ...CONNECT_TIME_ATTRIBUTES];
   }
 
   attributeChangedCallback(name: string, previous: string | null, value: string | null): void {
+    if (name === "placement") {
+      // Placement moves the panel, so the edges its layout holds still change
+      // with it. Deferred a frame so the new rules have applied.
+      requestAnimationFrame(() => this.#syncResizeAnchor());
+      return;
+    }
     if (name === "title-text") {
       // `#strings` is the resolved table once connected, the English defaults
       // before then.
@@ -794,6 +805,11 @@ export class AgUiChat extends HTMLElement {
     // Restore a dragged size before the panel paints, so it does not snap from
     // the placement default to the user's width on the first frame.
     this.#applySize(this.#readSize());
+    // Position the grip at the corner this layout grows toward. Deferred to a
+    // frame so the host's own stylesheet has applied; re-measured on every drag
+    // anyway, so a wrong first guess costs a grip in the wrong corner and never
+    // a wrong resize.
+    requestAnimationFrame(() => this.#syncResizeAnchor());
     // Resolve the string table before rendering any chrome (defaults are the
     // floor; `data-strings` then the `strings` property layer over them).
     this.#strings = mergeUiStrings({ ...this.#readStringOverrides(), ...this.strings });
@@ -1199,18 +1215,71 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Which axes this placement lets the user drag.
+   * Which axes the current placement allows.
    *
-   * A full-bleed layout is `100vw`/`100vh` by definition, so a handle there is
-   * a control that does nothing; a docked sidebar owns its height for the same
-   * reason and only its width is the user's to choose.
+   * A full-bleed layout is `100vw`/`100vh` by definition and cannot be resized
+   * at all; a docked panel owns its height, leaving only its inner edge. Read
+   * per interaction, because `placement` is a live attribute.
    */
   #resizeAxis(): ResizeAxis {
-    const placement = this.getAttribute("placement");
-    if (placement === "full" || placement === "page") {
-      return "none";
+    switch (this.getAttribute("placement")) {
+      case "full":
+      case "page":
+        return "none";
+      case "sidebar":
+      case "side":
+        return "width";
+      default:
+        return "both";
     }
-    return placement === "sidebar" || placement === "side" ? "width" : "both";
+  }
+
+  /**
+   * Which edges the layout is holding still, by measuring rather than guessing.
+   *
+   * A resize has to be computed from the edge that does not move, and which
+   * edge that is belongs to the **host's layout**, not to `placement`: a
+   * floating panel is pinned bottom-right, while an embedded one goes wherever
+   * the page's own CSS puts it — flex-start, flex-end, a grid cell. Mapping
+   * placement to a corner got this wrong for any host that right-aligns the
+   * element, and the symptom is bad enough to read as a broken control: the
+   * panel shrinks when dragged outward, travelling by its opposite corner.
+   *
+   * So: nudge the size by a pixel, see which edges stayed put, and undo. One
+   * forced reflow per drag, which is cheap next to being wrong.
+   */
+  #measureAnchor(): ResizeAnchor {
+    const before = this.getBoundingClientRect();
+    const width = this.style.getPropertyValue("--ag-ui-width");
+    const height = this.style.getPropertyValue("--ag-ui-height");
+    this.#applySize({ width: before.width + 1, height: before.height + 1 });
+    const after = this.getBoundingClientRect();
+    // Restore exactly what was there, including "nothing" — leaving a probe
+    // value behind would pin a panel that had been sizing itself.
+    this.#restoreProperty("--ag-ui-width", width);
+    this.#restoreProperty("--ag-ui-height", height);
+    return {
+      x: Math.abs(after.left - before.left) < 0.5 ? "left" : "right",
+      y: Math.abs(after.top - before.top) < 0.5 ? "top" : "bottom",
+    };
+  }
+
+  /** Stamp the measured anchor so the shadow CSS can place the grip. */
+  #syncResizeAnchor(): void {
+    if (!this.#connected) {
+      return;
+    }
+    const anchor = this.#measureAnchor();
+    this.setAttribute("data-resize-anchor", `${anchor.y}-${anchor.x}`);
+  }
+
+  /** Put a custom property back to a previous value, or remove it if there was none. */
+  #restoreProperty(name: string, value: string): void {
+    if (value === "") {
+      this.style.removeProperty(name);
+      return;
+    }
+    this.style.setProperty(name, value);
   }
 
   /**
@@ -1736,16 +1805,22 @@ export class AgUiChat extends HTMLElement {
     this.#rail.append(this.#iconElement("launcher", "launcher-icon", "💬"));
     this.#rail.addEventListener("click", () => this.setCollapsed(false));
 
-    const resize = createResizeHandle({
-      axis: this.#resizeAxis(),
-      measure: () => ({ width: this.offsetWidth, height: this.offsetHeight }),
-      apply: (size) => this.#applySize(size),
-      commit: (size) => this.#persistSize(size),
-      label: this.#strings.resizePanel,
-    });
-    if (resize !== null) {
-      this.#chat.append(resize);
-    }
+    this.#chat.append(
+      createResizeHandle({
+        axis: () => this.#resizeAxis(),
+        anchor: () => this.#measureAnchor(),
+        rect: () => this.getBoundingClientRect(),
+        apply: (size) => this.#applySize(size),
+        commit: (size) => {
+          this.#persistSize(size);
+          // Re-stamp after the drag: a host whose layout changed underneath us
+          // would otherwise keep the grip in the old corner, which reads as the
+          // control being in the wrong place even though the drag was right.
+          this.#syncResizeAnchor();
+        },
+        label: this.#strings.resizePanel,
+      }),
+    );
     this.#root.append(style, this.#chat, this.#rail);
   }
 

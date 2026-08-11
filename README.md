@@ -558,12 +558,26 @@ so a reader can widen it without the host having to re-theme anything.
   is `100vw`/`100vh` by definition, so there is nothing to drag.
 - `placement="sidebar"` / `placement="side"` get **width only**; the placement
   owns the height.
-- Everything else gets a corner grip.
+- Everything else resizes on both axes.
+
+**The grip sits at the corner your layout grows toward, and the component
+measures which one that is.** A resize has to be computed from the edge that
+stays still, and that belongs to *your* CSS rather than to `placement` — a
+floating panel is pinned bottom-right, an embedded one goes wherever the page
+puts it. The element probes its own geometry and reflects the result as
+`data-resize-anchor` (e.g. `bottom-right` means those two edges are fixed), which
+is what positions the grip.
 
 A drag writes `--ag-ui-width` / `--ag-ui-height` on the host **as custom
 properties, not inline `width`/`height`** — the placement rules set those same
 properties, so an inline dimension would outrank them and a panel dragged while
 floating would keep that width after switching to fullscreen.
+
+⚠ **A host rule that sizes the element wins over both.** `ag-ui-chat { flex: 1 }`
+stretches the panel to its container and the dragged width has no visible
+effect — which reads as a broken control rather than as your stylesheet winning.
+Give the element `flex: 0 1 auto` (plus `max-width: 100%`) if it lives in a flex
+container.
 
 The size persists per tab (`sessionStorage`, namespaced per element like the
 collapsed and theme preferences) and is restored before the first paint.

@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outrank them — a panel dragged while floating would keep that width after
   switching to fullscreen.
 
+  ⭐ **Which corner the grip sits on is measured, not assumed.** A resize is
+  computed from the edge that stays still, and which edge that is belongs to the
+  *host's* layout rather than to `placement` — a floating panel is pinned
+  bottom-right, an embedded one goes wherever the page's CSS puts it. Deriving
+  it from `placement` was wrong for any host that right-aligns the element, and
+  the symptom was bad enough to read as a broken control: the panel shrank when
+  dragged outward and travelled by its opposite corner. The element now probes
+  its own geometry and reflects the result as `data-resize-anchor`.
+
 ### Changed
 
 - ⚠ **Picking a skill now sends it.** It used to write the text into the

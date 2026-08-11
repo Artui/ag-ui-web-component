@@ -1,5 +1,18 @@
-/** Which dimensions a placement lets the user drag. */
-export type ResizeAxis = "both" | "width" | "none";
+/** Which edges the layout holds still while the panel changes size. */
+export interface ResizeAnchor {
+  /** The horizontal edge that does not move. */
+  readonly x: "left" | "right";
+  /** The vertical edge that does not move. */
+  readonly y: "top" | "bottom";
+}
+
+/**
+ * What the current placement allows: both axes, width only, or nothing.
+ *
+ * Which *corner* the grip sits on is not part of this — that follows the host's
+ * layout, which the component measures rather than assumes.
+ */
+export type ResizeAxis = "none" | "width" | "both";
 
 /** Persisted size, in CSS pixels. Either axis may be absent. */
 export interface ResizeSize {
@@ -7,12 +20,37 @@ export interface ResizeSize {
   readonly height?: number;
 }
 
+/** The panel's position on screen at the moment a drag starts. */
+export interface PanelRect {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
 /** What the handle needs from its host to do its job. */
 export interface ResizeOptions {
-  /** Which axes this placement allows. `none` means no handle is built. */
-  readonly axis: ResizeAxis;
-  /** Current size, so a drag starts from what is on screen. */
-  readonly measure: () => { width: number; height: number };
+  /**
+   * Which axes the current placement allows, read **per interaction**.
+   *
+   * A getter rather than a value because `placement` is a live attribute: read
+   * once at construction, a handle built while floating kept its axes after the
+   * host switched to a docked or full-bleed layout.
+   */
+  readonly axis: () => ResizeAxis;
+  /**
+   * Which edges the layout is holding still, measured at the moment of the
+   * drag.
+   *
+   * **Measured, not derived from `placement`.** A floating panel is pinned
+   * bottom-right and an embedded one goes wherever the host's own CSS puts it —
+   * the demo playground drops it in a right-aligned flex slot, so "embedded"
+   * alone says nothing. Guessing produced a panel that shrank when dragged
+   * outward and travelled by its opposite corner.
+   */
+  readonly anchor: () => ResizeAnchor;
+  /** The panel's current bounding box. */
+  readonly rect: () => PanelRect;
   /** Apply a size (the host writes the custom properties). */
   readonly apply: (size: ResizeSize) => void;
   /** Called once per completed drag, for persistence. */
@@ -32,52 +70,66 @@ const MIN_HEIGHT = 240;
  * `--ag-ui-height` to: themeable by the page, immovable by the person reading a
  * long answer in a 380px column.
  *
+ * **The new size is measured from the edge that is not moving, never from a
+ * delta**, and which edge that is is **measured rather than assumed**. A
+ * floating panel is pinned bottom-right; an embedded one goes wherever the
+ * host's CSS puts it, so `placement` does not answer the question. Getting it
+ * wrong is very visible: the panel shrinks when dragged outward and travels by
+ * its opposite corner.
+ *
  * **It writes the custom properties rather than inline `width` / `height`.**
  * The placement rules set those same properties, so an inline dimension would
  * fight them — a sidebar would keep a dragged width after switching to
  * fullscreen. Writing the property means placement still has the final say.
  *
- * Which axes are draggable is the placement's call, not this file's: a
- * full-bleed layout is `100vw`/`100vh` by definition, so a handle there is a
- * control that does nothing.
+ * The axes are read per interaction, so switching `placement` at runtime takes
+ * effect immediately rather than leaving whichever ones the element happened to
+ * mount with.
  */
-export function createResizeHandle(options: ResizeOptions): HTMLDivElement | null {
-  if (options.axis === "none") {
-    return null;
-  }
+export function createResizeHandle(options: ResizeOptions): HTMLDivElement {
   const handle = document.createElement("div");
-  handle.className = `resize-handle resize-handle--${options.axis}`;
+  handle.className = "resize-handle";
   handle.setAttribute("part", "resize-handle");
   handle.setAttribute("role", "separator");
-  handle.setAttribute("aria-orientation", options.axis === "width" ? "vertical" : "horizontal");
   handle.setAttribute("aria-label", options.label);
   handle.tabIndex = 0;
 
-  handle.addEventListener("pointerdown", (event: PointerEvent) => {
-    const origin = { x: event.clientX, y: event.clientY, ...options.measure() };
+  /** The size implied by a pointer at (x, y), given which edges are pinned. */
+  const sizeAt = (
+    axis: ResizeAxis,
+    anchor: ResizeAnchor,
+    rect: PanelRect,
+    x: number,
+    y: number,
+  ): ResizeSize => {
+    const width = anchor.x === "right" ? rect.right - x : x - rect.left;
+    const clamped: ResizeSize = { width: Math.max(MIN_WIDTH, width) };
+    if (axis !== "both") {
+      return clamped;
+    }
+    const height = anchor.y === "bottom" ? rect.bottom - y : y - rect.top;
+    return { ...clamped, height: Math.max(MIN_HEIGHT, height) };
+  };
 
-    // Built per drag so the start point is captured rather than read back from
-    // a nullable field: there is then no "no drag in progress" state for the
-    // move handler to defend against.
-    const sizeFor = (move: PointerEvent): ResizeSize => {
-      // The panel is anchored right/bottom in every resizable placement, so
-      // dragging left or up grows it: the delta is subtracted, not added.
-      const width = Math.max(MIN_WIDTH, origin.width - (move.clientX - origin.x));
-      if (options.axis === "width") {
-        return { width };
-      }
-      return { width, height: Math.max(MIN_HEIGHT, origin.height - (move.clientY - origin.y)) };
-    };
+  handle.addEventListener("pointerdown", (event: PointerEvent) => {
+    const axis = options.axis();
+    if (axis === "none") {
+      return;
+    }
+    // Captured once: the fixed edges cannot move during the drag, and reading
+    // them live would chase the panel as it resizes.
+    const anchor = options.anchor();
+    const rect = options.rect();
 
     const onMove = (move: PointerEvent): void => {
-      options.apply(sizeFor(move));
+      options.apply(sizeAt(axis, anchor, rect, move.clientX, move.clientY));
     };
 
     const onUp = (up: PointerEvent): void => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       handle.removeAttribute("data-dragging");
-      options.commit(sizeFor(up));
+      options.commit(sizeAt(axis, anchor, rect, up.clientX, up.clientY));
     };
 
     handle.setAttribute("data-dragging", "true");
@@ -91,17 +143,26 @@ export function createResizeHandle(options: ResizeOptions): HTMLDivElement | nul
   // Keyboard parity. A pointer-only resize is unreachable without a mouse, and
   // this control has no equivalent elsewhere in the UI.
   handle.addEventListener("keydown", (event: KeyboardEvent) => {
+    const axis = options.axis();
+    if (axis === "none") {
+      return;
+    }
+    const anchor = options.anchor();
+    const rect = options.rect();
     const step = event.shiftKey ? 64 : 16;
-    const { width, height } = options.measure();
+    // An arrow moves the grip, and whether that grows or shrinks depends on
+    // which side the grip is on — the same asymmetry the pointer path handles.
+    const outward = anchor.x === "right" ? -1 : 1;
+    const width = rect.right - rect.left;
+    const height = rect.bottom - rect.top;
     let next: ResizeSize | null = null;
     if (event.key === "ArrowLeft") {
-      next = { width: Math.max(MIN_WIDTH, width + step) };
+      next = { width: Math.max(MIN_WIDTH, width - step * outward) };
     } else if (event.key === "ArrowRight") {
-      next = { width: Math.max(MIN_WIDTH, width - step) };
-    } else if (event.key === "ArrowUp" && options.axis === "both") {
-      next = { height: Math.max(MIN_HEIGHT, height + step) };
-    } else if (event.key === "ArrowDown" && options.axis === "both") {
-      next = { height: Math.max(MIN_HEIGHT, height - step) };
+      next = { width: Math.max(MIN_WIDTH, width + step * outward) };
+    } else if (axis === "both" && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      const grow = event.key === (anchor.y === "bottom" ? "ArrowUp" : "ArrowDown");
+      next = { height: Math.max(MIN_HEIGHT, height + (grow ? step : -step)) };
     }
     if (next === null) {
       return;

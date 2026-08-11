@@ -183,7 +183,12 @@ export const STYLES = `
   outline-offset: -2px;
 }
 
-.resize-handle--both {
+/* The grip sits at the corner the panel grows toward. Which corner that is
+   depends on the host's layout, not on placement, so the element measures it
+   and stamps data-resize-anchor with the edges that stay put.
+
+   Default (bottom-right pinned, the floating case) puts the grip top-left. */
+.resize-handle {
   top: 0;
   left: 0;
   width: 14px;
@@ -191,12 +196,36 @@ export const STYLES = `
   cursor: nwse-resize;
 }
 
-.resize-handle--width {
+:host([data-resize-anchor~="left"]) .resize-handle {
+  left: auto;
+  right: 0;
+}
+
+:host([data-resize-anchor~="top"]) .resize-handle {
+  top: auto;
+  bottom: 0;
+}
+
+/* One axis flipped means the drag runs along the other diagonal. */
+:host([data-resize-anchor="top-right"]) .resize-handle,
+:host([data-resize-anchor="bottom-left"]) .resize-handle {
+  cursor: nesw-resize;
+}
+
+/* Docked: the placement owns the height, so only the inner edge is the user's. */
+:host([placement="sidebar"]) .resize-handle,
+:host([placement="side"]) .resize-handle {
   top: 0;
-  left: 0;
+  bottom: auto;
   width: 8px;
   height: 100%;
   cursor: ew-resize;
+}
+
+/* Full-bleed: nothing to drag. */
+:host([placement="full"]) .resize-handle,
+:host([placement="page"]) .resize-handle {
+  display: none;
 }
 
 .resize-handle[data-dragging] {
@@ -956,7 +985,12 @@ export const STYLES = `
   outline-offset: -2px;
 }
 
-.resize-handle--both {
+/* The grip sits on the corner opposite the panel's anchor, because a resize
+   measures from whichever edge is not moving. Selected from the host attribute,
+   so switching placement moves the grip immediately.
+
+   Default is floating: pinned bottom-right, so the grip is top-left. */
+.resize-handle {
   top: 0;
   left: 0;
   width: 14px;
@@ -964,12 +998,40 @@ export const STYLES = `
   cursor: nwse-resize;
 }
 
-.resize-handle--width {
-  top: 0;
-  left: 0;
+/* Embedded sits in normal flow, pinned top-left, so it grows bottom-right. */
+:host([placement="embedded"]) .resize-handle {
+  top: auto;
+  left: auto;
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+/* Pinned bottom-left, so the free corner is top-right. */
+:host([placement="bottom-left"]) .resize-handle {
+  left: auto;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+/* Docked: the placement owns the height, so only the inner edge is the user's. */
+:host([placement="sidebar"]) .resize-handle,
+:host([placement="side"]) .resize-handle {
   width: 8px;
   height: 100%;
   cursor: ew-resize;
+}
+
+/* Docked to the left, so the inner edge is the right-hand one. */
+:host([placement="sidebar"][data-side="left"]) .resize-handle {
+  left: auto;
+  right: 0;
+}
+
+/* Full-bleed: nothing to drag. */
+:host([placement="full"]) .resize-handle,
+:host([placement="page"]) .resize-handle {
+  display: none;
 }
 
 .resize-handle[data-dragging] {
