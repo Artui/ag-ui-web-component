@@ -893,6 +893,13 @@ export const STYLES = `
 
 /* The record of a human decision on a gated call. An approved call used to
    look exactly like one that was never gated. */
+.skill-item-token {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.92em;
+  color: var(--ag-ui-accent);
+  margin-right: 6px;
+}
+
 .tool-call-decision {
   flex: none;
   font-size: 11px;
@@ -1516,9 +1523,12 @@ export const STYLES = `
   color: var(--ag-ui-muted);
 }
 
+/* The hint sits directly above the composer's top border, so a zero bottom
+   margin left the text touching the divider. */
 .skill-hint {
-  margin: 8px 12px 0;
+  margin: 8px 12px;
   font-size: 0.85em;
+  line-height: 1.4;
   color: var(--ag-ui-danger);
 }
 

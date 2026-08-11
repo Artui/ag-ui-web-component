@@ -80,7 +80,12 @@ describe("SkillsMenu palette", () => {
     expect(m.isOpen()).toBe(true);
     const items = m.palette.querySelectorAll(".skill-item");
     expect(items).toHaveLength(1);
-    expect(items[0]?.querySelector(".skill-item-title")?.textContent).toBe("Draft description");
+    // The token leads, so the palette teaches the command and not just its
+    // label — a user who cannot see "/draft" cannot learn to type it.
+    expect(items[0]?.querySelector(".skill-item-token")?.textContent).toBe("/draft");
+    expect(items[0]?.querySelector(".skill-item-title")?.textContent).toBe(
+      "/draft Draft description",
+    );
     // No description on the draft skill → no desc node.
     expect(items[0]?.querySelector(".skill-item-desc")).toBeNull();
 

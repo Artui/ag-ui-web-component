@@ -87,13 +87,19 @@ describe("AgUiChat skills", () => {
     expect(shadow(el).querySelector<HTMLElement>(".skill-palette")?.hidden).toBe(true);
   });
 
-  it("blocks the pick and shows a hint when a placeholder is unfilled", () => {
+  it("blocks the pick, and hands back the template to complete", () => {
     const el = mount({ "data-skills": embed([FIND]), "data-prompt-chips": "true" });
     shadow(el).querySelector<HTMLButtonElement>(".skill-chip")?.click();
     const hint = shadow(el).querySelector<HTMLElement>(".skill-hint");
     expect(hint?.hidden).toBe(false);
     expect(hint?.textContent).toContain("q");
-    expect(input(el).value).toBe("");
+    // Not sent, but not a dead end either: the composer holds the partially
+    // filled prompt with its unresolved placeholder selected, so the next
+    // keystroke replaces it. A bare refusal left whatever the user typed to
+    // open the palette sitting there, saying nothing about what was wanted.
+    expect(input(el).value).toBe("Find {q}.");
+    expect(input(el).selectionStart).toBe(5);
+    expect(input(el).selectionEnd).toBe(8);
     // typing clears the hint
     typeQuery(el, "x");
     expect(hint?.hidden).toBe(true);

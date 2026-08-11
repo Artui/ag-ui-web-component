@@ -529,10 +529,16 @@ visible. Style them via the `tool-card-args` / `tool-card-result` parts, their h
 transcript, the way `data-answer-well` does — the modes are pure visibility over one DOM shape,
 selected by the shadow CSS from the host attribute.
 
-A call gated behind the confirmation card also carries the decision (`approved by you` /
-`declined by you`, part `tool-card-decision`, attribute `data-decision`). The prompt itself
-disappears once answered: a prompt and a record are different objects, and the record is the
-card.
+A gated call carries the decision (`approved by you` / `declined by you`, part
+`tool-card-decision`, attribute `data-decision`) — from the client-side confirmation card and
+from the server-side approval interrupt alike. The prompt itself disappears once answered: a
+prompt and a record are different objects, and the record is the card.
+
+⚠ **The annotation is session-scoped**, like the "run interrupted" notice. AG-UI carries no
+approval message — the answer rides `resume[]` as transient run input — so a reload restores the
+tool call and its result but not the note that a human waved it through. If you need "who
+approved what" durably, that is an audit concern rather than a transcript one; record it
+server-side.
 
 If a tool's schema carries an `x-summary` string (use `X_SUMMARY_KEY`), the card shows it on the
 label instead of the raw tool name.

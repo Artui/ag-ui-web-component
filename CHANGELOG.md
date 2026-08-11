@@ -36,6 +36,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The `/` palette leads with the command.** Each row now reads
+  `/fill-article Fill the article` rather than the label alone (part
+  `skill-item-token`), and a chip's tooltip names the token it stands for. A
+  palette that shows only labels cannot teach its own vocabulary — a user who
+  never sees `/fill-article` has no way to learn to type it.
+
+- **A skill blocked on an unfilled `{placeholder}` now hands back the
+  template.** The partially-filled prompt goes into the composer with the first
+  unresolved placeholder selected, so the next keystroke replaces it. Previously
+  the pick was refused with a hint and whatever the user had typed to open the
+  palette — a lone `/` — was left in the composer, which said nothing about what
+  the skill wanted or how to supply it. The hint now says what to do, too.
+
 - ⚠ **Picking a skill now sends it.** It used to write the text into the
   composer and wait for a second click unless the skill set
   `sendImmediately: true` — so the default behaviour of a shortcut was to not
@@ -98,10 +111,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **A gated call records the decision.** The tool card carries `approved by you`
-  / `declined by you` (part `tool-card-decision`, attribute `data-decision`).
-  Previously only a *refusal* left a trace — an approved call simply ran, making
-  a gated call's transcript identical to one that was never gated.
+- **A gated call records the decision**, from the client-side confirmation card
+  **and** the server-side approval interrupt. The tool card carries
+  `approved by you` / `declined by you` (part `tool-card-decision`, attribute
+  `data-decision`). Previously only a *refusal* left a trace — an approved call
+  simply ran, making a gated call's transcript identical to one that was never
+  gated, and the server-side gate left nothing at all even though it is the one
+  guarding tools that run on the backend.
+
+  ⚠ **Session-scoped, like the "run interrupted" notice.** AG-UI carries no
+  approval message — the answer rides `resume[]` as transient run input — so a
+  reload restores the call and its result but not the note. Durable "who
+  approved what" is an audit concern, not a transcript one.
 
 - **Each header control takes its own icon slot** — `icon-history`,
   `icon-checkpoints`, `icon-new`, `icon-collapse` — with the built-in glyph as
@@ -116,6 +137,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mode.
 
 ### Fixed
+
+- **A server that reuses a message id now gets a warning.** `@ag-ui/client`
+  appends to a message id already in its history rather than starting a new one,
+  so two answers merge into one transcript entry — silently, and the merged
+  entry is what gets persisted. The protocol has no rule to enforce and refusing
+  the event would be worse than the merge, so this warns and continues.
+
+  ⭐ Found because the demo harness was doing exactly this, which is the
+  argument for the harness in miniature: the bug was the consumer's, the
+  invisibility was ours.
 
 - **The demo playground covers the surface it is meant to demonstrate.** The
   scripted agent now dispatches on the latest turn — a server-resolved skill, a

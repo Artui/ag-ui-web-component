@@ -1148,10 +1148,19 @@ export class AgUiChat extends HTMLElement {
     }
     const { text, missing } = fillTemplate(skill.prompt, this.skillContext());
     if (missing.length > 0) {
+      // Hand the user something to work with rather than only a refusal. The
+      // partially-filled template goes into the composer with its unresolved
+      // `{placeholder}`s intact and the first one selected, so the next
+      // keystroke replaces it. Blocking with a hint alone left whatever the
+      // user had typed to open the palette — a lone "/" — sitting there, which
+      // says nothing about what the skill wanted or how to give it.
       this.#skillHint.textContent = this.#strings.skillNeeds
         .replace("{title}", skill.title)
         .replace("{fields}", missing.join(", "));
       this.#skillHint.hidden = false;
+      this.#input.value = text;
+      this.#input.focus();
+      this.#selectFirstPlaceholder(text);
       return;
     }
     this.#skillHint.hidden = true;
@@ -1161,6 +1170,20 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     void this.#submit();
+  }
+
+  /**
+   * Put the caret on the first unresolved placeholder, selected.
+   *
+   * Typing then replaces it, which is the shortest path from "this skill needs
+   * a topic" to a sendable prompt.
+   */
+  #selectFirstPlaceholder(text: string): void {
+    // The first surviving brace *is* the first unresolved placeholder — a
+    // resolved one was substituted away — so this needs no search through the
+    // missing keys and no not-found branch to defend.
+    const start = text.indexOf("{");
+    this.#input.setSelectionRange(start, text.indexOf("}", start) + 1);
   }
 
   /** Whether the widget is collapsed (reflected as the `collapsed` attribute). */
@@ -2237,6 +2260,12 @@ export class AgUiChat extends HTMLElement {
           : await requestApproval(this.#ensureGroup(), request, { signal, strings: this.#strings });
       this.#updateEmptyState();
       this.#messages.scrollTop = this.#messages.scrollHeight;
+      // Same annotation as the client-side confirmation gate. Without it the
+      // two gates read differently for the same act: a locally-confirmed call
+      // said who let it through and a server-gated one said nothing, which is
+      // backwards, since the server-side gate is the one guarding the tools
+      // that actually run on the backend.
+      card?.recordDecision(approved ? "approved" : "declined");
       if (approved) {
         responses[interrupt.id] = { status: "resolved", payload: { approved: true } };
       } else {

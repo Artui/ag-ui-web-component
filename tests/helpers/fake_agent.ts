@@ -5,7 +5,9 @@ import type { Interrupt } from "@ag-ui/core";
 export interface Emit {
   runStart(): void;
   text(buffer: string): void;
-  textEnd(buffer: string): void;
+  /** Open a text message with an explicit id (the real client always sends one). */
+  textStart(messageId: string): void;
+  textEnd(buffer: string, messageId?: string): void;
   toolCall(id: string, name: string, args: Record<string, unknown>): void;
   toolResult(toolCallId: string, content: string): void;
   /** Emit an AG-UI `ACTIVITY_SNAPSHOT` (the run-notice channel). */
@@ -40,7 +42,9 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
   return {
     runStart: () => void s.onRunInitialized?.({} as never),
     text: (textMessageBuffer) => void s.onTextMessageContentEvent?.({ textMessageBuffer } as never),
-    textEnd: (textMessageBuffer) => void s.onTextMessageEndEvent?.({ textMessageBuffer } as never),
+    textStart: (messageId) => void s.onTextMessageStartEvent?.({ event: { messageId } } as never),
+    textEnd: (textMessageBuffer, messageId = "msg") =>
+      void s.onTextMessageEndEvent?.({ event: { messageId }, textMessageBuffer } as never),
     toolCall: (toolCallId, toolCallName, toolCallArgs) =>
       void s.onToolCallEndEvent?.({
         event: { toolCallId },

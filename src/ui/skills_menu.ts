@@ -141,6 +141,10 @@ export class SkillsMenu {
       button.className = "skill-chip";
       button.setAttribute("part", "skill-chip");
       button.textContent = skill.title;
+      // The chip stays a label — it is a one-click affordance, not something to
+      // memorise — but naming the command it stands for makes the two
+      // discoverable as the same thing.
+      button.title = `/${skill.name}`;
       button.addEventListener("click", () => this.#pick(skill));
       this.chips.appendChild(button);
     }
@@ -159,7 +163,15 @@ export class SkillsMenu {
       const title = document.createElement("span");
       title.className = "skill-item-title";
       title.setAttribute("part", "skill-item-title");
-      title.textContent = skill.title;
+
+      // The token leads, because it is the thing the user has to type. A row
+      // showing only the label taught the label and not the command, so the
+      // palette could not be used to learn its own vocabulary.
+      const token = document.createElement("code");
+      token.className = "skill-item-token";
+      token.setAttribute("part", "skill-item-token");
+      token.textContent = `/${skill.name}`;
+      title.append(token, document.createTextNode(` ${skill.title}`));
       item.appendChild(title);
 
       if (skill.description !== undefined) {
