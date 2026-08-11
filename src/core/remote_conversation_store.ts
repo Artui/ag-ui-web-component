@@ -5,6 +5,7 @@ import {
   SessionStorageStore,
   type ThreadMeta,
 } from "./conversation_store.js";
+import { withCredentials } from "./utils.js";
 
 /** One row of the server thread index (django-ag-ui's `ThreadsView` wire shape). */
 interface ServerThreadRow {
@@ -16,6 +17,14 @@ interface ServerThreadRow {
 
 /** Live header source, read per request so rotated tokens / CSRF reach the server. */
 type HeadersProvider = () => Record<string, string>;
+
+/**
+ * Live cookie policy, read per request. A provider rather than a value because
+ * the store is built once (on connect) and kept, while a host may configure the
+ * element after inserting it — a captured value would pin whatever was set
+ * during that first frame.
+ */
+type CredentialsProvider = () => RequestCredentials | undefined;
 
 /**
  * A {@link ClientConversationStore} backed by a server thread-index endpoint —
@@ -37,6 +46,7 @@ export class RemoteConversationStore implements ClientConversationStore {
   readonly #url: string;
   readonly #headers: HeadersProvider;
   readonly #local: ClientConversationStore;
+  readonly #credentials: CredentialsProvider;
   readonly #dropped = new Set<string>();
   readonly #renamed = new Map<string, string>();
 
@@ -44,10 +54,12 @@ export class RemoteConversationStore implements ClientConversationStore {
     url: string,
     headers: HeadersProvider = () => ({}),
     local: ClientConversationStore = new SessionStorageStore(),
+    credentials: CredentialsProvider = () => undefined,
   ) {
     this.#url = url.endsWith("/") ? url : `${url}/`;
     this.#headers = headers;
     this.#local = local;
+    this.#credentials = credentials;
   }
 
   threadId(): string {
@@ -142,7 +154,7 @@ export class RemoteConversationStore implements ClientConversationStore {
   /** GET that resolves to the `Response`, or `null` on a network error. */
   async #get(url: string): Promise<Response | null> {
     try {
-      return await fetch(url, { headers: this.#headers() });
+      return await fetch(url, withCredentials({ headers: this.#headers() }, this.#credentials()));
     } catch {
       return null;
     }
@@ -156,11 +168,18 @@ export class RemoteConversationStore implements ClientConversationStore {
   ): Promise<void> {
     const headers = this.#headers();
     try {
-      await fetch(`${this.#url}${encodeURIComponent(threadId)}/`, {
-        method,
-        headers: body === undefined ? headers : { ...headers, "content-type": "application/json" },
-        body: body === undefined ? null : JSON.stringify(body),
-      });
+      await fetch(
+        `${this.#url}${encodeURIComponent(threadId)}/`,
+        withCredentials(
+          {
+            method,
+            headers:
+              body === undefined ? headers : { ...headers, "content-type": "application/json" },
+            body: body === undefined ? null : JSON.stringify(body),
+          },
+          this.#credentials(),
+        ),
+      );
     } catch {
       // Best-effort; the optimistic overlay keeps the drawer consistent.
     }

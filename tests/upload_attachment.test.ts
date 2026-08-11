@@ -38,6 +38,22 @@ describe("uploadAttachment", () => {
     });
   });
 
+  it("sets withCredentials only for the include mode", async () => {
+    for (const [credentials, expected] of [
+      ["include", true],
+      ["same-origin", false],
+      [undefined, false],
+    ] as const) {
+      const promise = uploadAttachment(
+        file(),
+        credentials === undefined ? { url: "/u/" } : { url: "/u/", credentials },
+      );
+      expect(xhr.last().withCredentials).toBe(expected);
+      xhr.last().succeed(201, REF_JSON);
+      await promise;
+    }
+  });
+
   it("includes url when the server returns one", async () => {
     const promise = uploadAttachment(file(), { url: "/u/" });
     xhr

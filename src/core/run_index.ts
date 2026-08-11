@@ -1,3 +1,5 @@
+import { withCredentials } from "./utils.js";
+
 /** One row of the server run index (django-ag-ui's `RunsView` wire shape). */
 export interface RunRow {
   readonly run_id: string;
@@ -10,6 +12,14 @@ export interface RunRow {
 
 /** Live header source, read per request so rotated tokens / CSRF reach the server. */
 type HeadersProvider = () => Record<string, string>;
+
+/**
+ * Live cookie policy, read per request. A provider rather than a value because
+ * the index is built once (on connect) and kept, while a host may configure the
+ * element after inserting it — a captured value would pin whatever was set
+ * during that first frame.
+ */
+type CredentialsProvider = () => RequestCredentials | undefined;
 
 /**
  * Reads the server's run index and derives the resume / fork URLs beside it.
@@ -34,10 +44,16 @@ type HeadersProvider = () => Record<string, string>;
 export class RunIndex {
   readonly #url: string;
   readonly #headers: HeadersProvider;
+  readonly #credentials: CredentialsProvider;
 
-  constructor(url: string, headers: HeadersProvider = () => ({})) {
+  constructor(
+    url: string,
+    headers: HeadersProvider = () => ({}),
+    credentials: CredentialsProvider = () => undefined,
+  ) {
     this.#url = url.endsWith("/") ? url : `${url}/`;
     this.#headers = headers;
+    this.#credentials = credentials;
   }
 
   /**
@@ -48,10 +64,16 @@ export class RunIndex {
    */
   async list(): Promise<readonly RunRow[]> {
     try {
-      const response = await fetch(this.#url, {
-        method: "GET",
-        headers: { Accept: "application/json", ...this.#headers() },
-      });
+      const response = await fetch(
+        this.#url,
+        withCredentials(
+          {
+            method: "GET",
+            headers: { Accept: "application/json", ...this.#headers() },
+          },
+          this.#credentials(),
+        ),
+      );
       if (!response.ok) {
         return [];
       }

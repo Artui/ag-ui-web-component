@@ -49,6 +49,25 @@ describe("list", () => {
     expect(spy.mock.calls[1]?.[1]).toMatchObject({ headers: { "X-CSRFToken": "two" } });
   });
 
+  it("re-reads the credentials mode per call, so a cross-origin index sends cookies", async () => {
+    let mode: RequestCredentials | undefined;
+    const spy = mockFetch({ runs: [] });
+    const index = new RunIndex(
+      "/agent/runs/",
+      () => ({}),
+      () => mode,
+    );
+
+    await index.list();
+    // Configured after the index was built and cached — the shape a host ref
+    // produces, which a captured value would have missed.
+    mode = "include";
+    await index.list();
+
+    expect(spy.mock.calls[0]?.[1]).not.toHaveProperty("credentials");
+    expect(spy.mock.calls[1]?.[1]).toMatchObject({ credentials: "include" });
+  });
+
   it("is empty rather than broken when the endpoint errors", async () => {
     mockFetch({}, false);
     expect(await new RunIndex("/agent/runs/").list()).toEqual([]);

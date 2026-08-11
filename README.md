@@ -38,6 +38,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
 
 - [Install](#install)
 - [Quickstart](#quickstart)
+- [Authenticating requests](#authenticating-requests)
 - [Core concepts](#core-concepts)
   - [The run loop and the AG-UI client](#the-run-loop-and-the-ag-ui-client)
   - [Stopping a run](#stopping-a-run)
@@ -103,7 +104,9 @@ Drop the element into your page and register the tools the agent may call:
 
   const chat = document.querySelector("ag-ui-chat");
 
-  // Extra request headers (e.g. CSRF) sent to the AG-UI endpoint.
+  // Extra request headers (e.g. CSRF), sent with every request the element makes.
+  // For a credential that rotates, set chat.getHeaders instead - it is consulted
+  // per request. See "Authenticating requests".
   chat.headers = { "X-CSRFToken": getCsrfToken() };
 
   // A non-destructive tool: fills a text field with a typing animation.
@@ -138,7 +141,9 @@ Drop the element into your page and register the tools the agent may call:
 ```
 
 That's the whole integration: an `endpoint` attribute pointing at your AG-UI server, optional
-`headers`, and the tools you want the agent to be able to invoke in the browser.
+`headers`, and the tools you want the agent to be able to invoke in the browser. If your API is on
+another origin, add `credentials="include"` too; see
+[Authenticating requests](#authenticating-requests).
 
 ### Attributes and properties
 
@@ -147,14 +152,15 @@ That's the whole integration: an `endpoint` attribute pointing at your AG-UI ser
 | Attribute | Property | Notes |
 | --- | --- | --- |
 | `endpoint` | `endpoint` | The AG-UI endpoint URL. Required to send. Reflecting getter + setter. |
+| `credentials` | `credentials` | Cookie policy for every request the element makes: `omit` / `same-origin` / `include`. Unset means the browser default (`same-origin`), which sends no cookies cross-origin. See [Authenticating requests](#authenticating-requests). |
 | `title-text` | — | Header label; defaults to `"Assistant"`. The only **observed** attribute (live-updates the header). |
 | `data-tool-display` | `toolDisplay` | Tool-call card detail: `inline` / `minimal` / `compact` / `full` (default `full`). |
 | `data-text-animation` | — | Incoming-text reveal: `none` (default) / `fade` / `word`. |
 | `data-prompt-chips` | — | Present (bare, or any value but `"false"`) to surface skills as chips. |
 | `data-slash-commands` | — | Present (bare, or any value but `"false"`) to enable the `/`-command palette. |
 | `data-skills` | — | Inline JSON skill catalog. |
-| `data-skills-url` | — | URL of a JSON skill catalog (fetched with `headers`). |
-| `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with `headers`; labels tool-call cards for server-side tools. |
+| `data-skills-url` | — | URL of a JSON skill catalog (fetched with the element's headers and cookie policy). |
+| `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with the element's headers and cookie policy; labels tool-call cards for server-side tools. |
 | `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
 | `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's ⭯ *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
 | `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's 📎 picker + drag-and-drop. |
@@ -182,11 +188,15 @@ brand `<img>` or `<svg>` rather than only restyling the character:
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
 | `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` / `embedded`. |
 
-**Properties** (JS only, not attributes): `headers`, `allowImages`, `autoConfirm`,
+**Properties** (JS only, not attributes): `headers`, `getHeaders`, `allowImages`, `autoConfirm`,
 `confirmPredicate`, `askUser`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
 `getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`,
 `navigationResult`, `skillContext`, `toolSummaries`, `strings`, `resolvePageTarget`, plus the
-mirrors `endpoint` / `toolDisplay` / `collapsed`.
+mirrors `endpoint` / `toolDisplay` / `collapsed` / `credentials`.
+
+`headers` and `getHeaders` authenticate **every** request the element makes, not only the agent
+run; `getHeaders` is the one to use for a credential that rotates. See
+[Authenticating requests](#authenticating-requests).
 
 `allowImages` (default `false`) re-enables `<img>` in rendered assistant markdown.
 It is off by default because a model-controlled image URL is fetched by the browser
@@ -209,7 +219,8 @@ keyboard focus and styleable via the `code-copy` part. Override its labels with
 the `copyCode` / `copied` / `copyFailed` strings.
 
 **Methods**: `registerTool`, `registerPageState`, `setSkills`, `sendMessage`, `attachFile`,
-`appendMessage`, `newChat`, `setCollapsed`, `toggleCollapsed`.
+`appendMessage`, `newChat`, `setCollapsed`, `toggleCollapsed`, `toggleTheme`, `openThreads`,
+`openCheckpoints`, `reload`.
 
 ### Sending from your own UI
 
@@ -240,6 +251,137 @@ chat.attachFile(fileInput.files[0]);
 
 A self-contained live playground lives in [`demo/`](demo/) — run `make demo` to serve it against a
 mock AG-UI server.
+
+---
+
+## Authenticating requests
+
+The element talks to more than one endpoint. Beyond the AG-UI run itself, it may fetch the thread
+index and a thread's messages, the tool-label and skill catalogs, the run index, and it may POST an
+upload or a voice clip. **Every one of them is authenticated the same way**, by the element rather
+than by the agent — so configuring authentication on a custom `agentFactory` authenticates the run
+and nothing else, and the history drawer comes back empty because its request was anonymous.
+
+| Request | Endpoint | Transport |
+| --- | --- | --- |
+| The agent run | `endpoint` | `fetch` (SSE), via `agentFactory` |
+| Thread index / a thread's messages / rename / delete | `data-threads-url` | `fetch` |
+| Tool-label catalog | `data-tools-url` | `fetch` |
+| Skill catalog | `data-skills-url` | `fetch` |
+| Run index | `data-runs-url` | `fetch` |
+| Voice transcription | `data-transcribe-url` | `fetch` |
+| File upload | `data-attachments-url` | `XMLHttpRequest` (for progress events) |
+
+### `headers` and `getHeaders`
+
+`headers` is a plain record sent with every request above:
+
+```js
+chat.headers = { "X-CSRFToken": getCsrfToken() };
+```
+
+It is read at request time, but only an assignment changes it — so a token captured there is pinned
+until you remember to assign again. For anything that rotates (a short-lived JWT, a re-issued CSRF
+token) set **`getHeaders`** instead, a function consulted immediately before every request:
+
+```js
+chat.getHeaders = () => ({ Authorization: `Bearer ${auth.accessToken()}` });
+```
+
+Because it is called per request, a token refreshed between two requests reaches the second one —
+including mid-conversation, on the cached agent's own stream.
+
+The two **compose**: they are merged per key, `getHeaders` winning, so a fixed header and a rotating
+one can be configured independently and neither silently drops the other.
+
+```js
+chat.headers = { "X-Client": "admin" };
+chat.getHeaders = () => ({ Authorization: `Bearer ${auth.accessToken()}` });
+// every request: X-Client: admin + a freshly-read Authorization
+```
+
+### Cross-origin cookies (`credentials`)
+
+If your API is on a different origin from the page — `app.example.com` calling `api.example.com`
+counts, subdomains are cross-origin — the browser's default of `same-origin` sends **no cookies at
+all**. The requests still go out; they arrive unauthenticated, and the server answers `401` while
+looking perfectly configured. Set the cookie policy explicitly:
+
+```html
+<ag-ui-chat endpoint="https://api.example.com/agent/" credentials="include"></ag-ui-chat>
+```
+
+```js
+chat.credentials = "include"; // mirrors the attribute
+```
+
+It takes `fetch`'s own three modes — `omit`, `same-origin`, `include` — applies to every request in
+the table above, and is read per request, so a late assignment applies to everything after it.
+Anything else is rejected where you wrote it: an unknown value assigned as a property throws, and an
+unknown value in the attribute is reported to the console and ignored, rather than becoming a `401`
+later on.
+
+The server has to agree: `Access-Control-Allow-Credentials: true` and a concrete
+`Access-Control-Allow-Origin` (the wildcard is invalid with credentials).
+
+One asymmetry: uploads use `XMLHttpRequest` for real progress events, and its cookie switch is
+two-state. `include` turns it on; every other value leaves it off. `omit` therefore cannot suppress
+cookies on a *same-origin* upload — supply your own `uploadHandler` if that matters.
+
+### Framework hosts: configure before you insert
+
+`headers`, `getHeaders` and `credentials` are read when a request is made, so they can be set at any
+time. Several other things are read once, while the element **connects**: `strings`, `uploadHandler`
+and `transcribeHandler` (they decide whether the attach and voice affordances exist at all) and
+every chrome-building `data-*` attribute — and the catalogs and thread history are requested at, or
+just after, that same moment.
+
+React attaches `ref`s *after* it inserts the node, which puts the canonical integration on the wrong
+side of that boundary. Create the element, configure it, then append:
+
+```jsx
+function Assistant() {
+  const host = useRef(null);
+
+  useEffect(() => {
+    defineAgUiChat();
+    const chat = document.createElement("ag-ui-chat");
+
+    // Configure first - every one of these is read as the element connects.
+    chat.setAttribute("endpoint", "/agent/");
+    chat.setAttribute("data-threads-url", "/agent/threads/");
+    chat.credentials = "include";
+    chat.getHeaders = () => ({ Authorization: `Bearer ${auth.accessToken()}` });
+    chat.registerTool(myTool);
+
+    // ...then insert it.
+    host.current.appendChild(chat);
+    return () => chat.remove();
+  }, []);
+
+  return <div ref={host} />;
+}
+```
+
+Writing it as `<ag-ui-chat ref={...} />` in JSX and configuring in the ref callback mostly works —
+the catalog requests are held back one microtask precisely so a ref assigned in the same commit is
+honoured — but the thread-history request is **not** deferred (a deferred replay could land after a
+`sendMessage()` and duplicate the transcript), so that one goes out with whatever was configured at
+insertion.
+
+If your credentials can only arrive later still — an awaited token, a passive effect — call
+**`reload()`** once they land:
+
+```js
+const token = await auth.login();
+chat.getHeaders = () => ({ Authorization: `Bearer ${token}` });
+await chat.reload();
+```
+
+`reload()` re-runs everything the element loads on startup (tool catalog, skills, thread history)
+with the configuration as it then stands. It is a reload, not a merge: the in-flight run is
+cancelled and the transcript is rebuilt from the persisted history, so call it when configuration
+lands rather than between turns.
 
 ---
 
@@ -432,18 +574,57 @@ human-readable speed (configurable; pass small/zero durations in tests):
 - `highlightThenClick(el, { highlightMs })` / `pressThenClick(el, options)` — outline/press an
   element, pause, then click.
 - `selectOption(el, value)` / `toggleControl(el, checked)` — animate a `<select>` / checkbox.
-- `scrollIntoCenterView(el)` / `focusWithFlash(el, { flashMs })`.
-- `prefersReducedMotion()` — honoured throughout so animations collapse to instant when the user
-  asks for reduced motion.
+- `scrollIntoCenterView(el, { settleMs })` — scrolls the element to the vertical centre and
+  resolves once the scroll has **settled**, so the ring that follows is drawn where the user is
+  looking rather than mid-glide. Awaiting is optional; the scroll is requested synchronously
+  either way. Settlement is `scrollend` where the browser has it, a short probe when nothing
+  actually moved (the element was already in view), and a 600 ms cap otherwise.
+- `flash(el, { flashMs, color })` / `focusWithFlash(el, { flashMs, color, focus })` — ring the
+  element so the user can find it. The ring is an `outline`, not a `box-shadow`, because a shadow
+  paints outside the border box and any `overflow: hidden` ancestor sharing the element's box (a
+  card, a table cell) clips it away entirely. It holds for **1200 ms** by default and fades out
+  over the last third — a 200 ms blink is not long enough to be *found* by someone who does not
+  yet know where to look. The colour comes from the target's own `--ag-ui-accent` (so a themed
+  page is flashed in its own colour), or from `color`.
+  `flash` leaves focus alone; `focusWithFlash` moves it — see "Flash versus focus" below.
+- `prefersReducedMotion()` — honoured by every primitive that *moves* something: the hold delays
+  in `pressThenClick` / `selectOption` / `toggleControl` collapse to instant, `scrollIntoCenterView`
+  jumps instead of gliding and settles immediately, and the flash drops its fade while still
+  holding the ring for its full duration. Reduced motion asks for no animation, not for no
+  feedback. `typeInto` and `highlightThenClick` are the exceptions: they keep their
+  explicit-duration contract, so pass `charDelayMs: 0` / `highlightMs: 0` yourself if you want
+  them instant.
 
 The **DOM-driver** primitives ([`dom_driver.ts`](src/dom/dom_driver.ts)) compose those into the
 operations a tool handler typically wants:
 
-- `fillField(el, value, options)` — scroll to, focus-flash, and type into a text field.
+- `fillField(el, value, options)` — scroll to, focus-flash, and type into a text field. The
+  flash defaults to `flashMs: 0` here: the field is about to be typed into, which is its own
+  highlight. Pass `flashMs` (and optionally `color`) to ring it first.
 - `clickElement(el, options)` / `pressButton(el, options)` — scroll to, highlight/press, and click.
 - `selectControl(el, value)` / `toggleCheckbox(el, checked)` — animate a `<select>` / checkbox.
 - `setControlValue(el, value)` — set a `<select>` or checkbox without animation, dispatching
   `input`/`change`.
+
+Every driver primitive **awaits the scroll** before it animates. A smooth scroll is not awaitable
+on its own, so a highlight fired straight after `scrollIntoView` could be applied and removed
+while the element was still travelling — visible to nobody. Budget up to ~600 ms of settle time
+per action in a browser without `scrollend`; an element already in view costs ~100 ms.
+
+**Flash versus focus.** `focusWithFlash` does what its name says: it moves keyboard focus. That is
+rarely what you want just to *point at* something — it takes focus off the composer, can fire blur
+validation on whatever the user was mid-edit in, and can close an open menu. Reach for `flash(el)`
+to highlight, and keep `focusWithFlash(el)` for the case where the agent is about to type. Either
+way you can be explicit with `focus`:
+
+```js
+await flash(el);                            // highlight, focus untouched
+await focusWithFlash(el);                   // highlight and take focus
+await focusWithFlash(el, { focus: false }); // same as flash(el)
+```
+
+`focusWithFlash` focuses with `preventScroll: true`, so it cannot fight a smooth scroll that is
+still in flight.
 
 The native-setter helpers ([`native_setter.ts`](src/dom/native_setter.ts)) — `setNativeValue` /
 `setNativeChecked` — set a control through its native prototype setter so React-controlled inputs
@@ -919,6 +1100,11 @@ Client-side `accept` / size checks are an instant-feedback nicety — **the serv
 authoritative**. Refs persist on the message, so a restored conversation re-renders its chips.
 Without the attribute the affordance stays hidden and the chat is text-only.
 
+The built-in handler sends the element's `headers` / `getHeaders` with every upload, and honours
+`credentials="include"` — with the caveat that it is an `XMLHttpRequest` (for real progress
+events), whose cookie switch is two-state: `include` turns it on, every other value leaves it off.
+See [Authenticating requests](#authenticating-requests).
+
 **Swapping the upload transport.** The built-in multipart `POST` is just the default
 `uploadHandler`. Set your own to use a different transport — a resumable
 [`tus-js-client`](https://github.com/tus/tus-js-client) adapter, direct-to-S3 multipart, etc.
@@ -1038,10 +1224,10 @@ re-export point. Internal modules import from leaf paths.
 | `DEFAULT_UI_STRINGS` | const | The English defaults (the override floor). |
 | `mergeUiStrings(overrides)` | function | Merge a partial override over the defaults. |
 | `renderMarkdown(text)` | function | Render sanitized markdown/HTML (marked + DOMPurify). |
-| `typeInto` / `highlightThenClick` / `pressThenClick` / `selectOption` / `toggleControl` / `scrollIntoCenterView` / `focusWithFlash` / `prefersReducedMotion` | function | Animation primitives. |
+| `typeInto` / `highlightThenClick` / `pressThenClick` / `selectOption` / `toggleControl` / `scrollIntoCenterView` / `flash` / `focusWithFlash` / `prefersReducedMotion` | function | Animation primitives. |
 | `fillField` / `clickElement` / `pressButton` / `selectControl` / `setControlValue` / `toggleCheckbox` | function | DOM-driver primitives. |
 | `setNativeValue` / `setNativeChecked` | function | Set a control via its native prototype setter (React-controlled inputs). |
-| `TypeOptions` / `HighlightClickOptions` / `PressOptions` / `SelectOptions` / `ToggleOptions` / `FlashOptions` / `FillFieldOptions` / `TextLikeElement` | type | Primitive option shapes. |
+| `TypeOptions` / `HighlightClickOptions` / `PressOptions` / `SelectOptions` / `ToggleOptions` / `FlashOptions` / `ScrollOptions` / `FillFieldOptions` / `TextLikeElement` | type | Primitive option shapes. |
 
 ### Constants
 
@@ -1063,8 +1249,24 @@ re-export point. Internal modules import from leaf paths.
 ## Theming, density, and placement
 
 The chat shell is styled inside its Shadow DOM and exposes a large set of `--ag-ui-*` CSS custom
-properties on `:host` (colors, status, surface, spacing, layout), so you theme it from outside
-without piercing the shadow boundary. A few of the knobs:
+properties (colors, status, surface, spacing, layout), so you theme it from outside without
+piercing the shadow boundary. Set them anywhere above the element and they inherit in — on the
+element itself, on a wrapper, or on `:root` for a whole page. The closest declaration wins, the
+way any inherited CSS property behaves:
+
+```css
+/* All three work. The most specific one that applies wins. */
+:root      { --ag-ui-accent: #4f46e5; }  /* whole page */
+.chat-dock { --ag-ui-accent: #0f766e; }  /* one region */
+ag-ui-chat { --ag-ui-accent: #b91c1c; }  /* one widget */
+```
+
+> Until 0.20.x the defaults were declared on `:host`, which set them *on the element* — and an
+> element's own value beats anything inherited from an ancestor, so only the `ag-ui-chat { … }`
+> form did anything and the wrapper form silently did nothing. The defaults now sit behind an
+> internal alias, so all three forms work.
+
+A few of the knobs:
 
 ```css
 ag-ui-chat {
@@ -1080,6 +1282,45 @@ ag-ui-chat {
   --ag-ui-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
 }
 ```
+
+### Where to put the variables
+
+There is one vocabulary — the `--ag-ui-*` names above — and it works from any ancestor. What
+differs is only *which* declaration wins, and that is ordinary CSS inheritance:
+
+```css
+/* A whole page or design-system scope. */
+:root { --ag-ui-accent: var(--brand-600); --ag-ui-radius: 4px; }
+
+/* One region — the widget picks this up through the wrapper. */
+aside.support-dock { --ag-ui-accent: #0f766e; }
+
+/* One widget. Beats both of the above, because it targets the element. */
+ag-ui-chat#support { --ag-ui-accent: #b91c1c; }
+
+/* Set at runtime with el.style.setProperty(...) — an inline style beats all of the above. */
+```
+
+Two that do not work:
+
+```css
+/* ::part() reaches structural elements, not variables — a custom property set
+   here applies to that part's own subtree, not to the whole shell. */
+ag-ui-chat::part(panel) { --ag-ui-accent: #b91c1c; }
+
+/* The internal --_* aliases are private and unversioned; they are renamed
+   without notice. Always set the public --ag-ui-* name. */
+ag-ui-chat { --_accent: #b91c1c; }
+```
+
+The preset attributes below sit *underneath* anything you declare: a `theme="dark"` widget still
+honours an explicit `--ag-ui-bg` from your CSS, so you can adopt a preset and correct one token
+rather than re-declaring the whole palette.
+
+`--ag-ui-accent` reaches further than the widget: it also colours the rings the DOM driver draws
+on **your** page. Each primitive reads it from the computed style of the element it is about to
+touch, so setting it on `:root` (or on any ancestor of the elements the agent drives) themes the
+highlights too. Without it they fall back to the package indigo.
 
 For the common cases there are three CSS-reactive **preset attributes** (no JS API), so you don't
 have to hand-tune the variables:
@@ -1137,6 +1378,26 @@ the skills UI (`skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skil
 `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`,
 `drawer-confirm-yes`, `drawer-confirm-no`).
 
+> **Hiding `::part(header)` hides the controls inside it.** The history, checkpoints, new-chat,
+> theme and collapse buttons are all children of the header, so a host that renders its own title
+> bar and does `ag-ui-chat::part(header) { display: none }` loses thread switching entirely. Every
+> one of them has an imperative equivalent, so your own chrome can drive them:
+>
+> | Control | Method |
+> | --- | --- |
+> | History drawer | `chat.openThreads()` |
+> | Checkpoints panel | `chat.openCheckpoints()` |
+> | New chat | `chat.newChat()` |
+> | Collapse | `chat.toggleCollapsed()` / `chat.setCollapsed(bool)` |
+> | Theme toggle | `chat.toggleTheme()` |
+>
+> ```js
+> myHeaderButton.onclick = () => chat.openThreads();
+> ```
+>
+> The built-in buttons call exactly these methods, so the two routes cannot drift. If you only want
+> to restyle the header, prefer `::part(header)` styling or the `header-actions` slot over hiding it.
+
 Coarse **slots** let you replace whole regions with your own markup (project light-DOM children
 with a matching `slot=`):
 
@@ -1160,7 +1421,7 @@ with a matching `slot=`):
 Give the header a brand icon with either the `icon` slot (any markup) or the `data-icon-url`
 convenience attribute (an `<img>`); the slot wins when both are set, and with neither the header
 stays icon-less. The same icon seam feeds the collapsed sidebar rail. Size it via
-`--ag-ui-icon-size` (default `22px`).
+`--ag-ui-icon-size` (default `22px`) and round it with `--ag-ui-icon-radius` (default `4px`).
 
 ```html
 <ag-ui-chat endpoint="/agent/" data-icon-url="/logo.png"></ag-ui-chat>

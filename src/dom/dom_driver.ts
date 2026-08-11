@@ -1,4 +1,5 @@
 import {
+  type FlashOptions,
   focusWithFlash,
   type HighlightClickOptions,
   highlightThenClick,
@@ -23,20 +24,25 @@ import { setNativeChecked, setNativeValue } from "./native_setter.js";
  * `fill_field(name, value)` finds `#id_<name>` then calls {@link fillField}.
  */
 
-export interface FillFieldOptions extends TypeOptions, FlashOptionsLike {}
+/**
+ * A field has to hold focus to be typed into, so ``focus`` is not on offer
+ * here — everything else the flash takes is.
+ */
+export interface FillFieldOptions extends TypeOptions, Omit<FlashOptions, "focus"> {}
 
-interface FlashOptionsLike {
-  flashMs?: number;
-}
-
-/** Scroll to, focus (with a flash), and type ``value`` into a text field. */
+/**
+ * Scroll to, focus (with a flash), and type ``value`` into a text field.
+ *
+ * The scroll is awaited: typing into an element that is still gliding past
+ * shows the user nothing.
+ */
 export async function fillField(
   el: TextLikeElement,
   value: string,
   options: FillFieldOptions = {},
 ): Promise<void> {
-  scrollIntoCenterView(el);
-  await focusWithFlash(el, { flashMs: options.flashMs ?? 0 });
+  await scrollIntoCenterView(el);
+  await focusWithFlash(el, { ...options, flashMs: options.flashMs ?? 0 });
   await typeInto(el, value, options);
 }
 
@@ -45,13 +51,13 @@ export async function clickElement(
   el: HTMLElement,
   options: HighlightClickOptions = {},
 ): Promise<void> {
-  scrollIntoCenterView(el);
+  await scrollIntoCenterView(el);
   await highlightThenClick(el, options);
 }
 
 /** Scroll to a button/control and click it with a visible "press" animation. */
 export async function pressButton(el: HTMLElement, options: PressOptions = {}): Promise<void> {
-  scrollIntoCenterView(el);
+  await scrollIntoCenterView(el);
   await pressThenClick(el, options);
 }
 
@@ -61,7 +67,7 @@ export async function selectControl(
   value: string,
   options: SelectOptions = {},
 ): Promise<void> {
-  scrollIntoCenterView(el);
+  await scrollIntoCenterView(el);
   await selectOption(el, value, options);
 }
 
@@ -71,7 +77,7 @@ export async function toggleCheckbox(
   checked: boolean,
   options: ToggleOptions = {},
 ): Promise<void> {
-  scrollIntoCenterView(el);
+  await scrollIntoCenterView(el);
   await toggleControl(el, checked, options);
 }
 

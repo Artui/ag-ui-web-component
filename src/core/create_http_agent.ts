@@ -1,10 +1,20 @@
 import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
+import { withCredentials } from "./utils.js";
 
 /** Config for {@link createHttpAgent}. */
 export interface HttpAgentOptions {
   endpoint: string;
   headers?: Record<string, string>;
+  /**
+   * Cookie policy for the run request, as `fetch`'s own `credentials` mode.
+   * Unset leaves the browser default (`same-origin`) alone — which sends **no**
+   * cookies when the agent endpoint is on a different origin (or a different
+   * subdomain) from the page. A cookie-authenticated cross-origin deployment
+   * needs `"include"` here, and a server that answers it with
+   * `Access-Control-Allow-Credentials: true` and a concrete origin.
+   */
+  credentials?: RequestCredentials;
   /**
    * Live header source, re-read on **every** request. `HttpAgent` bakes the
    * static `headers` into its constructor and the element caches the agent
@@ -43,17 +53,18 @@ export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
     // "Illegal invocation" in browsers. Wrap it so `fetch` is always called as
     // a free function with the correct receiver. The wrapper also overlays
     // `getHeaders()` per request, so header rotation (CSRF, short-lived JWT)
-    // reaches the stream even though the agent instance is cached.
+    // reaches the stream even though the agent instance is cached, and applies
+    // the configured cookie policy — the agent's own config has no seam for it.
     fetch: (url, init) => {
       const fresh = options.getHeaders?.();
       if (fresh === undefined) {
-        return fetch(url, init);
+        return fetch(url, withCredentials(init, options.credentials));
       }
       const headers = new Headers(init?.headers);
       for (const [name, value] of Object.entries(fresh)) {
         headers.set(name, value);
       }
-      return fetch(url, { ...init, headers });
+      return fetch(url, withCredentials({ ...init, headers }, options.credentials));
     },
     // Spread conditionally: under `exactOptionalPropertyTypes` an explicit
     // `undefined` is not assignable to these optional config fields.

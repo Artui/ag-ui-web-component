@@ -3,151 +3,186 @@
 // CSS pipeline. Scoped by the shadow boundary, so class names stay terse.
 
 export const STYLES = `
+/* ── Token defaults ─────────────────────────────────────────────────────────
+   Every public --ag-ui-* token is read here into a private --_* alias, and
+   only the alias is used by the rules below.
+
+   The indirection is what makes ancestor theming work. Declaring the public
+   name on :host would set it *on the host element*, and a value on an element
+   always beats one inherited from an ancestor — so a page that put the tokens
+   on a wrapper would see no effect at all, which is the one thing the API is
+   documented to support. Reading the public name with the default as a var()
+   fallback leaves it undeclared on the element, so an ancestor's value is
+   inherited normally while a value aimed at the element still wins over it.
+
+   Two invariants hold this together:
+   1. No rule outside this file's :host blocks may reference a public name
+      directly. A public name read outside these blocks resolves to nothing and
+      silently drops its declaration rather than erroring, so the miss shows up
+      as a missing colour, not a failure.
+   2. Every --_* alias in use is declared here. Aliases inherit like any custom
+      property, so an undeclared one would pick up a same-named property from
+      the host page; declaring it on :host shields the shadow tree from that. */
 :host {
   /* Colors */
-  --ag-ui-bg: #ffffff;
-  --ag-ui-fg: #1a1a2e;
-  --ag-ui-accent: #4f46e5;
-  --ag-ui-user-bg: #4f46e5;
-  --ag-ui-user-fg: #ffffff;
-  --ag-ui-assistant-bg: #f1f1f6;
-  --ag-ui-hover: #e7e7ee;
-  --ag-ui-input-bg: var(--ag-ui-bg);
-  --ag-ui-tool-bg: var(--ag-ui-assistant-bg);
-  --ag-ui-tool-fg: var(--ag-ui-accent);
-  --ag-ui-header-bg: var(--ag-ui-accent);
-  --ag-ui-header-fg: #ffffff;
-  --ag-ui-border: #e2e2ec;
-  --ag-ui-radius: 12px;
+  --_bg: var(--ag-ui-bg, #ffffff);
+  --_fg: var(--ag-ui-fg, #1a1a2e);
+  --_accent: var(--ag-ui-accent, #4f46e5);
+  --_user-bg: var(--ag-ui-user-bg, #4f46e5);
+  --_user-fg: var(--ag-ui-user-fg, #ffffff);
+  --_assistant-bg: var(--ag-ui-assistant-bg, #f1f1f6);
+  --_hover: var(--ag-ui-hover, #e7e7ee);
+  --_input-bg: var(--ag-ui-input-bg, var(--_bg));
+  --_tool-bg: var(--ag-ui-tool-bg, var(--_assistant-bg));
+  --_tool-fg: var(--ag-ui-tool-fg, var(--_accent));
+  --_header-bg: var(--ag-ui-header-bg, var(--_accent));
+  --_header-fg: var(--ag-ui-header-fg, #ffffff);
+  --_border: var(--ag-ui-border, #e2e2ec);
+  --_radius: var(--ag-ui-radius, 12px);
+
+  /* Body text and raised chrome. Both are referenced by the code-block copy
+     button; neither had a default before, so the declarations reading them
+     were dropped and the button fell back to the inherited colour over a
+     transparent box. The defaults below restate exactly that, so this is a
+     rename with no repaint — see the note on .code-copy. */
+  --_text: var(--ag-ui-text, var(--_fg));
+  --_surface: var(--ag-ui-surface, transparent);
 
   /* Status accents for tool-call cards. */
-  --ag-ui-success: #15803d;
-  --ag-ui-danger: #b91c1c;
-  --ag-ui-muted: #6b7280;
+  --_success: var(--ag-ui-success, #15803d);
+  --_danger: var(--ag-ui-danger, #b91c1c);
+  --_muted: var(--ag-ui-muted, #6b7280);
 
   /* Tool-call status icon glyphs (override to re-theme) + spinner speed.
      The pending state is the animated ring; the settled states use these. */
-  --ag-ui-tool-icon-done: "✓";
-  --ag-ui-tool-icon-error: "✕";
-  --ag-ui-tool-icon-declined: "⊘";
-  --ag-ui-tool-spin-duration: 0.7s;
+  --_tool-icon-done: var(--ag-ui-tool-icon-done, "✓");
+  --_tool-icon-error: var(--ag-ui-tool-icon-error, "✕");
+  --_tool-icon-declined: var(--ag-ui-tool-icon-declined, "⊘");
+  --_tool-spin-duration: var(--ag-ui-tool-spin-duration, 0.7s);
 
   /* Answer well (opt-in via data-answer-well) — boxes a whole assistant turn. */
-  --ag-ui-well-bg: transparent;
-  --ag-ui-well-border: var(--ag-ui-border);
+  --_well-bg: var(--ag-ui-well-bg, transparent);
+  --_well-border: var(--ag-ui-well-border, var(--_border));
 
   /* Surface — set --ag-ui-shadow: none for a flush, embedded panel. */
-  --ag-ui-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
-  --ag-ui-font: inherit;
-  --ag-ui-font-size: 14px;
-  --ag-ui-code-font: ui-monospace, "SF Mono", Menlo, monospace;
+  --_shadow: var(--ag-ui-shadow, 0 12px 32px rgba(20, 20, 50, 0.18));
+  --_font: var(--ag-ui-font, inherit);
+  --_font-size: var(--ag-ui-font-size, 14px);
+  --_code-font: var(--ag-ui-code-font, ui-monospace, "SF Mono", Menlo, monospace);
+
+  /* Header / launcher icon box. */
+  --_icon-size: var(--ag-ui-icon-size, 22px);
+  --_icon-radius: var(--ag-ui-icon-radius, 4px);
 
   /* Spacing — the density preset overrides these. */
-  --ag-ui-space: 10px;
-  --ag-ui-pad: 16px;
-  --ag-ui-msg-pad: 8px 12px;
-  --ag-ui-msg-radius: 14px;
+  --_space: var(--ag-ui-space, 10px);
+  --_pad: var(--ag-ui-pad, 16px);
+  --_msg-pad: var(--ag-ui-msg-pad, 8px 12px);
+  --_msg-radius: var(--ag-ui-msg-radius, 14px);
 
   /* Layout — override from outside to dock the widget anywhere.
      Set --ag-ui-position: static (and place this element in your own
      grid/flex layout) to embed it in the page flow instead of floating. */
-  --ag-ui-position: fixed;
-  --ag-ui-z-index: 2147483000;
-  --ag-ui-width: 380px;
-  --ag-ui-height: 560px;
-  --ag-ui-inset: auto 24px 24px auto;
-  --ag-ui-max-width: calc(100vw - 48px);
-  --ag-ui-max-height: calc(100vh - 48px);
+  --_position: var(--ag-ui-position, fixed);
+  --_z-index: var(--ag-ui-z-index, 2147483000);
+  --_width: var(--ag-ui-width, 380px);
+  --_height: var(--ag-ui-height, 560px);
+  --_inset: var(--ag-ui-inset, auto 24px 24px auto);
+  --_max-width: var(--ag-ui-max-width, calc(100vw - 48px));
+  --_max-height: var(--ag-ui-max-height, calc(100vh - 48px));
   /* Reading-column width for placement="page" (full-bleed, centred content). */
-  --ag-ui-content-max-width: 820px;
+  --_content-max-width: var(--ag-ui-content-max-width, 820px);
+  /* Slim rail the sidebar placement collapses to. Only that placement reads
+     it, but it is declared here so invariant 2 holds for every alias. */
+  --_rail-width: var(--ag-ui-rail-width, 52px);
 
-  position: var(--ag-ui-position);
-  inset: var(--ag-ui-inset);
-  z-index: var(--ag-ui-z-index);
-  width: var(--ag-ui-width);
-  max-width: var(--ag-ui-max-width);
-  height: var(--ag-ui-height);
-  max-height: var(--ag-ui-max-height);
+  position: var(--_position);
+  inset: var(--_inset);
+  z-index: var(--_z-index);
+  width: var(--_width);
+  max-width: var(--_max-width);
+  height: var(--_height);
+  max-height: var(--_max-height);
   display: flex;
-  font-family: var(--ag-ui-font);
-  font-size: var(--ag-ui-font-size);
-  color: var(--ag-ui-fg);
+  font-family: var(--_font);
+  font-size: var(--_font-size);
+  color: var(--_fg);
 }
 
 /* ── Themes ─────────────────────────────────────────────────────────────
    Themes only re-set the colour variables; layout/spacing are unaffected.
    theme="auto" follows the OS via prefers-color-scheme. */
 :host([theme="dark"]) {
-  --ag-ui-bg: #15151f;
-  --ag-ui-fg: #e8e8f2;
-  --ag-ui-assistant-bg: #25253a;
-  --ag-ui-hover: #303049;
-  --ag-ui-header-bg: #1f1f30;
-  --ag-ui-header-fg: #e8e8f2;
-  --ag-ui-border: #33334a;
-  --ag-ui-muted: #9aa0b4;
-  --ag-ui-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --_bg: var(--ag-ui-bg, #15151f);
+  --_fg: var(--ag-ui-fg, #e8e8f2);
+  --_assistant-bg: var(--ag-ui-assistant-bg, #25253a);
+  --_hover: var(--ag-ui-hover, #303049);
+  --_header-bg: var(--ag-ui-header-bg, #1f1f30);
+  --_header-fg: var(--ag-ui-header-fg, #e8e8f2);
+  --_border: var(--ag-ui-border, #33334a);
+  --_muted: var(--ag-ui-muted, #9aa0b4);
+  --_shadow: var(--ag-ui-shadow, 0 12px 32px rgba(0, 0, 0, 0.5));
 }
 
 @media (prefers-color-scheme: dark) {
   :host([theme="auto"]) {
-    --ag-ui-bg: #15151f;
-    --ag-ui-fg: #e8e8f2;
-    --ag-ui-assistant-bg: #25253a;
-    --ag-ui-hover: #303049;
-    --ag-ui-header-bg: #1f1f30;
-    --ag-ui-header-fg: #e8e8f2;
-    --ag-ui-border: #33334a;
-    --ag-ui-muted: #9aa0b4;
-    --ag-ui-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    --_bg: var(--ag-ui-bg, #15151f);
+    --_fg: var(--ag-ui-fg, #e8e8f2);
+    --_assistant-bg: var(--ag-ui-assistant-bg, #25253a);
+    --_hover: var(--ag-ui-hover, #303049);
+    --_header-bg: var(--ag-ui-header-bg, #1f1f30);
+    --_header-fg: var(--ag-ui-header-fg, #e8e8f2);
+    --_border: var(--ag-ui-border, #33334a);
+    --_muted: var(--ag-ui-muted, #9aa0b4);
+    --_shadow: var(--ag-ui-shadow, 0 12px 32px rgba(0, 0, 0, 0.5));
   }
 }
 
 /* A terminal-flavoured "code" theme: dark, monospace, green accent. */
 :host([theme="code"]) {
-  --ag-ui-bg: #0d1117;
-  --ag-ui-fg: #c9d1d9;
-  --ag-ui-accent: #3fb950;
-  --ag-ui-user-bg: #238636;
-  --ag-ui-assistant-bg: #161b22;
-  --ag-ui-hover: #21262d;
-  --ag-ui-header-bg: #010409;
-  --ag-ui-header-fg: #c9d1d9;
-  --ag-ui-border: #30363d;
-  --ag-ui-muted: #8b949e;
-  --ag-ui-font: var(--ag-ui-code-font);
-  --ag-ui-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  --_bg: var(--ag-ui-bg, #0d1117);
+  --_fg: var(--ag-ui-fg, #c9d1d9);
+  --_accent: var(--ag-ui-accent, #3fb950);
+  --_user-bg: var(--ag-ui-user-bg, #238636);
+  --_assistant-bg: var(--ag-ui-assistant-bg, #161b22);
+  --_hover: var(--ag-ui-hover, #21262d);
+  --_header-bg: var(--ag-ui-header-bg, #010409);
+  --_header-fg: var(--ag-ui-header-fg, #c9d1d9);
+  --_border: var(--ag-ui-border, #30363d);
+  --_muted: var(--ag-ui-muted, #8b949e);
+  --_font: var(--ag-ui-font, var(--_code-font));
+  --_shadow: var(--ag-ui-shadow, 0 12px 32px rgba(0, 0, 0, 0.6));
 }
 
 /* ── Density ────────────────────────────────────────────────────────────── */
 :host([density="compact"]) {
-  --ag-ui-font-size: 13px;
-  --ag-ui-space: 6px;
-  --ag-ui-pad: 10px;
-  --ag-ui-msg-pad: 5px 9px;
-  --ag-ui-msg-radius: 10px;
+  --_font-size: var(--ag-ui-font-size, 13px);
+  --_space: var(--ag-ui-space, 6px);
+  --_pad: var(--ag-ui-pad, 10px);
+  --_msg-pad: var(--ag-ui-msg-pad, 5px 9px);
+  --_msg-radius: var(--ag-ui-msg-radius, 10px);
 }
 
 /* ── Placement presets ──────────────────────────────────────────────────── */
 :host([placement="bottom-left"]) {
-  --ag-ui-inset: auto auto 24px 24px;
+  --_inset: var(--ag-ui-inset, auto auto 24px 24px);
 }
 
 :host([placement="side"]) {
-  --ag-ui-inset: 0 0 0 auto;
-  --ag-ui-width: 420px;
-  --ag-ui-height: 100vh;
-  --ag-ui-max-height: 100vh;
-  --ag-ui-radius: 0;
+  --_inset: var(--ag-ui-inset, 0 0 0 auto);
+  --_width: var(--ag-ui-width, 420px);
+  --_height: var(--ag-ui-height, 100vh);
+  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_radius: var(--ag-ui-radius, 0);
 }
 
 :host([placement="full"]) {
-  --ag-ui-inset: 0;
-  --ag-ui-width: 100vw;
-  --ag-ui-height: 100vh;
-  --ag-ui-max-width: 100vw;
-  --ag-ui-max-height: 100vh;
-  --ag-ui-radius: 0;
+  --_inset: var(--ag-ui-inset, 0);
+  --_width: var(--ag-ui-width, 100vw);
+  --_height: var(--ag-ui-height, 100vh);
+  --_max-width: var(--ag-ui-max-width, 100vw);
+  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_radius: var(--ag-ui-radius, 0);
 }
 
 /* Page: full-bleed background with a centred reading column. Unlike
@@ -156,85 +191,20 @@ export const STYLES = `
    padding on the scroll area + composer (no per-row wrapper), so user pills
    still right-align and the assistant well spans the column. */
 :host([placement="page"]) {
-  --ag-ui-inset: 0;
-  --ag-ui-width: 100vw;
-  --ag-ui-height: 100vh;
-  --ag-ui-max-width: 100vw;
-  --ag-ui-max-height: 100vh;
-  --ag-ui-radius: 0;
+  --_inset: var(--ag-ui-inset, 0);
+  --_width: var(--ag-ui-width, 100vw);
+  --_height: var(--ag-ui-height, 100vh);
+  --_max-width: var(--ag-ui-max-width, 100vw);
+  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_radius: var(--ag-ui-radius, 0);
 }
 
 :host([placement="page"]) .messages {
-  padding-inline: max(var(--ag-ui-pad), calc((100% - var(--ag-ui-content-max-width)) / 2));
+  padding-inline: max(var(--_pad), calc((100% - var(--_content-max-width)) / 2));
 }
 
-:host([placement="page"]) /* Resize handle: a corner grip on a floating panel, an edge grip on a docked
-   one. Absent entirely where the placement is full-bleed, since there is
-   nothing to drag. */
-.resize-handle {
-  position: absolute;
-  z-index: 2;
-  background: transparent;
-  touch-action: none;
-}
-
-.resize-handle:focus-visible {
-  outline: 2px solid var(--ag-ui-accent);
-  outline-offset: -2px;
-}
-
-/* The grip sits at the corner the panel grows toward. Which corner that is
-   depends on the host's layout, not on placement, so the element measures it
-   and stamps data-resize-anchor with the edges that stay put.
-
-   Default (bottom-right pinned, the floating case) puts the grip top-left. */
-.resize-handle {
-  top: 0;
-  left: 0;
-  width: 14px;
-  height: 14px;
-  cursor: nwse-resize;
-}
-
-:host([data-resize-anchor~="left"]) .resize-handle {
-  left: auto;
-  right: 0;
-}
-
-:host([data-resize-anchor~="top"]) .resize-handle {
-  top: auto;
-  bottom: 0;
-}
-
-/* One axis flipped means the drag runs along the other diagonal. */
-:host([data-resize-anchor="top-right"]) .resize-handle,
-:host([data-resize-anchor="bottom-left"]) .resize-handle {
-  cursor: nesw-resize;
-}
-
-/* Docked: the placement owns the height, so only the inner edge is the user's. */
-:host([placement="sidebar"]) .resize-handle,
-:host([placement="side"]) .resize-handle {
-  top: 0;
-  bottom: auto;
-  width: 8px;
-  height: 100%;
-  cursor: ew-resize;
-}
-
-/* Full-bleed: nothing to drag. */
-:host([placement="full"]) .resize-handle,
-:host([placement="page"]) .resize-handle {
-  display: none;
-}
-
-.resize-handle[data-dragging] {
-  background: var(--ag-ui-accent);
-  opacity: 0.35;
-}
-
-.input-row {
-  padding-inline: max(12px, calc((100% - var(--ag-ui-content-max-width)) / 2));
+:host([placement="page"]) .input-row {
+  padding-inline: max(12px, calc((100% - var(--_content-max-width)) / 2));
 }
 
 /* The rows between the message list and the composer (skill chips, the
@@ -243,12 +213,12 @@ export const STYLES = `
    margin-based, so each gets its own inline axis nudged by the same gutter. */
 :host([placement="page"]) .skill-chips,
 :host([placement="page"]) .attachment-tray {
-  padding-inline: max(12px, calc((100% - var(--ag-ui-content-max-width)) / 2));
+  padding-inline: max(12px, calc((100% - var(--_content-max-width)) / 2));
 }
 
 :host([placement="page"]) .skill-palette,
 :host([placement="page"]) .skill-hint {
-  margin-inline: max(12px, calc((100% - var(--ag-ui-content-max-width)) / 2));
+  margin-inline: max(12px, calc((100% - var(--_content-max-width)) / 2));
 }
 
 /* In the reading column the assistant well uses the full width; the user
@@ -263,17 +233,16 @@ export const STYLES = `
    --ag-ui-position: static (and place this element in your own layout) for a
    host-managed push instead. */
 :host([placement="sidebar"]) {
-  --ag-ui-inset: 0 0 0 auto;
-  --ag-ui-width: 420px;
-  --ag-ui-height: 100vh;
-  --ag-ui-max-height: 100vh;
-  --ag-ui-radius: 0;
-  --ag-ui-rail-width: 52px;
+  --_inset: var(--ag-ui-inset, 0 0 0 auto);
+  --_width: var(--ag-ui-width, 420px);
+  --_height: var(--ag-ui-height, 100vh);
+  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_radius: var(--ag-ui-radius, 0);
   transition: width 0.28s ease;
 }
 
 :host([placement="sidebar"][data-side="left"]) {
-  --ag-ui-inset: 0 auto 0 0;
+  --_inset: var(--ag-ui-inset, 0 auto 0 0);
 }
 
 :host([placement="sidebar"]) .chat {
@@ -284,7 +253,7 @@ export const STYLES = `
    reveal the rail. Higher specificity than the generic collapse rules, so it
    wins regardless of source order. */
 :host([placement="sidebar"][collapsed]) {
-  width: var(--ag-ui-rail-width);
+  width: var(--_rail-width);
   height: 100vh;
   max-height: 100vh;
   bottom: 0;
@@ -309,9 +278,9 @@ export const STYLES = `
   align-items: flex-start;
   justify-content: center;
   padding-top: 16px;
-  border: 1px solid var(--ag-ui-border);
-  background: var(--ag-ui-header-bg);
-  color: var(--ag-ui-header-fg);
+  border: 1px solid var(--_border);
+  background: var(--_header-bg);
+  color: var(--_header-fg);
   cursor: pointer;
 }
 
@@ -325,13 +294,13 @@ export const STYLES = `
 /* Embedded: drop the floating chrome and the high z-index stacking context so
    the widget lives in the host's own layout (fixes overlay/z-index clashes). */
 :host([placement="embedded"]) {
-  --ag-ui-position: static;
-  --ag-ui-width: 100%;
-  --ag-ui-height: 100%;
-  --ag-ui-max-width: 100%;
-  --ag-ui-max-height: 100%;
-  --ag-ui-shadow: none;
-  --ag-ui-z-index: auto;
+  --_position: var(--ag-ui-position, static);
+  --_width: var(--ag-ui-width, 100%);
+  --_height: var(--ag-ui-height, 100%);
+  --_max-width: var(--ag-ui-max-width, 100%);
+  --_max-height: var(--ag-ui-max-height, 100%);
+  --_shadow: var(--ag-ui-shadow, none);
+  --_z-index: var(--ag-ui-z-index, auto);
 }
 
 .chat {
@@ -340,10 +309,10 @@ export const STYLES = `
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: var(--ag-ui-bg);
-  border: 1px solid var(--ag-ui-border);
-  border-radius: var(--ag-ui-radius);
-  box-shadow: var(--ag-ui-shadow);
+  background: var(--_bg);
+  border: 1px solid var(--_border);
+  border-radius: var(--_radius);
+  box-shadow: var(--_shadow);
   overflow: hidden;
 }
 
@@ -353,9 +322,9 @@ export const STYLES = `
   justify-content: space-between;
   gap: 8px;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--ag-ui-border);
-  background: var(--ag-ui-header-bg);
-  color: var(--ag-ui-header-fg);
+  border-bottom: 1px solid var(--_border);
+  background: var(--_header-bg);
+  color: var(--_header-fg);
 }
 
 .header-title {
@@ -374,8 +343,8 @@ export const STYLES = `
   align-items: center;
   justify-content: center;
   flex: none;
-  width: var(--ag-ui-icon-size, 22px);
-  height: var(--ag-ui-icon-size, 22px);
+  width: var(--_icon-size);
+  height: var(--_icon-size);
   line-height: 1;
 }
 
@@ -383,7 +352,7 @@ export const STYLES = `
   width: 100%;
   height: 100%;
   object-fit: contain;
-  border-radius: var(--ag-ui-icon-radius, 4px);
+  border-radius: var(--_icon-radius);
 }
 
 .header-controls {
@@ -435,10 +404,10 @@ export const STYLES = `
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: var(--ag-ui-pad);
+  padding: var(--_pad);
   display: flex;
   flex-direction: column;
-  gap: var(--ag-ui-space);
+  gap: var(--_space);
 }
 
 /* Empty-state region (slot): centred while it's the only thing in the
@@ -446,7 +415,7 @@ export const STYLES = `
 .empty {
   margin: auto;
   text-align: center;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
 }
 
 .empty[hidden] {
@@ -462,22 +431,22 @@ export const STYLES = `
 .answer {
   display: flex;
   flex-direction: column;
-  gap: var(--ag-ui-space);
+  gap: var(--_space);
   align-self: stretch;
   min-width: 0;
 }
 
 :host([data-answer-well]) .answer {
-  padding: var(--ag-ui-pad);
-  background: var(--ag-ui-well-bg);
-  border: 1px solid var(--ag-ui-well-border);
-  border-radius: var(--ag-ui-radius);
+  padding: var(--_pad);
+  background: var(--_well-bg);
+  border: 1px solid var(--_well-border);
+  border-radius: var(--_radius);
 }
 
 .message {
   max-width: 80%;
-  padding: var(--ag-ui-msg-pad);
-  border-radius: var(--ag-ui-msg-radius);
+  padding: var(--_msg-pad);
+  border-radius: var(--_msg-radius);
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
@@ -515,14 +484,14 @@ export const STYLES = `
 
 .message--user {
   align-self: flex-end;
-  background: var(--ag-ui-user-bg);
-  color: var(--ag-ui-user-fg);
+  background: var(--_user-bg);
+  color: var(--_user-fg);
   border-bottom-right-radius: 4px;
 }
 
 .message--assistant {
   align-self: flex-start;
-  background: var(--ag-ui-assistant-bg);
+  background: var(--_assistant-bg);
   border-bottom-left-radius: 4px;
   /* Assistant bubbles hold rendered markdown/HTML, so collapse the source
      whitespace the renderer leaves between block tags. */
@@ -552,7 +521,7 @@ export const STYLES = `
 }
 
 .message--assistant a {
-  color: var(--ag-ui-accent);
+  color: var(--_accent);
   text-decoration: underline;
 }
 
@@ -567,8 +536,8 @@ export const STYLES = `
 .message--assistant pre {
   padding: 8px 10px;
   overflow: auto;
-  background: var(--ag-ui-bg);
-  border: 1px solid var(--ag-ui-border);
+  background: var(--_bg);
+  border: 1px solid var(--_border);
   border-radius: 6px;
 }
 
@@ -584,6 +553,13 @@ export const STYLES = `
   position: relative;
 }
 
+/* This button is the only reader of --ag-ui-surface and --ag-ui-text, and
+   neither had a default until the alias layer gave them one. Both references
+   used to resolve to nothing, dropping the declaration: the background fell
+   back to the initial transparent, and the hover/copied colour to the
+   inherited body colour. The defaults chosen upstream (transparent, and the
+   body foreground) reproduce that, so the rename repaints nothing. A raised
+   surface behind the button is a separate design question. */
 .code-copy {
   position: absolute;
   top: 4px;
@@ -592,9 +568,9 @@ export const STYLES = `
   font: inherit;
   font-size: 0.75em;
   line-height: 1.6;
-  color: var(--ag-ui-muted);
-  background: var(--ag-ui-surface);
-  border: 1px solid var(--ag-ui-border);
+  color: var(--_muted);
+  background: var(--_surface);
+  border: 1px solid var(--_border);
   border-radius: 4px;
   cursor: pointer;
   opacity: 0;
@@ -609,24 +585,24 @@ export const STYLES = `
 }
 
 .code-copy:hover {
-  color: var(--ag-ui-text);
-  background: var(--ag-ui-hover);
+  color: var(--_text);
+  background: var(--_hover);
 }
 
 .code-copy[data-state="copied"] {
   opacity: 1;
-  color: var(--ag-ui-text);
+  color: var(--_text);
 }
 
 .code-copy[data-state="failed"] {
   opacity: 1;
-  color: var(--ag-ui-danger, var(--ag-ui-text));
+  color: var(--_danger, var(--_text));
 }
 
 .message--assistant blockquote {
   padding-left: 10px;
-  border-left: 3px solid var(--ag-ui-border);
-  color: var(--ag-ui-muted);
+  border-left: 3px solid var(--_border);
+  color: var(--_muted);
 }
 
 /* Markdown tables. table/thead/tbody/tr/th/td are all in
@@ -647,13 +623,13 @@ export const STYLES = `
 .message--assistant th,
 .message--assistant td {
   padding: 6px 10px;
-  border: 1px solid var(--ag-ui-border);
+  border: 1px solid var(--_border);
   text-align: left;
   vertical-align: top;
 }
 
 .message--assistant th {
-  background: var(--ag-ui-hover);
+  background: var(--_hover);
   font-weight: 600;
 }
 
@@ -663,7 +639,7 @@ export const STYLES = `
   gap: 4px;
   align-items: center;
   padding: 12px 14px;
-  background: var(--ag-ui-assistant-bg);
+  background: var(--_assistant-bg);
   border-radius: 14px;
   border-bottom-left-radius: 4px;
 }
@@ -672,7 +648,7 @@ export const STYLES = `
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--ag-ui-muted);
+  background: var(--_muted);
   animation: ag-ui-pending 1.2s infinite ease-in-out both;
 }
 
@@ -705,7 +681,7 @@ export const STYLES = `
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
 }
 
 .thoughts-toggle {
@@ -716,7 +692,7 @@ export const STYLES = `
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
   cursor: pointer;
 }
 
@@ -741,7 +717,7 @@ export const STYLES = `
 .thoughts-body {
   margin: 0;
   padding: 4px 0 4px 10px;
-  border-left: 2px solid var(--ag-ui-border);
+  border-left: 2px solid var(--_border);
   max-height: 220px;
   overflow: auto;
   white-space: pre-wrap;
@@ -770,9 +746,9 @@ export const STYLES = `
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   padding: 8px 10px;
   border-radius: 8px;
-  background: var(--ag-ui-tool-bg);
-  border: 1px solid var(--ag-ui-border);
-  color: var(--ag-ui-tool-fg);
+  background: var(--_tool-bg);
+  border: 1px solid var(--_border);
+  color: var(--_tool-fg);
 }
 
 .tool-call-head {
@@ -805,10 +781,10 @@ export const STYLES = `
 
 /* Pending: a real spinning ring. Speed is tunable; reduced motion stops it. */
 .tool-call[data-status="pending"] .tool-call-icon {
-  border: 2px solid var(--ag-ui-muted);
+  border: 2px solid var(--_muted);
   border-top-color: transparent;
   border-radius: 50%;
-  animation: ag-ui-tool-spin var(--ag-ui-tool-spin-duration) linear infinite;
+  animation: ag-ui-tool-spin var(--_tool-spin-duration) linear infinite;
 }
 
 @keyframes ag-ui-tool-spin {
@@ -817,18 +793,18 @@ export const STYLES = `
 
 /* Settled: a themeable glyph coloured by outcome. */
 .tool-call[data-status="done"] .tool-call-icon::before {
-  content: var(--ag-ui-tool-icon-done);
-  color: var(--ag-ui-success);
+  content: var(--_tool-icon-done);
+  color: var(--_success);
 }
 
 .tool-call[data-status="error"] .tool-call-icon::before {
-  content: var(--ag-ui-tool-icon-error);
-  color: var(--ag-ui-danger);
+  content: var(--_tool-icon-error);
+  color: var(--_danger);
 }
 
 .tool-call[data-status="declined"] .tool-call-icon::before {
-  content: var(--ag-ui-tool-icon-declined);
-  color: var(--ag-ui-muted);
+  content: var(--_tool-icon-declined);
+  color: var(--_muted);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -854,19 +830,19 @@ export const STYLES = `
   font-size: 11px;
   font-weight: 600;
   background: rgba(127, 127, 127, 0.16);
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
 }
 
 .tool-call[data-status="done"] .tool-call-status {
-  color: var(--ag-ui-success);
+  color: var(--_success);
 }
 
 .tool-call[data-status="error"] .tool-call-status {
-  color: var(--ag-ui-danger);
+  color: var(--_danger);
 }
 
 .tool-call[data-status="declined"] .tool-call-status {
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
 }
 
 .tool-call-body {
@@ -888,7 +864,7 @@ export const STYLES = `
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
 }
 
 /* The record of a human decision on a gated call. An approved call used to
@@ -896,7 +872,7 @@ export const STYLES = `
 .skill-item-token {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.92em;
-  color: var(--ag-ui-accent);
+  color: var(--_accent);
   margin-right: 6px;
 }
 
@@ -904,7 +880,7 @@ export const STYLES = `
   flex: none;
   font-size: 11px;
   font-style: italic;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
 }
 
 .tool-call-args,
@@ -913,12 +889,12 @@ export const STYLES = `
   padding: 6px 8px;
   max-height: 160px;
   overflow: auto;
-  background: var(--ag-ui-bg);
-  border: 1px solid var(--ag-ui-border);
+  background: var(--_bg);
+  border: 1px solid var(--_border);
   border-radius: 6px;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--ag-ui-fg);
+  color: var(--_fg);
 }
 
 /* Display modes are pure visibility over one DOM shape, selected from the host
@@ -965,7 +941,7 @@ export const STYLES = `
   background: none;
   font: inherit;
   font-weight: 600;
-  color: var(--ag-ui-accent);
+  color: var(--_accent);
   cursor: pointer;
 }
 
@@ -988,13 +964,12 @@ export const STYLES = `
 }
 
 .resize-handle:focus-visible {
-  outline: 2px solid var(--ag-ui-accent);
+  outline: 2px solid var(--_accent);
   outline-offset: -2px;
 }
 
 /* The grip sits on the corner opposite the panel's anchor, because a resize
-   measures from whichever edge is not moving. Selected from the host attribute,
-   so switching placement moves the grip immediately.
+   measures from whichever edge is not moving.
 
    Default is floating: pinned bottom-right, so the grip is top-left. */
 .resize-handle {
@@ -1005,7 +980,9 @@ export const STYLES = `
   cursor: nwse-resize;
 }
 
-/* Embedded sits in normal flow, pinned top-left, so it grows bottom-right. */
+/* Placement is only the opening guess, and these two rules are all it is good
+   for. Embedded sits in normal flow, pinned top-left, so it grows bottom-right;
+   bottom-left is pinned there, so its free corner is top-right. */
 :host([placement="embedded"]) .resize-handle {
   top: auto;
   left: auto;
@@ -1014,16 +991,64 @@ export const STYLES = `
   cursor: nwse-resize;
 }
 
-/* Pinned bottom-left, so the free corner is top-right. */
 :host([placement="bottom-left"]) .resize-handle {
   left: auto;
   right: 0;
   cursor: nesw-resize;
 }
 
-/* Docked: the placement owns the height, so only the inner edge is the user's. */
+/* Then the measurement corrects it. Which edges are held still belongs to the
+   host's layout rather than to placement -- a floating panel a host right-aligns
+   is anchored bottom-left, not bottom-right -- so the element measures the edges
+   that stay put and stamps them here as "<y>-<x>". Equal specificity to the
+   rules above, so source order is what lets the measured value win.
+
+   These must not be written as [data-resize-anchor~="left"]: the stamped value
+   is one hyphenated token, and ~= matches whitespace-separated words, so such a
+   selector cannot ever match. It did not, which left the grip drawn at the
+   corner that moves while the cursor pointed along the right diagonal.
+
+   Each rule also sets both sides of its axis rather than only the side it
+   moves. One that flipped a single way could not undo a placement guess that
+   had flipped the other, which put the grip on the anchored corner for an
+   embedded panel its host right-aligns. */
+:host([data-resize-anchor$="-left"]) .resize-handle {
+  left: auto;
+  right: 0;
+}
+
+:host([data-resize-anchor$="-right"]) .resize-handle {
+  left: 0;
+  right: auto;
+}
+
+:host([data-resize-anchor^="top-"]) .resize-handle {
+  top: auto;
+  bottom: 0;
+}
+
+:host([data-resize-anchor^="bottom-"]) .resize-handle {
+  top: 0;
+  bottom: auto;
+}
+
+/* One axis flipped means the drag runs along the other diagonal. */
+:host([data-resize-anchor="top-left"]) .resize-handle,
+:host([data-resize-anchor="bottom-right"]) .resize-handle {
+  cursor: nwse-resize;
+}
+
+:host([data-resize-anchor="top-right"]) .resize-handle,
+:host([data-resize-anchor="bottom-left"]) .resize-handle {
+  cursor: nesw-resize;
+}
+
+/* Docked: the placement owns the height, so only the inner edge is the user's --
+   an edge, not a corner, so this outranks the measured anchor by coming after. */
 :host([placement="sidebar"]) .resize-handle,
 :host([placement="side"]) .resize-handle {
+  top: 0;
+  bottom: auto;
   width: 8px;
   height: 100%;
   cursor: ew-resize;
@@ -1042,7 +1067,7 @@ export const STYLES = `
 }
 
 .resize-handle[data-dragging] {
-  background: var(--ag-ui-accent);
+  background: var(--_accent);
   opacity: 0.35;
 }
 
@@ -1050,14 +1075,14 @@ export const STYLES = `
   display: flex;
   gap: 8px;
   padding: 12px;
-  border-top: 1px solid var(--ag-ui-border);
+  border-top: 1px solid var(--_border);
 }
 
 .input {
   flex: 1;
   resize: none;
-  background: var(--ag-ui-input-bg);
-  border: 1px solid var(--ag-ui-border);
+  background: var(--_input-bg);
+  border: 1px solid var(--_border);
   border-radius: 8px;
   padding: 8px 10px;
   font: inherit;
@@ -1066,14 +1091,14 @@ export const STYLES = `
 }
 
 .input:focus {
-  border-color: var(--ag-ui-accent);
+  border-color: var(--_accent);
 }
 
 .send {
   border: none;
   border-radius: 8px;
   padding: 0 16px;
-  background: var(--ag-ui-accent);
+  background: var(--_accent);
   color: #ffffff;
   font: inherit;
   font-weight: 600;
@@ -1087,23 +1112,23 @@ export const STYLES = `
 
 /* The composer button doubles as the Stop control while a run is in flight. */
 .send[data-state="running"] {
-  background: var(--ag-ui-muted);
+  background: var(--_muted);
 }
 
 /* ── File attachments ───────────────────────────────────────────────────── */
 /* The 📎 picker button sits left of the input; hidden until data-attachments-url. */
 .attach-btn {
-  border: 1px solid var(--ag-ui-border);
+  border: 1px solid var(--_border);
   border-radius: 8px;
   padding: 0 10px;
-  background: var(--ag-ui-input-bg);
+  background: var(--_input-bg);
   color: inherit;
   font: inherit;
   cursor: pointer;
 }
 
 .attach-btn:hover {
-  border-color: var(--ag-ui-accent);
+  border-color: var(--_accent);
 }
 
 .attach-input {
@@ -1116,17 +1141,17 @@ export const STYLES = `
 }
 
 .voice-btn {
-  border: 1px solid var(--ag-ui-border);
+  border: 1px solid var(--_border);
   border-radius: 8px;
   padding: 0 10px;
-  background: var(--ag-ui-input-bg);
+  background: var(--_input-bg);
   color: inherit;
   font: inherit;
   cursor: pointer;
 }
 
 .voice-btn:hover {
-  border-color: var(--ag-ui-accent);
+  border-color: var(--_accent);
 }
 
 .voice-btn:disabled {
@@ -1136,8 +1161,8 @@ export const STYLES = `
 
 /* Recording: a red tint + a gentle pulse so it's clearly "live". */
 .voice-btn[data-state="recording"] {
-  border-color: var(--ag-ui-danger);
-  background: var(--ag-ui-danger);
+  border-color: var(--_danger);
+  background: var(--_danger);
   color: #ffffff;
   animation: ag-ui-voice-pulse 1.2s ease-in-out infinite;
 }
@@ -1180,10 +1205,10 @@ export const STYLES = `
   max-width: 100%;
   margin: 2px 0;
   padding: 3px 10px;
-  border: 1px dashed var(--ag-ui-border);
+  border: 1px dashed var(--_border);
   border-radius: 999px;
   background: transparent;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
   font-size: 0.8em;
   line-height: 1.4;
 }
@@ -1204,16 +1229,16 @@ export const STYLES = `
   gap: 6px;
   max-width: 100%;
   padding: 4px 8px;
-  border: 1px solid var(--ag-ui-border);
+  border: 1px solid var(--_border);
   border-radius: 999px;
-  background: var(--ag-ui-assistant-bg);
+  background: var(--_assistant-bg);
   font-size: 0.85em;
   position: relative;
 }
 
 .attachment-chip--error {
-  border-color: var(--ag-ui-danger);
-  color: var(--ag-ui-danger);
+  border-color: var(--_danger);
+  color: var(--_danger);
 }
 
 .attachment-chip-name {
@@ -1224,12 +1249,12 @@ export const STYLES = `
 }
 
 .attachment-chip-size {
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
   white-space: nowrap;
 }
 
 .attachment-chip--error .attachment-chip-size {
-  color: var(--ag-ui-danger);
+  color: var(--_danger);
 }
 
 /* The progress bar fills as the file uploads. */
@@ -1237,13 +1262,13 @@ export const STYLES = `
   flex-basis: 100%;
   height: 3px;
   border-radius: 2px;
-  background: var(--ag-ui-border);
+  background: var(--_border);
   overflow: hidden;
 }
 
 .attachment-chip-bar-fill {
   height: 100%;
-  background: var(--ag-ui-accent);
+  background: var(--_accent);
   transition: width 0.15s ease;
 }
 
@@ -1265,14 +1290,14 @@ export const STYLES = `
 
 /* A subtle outline while a file is dragged over the shell. */
 .chat--dragover {
-  outline: 2px dashed var(--ag-ui-accent);
+  outline: 2px dashed var(--_accent);
   outline-offset: -4px;
 }
 
 /* Muted "⏹ Stopped" line after a cancelled run — a note, not an error bubble. */
 .stopped-note {
   align-self: flex-start;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
   font-size: 12px;
   padding: 2px 4px;
 }
@@ -1285,14 +1310,14 @@ export const STYLES = `
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: var(--ag-ui-bg);
-  border: 1px solid var(--ag-ui-accent);
+  background: var(--_bg);
+  border: 1px solid var(--_accent);
   border-radius: 10px;
 }
 
 .confirm[data-resolved] {
   opacity: 0.7;
-  border-color: var(--ag-ui-border);
+  border-color: var(--_border);
 }
 
 .confirm-body {
@@ -1306,7 +1331,7 @@ export const STYLES = `
   overflow: auto;
   font-size: 12px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  background: var(--ag-ui-assistant-bg);
+  background: var(--_assistant-bg);
   border-radius: 8px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1319,14 +1344,14 @@ export const STYLES = `
 }
 
 .confirm-btn {
-  border: 1px solid var(--ag-ui-border);
+  border: 1px solid var(--_border);
   border-radius: 8px;
   padding: 8px 14px;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  background: var(--ag-ui-bg);
-  color: var(--ag-ui-fg);
+  background: var(--_bg);
+  color: var(--_fg);
 }
 
 .confirm-btn:disabled {
@@ -1335,8 +1360,8 @@ export const STYLES = `
 }
 
 .confirm-btn--confirm {
-  border-color: var(--ag-ui-accent);
-  background: var(--ag-ui-accent);
+  border-color: var(--_accent);
+  background: var(--_accent);
   color: #ffffff;
 }
 
@@ -1348,14 +1373,14 @@ export const STYLES = `
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: var(--ag-ui-bg);
-  border: 1px solid var(--ag-ui-accent);
+  background: var(--_bg);
+  border: 1px solid var(--_accent);
   border-radius: 10px;
 }
 
 .approval[data-resolved] {
   opacity: 0.7;
-  border-color: var(--ag-ui-border);
+  border-color: var(--_border);
 }
 
 .approval-body {
@@ -1369,14 +1394,14 @@ export const STYLES = `
 }
 
 .approval-btn {
-  border: 1px solid var(--ag-ui-border);
+  border: 1px solid var(--_border);
   border-radius: 8px;
   padding: 8px 14px;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  background: var(--ag-ui-bg);
-  color: var(--ag-ui-fg);
+  background: var(--_bg);
+  color: var(--_fg);
 }
 
 .approval-btn:disabled {
@@ -1385,8 +1410,8 @@ export const STYLES = `
 }
 
 .approval-btn--approve {
-  border-color: var(--ag-ui-accent);
-  background: var(--ag-ui-accent);
+  border-color: var(--_accent);
+  background: var(--_accent);
   color: #ffffff;
 }
 
@@ -1398,14 +1423,14 @@ export const STYLES = `
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: var(--ag-ui-bg);
-  border: 1px solid var(--ag-ui-accent);
+  background: var(--_bg);
+  border: 1px solid var(--_accent);
   border-radius: 10px;
 }
 
 .question[data-resolved] {
   opacity: 0.7;
-  border-color: var(--ag-ui-border);
+  border-color: var(--_border);
 }
 
 .question-body {
@@ -1430,9 +1455,9 @@ export const STYLES = `
   width: 100%;
   padding: 8px 10px;
   font: inherit;
-  color: var(--ag-ui-fg);
-  background: var(--ag-ui-bg);
-  border: 1px solid var(--ag-ui-border);
+  color: var(--_fg);
+  background: var(--_bg);
+  border: 1px solid var(--_border);
   border-radius: 8px;
 }
 
@@ -1446,13 +1471,13 @@ export const STYLES = `
 }
 
 .question-btn {
-  border: 1px solid var(--ag-ui-accent);
+  border: 1px solid var(--_accent);
   border-radius: 8px;
   padding: 8px 14px;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  background: var(--ag-ui-accent);
+  background: var(--_accent);
   color: #ffffff;
 }
 
@@ -1470,18 +1495,18 @@ export const STYLES = `
 }
 
 .skill-chip {
-  border: 1px solid var(--ag-ui-border);
+  border: 1px solid var(--_border);
   border-radius: 999px;
   padding: 4px 12px;
   font: inherit;
   font-size: 0.9em;
   cursor: pointer;
-  background: var(--ag-ui-assistant-bg);
-  color: var(--ag-ui-fg);
+  background: var(--_assistant-bg);
+  color: var(--_fg);
 }
 
 .skill-chip:hover {
-  border-color: var(--ag-ui-accent);
+  border-color: var(--_accent);
 }
 
 .skill-palette {
@@ -1490,8 +1515,8 @@ export const STYLES = `
   flex-direction: column;
   max-height: 220px;
   overflow: auto;
-  background: var(--ag-ui-bg);
-  border: 1px solid var(--ag-ui-border);
+  background: var(--_bg);
+  border: 1px solid var(--_border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(20, 20, 50, 0.16);
 }
@@ -1507,11 +1532,11 @@ export const STYLES = `
   font: inherit;
   text-align: left;
   cursor: pointer;
-  color: var(--ag-ui-fg);
+  color: var(--_fg);
 }
 
 .skill-item[aria-selected="true"] {
-  background: var(--ag-ui-assistant-bg);
+  background: var(--_assistant-bg);
 }
 
 .skill-item-title {
@@ -1520,7 +1545,7 @@ export const STYLES = `
 
 .skill-item-desc {
   font-size: 0.85em;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
 }
 
 /* The hint sits directly above the composer's top border, so a zero bottom
@@ -1529,7 +1554,7 @@ export const STYLES = `
   margin: 8px 12px;
   font-size: 0.85em;
   line-height: 1.4;
-  color: var(--ag-ui-danger);
+  color: var(--_danger);
 }
 
 /* Chat-history drawer — a slide-over within the chat panel. */
@@ -1553,9 +1578,9 @@ export const STYLES = `
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.5rem;
-  border: 1px solid var(--ag-ui-border);
+  border: 1px solid var(--_border);
   border-radius: 0.5rem;
-  background: var(--ag-ui-assistant-bg);
+  background: var(--_assistant-bg);
   box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
   max-height: 60%;
   overflow-y: auto;
@@ -1586,7 +1611,7 @@ export const STYLES = `
 }
 
 .checkpoint-row:hover {
-  background: var(--ag-ui-hover);
+  background: var(--_hover);
 }
 
 .checkpoint-label {
@@ -1601,7 +1626,7 @@ export const STYLES = `
   font-size: 0.6875rem;
   padding: 0 0.375rem;
   border-radius: 999px;
-  background: var(--ag-ui-hover);
+  background: var(--_hover);
   opacity: 0.8;
 }
 
@@ -1610,14 +1635,14 @@ export const STYLES = `
   font-size: 0.75rem;
   cursor: pointer;
   padding: 0.125rem 0.5rem;
-  border: 1px solid var(--ag-ui-border);
+  border: 1px solid var(--_border);
   border-radius: 0.375rem;
   background: transparent;
   color: inherit;
 }
 
 .checkpoint-action:hover {
-  background: var(--ag-ui-hover);
+  background: var(--_hover);
 }
 
 .drawer-backdrop {
@@ -1632,9 +1657,9 @@ export const STYLES = `
   flex-direction: column;
   width: min(300px, 85%);
   height: 100%;
-  background: var(--ag-ui-bg);
-  border-right: 1px solid var(--ag-ui-border);
-  box-shadow: var(--ag-ui-shadow);
+  background: var(--_bg);
+  border-right: 1px solid var(--_border);
+  box-shadow: var(--_shadow);
   overflow: hidden;
 }
 
@@ -1642,9 +1667,9 @@ export const STYLES = `
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--ag-ui-space);
-  padding: var(--ag-ui-pad);
-  border-bottom: 1px solid var(--ag-ui-border);
+  gap: var(--_space);
+  padding: var(--_pad);
+  border-bottom: 1px solid var(--_border);
 }
 
 .drawer-title {
@@ -1652,10 +1677,10 @@ export const STYLES = `
 }
 
 .drawer-new {
-  border: 1px solid var(--ag-ui-border);
-  border-radius: var(--ag-ui-radius);
-  background: var(--ag-ui-bg);
-  color: var(--ag-ui-accent);
+  border: 1px solid var(--_border);
+  border-radius: var(--_radius);
+  background: var(--_bg);
+  color: var(--_accent);
   padding: 4px 10px;
   font: inherit;
   font-size: 0.85em;
@@ -1669,19 +1694,19 @@ export const STYLES = `
 }
 
 .drawer-empty {
-  padding: var(--ag-ui-pad);
+  padding: var(--_pad);
   font-size: 0.9em;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
 }
 
 .drawer-row {
   display: flex;
   align-items: stretch;
-  border-bottom: 1px solid var(--ag-ui-border);
+  border-bottom: 1px solid var(--_border);
 }
 
 .drawer-row--active {
-  background: var(--ag-ui-assistant-bg);
+  background: var(--_assistant-bg);
 }
 
 .drawer-row-select {
@@ -1708,12 +1733,12 @@ export const STYLES = `
 
 .drawer-row-time {
   font-size: 0.72em;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
 }
 
 .drawer-row-preview {
   font-size: 0.8em;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1730,7 +1755,7 @@ export const STYLES = `
 .drawer-row-delete {
   border: none;
   background: none;
-  color: var(--ag-ui-muted);
+  color: var(--_muted);
   font-size: 0.9em;
   padding: 4px;
   cursor: pointer;
@@ -1741,10 +1766,10 @@ export const STYLES = `
   min-width: 0;
   margin: 6px 10px;
   padding: 4px 8px;
-  border: 1px solid var(--ag-ui-accent);
+  border: 1px solid var(--_accent);
   border-radius: 6px;
-  background: var(--ag-ui-input-bg);
-  color: var(--ag-ui-fg);
+  background: var(--_input-bg);
+  color: var(--_fg);
   font: inherit;
 }
 
@@ -1757,13 +1782,13 @@ export const STYLES = `
 }
 
 .drawer-confirm-label {
-  color: var(--ag-ui-danger);
+  color: var(--_danger);
 }
 
 .drawer-confirm-yes {
   border: none;
   border-radius: 6px;
-  background: var(--ag-ui-danger);
+  background: var(--_danger);
   color: #ffffff;
   padding: 3px 10px;
   font: inherit;
@@ -1771,7 +1796,7 @@ export const STYLES = `
 }
 
 .drawer-confirm-no {
-  border: 1px solid var(--ag-ui-border);
+  border: 1px solid var(--_border);
   border-radius: 6px;
   background: none;
   color: inherit;

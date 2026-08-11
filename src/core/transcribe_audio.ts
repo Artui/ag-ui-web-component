@@ -1,3 +1,5 @@
+import { withCredentials } from "./utils.js";
+
 /**
  * The composer's voice-transcription contract: take a recorded audio `Blob` and
  * resolve to the transcript text. The built-in handler is {@link transcribeAudio}
@@ -13,6 +15,13 @@ export interface TranscribeOptions {
   readonly url: string;
   /** Extra HTTP headers (CSRF / auth), read fresh per request. */
   readonly headers?: Record<string, string>;
+  /**
+   * Cookie policy, as `fetch`'s own `credentials` mode. Unset leaves the
+   * browser default (`same-origin`), which sends no cookies to an endpoint on
+   * another origin; a cookie-authenticated cross-origin deployment needs
+   * `"include"`.
+   */
+  readonly credentials?: RequestCredentials;
 }
 
 /**
@@ -29,11 +38,17 @@ export async function transcribeAudio(audio: Blob, options: TranscribeOptions): 
   // reads the blob's content type).
   form.append("audio", audio, "recording.webm");
 
-  const response = await fetch(options.url, {
-    method: "POST",
-    headers: { ...(options.headers ?? {}) },
-    body: form,
-  });
+  const response = await fetch(
+    options.url,
+    withCredentials(
+      {
+        method: "POST",
+        headers: { ...(options.headers ?? {}) },
+        body: form,
+      },
+      options.credentials,
+    ),
+  );
   if (!response.ok) {
     throw new Error(await errorMessage(response));
   }

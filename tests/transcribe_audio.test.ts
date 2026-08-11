@@ -37,6 +37,17 @@ describe("transcribeAudio", () => {
     expect((init.body as FormData).get("audio")).toBeInstanceOf(Blob);
   });
 
+  it("sends the configured credentials mode, and none when unset", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ text: "hi" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await transcribeAudio(new Blob(["x"]), { url: "/t/", credentials: "include" });
+    await transcribeAudio(new Blob(["x"]), { url: "/t/" });
+
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: "include" });
+    expect(fetchMock.mock.calls[1]?.[1]).not.toHaveProperty("credentials");
+  });
+
   it("rejects with the server error message on a non-2xx response", async () => {
     vi.stubGlobal(
       "fetch",

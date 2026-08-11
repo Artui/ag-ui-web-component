@@ -26,6 +26,15 @@ export interface UploadOptions {
   readonly url: string;
   /** Extra HTTP headers (CSRF / auth), read fresh per upload. */
   readonly headers?: Record<string, string>;
+  /**
+   * Cookie policy, spelled as `fetch`'s `credentials` mode for consistency with
+   * the component's other endpoints — but carried by `XMLHttpRequest`, which
+   * only has the two-state `withCredentials`. `"include"` sets it; every other
+   * value leaves it off, which matches `"same-origin"`. `"omit"` therefore
+   * **cannot** be honoured for a same-origin upload (XHR always sends cookies
+   * there); use a custom {@link UploadHandler} if that matters.
+   */
+  readonly credentials?: RequestCredentials;
   /** Progress callback, `0..1`, fired as the body uploads. */
   readonly onProgress?: (fraction: number) => void;
   /** Abort signal to cancel the in-flight upload. */
@@ -48,6 +57,10 @@ export function uploadAttachment(file: File, options: UploadOptions): Promise<At
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", options.url);
+    // Cross-origin cookies ride only when asked for, exactly as with the fetch
+    // sites; without this an upload to another subdomain is anonymous and 401s
+    // while the run itself succeeds.
+    xhr.withCredentials = options.credentials === "include";
     for (const [key, value] of Object.entries(options.headers ?? {})) {
       xhr.setRequestHeader(key, value);
     }
