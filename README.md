@@ -574,10 +574,15 @@ puts it. The element probes its own geometry and reflects the result as
 `data-resize-anchor` (e.g. `bottom-right` means those two edges are fixed), which
 is what positions the grip.
 
-A drag writes `--ag-ui-width` / `--ag-ui-height` on the host **as custom
-properties, not inline `width`/`height`** — the placement rules set those same
-properties, so an inline dimension would outrank them and a panel dragged while
-floating would keep that width after switching to fullscreen.
+A drag writes `--ag-ui-width` / `--ag-ui-height` on the host as custom
+properties.
+
+⚠ **That alone does not leave placement in charge** — an inline custom property
+still outranks a `:host([placement=…])` rule setting the same property. So the
+component enforces the split directly: **a placement owns the axes it fixes**,
+and a dragged or persisted size is only ever applied to the ones it leaves free.
+Switching placement hands the owned axes back. Without that, a height dragged
+while floating capped a docked sidebar that had asked for `100vh`.
 
 ⚠ **A host rule that sizes the element wins over both.** `ag-ui-chat { flex: 1 }`
 stretches the panel to its container and the dragged width has no visible

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- ⛔ **`placement="side"` (and `sidebar`) stopped being full height once the
+  panel had been resized.** A dragged size is written as a custom property on
+  the host, and an inline custom property **outranks a `:host([placement=…])`
+  rule setting the same property** — so a height dragged while floating capped a
+  docked sidebar that had asked for `100vh`. Since the size persists per tab,
+  one drag broke every later visit.
+
+  ⚠ **The previous release claimed this was already handled, and the reasoning
+  was wrong.** Writing `--ag-ui-height` rather than inline `height` was supposed
+  to leave placement with the final say; it does not, because the indirection
+  changes nothing about the cascade. The fix is explicit rather than
+  cascade-dependent: **a placement owns the axes it fixes**, a persisted size is
+  applied only to the axes it leaves free, and switching placement hands the
+  owned axes back.
+
+  ⇒ *"I used the more specific-looking mechanism" is not a substitute for
+  checking which declaration actually wins.*
+
 ## [0.20.0] — 2026-08-11
 
 ### Added

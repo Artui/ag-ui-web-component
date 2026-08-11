@@ -538,8 +538,12 @@ export class AgUiChat extends HTMLElement {
 
   attributeChangedCallback(name: string, previous: string | null, value: string | null): void {
     if (name === "placement") {
-      // Placement moves the panel, so the edges its layout holds still change
-      // with it. Deferred a frame so the new rules have applied.
+      // A placement owns the axes it fixes, so hand those back before anything
+      // else: a size dragged under the previous placement would otherwise sit
+      // inline and outrank the new one.
+      this.#releaseOwnedAxes();
+      // Placement also moves the panel, so the edges its layout holds still
+      // change with it. Deferred a frame so the new rules have applied.
       requestAnimationFrame(() => this.#syncResizeAnchor());
       return;
     }
@@ -1306,19 +1310,44 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Write a dragged size onto the host as custom properties.
+   * Write a dragged size onto the host, on the axes this placement leaves free.
    *
-   * Properties rather than inline `width` / `height`: the placement rules set
-   * those same properties, so an inline dimension would outrank them and a
-   * panel dragged while floating would keep that width after switching to
-   * fullscreen.
+   * ⚠ Writing the custom property rather than inline `width` / `height` does
+   * **not** by itself leave placement in charge — an inline custom property
+   * still outranks a `:host([placement=…])` rule setting the same property, so
+   * a height dragged while floating capped a docked sidebar that had asked for
+   * `100vh`. The cascade cannot arbitrate this; the axis check has to.
+   *
+   * So the rule is explicit: a placement owns the axes it fixes, and a
+   * persisted size is only ever applied to the ones it does not.
    */
   #applySize(size: ResizeSize): void {
+    const axis = this.#resizeAxis();
+    if (axis === "none") {
+      return;
+    }
     if (size.width !== undefined) {
       this.style.setProperty("--ag-ui-width", `${size.width}px`);
     }
-    if (size.height !== undefined) {
+    if (size.height !== undefined && axis === "both") {
       this.style.setProperty("--ag-ui-height", `${size.height}px`);
+    }
+  }
+
+  /**
+   * Drop any dragged size the new placement has taken ownership of.
+   *
+   * Without this a size survives the switch as an inline property and silently
+   * overrides the placement it moved to — the panel keeps a floating height
+   * while docked, and reads as a component that cannot do full height.
+   */
+  #releaseOwnedAxes(): void {
+    const axis = this.#resizeAxis();
+    if (axis !== "both") {
+      this.style.removeProperty("--ag-ui-height");
+    }
+    if (axis === "none") {
+      this.style.removeProperty("--ag-ui-width");
     }
   }
 
