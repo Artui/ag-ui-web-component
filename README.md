@@ -614,7 +614,7 @@ opt-in via two attributes:
 <ag-ui-chat endpoint="/agent/" data-prompt-chips="true" data-slash-commands="true"></ag-ui-chat>
 ```
 
-A `Skill` is `{ name, title, description?, prompt, sendImmediately?, chip? }`. Skills are merged
+A `Skill` is `{ name, title, description?, prompt?, sendImmediately?, chip? }`. Skills are merged
 from three sources — **backend → embed → client** (later wins by `name`):
 
 - `data-skills-url` — a JSON endpoint, fetched with the element's `headers`.
@@ -623,17 +623,31 @@ from three sources — **backend → embed → client** (later wins by `name`):
 
 ```js
 chat.setSkills([
+  // Server-resolved: no prompt here, so picking it sends the bare "/triage"
+  // token and the agent decides what it means.
+  { name: "triage", title: "Triage this", chip: true },
+  // Client-side: the page owns the wording and fills the placeholders.
   { name: "summarize", title: "Summarize page", prompt: "Summarize {title}.", chip: true },
 ]);
 ```
 
-A skill `prompt` may contain `{placeholder}` tokens; the `skillContext` property
+**Prefer omitting `prompt` for anything internal.** A skill is often where a project's workflow is
+written down most plainly, and a catalog is either a plain `GET` or sits in the page source — so
+shipping the wording to the browser publishes it. Without a `prompt` the component sends `/name`
+and the agent expands it (from the harness `Skills` capability, or your own instructions); the text
+never leaves the server. `django-ag-ui`'s `SkillRegistry` supports this by leaving `prompt` unset.
+
+A skill that *does* carry a `prompt` may use `{placeholder}` tokens; the `skillContext` property
 (`() => Record<string, unknown>`) supplies the values, filled in before send. A missing placeholder
 blocks the send and shows a hint instead.
 
 ```js
 chat.skillContext = () => ({ title: document.title });
 ```
+
+**Picking a skill sends it.** A chip that needs a second click to do anything is a two-step
+shortcut. Set `sendImmediately: false` on a prompt-carrying skill to pre-fill the composer instead —
+useful when the user is expected to edit before sending. A server-resolved skill always sends.
 
 ---
 

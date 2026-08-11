@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- ⚠ **Picking a skill now sends it.** It used to write the text into the
+  composer and wait for a second click unless the skill set
+  `sendImmediately: true` — so the default behaviour of a shortcut was to not
+  take the shortcut. Set `sendImmediately: false` to keep pre-filling, which is
+  worth doing where the user is expected to edit before sending.
+
+- **`Skill.prompt` is now optional, and omitting it is the better default for
+  anything internal.** A skill with no prompt is **server-resolved**: picking it
+  sends the bare `/name` token and the agent expands it, from the harness
+  `Skills` capability or the server's own instructions.
+
+  ⛔ **The prompt was the leak.** A catalog is either a fetched `GET` or an
+  inline `data-skills` attribute sitting in the page source, and a skill is
+  often where a project's internal workflow is written down most plainly — so
+  the client-side catalog published it to anyone who opened the page. Sending a
+  token instead keeps the wording on the server entirely, which is what
+  "trigger a `/command` without exposing the prompt" actually requires; hiding
+  the text behind a chip label would only have moved it off screen.
+
+  `parseSkills` accepts a catalog entry with no `prompt` rather than dropping
+  it — requiring the field would have silently discarded exactly the skills
+  whose wording was kept off the browser. Pairs with `django-ag-ui`'s
+  `SkillSpec.prompt` becoming optional.
+
 ## [0.19.0] — 2026-08-11
 
 ### Changed

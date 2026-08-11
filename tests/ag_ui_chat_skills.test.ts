@@ -75,8 +75,11 @@ describe("AgUiChat skills", () => {
     expect(shadow(el).querySelectorAll(".skill-chip")).toHaveLength(0);
   });
 
-  it("opens the slash palette and picks with Enter, pre-filling the input", () => {
-    const el = mount({ "data-skills": embed([SUM]), "data-slash-commands": "true" });
+  it("opens the slash palette and picks with Enter, pre-filling when asked", () => {
+    const el = mount({
+      "data-skills": embed([{ ...SUM, sendImmediately: false }]),
+      "data-slash-commands": "true",
+    });
     typeQuery(el, "/");
     expect(shadow(el).querySelectorAll(".skill-item")).toHaveLength(1);
     input(el).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
@@ -97,7 +100,10 @@ describe("AgUiChat skills", () => {
   });
 
   it("fills placeholders from skillContext", () => {
-    const el = mount({ "data-skills": embed([FIND]), "data-prompt-chips": "true" });
+    const el = mount({
+      "data-skills": embed([{ ...FIND, sendImmediately: false }]),
+      "data-prompt-chips": "true",
+    });
     el.skillContext = () => ({ q: "widgets" });
     shadow(el).querySelector<HTMLButtonElement>(".skill-chip")?.click();
     expect(input(el).value).toBe("Find widgets.");
@@ -165,5 +171,41 @@ describe("opt-in flag attributes", () => {
   it("still honours an explicit false", () => {
     const el = mount({ "data-skills": embed([SUM]), "data-prompt-chips": "false" });
     expect(shadow(el).querySelectorAll(".skill-chip")).toHaveLength(0);
+  });
+});
+
+describe("server-resolved skills", () => {
+  it("sends the bare token for a skill that ships no prompt", async () => {
+    // The prompt never reaches the browser: the catalog carries name and label
+    // only, and the agent decides what the token means.
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-prompt-chips", "true");
+    el.setAttribute("data-skills", embed([{ name: "triage", title: "Triage", chip: true }]));
+    const fake = makeFakeAgent({ script: () => {} });
+    el.agentFactory = () => fake.agent;
+    document.body.appendChild(el);
+
+    shadow(el).querySelector<HTMLButtonElement>(".skill-chip")?.click();
+    await flush();
+
+    expect(fake.messages.at(-1)?.content).toBe("/triage");
+    // Nothing was parked in the composer waiting for a second click.
+    expect(input(el).value).toBe("");
+  });
+
+  it("sends a prompt-carrying skill on pick, without a second click", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-prompt-chips", "true");
+    el.setAttribute("data-skills", embed([SUM]));
+    const fake = makeFakeAgent({ script: () => {} });
+    el.agentFactory = () => fake.agent;
+    document.body.appendChild(el);
+
+    shadow(el).querySelector<HTMLButtonElement>(".skill-chip")?.click();
+    await flush();
+
+    expect(fake.messages.at(-1)?.content).toBe("Summarize this.");
   });
 });

@@ -16,12 +16,21 @@ describe("parseSkills", () => {
       { name: "ok", title: "OK", prompt: "p" },
       { name: "no-title", prompt: "p" },
       { title: "no-name", prompt: "p" },
-      { name: "x", title: "x" }, // no prompt
+      { name: "bad-prompt", title: "x", prompt: 42 },
       "not-an-object",
       null,
       42,
     ]);
     expect(skills.map((s) => s.name)).toEqual(["ok"]);
+  });
+
+  it("keeps a skill that deliberately ships no prompt", () => {
+    // Server-resolved: the catalog carries name and label only, and the client
+    // sends the bare token. Requiring `prompt` here would silently drop exactly
+    // the skills whose wording was kept off the browser.
+    const skills = parseSkills([{ name: "triage", title: "Triage" }]);
+    expect(skills.map((s) => s.name)).toEqual(["triage"]);
+    expect(skills[0]?.prompt).toBeUndefined();
   });
 
   it("returns an empty list for a non-array", () => {

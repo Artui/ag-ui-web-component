@@ -1098,8 +1098,31 @@ export class AgUiChat extends HTMLElement {
     this.#skillsMenu.setSkills([...merged.values()]);
   }
 
-  /** Pre-fill (or send) a picked skill's prompt, filling its placeholders. */
+  /**
+   * Act on a picked skill.
+   *
+   * A skill that ships no `prompt` is **server-resolved**: the catalog carries
+   * only its name and label, and picking it sends the bare `/name` token for
+   * the agent to expand — from the harness `Skills` capability, or from the
+   * server's own instructions. That is the shape to prefer, because the prompt
+   * then never reaches the browser at all: a skill is often where a project's
+   * internal workflow is written down most plainly, and a catalog endpoint is a
+   * plain GET.
+   *
+   * A skill that does carry a `prompt` keeps the older behaviour — the client
+   * fills its `{placeholder}`s from the page and sends (or pre-fills) the text.
+   * Right for a user-facing convenience, and for placeholders only the page can
+   * supply.
+   *
+   * Either way a pick now **sends**, rather than parking text in the composer
+   * for a second click; `sendImmediately: false` opts back into pre-filling.
+   */
   #applySkill(skill: Skill): void {
+    if (skill.prompt === undefined) {
+      this.#skillHint.hidden = true;
+      void this.sendMessage(`/${skill.name}`);
+      return;
+    }
     const { text, missing } = fillTemplate(skill.prompt, this.skillContext());
     if (missing.length > 0) {
       this.#skillHint.textContent = this.#strings.skillNeeds
@@ -1110,11 +1133,11 @@ export class AgUiChat extends HTMLElement {
     }
     this.#skillHint.hidden = true;
     this.#input.value = text;
-    if (skill.sendImmediately === true) {
-      void this.#submit();
-    } else {
+    if (skill.sendImmediately === false) {
       this.#input.focus();
+      return;
     }
+    void this.#submit();
   }
 
   /** Whether the widget is collapsed (reflected as the `collapsed` attribute). */
