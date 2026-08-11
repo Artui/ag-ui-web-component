@@ -139,6 +139,32 @@ describe("RemoteConversationStore", () => {
     expect((await store.listThreads()).map((m) => m.threadId)).toEqual(["t1"]);
   });
 
+  it("carries a live credentials mode on both reads and writes", async () => {
+    let mode: RequestCredentials | undefined;
+    fetchMock.mockResolvedValue(ok({ threads: [] }));
+    const store = new RemoteConversationStore(
+      "https://x/threads/",
+      () => ({}),
+      new SessionStorageStore(),
+      () => mode,
+    );
+
+    await store.listThreads();
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("credentials");
+
+    // Configured after the store was wired, as a host ref does.
+    mode = "include";
+    await store.listThreads();
+    await store.loadMessages("t1");
+    store.renameThread("t1", "Renamed");
+    store.clear("t2");
+    await flush();
+
+    for (const call of fetchMock.mock.calls.slice(1)) {
+      expect(call[1]).toMatchObject({ credentials: "include" });
+    }
+  });
+
   it("renames optimistically and PATCHes the server", async () => {
     fetchMock.mockResolvedValue(
       ok({ threads: [{ thread_id: "t1", title: "Old", updated_at: null, preview: "" }] }),

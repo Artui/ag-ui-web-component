@@ -75,6 +75,7 @@ import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunIndex } from "./run_index.js";
 import { type TranscribeHandler, transcribeAudio } from "./transcribe_audio.js";
 import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
+import { withCredentials } from "./utils.js";
 
 /** The role a rendered chat message takes. */
 export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
@@ -133,6 +134,18 @@ const CONNECT_TIME_ATTRIBUTES = [
   "data-icon-url",
 ] as const;
 
+/**
+ * The cookie policies `fetch` accepts. Anything else is a configuration
+ * mistake, and one that would otherwise surface as an unexplained 401 from a
+ * request the browser silently sent anonymously.
+ */
+const CREDENTIALS_MODES: readonly string[] = ["omit", "same-origin", "include"];
+
+/** Whether `value` is one of the three modes `fetch` understands. */
+function isCredentialsMode(value: string): value is RequestCredentials {
+  return CREDENTIALS_MODES.includes(value);
+}
+
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
 
@@ -158,8 +171,33 @@ export class AgUiChat extends HTMLElement {
   /** Agent factory; override to inject a custom or fake agent (tests). */
   agentFactory: AgentFactory = createHttpAgent;
 
-  /** Extra HTTP headers for the AG-UI endpoint (e.g. CSRF). */
+  /**
+   * Static extra HTTP headers, sent with **every** request this element makes —
+   * the agent run, the thread index and its messages, the tool and skill
+   * catalogs, the run index, uploads and transcription.
+   *
+   * Right for values fixed for the element's lifetime. A credential that
+   * rotates (a short-lived JWT, a re-issued CSRF token) belongs in
+   * {@link getHeaders} instead: this is read at request time, but only a
+   * re-assignment updates it, so a token captured here is pinned until the host
+   * remembers to assign again.
+   */
   headers: Record<string, string> = {};
+
+  /**
+   * Live header source, consulted immediately before every request — the way to
+   * supply rotating credentials.
+   *
+   * Set it to a function and each request calls it afresh: a token refreshed by
+   * the host between two requests reaches the second one, with nothing to
+   * re-assign and nothing to keep in sync.
+   *
+   * Composes with {@link headers} rather than replacing it: the two are merged
+   * per key with `getHeaders()` winning, so a static `X-Client` and a rotating
+   * `Authorization` can be configured independently and neither silently drops
+   * the other.
+   */
+  getHeaders: (() => Record<string, string>) | null = null;
 
   /**
    * Permit `<img>` in rendered assistant markdown. **Off by default**: a
@@ -474,7 +512,11 @@ export class AgUiChat extends HTMLElement {
       return null;
     }
     if (this.#runIndex === null) {
-      this.#runIndex = new RunIndex(url, () => this.headers);
+      this.#runIndex = new RunIndex(
+        url,
+        () => this.#requestHeaders(),
+        () => this.#requestCredentials(),
+      );
     }
     return this.#runIndex;
   }
@@ -507,8 +549,9 @@ export class AgUiChat extends HTMLElement {
     const endpoint = verb === "resume" ? index.resumeUrl(runId) : index.forkUrl(runId);
     const agent = this.agentFactory({
       endpoint,
-      headers: this.headers,
-      getHeaders: () => this.headers,
+      headers: this.#requestHeaders(),
+      getHeaders: () => this.#requestHeaders(),
+      ...this.#credentialsOption(),
       threadId: this.#threadId,
       // The seed the endpoints assume: nothing. The snapshot is the history.
       initialMessages: [],
@@ -533,10 +576,24 @@ export class AgUiChat extends HTMLElement {
 
   /** Attributes the element reacts to after it has been connected. */
   static get observedAttributes(): string[] {
-    return ["title-text", "placement", ...CONNECT_TIME_ATTRIBUTES];
+    return ["title-text", "placement", "credentials", ...CONNECT_TIME_ATTRIBUTES];
   }
 
   attributeChangedCallback(name: string, previous: string | null, value: string | null): void {
+    if (name === "credentials") {
+      // Reported the moment the attribute is written — before connect, and
+      // whether it came from markup or the property setter. An unrecognised
+      // mode is otherwise inert, and the request it was meant to authorise
+      // goes out anonymously with nothing to show for it.
+      if (value !== null && !isCredentialsMode(value)) {
+        console.error(
+          `<ag-ui-chat>: credentials="${value}" is not a fetch credentials mode ` +
+            `(${CREDENTIALS_MODES.join(" / ")}) — it is being ignored, so requests use ` +
+            "the browser default and cross-origin cookies will not be sent.",
+        );
+      }
+      return;
+    }
     if (name === "placement") {
       // A placement owns the axes it fixes, so hand those back before anything
       // else: a size dragged under the previous placement would otherwise sit
@@ -778,6 +835,82 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * Cookie policy for **every** request this element makes, as `fetch`'s own
+   * `credentials` mode (`"omit"` / `"same-origin"` / `"include"`). Mirrored to
+   * the `credentials` attribute, so markup embeds can set it without script.
+   *
+   * `null` (the default) leaves the browser's default of `same-origin` in
+   * place. That default sends **no cookies at all** when the endpoints live on
+   * a different origin from the page — app.example.com calling
+   * api.example.com is cross-origin — and the request goes out anonymously
+   * rather than failing, so the symptom is a 401 from a server that looks
+   * correctly configured. A cookie-authenticated cross-origin deployment wants
+   * `"include"`, plus `Access-Control-Allow-Credentials: true` and a concrete
+   * (non-wildcard) `Access-Control-Allow-Origin` on the server.
+   *
+   * Read per request, so a late assignment applies to everything after it.
+   * `"omit"` cannot be honoured by the built-in **upload** transport, which is
+   * an `XMLHttpRequest` and only has a two-state cookie switch; every other
+   * endpoint honours all three modes.
+   */
+  get credentials(): RequestCredentials | null {
+    const attr = this.getAttribute("credentials");
+    return attr !== null && isCredentialsMode(attr) ? attr : null;
+  }
+
+  set credentials(value: RequestCredentials | null) {
+    if (value === null) {
+      this.removeAttribute("credentials");
+      return;
+    }
+    // Thrown, not warned: an unrecognised mode is inert at request time, and
+    // the whole failure this option exists to fix is a request that goes out
+    // wrong without saying so. Fail where the mistake was made instead.
+    if (!isCredentialsMode(value)) {
+      throw new TypeError(
+        `<ag-ui-chat>: credentials must be one of ${CREDENTIALS_MODES.map((mode) => `"${mode}"`).join(", ")} ` +
+          `(got ${JSON.stringify(value)}).`,
+      );
+    }
+    this.setAttribute("credentials", value);
+  }
+
+  /**
+   * The headers for the request about to go out: the static {@link headers}
+   * with {@link getHeaders}'s live values overlaid, per key.
+   *
+   * Every request site goes through here, so "how this element authenticates"
+   * is one answer rather than one per endpoint.
+   */
+  #requestHeaders(): Record<string, string> {
+    return { ...this.headers, ...this.getHeaders?.() };
+  }
+
+  /** The configured cookie policy as `fetch` spells it; `undefined` when unset. */
+  #requestCredentials(): RequestCredentials | undefined {
+    return this.credentials ?? undefined;
+  }
+
+  /**
+   * The `credentials` entry for an {@link AgentFactory} call, or nothing at all.
+   *
+   * Spread rather than assigned: `exactOptionalPropertyTypes` rejects an
+   * explicit `credentials: undefined`, and a factory should see the field
+   * absent — not present-and-empty — when no policy is configured. The agent
+   * reads it when it is built (first send, thread switch, continuation), by
+   * which time any host configuration has landed.
+   */
+  #credentialsOption(): { credentials?: RequestCredentials } {
+    const credentials = this.#requestCredentials();
+    return credentials === undefined ? {} : { credentials };
+  }
+
+  /** The `fetch` init for the element's own plain GETs (catalogs). */
+  #fetchInit(): RequestInit | undefined {
+    return withCredentials({ headers: this.#requestHeaders() }, this.#requestCredentials());
+  }
+
+  /**
    * How much detail tool-call cards show, from the `data-tool-display`
    * attribute (`minimal` / `inline` / `compact` / `full`). Defaults to `full`.
    *
@@ -833,7 +966,6 @@ export class AgUiChat extends HTMLElement {
     }
     this.#syncRail();
     this.#initSkills();
-    void this.#fetchToolCatalog();
     // Namespace the built-in default store too (a host-injected store is used
     // verbatim). Must precede #wireThreadStore, which wraps the current store.
     if (this.#storageNs !== "" && this.conversationStore instanceof SessionStorageStore) {
@@ -843,10 +975,70 @@ export class AgUiChat extends HTMLElement {
     this.#wireAttachments();
     this.#wireVoice();
     this.#threadId = this.conversationStore.threadId();
+    // The catalog requests go out a microtask later, so a host configuring
+    // through a framework ref still has a chance to be heard — see #startup.
+    queueMicrotask(() => this.#startup());
     void this.#rehydrate();
     // Last: everything above reads (and some of it sets) attributes, and none
     // of that should trip the connect-time warning.
     this.#connected = true;
+  }
+
+  /**
+   * The catalog requests the element issues on startup: the tool labels
+   * (`data-tools-url`) and the backend skills (`data-skills-url`).
+   *
+   * Deliberately one microtask behind `connectedCallback`. A host that
+   * configures the element through a framework ref necessarily does so *after*
+   * inserting the node — React attaches refs and runs layout effects in the
+   * same commit as the insertion, but strictly afterwards — so a request issued
+   * from `connectedCallback` itself goes out before `headers`,
+   * {@link getHeaders} or {@link credentials} exist, and comes back 401 in a
+   * way that reads as a server fault rather than a mis-timed assignment. A
+   * microtask lands after that commit and still before paint.
+   *
+   * Two things it is **not**. It is not a fix for configuration that arrives
+   * later than the commit (a passive `useEffect`, an awaited token fetch):
+   * configure before insertion (`createElement` → configure → `append`) or call
+   * {@link reload} once configured, because a longer timer would hide that race
+   * rather than close it. And it deliberately excludes the *history* replay,
+   * which stays in `connectedCallback`: the replay renders into the transcript,
+   * so deferring it lets a `sendMessage()` issued in the same task land first
+   * and the replay then duplicate it. The thread history is therefore the one
+   * request that can still go out before a ref is attached — {@link reload}
+   * covers it.
+   */
+  #startup(): void {
+    // An element can be inserted and removed inside one task (a discarded
+    // render, a double-mount); nothing should go out for a node that has
+    // already left the document.
+    if (!this.#connected) {
+      return;
+    }
+    void this.#fetchToolCatalog();
+    void this.#fetchSkills();
+  }
+
+  /**
+   * Re-run everything the element loads on startup — the tool-label catalog,
+   * the backend skill catalog and the thread's history — with the transport
+   * configuration as it stands now.
+   *
+   * This is the answer for a host that can only configure the element after the
+   * fact (a token fetched in a passive effect, an async auth handshake): the
+   * startup requests already went out with whatever was set then, and this says
+   * "try again, properly authenticated" without removing and re-inserting the
+   * node.
+   *
+   * A reload, not a merge — the in-flight run is cancelled and the transcript
+   * is rebuilt from the persisted history, so anything streamed since is
+   * dropped. Call it once, when configuration lands; not between turns.
+   */
+  async reload(): Promise<void> {
+    this.#cancelRun();
+    this.#resetState();
+    this.#setRunning(false);
+    await Promise.all([this.#fetchToolCatalog(), this.#fetchSkills(), this.#rehydrate()]);
   }
 
   /**
@@ -940,7 +1132,13 @@ export class AgUiChat extends HTMLElement {
     // Forward the tray's abort signal so removing a chip (or tearing the
     // element down) cancels the XHR.
     return (file, onProgress, signal) =>
-      uploadAttachment(file, { url, headers: this.headers, onProgress, signal });
+      uploadAttachment(file, {
+        url,
+        headers: this.#requestHeaders(),
+        ...this.#credentialsOption(),
+        onProgress,
+        signal,
+      });
   }
 
   /**
@@ -969,7 +1167,12 @@ export class AgUiChat extends HTMLElement {
     if (url === null) {
       return null;
     }
-    return (audio) => transcribeAudio(audio, { url, headers: this.headers });
+    return (audio) =>
+      transcribeAudio(audio, {
+        url,
+        headers: this.#requestHeaders(),
+        ...this.#credentialsOption(),
+      });
   }
 
   /** Drop a voice transcript into the composer (appended to any typed text). */
@@ -1050,8 +1253,9 @@ export class AgUiChat extends HTMLElement {
     if (url !== null) {
       this.conversationStore = new RemoteConversationStore(
         url,
-        () => this.headers,
+        () => this.#requestHeaders(),
         this.conversationStore,
+        () => this.#requestCredentials(),
       );
     }
   }
@@ -1063,7 +1267,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     try {
-      const response = await fetch(url, { headers: this.headers });
+      const response = await fetch(url, this.#fetchInit());
       this.#toolCatalog = parseToolCatalog(await response.json());
     } catch {
       // Network/parse failure: cards fall back to toolSummaries / raw names.
@@ -1079,13 +1283,16 @@ export class AgUiChat extends HTMLElement {
     this.#recomputeSkills();
   }
 
-  /** Wire the skill surfaces: opt-in flags, embedded catalog, optional fetch. */
+  /**
+   * Wire the skill surfaces: opt-in flags and the embedded catalog. The backend
+   * catalog is fetched from `#startup`, a microtask later, so it carries the
+   * host's transport configuration.
+   */
   #initSkills(): void {
     this.#skillsMenu.enableChips(this.#flag("data-prompt-chips"));
     this.#skillsMenu.enableSlash(this.#flag("data-slash-commands"));
     this.#embedSkills = this.#readEmbeddedSkills();
     this.#recomputeSkills();
-    void this.#fetchSkills();
   }
 
   /** Parse the inline `data-skills` JSON catalog (empty when absent/malformed). */
@@ -1108,7 +1315,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     try {
-      const response = await fetch(url, { headers: this.headers });
+      const response = await fetch(url, this.#fetchInit());
       this.#backendSkills = parseSkills(await response.json());
       this.#recomputeSkills();
     } catch {
@@ -1395,6 +1602,34 @@ export class AgUiChat extends HTMLElement {
   #syncThemeGlyph(): void {
     const dark = this.getAttribute("theme") === "dark";
     this.#themeToggle.textContent = dark ? "☀️" : "🌙";
+  }
+
+  /**
+   * Open the thread-history drawer: the imperative route to the control that
+   * renders as `::part(history-button)`.
+   *
+   * A host that hides `::part(header)` to render its own title bar hides the
+   * history, new-chat and collapse buttons with it — and thread switching then
+   * has no route at all, because those controls live inside the header. Each of
+   * them has a method, so a host chrome can rebuild the set: this one,
+   * {@link openCheckpoints}, {@link newChat}, {@link toggleCollapsed} and
+   * {@link toggleTheme}.
+   */
+  openThreads(): void {
+    void this.#refreshDrawer();
+    this.#drawer.open();
+  }
+
+  /**
+   * Open the checkpoints panel (the `::part(checkpoints-button)` route).
+   *
+   * It lists the runs the `data-runs-url` server reports as continuable;
+   * without that attribute the built-in button is never rendered and this opens
+   * an empty panel.
+   */
+  openCheckpoints(): void {
+    void this.#refreshCheckpoints();
+    this.#checkpoints.open();
   }
 
   /**
@@ -1713,17 +1948,13 @@ export class AgUiChat extends HTMLElement {
     controls.className = "header-controls";
     controls.setAttribute("part", "header-controls");
 
+    // Both controls delegate to the public methods, so a host chrome driving
+    // them imperatively takes exactly the path the built-in button takes.
     const history = this.#headerButton("history", this.#strings.chatHistory, "☰");
-    history.addEventListener("click", () => {
-      void this.#refreshDrawer();
-      this.#drawer.open();
-    });
+    history.addEventListener("click", () => this.openThreads());
 
     const checkpoints = this.#headerButton("checkpoints", this.#strings.checkpoints, "⭯");
-    checkpoints.addEventListener("click", () => {
-      void this.#refreshCheckpoints();
-      this.#checkpoints.open();
-    });
+    checkpoints.addEventListener("click", () => this.openCheckpoints());
 
     const newChat = this.#headerButton("new", this.#strings.newChat, "✚");
     newChat.addEventListener("click", () => this.newChat());
@@ -2098,11 +2329,12 @@ export class AgUiChat extends HTMLElement {
     if (this.#client === null) {
       const agent = this.agentFactory({
         endpoint: this.endpoint,
-        headers: this.headers,
+        headers: this.#requestHeaders(),
         // Live getter: the client is built once and cached, but a rotated
         // token must still reach every request — the factory's fetch wrapper
         // re-reads this on each call.
-        getHeaders: () => this.headers,
+        getHeaders: () => this.#requestHeaders(),
+        ...this.#credentialsOption(),
         threadId: this.#threadId,
         initialMessages: this.#initialMessages,
         initialState: this.#sharedState,

@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Ten findings from a real embed — a cross-origin, cookie-authenticated React host.
+Six of them are one defect: **the component assumed it owned the page.** It had
+only ever been embedded in its own playground and in `django-admin-agent`, two
+hosts that both arrange the page the way it expects.
+
+### Added
+
+- **`getHeaders`** — a function consulted immediately before **every** request, so
+  a rotating credential (a short-lived JWT, a re-issued CSRF token) reaches the
+  request that needs it. `headers` was a plain field the element never wrote to,
+  read at ten sites; configuring auth through `agentFactory` therefore
+  authenticated the run and nothing else, and thread history, attachments and the
+  catalogs went out anonymous and 401'd — which reads as a backend fault. The two
+  compose, merged per key with `getHeaders` winning, so adding a rotating header
+  cannot silently drop a static one.
+
+- **`credentials`** (attribute and property) — `omit` / `same-origin` / `include`,
+  applied to every request. There was previously no occurrence of `credentials`
+  anywhere in the source, so every request used the browser default and a host
+  serving its SPA and API from different subdomains sent no cookies, with **no way
+  to express the fix** short of replacing the transport. An unknown value is
+  rejected where it was written (the property throws; the attribute logs and stays
+  inert) rather than becoming a 401 later.
+
+- **`flash(el, options)`** — ring an element without moving focus.
+  `focusWithFlash` calls `el.focus()`, which for a helper named "flash" is
+  surprising: it takes focus off the composer, can fire blur validation on
+  whatever the user was mid-edit in, and can close a menu. Both now accept an
+  explicit `focus` option, and `focusWithFlash` focuses with `preventScroll: true`
+  so it no longer fights the scroll it just started.
+
+- **`openThreads()` / `openCheckpoints()` / `reload()`.** The header's controls all
+  live inside `::part(header)`, so a host rendering its own title bar and hiding it
+  lost thread switching entirely. The built-in buttons call exactly these methods,
+  so the two routes cannot drift. `reload()` re-runs the startup fetches once
+  credentials that arrive late have landed.
+
+- **`ScrollOptions`**, and `scrollIntoCenterView` now returns a promise that
+  resolves when the scroll has settled (`scrollend` where available, a short probe
+  when nothing moved, a 600 ms cap otherwise). Every DOM-driver primitive awaits it.
+
+### Changed
+
+- **CSS custom properties now work from an ancestor**, which is what the README
+  always described and the one thing that could not work: every `--ag-ui-*` default
+  was declared on `:host`, which sets the property *on the element*, and an
+  element's own value beats anything inherited. A consumer ran the full token map
+  on a wrapper for an entire build and concluded they had the names wrong. The
+  defaults now sit behind private aliases, so `:root`, a wrapper, the element and
+  an inline style all work and resolve in the usual order. **One vocabulary — the
+  public `--ag-ui-*` names are unchanged**, and a built-in `theme` / `density` /
+  `placement` preset still loses to an explicit page rule.
+
+- **The flash is an `outline`, not a `box-shadow`**, and holds for **1200 ms** with
+  a fade rather than 200 ms. A shadow paints outside the border box, so any
+  `overflow: hidden` ancestor sharing the element's box — a card, a table cell —
+  clipped it entirely while the tool reported success. And 200 ms is below the
+  threshold at which someone who does not know where to look notices anything.
+  ⭐ Neither our tests nor the consumer's could have found the second one:
+  headless Chromium hides the scroll race, and no automated check has an opinion
+  about whether a human sees a 200 ms ring.
+
+- **The flash colour comes from the target's `--ag-ui-accent`** rather than a
+  hardcoded indigo, so a themed page is flashed in its own colour.
+
+- **`prefersReducedMotion()` is now honoured where the README already claimed it
+  was.** The flash ignored it entirely while the docs said the preference was
+  "honoured throughout"; a consumer investigated reduced motion as the cause of an
+  invisible highlight on the strength of that sentence. Under reduced motion the
+  ring drops its fade but keeps its full hold — reduced motion asks for no
+  animation, not for no feedback. `typeInto` and `highlightThenClick` keep their
+  explicit-duration contract, and the docs now say so instead of overclaiming.
+
+- **The tool and skill catalog fetches are deferred by one microtask**, so a React
+  `ref` assigned in the same commit as insertion is honoured. ⚠ The thread-history
+  request is deliberately **not** deferred: a deferred replay can land after a
+  `sendMessage()` and duplicate the transcript. Configure before you insert, or
+  call `reload()`; the new React recipe in the README shows both.
+
 ## [0.20.1] — 2026-08-11
 
 ### Fixed

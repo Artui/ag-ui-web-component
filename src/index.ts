@@ -64,12 +64,14 @@ export {
 } from "./core/upload_attachment.js";
 export {
   type FlashOptions,
+  flash,
   focusWithFlash,
   type HighlightClickOptions,
   highlightThenClick,
   type PressOptions,
   prefersReducedMotion,
   pressThenClick,
+  type ScrollOptions,
   type SelectOptions,
   scrollIntoCenterView,
   selectOption,

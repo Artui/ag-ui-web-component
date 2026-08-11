@@ -10,6 +10,8 @@ export class FakeXhr {
   responseText = "";
   body: unknown = null;
   aborted = false;
+  /** XHR's two-state cookie switch — the upload transport's `credentials`. */
+  withCredentials = false;
   readonly headers: Record<string, string> = {};
   readonly #listeners = new Map<string, Listener[]>();
   readonly #uploadListeners = new Map<string, Listener[]>();

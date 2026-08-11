@@ -72,6 +72,29 @@ describe("createHttpAgent", () => {
     }
   });
 
+  it("sends the configured credentials mode with the run, headers or not", async () => {
+    const original = globalThis.fetch;
+    const seen: Array<RequestCredentials | undefined> = [];
+    globalThis.fetch = ((_url: string, init: RequestInit) => {
+      seen.push(init.credentials);
+      return Promise.resolve(new Response("ok"));
+    }) as typeof fetch;
+    // Both arms of the wrapper: with a live header source and without one.
+    const plain = createHttpAgent({ endpoint: "/agent/", credentials: "include" }) as HttpAgent;
+    const rotating = createHttpAgent({
+      endpoint: "/agent/",
+      credentials: "include",
+      getHeaders: () => ({ "X-Fresh": "yes" }),
+    }) as HttpAgent;
+    try {
+      await plain.fetch("/agent/", { method: "POST" });
+      await rotating.fetch("/agent/", { method: "POST" });
+      expect(seen).toEqual(["include", "include"]);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("keeps existing request init fields when overlaying headers", async () => {
     const agent = createHttpAgent({
       endpoint: "/agent/",

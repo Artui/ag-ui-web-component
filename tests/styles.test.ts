@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { STYLES } from "../src/ui/styles.js";
 
+/**
+ * The defaults block never declares a public token on :host — that would set it
+ * on the host element and beat anything inherited from an ancestor, which is
+ * the bug tests/browser/styles_host_theming.browser.test.ts pins. It declares a
+ * private alias that *reads* the public token, with the old default as the
+ * var() fallback. So "the token exists" is spelled as "its alias reads it".
+ */
+function aliasDeclaration(token: string): string {
+  return `--_${token.slice("--ag-ui-".length)}: var(${token},`;
+}
+
 describe("STYLES", () => {
   it("defines the color custom properties on :host", () => {
     for (const name of [
@@ -13,7 +24,7 @@ describe("STYLES", () => {
       "--ag-ui-border",
       "--ag-ui-radius",
     ]) {
-      expect(STYLES).toContain(`${name}:`);
+      expect(STYLES).toContain(aliasDeclaration(name));
     }
   });
 
@@ -25,35 +36,35 @@ describe("STYLES", () => {
       "--ag-ui-max-width",
       "--ag-ui-max-height",
     ]) {
-      expect(STYLES).toContain(`${name}:`);
+      expect(STYLES).toContain(aliasDeclaration(name));
     }
   });
 
   it("keeps the default floating bottom-right 380x560 widget", () => {
-    expect(STYLES).toContain("--ag-ui-width: 380px;");
-    expect(STYLES).toContain("--ag-ui-height: 560px;");
-    expect(STYLES).toContain("--ag-ui-inset: auto 24px 24px auto;");
-    expect(STYLES).toContain("--ag-ui-radius: 12px;");
+    expect(STYLES).toContain("--_width: var(--ag-ui-width, 380px);");
+    expect(STYLES).toContain("--_height: var(--ag-ui-height, 560px);");
+    expect(STYLES).toContain("--_inset: var(--ag-ui-inset, auto 24px 24px auto);");
+    expect(STYLES).toContain("--_radius: var(--ag-ui-radius, 12px);");
   });
 
   it("drives the layout box from the custom properties", () => {
-    expect(STYLES).toContain("inset: var(--ag-ui-inset);");
-    expect(STYLES).toContain("width: var(--ag-ui-width);");
-    expect(STYLES).toContain("height: var(--ag-ui-height);");
-    expect(STYLES).toContain("max-width: var(--ag-ui-max-width);");
-    expect(STYLES).toContain("max-height: var(--ag-ui-max-height);");
+    expect(STYLES).toContain("inset: var(--_inset);");
+    expect(STYLES).toContain("width: var(--_width);");
+    expect(STYLES).toContain("height: var(--_height);");
+    expect(STYLES).toContain("max-width: var(--_max-width);");
+    expect(STYLES).toContain("max-height: var(--_max-height);");
   });
 
   it("themes the input and tool-call surfaces (so dark themes work)", () => {
-    expect(STYLES).toContain("--ag-ui-input-bg:");
-    expect(STYLES).toContain("--ag-ui-tool-bg:");
-    expect(STYLES).toContain("background: var(--ag-ui-input-bg);");
-    expect(STYLES).toContain("background: var(--ag-ui-tool-bg);");
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-input-bg"));
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-tool-bg"));
+    expect(STYLES).toContain("background: var(--_input-bg);");
+    expect(STYLES).toContain("background: var(--_tool-bg);");
   });
 
   it("themes the tool-call card status accents", () => {
     for (const name of ["--ag-ui-tool-fg", "--ag-ui-success", "--ag-ui-danger", "--ag-ui-muted"]) {
-      expect(STYLES).toContain(`${name}:`);
+      expect(STYLES).toContain(aliasDeclaration(name));
     }
     // Status pill colour keys off the card's data-status attribute.
     expect(STYLES).toContain('.tool-call[data-status="done"] .tool-call-status');
@@ -65,19 +76,19 @@ describe("STYLES", () => {
 
   it("exposes the surface + embed knobs that make it feel native", () => {
     // Header matches the host surface instead of an accent titlebar.
-    expect(STYLES).toContain("--ag-ui-header-bg:");
-    expect(STYLES).toContain("--ag-ui-header-fg:");
-    expect(STYLES).toContain("background: var(--ag-ui-header-bg);");
-    expect(STYLES).toContain("color: var(--ag-ui-header-fg);");
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-header-bg"));
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-header-fg"));
+    expect(STYLES).toContain("background: var(--_header-bg);");
+    expect(STYLES).toContain("color: var(--_header-fg);");
     // Shadow can be dropped for a flush panel.
-    expect(STYLES).toContain("--ag-ui-shadow:");
-    expect(STYLES).toContain("box-shadow: var(--ag-ui-shadow);");
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-shadow"));
+    expect(STYLES).toContain("box-shadow: var(--_shadow);");
     // Typography inherits the host by default.
-    expect(STYLES).toContain("--ag-ui-font: inherit;");
-    expect(STYLES).toContain("font-family: var(--ag-ui-font);");
+    expect(STYLES).toContain("--_font: var(--ag-ui-font, inherit);");
+    expect(STYLES).toContain("font-family: var(--_font);");
     // Positioning can switch from floating overlay to in-flow embed.
-    expect(STYLES).toContain("--ag-ui-position: fixed;");
-    expect(STYLES).toContain("position: var(--ag-ui-position);");
+    expect(STYLES).toContain("--_position: var(--ag-ui-position, fixed);");
+    expect(STYLES).toContain("position: var(--_position);");
   });
 
   it("ships dark / auto / code themes that re-set the colour variables", () => {
@@ -86,17 +97,17 @@ describe("STYLES", () => {
     expect(STYLES).toContain(':host([theme="auto"])');
     expect(STYLES).toContain(':host([theme="code"])');
     // The code theme switches to the monospace font stack.
-    expect(STYLES).toContain("--ag-ui-code-font:");
-    expect(STYLES).toContain("--ag-ui-font: var(--ag-ui-code-font);");
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-code-font"));
+    expect(STYLES).toContain("--_font: var(--ag-ui-font, var(--_code-font));");
   });
 
   it("drives spacing from variables a density preset overrides", () => {
-    expect(STYLES).toContain("--ag-ui-space:");
-    expect(STYLES).toContain("--ag-ui-pad:");
-    expect(STYLES).toContain("--ag-ui-msg-pad:");
-    expect(STYLES).toContain("padding: var(--ag-ui-pad);");
-    expect(STYLES).toContain("gap: var(--ag-ui-space);");
-    expect(STYLES).toContain("padding: var(--ag-ui-msg-pad);");
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-space"));
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-pad"));
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-msg-pad"));
+    expect(STYLES).toContain("padding: var(--_pad);");
+    expect(STYLES).toContain("gap: var(--_space);");
+    expect(STYLES).toContain("padding: var(--_msg-pad);");
     expect(STYLES).toContain(':host([density="compact"])');
   });
 
@@ -123,17 +134,15 @@ describe("STYLES", () => {
     expect(STYLES).toContain(':host([placement="full"])');
     expect(STYLES).toContain(':host([placement="embedded"])');
     // Embedded fixes the z-index overlay clash.
-    expect(STYLES).toContain("--ag-ui-z-index: auto;");
-    expect(STYLES).toContain("--ag-ui-position: static;");
+    expect(STYLES).toContain("--_z-index: var(--ag-ui-z-index, auto);");
+    expect(STYLES).toContain("--_position: var(--ag-ui-position, static);");
   });
 
   it("page placement centres a reading column capped by a content-width var", () => {
     expect(STYLES).toContain(':host([placement="page"])');
-    expect(STYLES).toContain("--ag-ui-content-max-width:");
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-content-max-width"));
     // The column is produced by symmetric auto padding on the scroll area.
-    expect(STYLES).toContain(
-      "max(var(--ag-ui-pad), calc((100% - var(--ag-ui-content-max-width)) / 2))",
-    );
+    expect(STYLES).toContain("max(var(--_pad), calc((100% - var(--_content-max-width)) / 2))");
     // In page mode the assistant well uses the full column width.
     expect(STYLES).toContain(':host([placement="page"]) .message--assistant');
     // The skill chips, palette/hint, and upload tray align to the same column.
@@ -149,7 +158,7 @@ describe("STYLES", () => {
     // …but the bordered well only draws under the data-answer-well opt-in.
     expect(STYLES).toContain(":host([data-answer-well]) .answer");
     for (const name of ["--ag-ui-well-bg", "--ag-ui-well-border"]) {
-      expect(STYLES).toContain(`${name}:`);
+      expect(STYLES).toContain(aliasDeclaration(name));
     }
   });
 
@@ -165,11 +174,11 @@ describe("STYLES", () => {
       "--ag-ui-tool-icon-declined",
       "--ag-ui-tool-spin-duration",
     ]) {
-      expect(STYLES).toContain(`${name}:`);
+      expect(STYLES).toContain(aliasDeclaration(name));
     }
-    expect(STYLES).toContain("content: var(--ag-ui-tool-icon-done)");
+    expect(STYLES).toContain("content: var(--_tool-icon-done)");
     // The spinner speed is driven by the tunable duration var.
-    expect(STYLES).toContain("ag-ui-tool-spin var(--ag-ui-tool-spin-duration)");
+    expect(STYLES).toContain("ag-ui-tool-spin var(--_tool-spin-duration)");
     // The spin honours reduced motion.
     expect(STYLES).toContain("prefers-reduced-motion: reduce");
   });
@@ -205,5 +214,65 @@ describe("STYLES", () => {
     expect(STYLES).toContain(".voice-btn");
     expect(STYLES).toContain('.voice-btn[data-state="recording"]');
     expect(STYLES).toContain("@keyframes ag-ui-voice-pulse");
+  });
+});
+
+/**
+ * Structural guards on the public-token → private-alias indirection.
+ *
+ * The conversion was ~180 mechanical rewrites in one 1800-line template
+ * literal, and a missed one does not error: the public name resolves to
+ * nothing, the whole declaration is dropped, and a colour quietly goes
+ * missing. These assertions are what makes that failure loud, and what keeps a
+ * new rule from reaching for a public name out of habit.
+ */
+describe("STYLES token indirection", () => {
+  /** The stylesheet with CSS comments stripped, so prose is not mistaken for code. */
+  const code = STYLES.replace(/\/\*[\s\S]*?\*\//g, "");
+  /** The base defaults block: everything up to the end of the first :host rule. */
+  const defaults = code.slice(code.indexOf(":host {"), code.indexOf("}", code.indexOf(":host {")));
+
+  it("never declares a public token, which is what broke ancestor theming", () => {
+    // A :host declaration sets the property on the host element, and an
+    // element's own value always beats one inherited from an ancestor. Every
+    // token declared here is a token a host page cannot theme from a wrapper.
+    const declared = [...code.matchAll(/^\s*(--ag-ui-[a-z0-9-]+):/gm)].map((m) => m[1]);
+    expect(declared).toEqual([]);
+  });
+
+  it("reads every public token only inside its own alias declaration", () => {
+    const stray = code
+      .split("\n")
+      .filter((line) => line.includes("var(--ag-ui-"))
+      // The internal per-word channel is written by reveal_words as an inline
+      // style on each span; it is plumbing, not a theming token, and has no
+      // alias by design.
+      .filter((line) => !line.includes("var(--ag-ui-word-index"))
+      .filter((line) => !/^\s*--_([a-z0-9-]+): var\(--ag-ui-\1[,)]/.test(line));
+    expect(stray).toEqual([]);
+  });
+
+  it("declares every alias it uses in the defaults block", () => {
+    // Aliases inherit like any custom property. An alias used but not declared
+    // on :host would pick up a same-named property from the host page's own
+    // CSS; declaring it here shields the shadow tree from that.
+    const used = new Set([...code.matchAll(/var\(\s*(--_[a-z0-9-]+)/g)].map((m) => m[1]));
+    const declared = new Set([...defaults.matchAll(/^\s*(--_[a-z0-9-]+):/gm)].map((m) => m[1]));
+    expect([...used].filter((name) => !declared.has(name))).toEqual([]);
+    expect([...declared].filter((name) => !used.has(name))).toEqual([]);
+  });
+
+  it("gives every alias, wherever it is set, a public token to read", () => {
+    // Including the theme, density and placement blocks. If one of those set
+    // its alias directly, the built-in preset would outrank an explicit page
+    // rule — the opposite of today's cascade, where a shadow :host rule loses
+    // to any outer-tree rule regardless of specificity.
+    const direct = [...code.matchAll(/^\s*(--_[a-z0-9-]+): (.*);$/gm)]
+      .map(([, name, value]) => `${name}: ${value}`)
+      .filter((declaration) => {
+        const [name, value] = declaration.split(": ", 2);
+        return !value?.startsWith(`var(--ag-ui-${name?.slice(3)},`);
+      });
+    expect(direct).toEqual([]);
   });
 });

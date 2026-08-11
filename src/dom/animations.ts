@@ -8,12 +8,59 @@
 
 import { setNativeChecked, setNativeValue } from "./native_setter.js";
 
+/** Ring colour when the host page has not themed `--ag-ui-accent`. */
 const ACCENT = "#4f46e5";
+
+/**
+ * Fallback for the box-shadow rings, which read as a soft halo rather than a
+ * line and so carry their own alpha.
+ */
+const ACCENT_HALO = "rgba(79, 70, 229, 0.4)";
+
+const ACCENT_PROPERTY = "--ag-ui-accent";
 
 function delay(ms: number): Promise<void> {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+/**
+ * Whether the user has asked the OS/browser to minimise motion.
+ *
+ * Honoured by every primitive that *moves* something: the action animations
+ * skip their hold delays, `scrollIntoCenterView` jumps instead of gliding, and
+ * the focus flash drops its fade while still holding the ring long enough to be
+ * seen — reduced motion asks for no animation, not for no feedback. The
+ * character-typing and highlight primitives predate this and keep their
+ * explicit-duration contract.
+ */
+export function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** Like {@link delay}, but resolves immediately under reduced motion. */
+function motionDelay(ms: number): Promise<void> {
+  if (ms <= 0 || prefersReducedMotion()) {
+    return Promise.resolve();
+  }
+  return delay(ms);
+}
+
+/**
+ * Resolve the accent colour from the **target's** computed style.
+ *
+ * `--ag-ui-accent` inherits, so reading it off the element the agent is about
+ * to touch picks up whatever the host's cascade produced there — a themed page
+ * gets flashed in its own colour instead of this package's indigo.
+ */
+function accentColor(el: HTMLElement, fallback: string): string {
+  const themed = window.getComputedStyle(el).getPropertyValue(ACCENT_PROPERTY).trim();
+  return themed === "" ? fallback : themed;
+}
+
+function ringShadow(el: HTMLElement): string {
+  return `0 0 0 3px ${accentColor(el, ACCENT_HALO)}`;
 }
 
 /** An element whose `value` can be typed into. */
@@ -59,7 +106,7 @@ export async function highlightThenClick(
   const highlightMs = options.highlightMs ?? 280;
   const previousOutline = el.style.outline;
   const previousOffset = el.style.outlineOffset;
-  el.style.outline = `2px solid ${ACCENT}`;
+  el.style.outline = `2px solid ${accentColor(el, ACCENT)}`;
   el.style.outlineOffset = "2px";
   await delay(highlightMs);
   el.style.outline = previousOutline;
@@ -67,46 +114,143 @@ export async function highlightThenClick(
   el.click();
 }
 
-/** Scroll ``el`` to the vertical centre of the viewport. */
-export function scrollIntoCenterView(el: HTMLElement): void {
-  el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+export interface ScrollOptions {
+  /**
+   * How long to wait for a moving scroll to settle before giving up.
+   * Default 600.
+   */
+  settleMs?: number;
 }
 
-export interface FlashOptions {
-  /** Milliseconds to hold the focus flash. Default 200. */
-  flashMs?: number;
-}
+const SCROLL_SETTLE_MS = 600;
 
-/** Focus ``el`` and briefly flash a ring around it. */
-export async function focusWithFlash(el: HTMLElement, options: FlashOptions = {}): Promise<void> {
-  const flashMs = options.flashMs ?? 200;
-  el.focus();
-  const previousShadow = el.style.boxShadow;
-  el.style.boxShadow = `0 0 0 3px rgba(79, 70, 229, 0.4)`;
-  await delay(flashMs);
-  el.style.boxShadow = previousShadow;
-}
-
-const RING = "0 0 0 3px rgba(79, 70, 229, 0.4)";
+/** How long to give a smooth scroll to start moving before assuming it will not. */
+const SCROLL_START_MS = 100;
 
 /**
- * Whether the user has asked the OS/browser to minimise motion.
+ * Scroll ``el`` to the vertical centre of the viewport.
  *
- * The richer action animations below check this and skip their hold delays so
- * the agent's edits still happen (events fire, values set) but without the
- * visible pause. The character-typing / highlight primitives above predate this
- * and keep their explicit-duration contract.
+ * The returned promise resolves once the scroll has settled, so a caller can
+ * hold its animation until the element has stopped moving — a ring drawn
+ * mid-glide lands somewhere the user is not looking yet. Awaiting is optional;
+ * the scroll itself is requested synchronously.
  */
-export function prefersReducedMotion(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-/** Like {@link delay}, but resolves immediately under reduced motion. */
-function motionDelay(ms: number): Promise<void> {
-  if (ms <= 0 || prefersReducedMotion()) {
+export function scrollIntoCenterView(el: HTMLElement, options: ScrollOptions = {}): Promise<void> {
+  const reduced = prefersReducedMotion();
+  el.scrollIntoView({
+    block: "center",
+    inline: "nearest",
+    behavior: reduced ? "auto" : "smooth",
+  });
+  if (reduced) {
     return Promise.resolve();
   }
-  return delay(ms);
+  return new Promise<void>((resolve) => {
+    let timer: ReturnType<typeof setTimeout>;
+    const settle = (): void => {
+      clearTimeout(timer);
+      document.removeEventListener("scroll", started, true);
+      document.removeEventListener("scrollend", settle, true);
+      resolve();
+    };
+    const started = (): void => {
+      document.removeEventListener("scroll", started, true);
+      clearTimeout(timer);
+      timer = setTimeout(settle, options.settleMs ?? SCROLL_SETTLE_MS);
+    };
+    // Neither event bubbles, and both fire on whichever ancestor actually
+    // scrolled, so listen on the document in the capture phase.
+    //
+    // Two timeouts, because two things can go wrong. An element already in
+    // view never scrolls and so never fires scrollend — waiting the full
+    // budget for it would add dead time to every action, hence the short
+    // did-anything-move probe. Once something is moving, the longer budget
+    // covers browsers that do not implement scrollend at all (Safari gained it
+    // only recently).
+    timer = setTimeout(settle, SCROLL_START_MS);
+    document.addEventListener("scroll", started, true);
+    document.addEventListener("scrollend", settle, true);
+  });
+}
+
+/** Total on-screen life of the flash ring, hold plus fade. */
+const FLASH_MS = 1200;
+
+/** Share of {@link FLASH_MS} spent fading out rather than holding. */
+const FLASH_FADE_RATIO = 1 / 3;
+
+export interface FlashOptions {
+  /**
+   * Total milliseconds the ring is on screen, hold plus fade. Default 1200 —
+   * long enough for someone who does not yet know where to look to find it.
+   */
+  flashMs?: number;
+  /** Ring colour. Defaults to the target's `--ag-ui-accent`, else the package accent. */
+  color?: string;
+  /**
+   * Move keyboard focus to the element as well. Defaults to false for
+   * {@link flash} and true for {@link focusWithFlash}.
+   */
+  focus?: boolean;
+}
+
+async function flashRing(
+  el: HTMLElement,
+  options: FlashOptions,
+  focusByDefault: boolean,
+): Promise<void> {
+  if (options.focus ?? focusByDefault) {
+    // preventScroll: a caller's smooth scroll is typically still in flight, and
+    // the instant scroll focus() would otherwise do fights it.
+    el.focus({ preventScroll: true });
+  }
+  const flashMs = options.flashMs ?? FLASH_MS;
+  if (flashMs <= 0) {
+    return;
+  }
+  const previousOutline = el.style.outline;
+  const previousOffset = el.style.outlineOffset;
+  const previousTransition = el.style.transition;
+  const color = options.color ?? accentColor(el, ACCENT);
+  // outline, not box-shadow: a shadow paints outside the border box, so any
+  // overflow:hidden ancestor sharing the target's box (a card, a table cell)
+  // clips the whole ring away while the helper still reports success.
+  el.style.outline = `3px solid ${color}`;
+  el.style.outlineOffset = "2px";
+  const fadeMs = prefersReducedMotion() ? 0 : Math.round(flashMs * FLASH_FADE_RATIO);
+  await delay(flashMs - fadeMs);
+  if (fadeMs > 0) {
+    // Setting the transition and the new colour in the same task is fine: the
+    // browser starts transitions from the after-change style.
+    el.style.transition = `outline-color ${fadeMs}ms ease-out`;
+    el.style.outline = "3px solid transparent";
+    await delay(fadeMs);
+  }
+  el.style.outline = previousOutline;
+  el.style.outlineOffset = previousOffset;
+  el.style.transition = previousTransition;
+}
+
+/**
+ * Flash a ring around ``el`` without touching focus.
+ *
+ * Prefer this over {@link focusWithFlash} when the point is to *show* the user
+ * something: moving focus steals it from the composer, can fire blur validation
+ * on whatever they were mid-edit in, and can close an open menu.
+ */
+export function flash(el: HTMLElement, options: FlashOptions = {}): Promise<void> {
+  return flashRing(el, options, false);
+}
+
+/**
+ * Focus ``el`` and flash a ring around it.
+ *
+ * Focus moves unless ``options.focus`` says otherwise — that is the documented
+ * behaviour of this name. Use {@link flash} for a highlight that leaves focus
+ * where the user put it.
+ */
+export function focusWithFlash(el: HTMLElement, options: FlashOptions = {}): Promise<void> {
+  return flashRing(el, options, true);
 }
 
 export interface PressOptions {
@@ -126,7 +270,7 @@ export async function pressThenClick(el: HTMLElement, options: PressOptions = {}
   const previousShadow = el.style.boxShadow;
   el.style.transition = "transform 80ms ease";
   el.style.transform = "scale(0.96)";
-  el.style.boxShadow = RING;
+  el.style.boxShadow = ringShadow(el);
   await motionDelay(pressMs);
   el.style.transform = previousTransform;
   el.style.transition = previousTransition;
@@ -166,7 +310,7 @@ export async function selectOption(
   const highlightMs = options.highlightMs ?? 220;
   const previousOutline = el.style.outline;
   const previousOffset = el.style.outlineOffset;
-  el.style.outline = `2px solid ${ACCENT}`;
+  el.style.outline = `2px solid ${accentColor(el, ACCENT)}`;
   el.style.outlineOffset = "2px";
   await motionDelay(highlightMs);
   setNativeValue(el, option.value);
@@ -192,7 +336,7 @@ export async function toggleControl(
 ): Promise<void> {
   const flashMs = options.flashMs ?? 200;
   const previousShadow = el.style.boxShadow;
-  el.style.boxShadow = RING;
+  el.style.boxShadow = ringShadow(el);
   await motionDelay(flashMs);
   setNativeChecked(el, checked);
   el.dispatchEvent(new Event("input", { bubbles: true }));

@@ -26,13 +26,51 @@ describe("fillField", () => {
 
     expect(scroll).toHaveBeenCalledOnce();
     expect(el.value).toBe("Paris");
+    expect(document.activeElement).toBe(el);
+  });
+
+  it("waits for the scroll to settle before typing", async () => {
+    vi.useFakeTimers();
+    const el = document.createElement("input");
+    document.body.appendChild(el);
+
+    const done = fillField(el, "Paris", { charDelayMs: 0 });
+    await Promise.resolve();
+    expect(el.value).toBe("");
+
+    el.dispatchEvent(new Event("scrollend"));
+    await vi.runAllTimersAsync();
+    await done;
+    expect(el.value).toBe("Paris");
   });
 
   it("defaults the focus flash to zero", async () => {
+    vi.useFakeTimers();
     const el = document.createElement("textarea");
     document.body.appendChild(el);
-    await fillField(el, "hi", { charDelayMs: 0 });
+
+    const done = fillField(el, "hi", { charDelayMs: 0 });
+    await vi.runAllTimersAsync();
+    await done;
+
+    // No ring was ever held: the flash is opt-in for a field the agent is
+    // about to type into anyway.
+    expect(el.style.outline).toBe("");
     expect(el.value).toBe("hi");
+  });
+
+  it("passes the ring colour through to the flash", async () => {
+    vi.useFakeTimers();
+    const el = document.createElement("input");
+    document.body.appendChild(el);
+
+    const done = fillField(el, "hi", { charDelayMs: 0, flashMs: 30, color: "hotpink" });
+    el.dispatchEvent(new Event("scrollend"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(el.style.outline).toContain("hotpink");
+
+    await vi.runAllTimersAsync();
+    await done;
   });
 });
 
@@ -53,6 +91,23 @@ describe("clickElement", () => {
 
     expect(scroll).toHaveBeenCalledOnce();
     expect(clicked).toBe(true);
+  });
+
+  it("does not highlight until the scroll has settled", async () => {
+    vi.useFakeTimers();
+    const button = document.createElement("button");
+    document.body.appendChild(button);
+
+    const done = clickElement(button, { highlightMs: 5 });
+    await Promise.resolve();
+    expect(button.style.outline).toBe("");
+
+    button.dispatchEvent(new Event("scrollend"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(button.style.outline).toContain("#4f46e5");
+
+    await vi.runAllTimersAsync();
+    await done;
   });
 });
 
