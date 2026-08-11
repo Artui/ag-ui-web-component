@@ -111,12 +111,69 @@ describe("STYLES", () => {
     expect(STYLES).toContain(':host([density="compact"])');
   });
 
-  it("collapses to just the header — hiding the body incl. skill surfaces", () => {
-    expect(STYLES).toContain(":host([collapsed]) .skill-chips");
-    expect(STYLES).toContain(":host([collapsed]) .skill-palette");
-    expect(STYLES).toContain(":host([collapsed]) .input-row");
-    // Edge-docked placements unpin the bottom so they shrink when collapsed.
-    expect(STYLES).toContain(':host([collapsed][placement="side"])');
+  it("collapses to the floating launcher, panel and button morphing as one", () => {
+    // The panel leaves on transform + opacity only (no layout animates), and
+    // visibility is what takes it out of the tab order once it has gone.
+    expect(STYLES).toContain(":host([collapsed]) .chat");
+    expect(STYLES).toContain("visibility: hidden;");
+    expect(STYLES).toContain(":host([collapsed]) .launcher");
+    // The collapsed host box stops swallowing clicks; the launcher takes them.
+    expect(STYLES).toContain(":host([collapsed]) {\n  pointer-events: none;");
+    expect(STYLES).toContain("pointer-events: auto;");
+    // Both halves stay laid out and hide with visibility, so each can animate
+    // in *and* out — display:none can do neither.
+    expect(STYLES).toContain("visibility: visible;");
+  });
+
+  it("keeps the header-bar collapse for the two in-flow placements", () => {
+    // A floating circle would escape an embedded widget's host layout, and a
+    // full-screen page route has no corner to float in.
+    const inFlow = ':host([collapsed]:is([placement="embedded"], [placement="page"]))';
+    expect(STYLES).toContain(`${inFlow} .skill-chips`);
+    expect(STYLES).toContain(`${inFlow} .skill-palette`);
+    expect(STYLES).toContain(`${inFlow} .input-row`);
+  });
+
+  it("slides the sidebar panel out through the edge it docks against", () => {
+    expect(STYLES).toContain(':host([placement="sidebar"][collapsed]) .chat');
+    expect(STYLES).toContain("transform: translateX(100%);");
+    expect(STYLES).toContain(':host([placement="sidebar"][data-side="left"][collapsed]) .chat');
+    expect(STYLES).toContain("transform: translateX(-100%);");
+  });
+
+  it("times every transition from one motion token, which reduced motion zeroes", () => {
+    expect(STYLES).toContain("--_motion: var(--ag-ui-motion, 0.28s);");
+    expect(STYLES).toContain("--_motion: var(--ag-ui-motion, 0.001s);");
+  });
+
+  it("animates the chat-history drawer in and out from its hidden attribute", () => {
+    // The closed drawer keeps its box so both halves stay transitionable;
+    // visibility is what takes the subtree out of hit testing and the a11y tree.
+    expect(STYLES).toContain("transition: visibility var(--_motion) var(--_ease);");
+    expect(STYLES).toContain(".drawer[hidden] .drawer-panel");
+    expect(STYLES).toContain(".drawer[hidden] .drawer-backdrop");
+  });
+
+  it("badges the launcher with what arrived while it was collapsed", () => {
+    expect(STYLES).toContain(".launcher-badge {");
+    expect(STYLES).toContain(".launcher-badge[hidden]");
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-badge-bg"));
+    expect(STYLES).toContain(aliasDeclaration("--ag-ui-badge-size"));
+    // A ring in the widget's own background is what separates the badge from
+    // the launcher under it, whatever the host themes either one to be.
+    expect(STYLES).toContain("box-shadow: 0 0 0 2px var(--_bg);");
+  });
+
+  it("builds the composer as one surface with a circular send button", () => {
+    expect(STYLES).toContain(".composer {");
+    expect(STYLES).toContain(".composer:focus-within");
+    expect(STYLES).toContain(".composer-tools");
+    // Icon-only send: a circle sized by its own token, glyph swapped by state.
+    expect(STYLES).toContain("width: var(--_send-size);");
+    expect(STYLES).toContain('.send[data-state="idle"] .send-stop');
+    expect(STYLES).toContain('.send[data-state="running"] .send-send');
+    // The field grows with its content up to a ceiling, then scrolls.
+    expect(STYLES).toContain("max-height: var(--_composer-max-height);");
   });
 
   it("animates incoming text (fade + word) and respects reduced motion", () => {

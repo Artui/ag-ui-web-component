@@ -179,6 +179,20 @@ const server = createServer((req, res) => {
     });
     return;
   }
+  if (req.method === "POST" && req.url === "/attachments/") {
+    // Uploads: a real backend would store the file and hand back a durable
+    // ref; the demo drains the body and echoes one, so the composer's paperclip
+    // and the pending-attachment tray are both reachable.
+    let bytes = 0;
+    req.on("data", (chunk) => {
+      bytes += chunk.length;
+    });
+    req.on("end", () => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ id: id("file"), url: `/uploads/${id("f")}`, size: bytes }));
+    });
+    return;
+  }
   if (req.method === "POST" && req.url === "/transcribe/") {
     // Voice input: a real backend would run STT on the posted clip;
     // the demo just drains the body and returns a canned transcript.

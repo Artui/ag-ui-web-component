@@ -20,6 +20,17 @@ export const SUBMIT_EVENT = "ag-ui-submit";
 export const TOGGLE_EVENT = "ag-ui-toggle";
 
 /**
+ * Event dispatched by `<ag-ui-chat>` when the number of answers that arrived
+ * while it was collapsed changes — one more finished, or expanding cleared them
+ * all. `detail` carries `{ unread: number }`.
+ *
+ * The built-in badge on the launcher renders exactly this. A host driving its
+ * own chrome can turn the badge off with `data-unread-badge="false"` and listen
+ * here instead.
+ */
+export const UNREAD_EVENT = "ag-ui-unread";
+
+/**
  * Event dispatched by `<ag-ui-chat>` when AG-UI **shared state** changes — the
  * server streamed a `STATE_SNAPSHOT` / `STATE_DELTA`, or the host assigned
  * {@link AgUiChat.sharedState}. `detail` carries `{ state }`.
@@ -158,3 +169,27 @@ export const COMPACTION_ACTIVITY_TYPE = "compaction";
  * *human* affordance (a prompt the user launches from the `/`-palette).
  */
 export const LOAD_CAPABILITY_TOOL = "load_capability";
+
+/**
+ * The chrome's glyphs, as inline SVG markup.
+ *
+ * Static, author-written markup assigned to a `<slot>`'s fallback content, so
+ * it never passes through the sanitiser — nothing here is user or server data.
+ * Each icon is a 24x24 viewBox carrying the shared `glyph` class, which
+ * `STYLES` sizes and paints from `currentColor`; `glyph--solid` fills instead
+ * of stroking. A host that wants its own mark projects a matching
+ * `slot="icon-…"` child rather than editing these.
+ */
+export const ICON_SEND = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19.5V5m-6.5 6.5L12 5l6.5 6.5"/></svg>`;
+
+/** The Stop glyph the composer button wears while a run is in flight. */
+export const ICON_STOP = `<svg class="glyph glyph--solid" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.5"/></svg>`;
+
+/** The file-picker glyph (a paperclip). */
+export const ICON_ATTACH = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 8.5V15a5 5 0 0 1-10 0V7a3 3 0 0 1 6 0v7.5a1 1 0 0 1-2 0V8.5"/></svg>`;
+
+/** The voice-input glyph (a microphone on its stand). */
+export const ICON_VOICE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3z"/><path d="M5 11v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v3"/></svg>`;
+
+/** The default launcher mark (a speech bubble), shown when the host slots none. */
+export const ICON_LAUNCHER = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-5 4z"/></svg>`;

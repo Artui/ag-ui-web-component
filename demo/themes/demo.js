@@ -194,6 +194,21 @@ $("cfg-i18n").addEventListener("change", (event) => {
   window.location.reload();
 });
 
+// The unread badge is on by default; the checkbox writes the opt-out.
+$("cfg-badge").addEventListener("change", (event) => {
+  chat.setAttribute("data-unread-badge", event.target.checked ? "true" : "false");
+});
+
+// The badge only counts answers that land while the widget is *collapsed*,
+// which is impossible to reach by hand — collapsing takes the composer with it.
+// This collapses first, then sends, so the answer arrives behind the launcher.
+// A slash token takes the server's short server-resolved branch rather than the
+// long scripted tool run, so the badge ticks in about a second.
+$("cfg-ping").addEventListener("click", () => {
+  chat.setCollapsed(true);
+  void chat.sendMessage("/ping");
+});
+
 // A dragged size persists per tab, which is confusing when you are flipping
 // placements to compare handles.
 $("cfg-reset-size").addEventListener("click", () => {

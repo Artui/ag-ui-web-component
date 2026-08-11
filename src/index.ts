@@ -12,6 +12,7 @@ export {
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
+  UNREAD_EVENT,
   X_CONFIRM_KEY,
   X_DESTRUCTIVE_KEY,
   X_NAVIGATES_KEY,
@@ -24,6 +25,7 @@ export {
   type StateDetail,
   type SubmitDetail,
   type ToggleDetail,
+  type UnreadDetail,
 } from "./core/ag_ui_chat.js";
 export {
   AgUiClient,
