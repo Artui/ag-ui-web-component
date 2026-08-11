@@ -1,0 +1,110 @@
+# What a fresh install would get today, run on a schedule.
+#
+# pnpm-lock.yaml is what every other job resolves against (they all run
+# `pnpm install --frozen-lockfile`), so a dependency can be a wide caret range
+# in package.json and still be frozen everywhere it is actually tested. An
+# upstream release inside that range is therefore never exercised until someone
+# bumps it by hand.
+#
+# This job closes that deliberately: it takes the newest versions package.json
+# allows and runs the suite, so a release that breaks us is found by a
+# scheduled run rather than by a consumer.
+#
+# It is also the control that makes wide dependency ranges safe. A ceiling is a
+# guess about which future versions will break; this is a measurement of which
+# ones do. Do not delete it to quieten a noisy week without replacing what it
+# measures.
+name: upstream drift
+
+on:
+  schedule:
+    # Mondays, 06:00 UTC. Weekly rather than nightly: the failure this guards
+    # against is an upstream release, which is measured in weeks.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  resolve-latest:
+    name: resolve unpinned + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      # One version, not the matrix. The matrix answers "does this Node work";
+      # this answers "has a dependency moved under us", so it runs on the
+      # floor version where a break is likeliest to matter first.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Take the newest versions package.json allows
+        # Resolve from scratch rather than `pnpm update`, which rewrites the
+        # ranges in package.json as a side effect -- it narrowed a deliberate
+        # ">=0.0.54 <0.1" to "^0.0.57", and for a 0.0.x version that caret means
+        # ">=0.0.57 <0.0.58". The question here is what package.json as written
+        # resolves to today, so the manifest must not be edited to answer it.
+        run: |
+          rm -f pnpm-lock.yaml
+          pnpm install --no-frozen-lockfile
+
+      - name: Report what changed against the committed lockfile
+        # The most useful line in the log when this fails: it names the upgrade
+        # that broke the build.
+        run: git --no-pager diff --stat pnpm-lock.yaml || true
+
+      # ⚠ Required, not optional. The sanitisation tests run in real Chromium
+      # because DOMPurify silently stops sanitising under happy-dom, so without
+      # this step they cannot start and the suite goes green having skipped the
+      # assertions that matter most. A 0.15.0 release once published at 0%
+      # coverage for exactly this reason.
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Show the resolved versions
+        run: pnpm list --depth 0 || true
+
+      - name: Test
+        run: pnpm test
+
+      - name: Open or update an issue on failure
+        if: failure()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const title = "upstream drift: the unpinned resolve is failing";
+            const body = [
+              "The weekly unpinned resolve failed. A dependency released a version",
+              "that package.json admits and the suite does not survive.",
+              "",
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              "",
+              "The `git diff --stat pnpm-lock.yaml` step in that run names what moved.",
+              "",
+              "Fix forward (adopt the new version) or narrow the range and say why,",
+              "but do not silence the job — it is the control that lets this repo",
+              "declare wide dependency ranges.",
+            ].join("\n");
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "upstream-drift",
+            });
+            if (existing.data.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ["upstream-drift"],
+              });
+            }
