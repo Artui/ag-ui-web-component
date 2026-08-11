@@ -536,6 +536,37 @@ describe("panel resize", () => {
     }
   });
 
+  it("never applies a persisted size on an axis the placement owns", () => {
+    // ⚠ The cascade cannot arbitrate this. An inline custom property outranks
+    // a `:host([placement=…])` rule setting the same property, so a height
+    // dragged while floating capped a docked sidebar that had asked for 100vh.
+    sessionStorage.setItem(SIZE_KEY, JSON.stringify({ width: 640, height: 700 }));
+
+    const docked = mount({ placement: "side" });
+    expect(docked.style.getPropertyValue("--ag-ui-width")).toBe("640px");
+    expect(docked.style.getPropertyValue("--ag-ui-height")).toBe("");
+
+    const bleed = mount({ placement: "full" });
+    expect(bleed.style.getPropertyValue("--ag-ui-width")).toBe("");
+    expect(bleed.style.getPropertyValue("--ag-ui-height")).toBe("");
+  });
+
+  it("hands the owned axes back when the placement changes", () => {
+    // Otherwise a size dragged under the old placement survives the switch and
+    // silently overrides the new one.
+    sessionStorage.removeItem(SIZE_KEY);
+    const el = mount();
+    el.style.setProperty("--ag-ui-width", "640px");
+    el.style.setProperty("--ag-ui-height", "700px");
+
+    el.setAttribute("placement", "side");
+    expect(el.style.getPropertyValue("--ag-ui-height")).toBe("");
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("640px");
+
+    el.setAttribute("placement", "full");
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("");
+  });
+
   it("does nothing at all where the placement is full-bleed", () => {
     const el = mount({ placement: "full" });
     const handle = shadow(el).querySelector<HTMLElement>(".resize-handle");
