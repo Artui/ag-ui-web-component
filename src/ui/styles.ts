@@ -168,7 +168,43 @@ export const STYLES = `
   padding-inline: max(var(--ag-ui-pad), calc((100% - var(--ag-ui-content-max-width)) / 2));
 }
 
-:host([placement="page"]) .input-row {
+:host([placement="page"]) /* Resize handle: a corner grip on a floating panel, an edge grip on a docked
+   one. Absent entirely where the placement is full-bleed, since there is
+   nothing to drag. */
+.resize-handle {
+  position: absolute;
+  z-index: 2;
+  background: transparent;
+  touch-action: none;
+}
+
+.resize-handle:focus-visible {
+  outline: 2px solid var(--ag-ui-accent);
+  outline-offset: -2px;
+}
+
+.resize-handle--both {
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+.resize-handle--width {
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+}
+
+.resize-handle[data-dragging] {
+  background: var(--ag-ui-accent);
+  opacity: 0.35;
+}
+
+.input-row {
   padding-inline: max(12px, calc((100% - var(--ag-ui-content-max-width)) / 2));
 }
 
@@ -903,6 +939,42 @@ export const STYLES = `
 
 .tool-call-toggle[aria-expanded="true"]::before {
   content: "▾ ";
+}
+
+/* Resize handle: a corner grip on a floating panel, an edge grip on a docked
+   one. Absent entirely where the placement is full-bleed, since there is
+   nothing to drag. */
+.resize-handle {
+  position: absolute;
+  z-index: 2;
+  background: transparent;
+  touch-action: none;
+}
+
+.resize-handle:focus-visible {
+  outline: 2px solid var(--ag-ui-accent);
+  outline-offset: -2px;
+}
+
+.resize-handle--both {
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+.resize-handle--width {
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+}
+
+.resize-handle[data-dragging] {
+  background: var(--ag-ui-accent);
+  opacity: 0.35;
 }
 
 .input-row {

@@ -549,6 +549,29 @@ speed; the spin respects `prefers-reduced-motion`).
 
 ---
 
+## Resizing the panel
+
+The panel carries a drag handle on its leading corner (or leading edge, docked),
+so a reader can widen it without the host having to re-theme anything.
+
+- `placement="full"` / `placement="page"` get **no handle** — a full-bleed layout
+  is `100vw`/`100vh` by definition, so there is nothing to drag.
+- `placement="sidebar"` / `placement="side"` get **width only**; the placement
+  owns the height.
+- Everything else gets a corner grip.
+
+A drag writes `--ag-ui-width` / `--ag-ui-height` on the host **as custom
+properties, not inline `width`/`height`** — the placement rules set those same
+properties, so an inline dimension would outrank them and a panel dragged while
+floating would keep that width after switching to fullscreen.
+
+The size persists per tab (`sessionStorage`, namespaced per element like the
+collapsed and theme preferences) and is restored before the first paint.
+Arrow keys resize from the keyboard (`Shift` for a larger step); style the grip
+via the `resize-handle` part.
+
+---
+
 ## Markdown rendering
 
 Assistant bubbles render sanitized markdown/HTML via [`marked`](https://www.npmjs.com/package/marked)

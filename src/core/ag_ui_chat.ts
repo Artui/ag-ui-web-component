@@ -42,6 +42,7 @@ import {
   requestQuestion,
 } from "../ui/question_card.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
+import { createResizeHandle, type ResizeAxis, type ResizeSize } from "../ui/resize_handle.js";
 import { wrapWords } from "../ui/reveal_words.js";
 import { renderRunNotice } from "../ui/run_notice.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
@@ -129,6 +130,9 @@ const CONNECT_TIME_ATTRIBUTES = [
 
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
+
+/** Per-tab persistence key for a dragged panel size. */
+const SIZE_KEY = "ag-ui-chat:size";
 
 /** Per-tab persistence key for the built-in theme toggle. */
 const THEME_KEY = "ag-ui-chat:theme";
@@ -787,6 +791,9 @@ export class AgUiChat extends HTMLElement {
     // key read/write, so this instance doesn't share collapsed/theme/thread
     // state with another on the same origin.
     this.#storageNs = this.id !== "" ? this.id : this.endpoint;
+    // Restore a dragged size before the panel paints, so it does not snap from
+    // the placement default to the user's width on the first frame.
+    this.#applySize(this.#readSize());
     // Resolve the string table before rendering any chrome (defaults are the
     // floor; `data-strings` then the `strings` property layer over them).
     this.#strings = mergeUiStrings({ ...this.#readStringOverrides(), ...this.strings });
@@ -1189,6 +1196,60 @@ export class AgUiChat extends HTMLElement {
     this.setAttribute("theme", next);
     sessionStorage.setItem(this.#storageKey(THEME_KEY), next);
     this.#syncThemeGlyph();
+  }
+
+  /**
+   * Which axes this placement lets the user drag.
+   *
+   * A full-bleed layout is `100vw`/`100vh` by definition, so a handle there is
+   * a control that does nothing; a docked sidebar owns its height for the same
+   * reason and only its width is the user's to choose.
+   */
+  #resizeAxis(): ResizeAxis {
+    const placement = this.getAttribute("placement");
+    if (placement === "full" || placement === "page") {
+      return "none";
+    }
+    return placement === "sidebar" || placement === "side" ? "width" : "both";
+  }
+
+  /**
+   * Write a dragged size onto the host as custom properties.
+   *
+   * Properties rather than inline `width` / `height`: the placement rules set
+   * those same properties, so an inline dimension would outrank them and a
+   * panel dragged while floating would keep that width after switching to
+   * fullscreen.
+   */
+  #applySize(size: ResizeSize): void {
+    if (size.width !== undefined) {
+      this.style.setProperty("--ag-ui-width", `${size.width}px`);
+    }
+    if (size.height !== undefined) {
+      this.style.setProperty("--ag-ui-height", `${size.height}px`);
+    }
+  }
+
+  /** Persist a dragged size per tab, alongside the collapsed/theme preferences. */
+  #persistSize(size: ResizeSize): void {
+    const stored = { ...this.#readSize(), ...size };
+    sessionStorage.setItem(this.#storageKey(SIZE_KEY), JSON.stringify(stored));
+  }
+
+  /** The persisted size for this instance, or an empty record. */
+  #readSize(): ResizeSize {
+    const raw = this.#readScopedItem(SIZE_KEY);
+    if (raw === null) {
+      return {};
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return typeof parsed === "object" && parsed !== null ? (parsed as ResizeSize) : {};
+    } catch {
+      // A corrupt entry is not worth failing a mount over; fall back to the
+      // placement's own size.
+      return {};
+    }
   }
 
   /** This instance's namespaced form of an origin-scoped storage key. */
@@ -1675,6 +1736,16 @@ export class AgUiChat extends HTMLElement {
     this.#rail.append(this.#iconElement("launcher", "launcher-icon", "💬"));
     this.#rail.addEventListener("click", () => this.setCollapsed(false));
 
+    const resize = createResizeHandle({
+      axis: this.#resizeAxis(),
+      measure: () => ({ width: this.offsetWidth, height: this.offsetHeight }),
+      apply: (size) => this.#applySize(size),
+      commit: (size) => this.#persistSize(size),
+      label: this.#strings.resizePanel,
+    });
+    if (resize !== null) {
+      this.#chat.append(resize);
+    }
     this.#root.append(style, this.#chat, this.#rail);
   }
 

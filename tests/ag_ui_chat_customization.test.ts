@@ -456,3 +456,62 @@ describe("header control icons", () => {
     expect(history?.getAttribute("part")).toBe("header-button history-button");
   });
 });
+
+const SIZE_KEY = "ag-ui-chat:size";
+
+describe("panel resize", () => {
+  beforeEach(() => {
+    sessionStorage.removeItem(SIZE_KEY);
+  });
+
+  it("offers a corner grip on a floating panel and none on a full-bleed one", () => {
+    // A 100vw/100vh layout has nothing to drag.
+    expect(shadow(mount()).querySelector(".resize-handle--both")).not.toBeNull();
+    expect(shadow(mount({ placement: "full" })).querySelector(".resize-handle")).toBeNull();
+    expect(shadow(mount({ placement: "page" })).querySelector(".resize-handle")).toBeNull();
+  });
+
+  it("offers width only where the placement owns the height", () => {
+    const el = mount({ placement: "sidebar" });
+    expect(shadow(el).querySelector(".resize-handle--width")).not.toBeNull();
+  });
+
+  it("writes the custom properties, not inline width and height", () => {
+    // The placement rules set those same properties; an inline dimension would
+    // outrank them and survive a placement change.
+    const el = mount();
+    const handle = shadow(el).querySelector<HTMLElement>(".resize-handle");
+    const down = new Event("pointerdown", { bubbles: true, cancelable: true });
+    Object.assign(down, { clientX: 200, clientY: 200 });
+    handle?.dispatchEvent(down);
+    const move = new Event("pointermove", { bubbles: true });
+    Object.assign(move, { clientX: 150, clientY: 150 });
+    window.dispatchEvent(move);
+
+    expect(el.style.getPropertyValue("--ag-ui-width")).not.toBe("");
+    expect(el.style.width).toBe("");
+    const up = new Event("pointerup", { bubbles: true });
+    Object.assign(up, { clientX: 150, clientY: 150 });
+    window.dispatchEvent(up);
+    expect(sessionStorage.getItem(SIZE_KEY)).toContain("width");
+  });
+
+  it("restores a persisted size on mount", () => {
+    sessionStorage.setItem(SIZE_KEY, JSON.stringify({ width: 640, height: 700 }));
+    const el = mount();
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("640px");
+    expect(el.style.getPropertyValue("--ag-ui-height")).toBe("700px");
+  });
+
+  it("falls back to the placement size when the stored entry is corrupt", () => {
+    sessionStorage.setItem(SIZE_KEY, "{not json");
+    const el = mount();
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("");
+  });
+
+  it("ignores a stored entry that is not an object", () => {
+    sessionStorage.setItem(SIZE_KEY, "42");
+    const el = mount();
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("");
+  });
+});

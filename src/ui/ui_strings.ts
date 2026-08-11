@@ -89,6 +89,8 @@ export interface UiStrings {
   toolError: string;
   /** Status pill on a declined call. */
   toolDeclined: string;
+  /** Accessible label on the panel resize handle. */
+  resizePanel: string;
   /** Note on a tool card whose call a human approved. */
   decisionApproved: string;
   /** Note on a tool card whose call a human declined. */
@@ -243,6 +245,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   toolDone: "✓ done",
   toolError: "⚠ error",
   toolDeclined: "⊘ declined",
+  resizePanel: "Resize the chat panel",
   decisionApproved: "approved by you",
   decisionDeclined: "declined by you",
   argumentsLabel: "Arguments",

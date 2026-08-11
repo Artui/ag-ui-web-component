@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The panel is resizable.** A drag handle on the leading corner (or leading
+  edge when docked), with the size persisted per tab and restored before the
+  first paint. Arrow keys resize from the keyboard, since a pointer-only control
+  has no equivalent elsewhere in the UI; style it via the `resize-handle` part.
+
+  Which axes are draggable is the placement's call: `full` and `page` get no
+  handle at all (a `100vw`/`100vh` layout has nothing to drag), `sidebar` /
+  `side` get width only, everything else gets both.
+
+  ⚠ **It writes the custom properties, not inline `width` / `height`.** The
+  placement rules set those same properties, so an inline dimension would
+  outrank them — a panel dragged while floating would keep that width after
+  switching to fullscreen.
+
 ### Changed
 
 - ⚠ **Picking a skill now sends it.** It used to write the text into the
