@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-08-11
+
 Ten findings from a real embed — a cross-origin, cookie-authenticated React host.
 Six of them are one defect: **the component assumed it owned the page.** It had
 only ever been embedded in its own playground and in `django-admin-agent`, two
@@ -1169,7 +1171,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.18.0...v0.19.0
