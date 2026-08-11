@@ -42,6 +42,12 @@ import {
   requestQuestion,
 } from "../ui/question_card.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
+import {
+  createResizeHandle,
+  type ResizeAnchor,
+  type ResizeAxis,
+  type ResizeSize,
+} from "../ui/resize_handle.js";
 import { wrapWords } from "../ui/reveal_words.js";
 import { renderRunNotice } from "../ui/run_notice.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
@@ -129,6 +135,9 @@ const CONNECT_TIME_ATTRIBUTES = [
 
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
+
+/** Per-tab persistence key for a dragged panel size. */
+const SIZE_KEY = "ag-ui-chat:size";
 
 /** Per-tab persistence key for the built-in theme toggle. */
 const THEME_KEY = "ag-ui-chat:theme";
@@ -524,10 +533,16 @@ export class AgUiChat extends HTMLElement {
 
   /** Attributes the element reacts to after it has been connected. */
   static get observedAttributes(): string[] {
-    return ["title-text", ...CONNECT_TIME_ATTRIBUTES];
+    return ["title-text", "placement", ...CONNECT_TIME_ATTRIBUTES];
   }
 
   attributeChangedCallback(name: string, previous: string | null, value: string | null): void {
+    if (name === "placement") {
+      // Placement moves the panel, so the edges its layout holds still change
+      // with it. Deferred a frame so the new rules have applied.
+      requestAnimationFrame(() => this.#syncResizeAnchor());
+      return;
+    }
     if (name === "title-text") {
       // `#strings` is the resolved table once connected, the English defaults
       // before then.
@@ -787,6 +802,14 @@ export class AgUiChat extends HTMLElement {
     // key read/write, so this instance doesn't share collapsed/theme/thread
     // state with another on the same origin.
     this.#storageNs = this.id !== "" ? this.id : this.endpoint;
+    // Restore a dragged size before the panel paints, so it does not snap from
+    // the placement default to the user's width on the first frame.
+    this.#applySize(this.#readSize());
+    // Position the grip at the corner this layout grows toward. Deferred to a
+    // frame so the host's own stylesheet has applied; re-measured on every drag
+    // anyway, so a wrong first guess costs a grip in the wrong corner and never
+    // a wrong resize.
+    requestAnimationFrame(() => this.#syncResizeAnchor());
     // Resolve the string table before rendering any chrome (defaults are the
     // floor; `data-strings` then the `strings` property layer over them).
     this.#strings = mergeUiStrings({ ...this.#readStringOverrides(), ...this.strings });
@@ -1098,23 +1121,69 @@ export class AgUiChat extends HTMLElement {
     this.#skillsMenu.setSkills([...merged.values()]);
   }
 
-  /** Pre-fill (or send) a picked skill's prompt, filling its placeholders. */
+  /**
+   * Act on a picked skill.
+   *
+   * A skill that ships no `prompt` is **server-resolved**: the catalog carries
+   * only its name and label, and picking it sends the bare `/name` token for
+   * the agent to expand — from the harness `Skills` capability, or from the
+   * server's own instructions. That is the shape to prefer, because the prompt
+   * then never reaches the browser at all: a skill is often where a project's
+   * internal workflow is written down most plainly, and a catalog endpoint is a
+   * plain GET.
+   *
+   * A skill that does carry a `prompt` keeps the older behaviour — the client
+   * fills its `{placeholder}`s from the page and sends (or pre-fills) the text.
+   * Right for a user-facing convenience, and for placeholders only the page can
+   * supply.
+   *
+   * Either way a pick now **sends**, rather than parking text in the composer
+   * for a second click; `sendImmediately: false` opts back into pre-filling.
+   */
   #applySkill(skill: Skill): void {
+    if (skill.prompt === undefined) {
+      this.#skillHint.hidden = true;
+      void this.sendMessage(`/${skill.name}`);
+      return;
+    }
     const { text, missing } = fillTemplate(skill.prompt, this.skillContext());
     if (missing.length > 0) {
+      // Hand the user something to work with rather than only a refusal. The
+      // partially-filled template goes into the composer with its unresolved
+      // `{placeholder}`s intact and the first one selected, so the next
+      // keystroke replaces it. Blocking with a hint alone left whatever the
+      // user had typed to open the palette — a lone "/" — sitting there, which
+      // says nothing about what the skill wanted or how to give it.
       this.#skillHint.textContent = this.#strings.skillNeeds
         .replace("{title}", skill.title)
         .replace("{fields}", missing.join(", "));
       this.#skillHint.hidden = false;
+      this.#input.value = text;
+      this.#input.focus();
+      this.#selectFirstPlaceholder(text);
       return;
     }
     this.#skillHint.hidden = true;
     this.#input.value = text;
-    if (skill.sendImmediately === true) {
-      void this.#submit();
-    } else {
+    if (skill.sendImmediately === false) {
       this.#input.focus();
+      return;
     }
+    void this.#submit();
+  }
+
+  /**
+   * Put the caret on the first unresolved placeholder, selected.
+   *
+   * Typing then replaces it, which is the shortest path from "this skill needs
+   * a topic" to a sendable prompt.
+   */
+  #selectFirstPlaceholder(text: string): void {
+    // The first surviving brace *is* the first unresolved placeholder — a
+    // resolved one was substituted away — so this needs no search through the
+    // missing keys and no not-found branch to defend.
+    const start = text.indexOf("{");
+    this.#input.setSelectionRange(start, text.indexOf("}", start) + 1);
   }
 
   /** Whether the widget is collapsed (reflected as the `collapsed` attribute). */
@@ -1166,6 +1235,113 @@ export class AgUiChat extends HTMLElement {
     this.setAttribute("theme", next);
     sessionStorage.setItem(this.#storageKey(THEME_KEY), next);
     this.#syncThemeGlyph();
+  }
+
+  /**
+   * Which axes the current placement allows.
+   *
+   * A full-bleed layout is `100vw`/`100vh` by definition and cannot be resized
+   * at all; a docked panel owns its height, leaving only its inner edge. Read
+   * per interaction, because `placement` is a live attribute.
+   */
+  #resizeAxis(): ResizeAxis {
+    switch (this.getAttribute("placement")) {
+      case "full":
+      case "page":
+        return "none";
+      case "sidebar":
+      case "side":
+        return "width";
+      default:
+        return "both";
+    }
+  }
+
+  /**
+   * Which edges the layout is holding still, by measuring rather than guessing.
+   *
+   * A resize has to be computed from the edge that does not move, and which
+   * edge that is belongs to the **host's layout**, not to `placement`: a
+   * floating panel is pinned bottom-right, while an embedded one goes wherever
+   * the page's own CSS puts it — flex-start, flex-end, a grid cell. Mapping
+   * placement to a corner got this wrong for any host that right-aligns the
+   * element, and the symptom is bad enough to read as a broken control: the
+   * panel shrinks when dragged outward, travelling by its opposite corner.
+   *
+   * So: nudge the size by a pixel, see which edges stayed put, and undo. One
+   * forced reflow per drag, which is cheap next to being wrong.
+   */
+  #measureAnchor(): ResizeAnchor {
+    const before = this.getBoundingClientRect();
+    const width = this.style.getPropertyValue("--ag-ui-width");
+    const height = this.style.getPropertyValue("--ag-ui-height");
+    this.#applySize({ width: before.width + 1, height: before.height + 1 });
+    const after = this.getBoundingClientRect();
+    // Restore exactly what was there, including "nothing" — leaving a probe
+    // value behind would pin a panel that had been sizing itself.
+    this.#restoreProperty("--ag-ui-width", width);
+    this.#restoreProperty("--ag-ui-height", height);
+    return {
+      x: Math.abs(after.left - before.left) < 0.5 ? "left" : "right",
+      y: Math.abs(after.top - before.top) < 0.5 ? "top" : "bottom",
+    };
+  }
+
+  /** Stamp the measured anchor so the shadow CSS can place the grip. */
+  #syncResizeAnchor(): void {
+    if (!this.#connected) {
+      return;
+    }
+    const anchor = this.#measureAnchor();
+    this.setAttribute("data-resize-anchor", `${anchor.y}-${anchor.x}`);
+  }
+
+  /** Put a custom property back to a previous value, or remove it if there was none. */
+  #restoreProperty(name: string, value: string): void {
+    if (value === "") {
+      this.style.removeProperty(name);
+      return;
+    }
+    this.style.setProperty(name, value);
+  }
+
+  /**
+   * Write a dragged size onto the host as custom properties.
+   *
+   * Properties rather than inline `width` / `height`: the placement rules set
+   * those same properties, so an inline dimension would outrank them and a
+   * panel dragged while floating would keep that width after switching to
+   * fullscreen.
+   */
+  #applySize(size: ResizeSize): void {
+    if (size.width !== undefined) {
+      this.style.setProperty("--ag-ui-width", `${size.width}px`);
+    }
+    if (size.height !== undefined) {
+      this.style.setProperty("--ag-ui-height", `${size.height}px`);
+    }
+  }
+
+  /** Persist a dragged size per tab, alongside the collapsed/theme preferences. */
+  #persistSize(size: ResizeSize): void {
+    const stored = { ...this.#readSize(), ...size };
+    sessionStorage.setItem(this.#storageKey(SIZE_KEY), JSON.stringify(stored));
+  }
+
+  /** The persisted size for this instance, or an empty record. */
+  #readSize(): ResizeSize {
+    const raw = this.#readScopedItem(SIZE_KEY);
+    if (raw === null) {
+      return {};
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return typeof parsed === "object" && parsed !== null ? (parsed as ResizeSize) : {};
+    } catch {
+      // A corrupt entry is not worth failing a mount over; fall back to the
+      // placement's own size.
+      return {};
+    }
   }
 
   /** This instance's namespaced form of an origin-scoped storage key. */
@@ -1652,6 +1828,22 @@ export class AgUiChat extends HTMLElement {
     this.#rail.append(this.#iconElement("launcher", "launcher-icon", "💬"));
     this.#rail.addEventListener("click", () => this.setCollapsed(false));
 
+    this.#chat.append(
+      createResizeHandle({
+        axis: () => this.#resizeAxis(),
+        anchor: () => this.#measureAnchor(),
+        rect: () => this.getBoundingClientRect(),
+        apply: (size) => this.#applySize(size),
+        commit: (size) => {
+          this.#persistSize(size);
+          // Re-stamp after the drag: a host whose layout changed underneath us
+          // would otherwise keep the grip in the old corner, which reads as the
+          // control being in the wrong place even though the drag was right.
+          this.#syncResizeAnchor();
+        },
+        label: this.#strings.resizePanel,
+      }),
+    );
     this.#root.append(style, this.#chat, this.#rail);
   }
 
@@ -2068,6 +2260,12 @@ export class AgUiChat extends HTMLElement {
           : await requestApproval(this.#ensureGroup(), request, { signal, strings: this.#strings });
       this.#updateEmptyState();
       this.#messages.scrollTop = this.#messages.scrollHeight;
+      // Same annotation as the client-side confirmation gate. Without it the
+      // two gates read differently for the same act: a locally-confirmed call
+      // said who let it through and a server-gated one said nothing, which is
+      // backwards, since the server-side gate is the one guarding the tools
+      // that actually run on the backend.
+      card?.recordDecision(approved ? "approved" : "declined");
       if (approved) {
         responses[interrupt.id] = { status: "resolved", payload: { approved: true } };
       } else {

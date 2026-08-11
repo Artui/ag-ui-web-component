@@ -158,8 +158,35 @@
         color: #b0b0c4;
         font-size: 13px;
       }
+      .tour {
+        margin: 0 0 18px;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      .tour summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .tour ul {
+        margin: 10px 0 0;
+        padding-left: 18px;
+      }
+      .tour li {
+        margin-bottom: 6px;
+      }
+      .bar button {
+        font: inherit;
+        padding: 3px 10px;
+        cursor: pointer;
+      }
+
+      /* `flex: 1` would stretch the panel to the slot and silently outrank the
+         width the resize handle writes, which reads as a broken component
+         rather than a host stylesheet winning. Let the element keep its own
+         size and cap it to the slot instead. */
       ag-ui-chat {
-        flex: 1;
+        flex: 0 1 auto;
+        max-width: 100%;
       }
       /* When embedded + collapsed, shrink to the header instead of filling the slot. */
       ag-ui-chat[collapsed] {
@@ -219,6 +246,15 @@
         >Answer well
         <input type="checkbox" id="cfg-well" />
       </label>
+      <label
+        >Header icons
+        <input type="checkbox" id="cfg-icons" />
+      </label>
+      <label
+        >Deutsch
+        <input type="checkbox" id="cfg-i18n" />
+      </label>
+      <button type="button" id="cfg-reset-size">Reset size</button>
     </header>
 
     <main>
@@ -227,6 +263,45 @@
         <p class="subtitle">
           Ask the assistant to fill this in — or run a skill (type <code>/</code> or click a chip).
         </p>
+
+        <details class="tour">
+          <summary>What to try</summary>
+          <ul>
+            <li>
+              <strong>Tool cards.</strong> Run <em>Fill the article</em>, then flip
+              <em>Tool cards</em> in the bar. The mode now applies to cards already on
+              screen; each settled card separates <em>Arguments</em> from
+              <em>Result</em> behind its own toggle.
+            </li>
+            <li>
+              <strong>Confirmation.</strong> The same run ends on a destructive
+              <em>Save article</em>. The prompt appears inside the turn, disappears once
+              answered, and the tool card keeps the decision.
+            </li>
+            <li>
+              <strong>A failing tool.</strong> Ask it to <em>break something</em> — the
+              card settles to an <em>Error</em> region rather than losing the turn.
+            </li>
+            <li>
+              <strong>A question.</strong> Say <em>ask me something</em> to reach the
+              built-in <code>ask_user</code> card.
+            </li>
+            <li>
+              <strong>Server-resolved skill.</strong> The <em>Triage this article</em>
+              chip ships no prompt: it sends <code>/triage</code> and the server answers.
+              Watch the request — the wording is never in this page.
+            </li>
+            <li>
+              <strong>Resize.</strong> Drag the panel's top-left grip. Switch
+              <em>Placement</em> to see the axes change: <code>side</code> is width-only,
+              <code>full</code> and <code>page</code> have no grip at all.
+            </li>
+            <li>
+              <strong>Header icons / Deutsch.</strong> Both check that the chrome is
+              host-replaceable and that every label comes from the string table.
+            </li>
+          </ul>
+        </details>
 
         <form id="article-form">
           <div class="field">

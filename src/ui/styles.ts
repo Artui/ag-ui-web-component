@@ -168,7 +168,72 @@ export const STYLES = `
   padding-inline: max(var(--ag-ui-pad), calc((100% - var(--ag-ui-content-max-width)) / 2));
 }
 
-:host([placement="page"]) .input-row {
+:host([placement="page"]) /* Resize handle: a corner grip on a floating panel, an edge grip on a docked
+   one. Absent entirely where the placement is full-bleed, since there is
+   nothing to drag. */
+.resize-handle {
+  position: absolute;
+  z-index: 2;
+  background: transparent;
+  touch-action: none;
+}
+
+.resize-handle:focus-visible {
+  outline: 2px solid var(--ag-ui-accent);
+  outline-offset: -2px;
+}
+
+/* The grip sits at the corner the panel grows toward. Which corner that is
+   depends on the host's layout, not on placement, so the element measures it
+   and stamps data-resize-anchor with the edges that stay put.
+
+   Default (bottom-right pinned, the floating case) puts the grip top-left. */
+.resize-handle {
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+:host([data-resize-anchor~="left"]) .resize-handle {
+  left: auto;
+  right: 0;
+}
+
+:host([data-resize-anchor~="top"]) .resize-handle {
+  top: auto;
+  bottom: 0;
+}
+
+/* One axis flipped means the drag runs along the other diagonal. */
+:host([data-resize-anchor="top-right"]) .resize-handle,
+:host([data-resize-anchor="bottom-left"]) .resize-handle {
+  cursor: nesw-resize;
+}
+
+/* Docked: the placement owns the height, so only the inner edge is the user's. */
+:host([placement="sidebar"]) .resize-handle,
+:host([placement="side"]) .resize-handle {
+  top: 0;
+  bottom: auto;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+}
+
+/* Full-bleed: nothing to drag. */
+:host([placement="full"]) .resize-handle,
+:host([placement="page"]) .resize-handle {
+  display: none;
+}
+
+.resize-handle[data-dragging] {
+  background: var(--ag-ui-accent);
+  opacity: 0.35;
+}
+
+.input-row {
   padding-inline: max(12px, calc((100% - var(--ag-ui-content-max-width)) / 2));
 }
 
@@ -828,6 +893,13 @@ export const STYLES = `
 
 /* The record of a human decision on a gated call. An approved call used to
    look exactly like one that was never gated. */
+.skill-item-token {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.92em;
+  color: var(--ag-ui-accent);
+  margin-right: 6px;
+}
+
 .tool-call-decision {
   flex: none;
   font-size: 11px;
@@ -903,6 +975,75 @@ export const STYLES = `
 
 .tool-call-toggle[aria-expanded="true"]::before {
   content: "▾ ";
+}
+
+/* Resize handle: a corner grip on a floating panel, an edge grip on a docked
+   one. Absent entirely where the placement is full-bleed, since there is
+   nothing to drag. */
+.resize-handle {
+  position: absolute;
+  z-index: 2;
+  background: transparent;
+  touch-action: none;
+}
+
+.resize-handle:focus-visible {
+  outline: 2px solid var(--ag-ui-accent);
+  outline-offset: -2px;
+}
+
+/* The grip sits on the corner opposite the panel's anchor, because a resize
+   measures from whichever edge is not moving. Selected from the host attribute,
+   so switching placement moves the grip immediately.
+
+   Default is floating: pinned bottom-right, so the grip is top-left. */
+.resize-handle {
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+/* Embedded sits in normal flow, pinned top-left, so it grows bottom-right. */
+:host([placement="embedded"]) .resize-handle {
+  top: auto;
+  left: auto;
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+/* Pinned bottom-left, so the free corner is top-right. */
+:host([placement="bottom-left"]) .resize-handle {
+  left: auto;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+/* Docked: the placement owns the height, so only the inner edge is the user's. */
+:host([placement="sidebar"]) .resize-handle,
+:host([placement="side"]) .resize-handle {
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+}
+
+/* Docked to the left, so the inner edge is the right-hand one. */
+:host([placement="sidebar"][data-side="left"]) .resize-handle {
+  left: auto;
+  right: 0;
+}
+
+/* Full-bleed: nothing to drag. */
+:host([placement="full"]) .resize-handle,
+:host([placement="page"]) .resize-handle {
+  display: none;
+}
+
+.resize-handle[data-dragging] {
+  background: var(--ag-ui-accent);
+  opacity: 0.35;
 }
 
 .input-row {
@@ -1382,9 +1523,12 @@ export const STYLES = `
   color: var(--ag-ui-muted);
 }
 
+/* The hint sits directly above the composer's top border, so a zero bottom
+   margin left the text touching the divider. */
 .skill-hint {
-  margin: 8px 12px 0;
+  margin: 8px 12px;
   font-size: 0.85em;
+  line-height: 1.4;
   color: var(--ag-ui-danger);
 }
 

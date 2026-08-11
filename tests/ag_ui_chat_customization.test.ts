@@ -456,3 +456,134 @@ describe("header control icons", () => {
     expect(history?.getAttribute("part")).toBe("header-button history-button");
   });
 });
+
+const SIZE_KEY = "ag-ui-chat:size";
+
+describe("panel resize", () => {
+  beforeEach(() => {
+    sessionStorage.removeItem(SIZE_KEY);
+  });
+
+  it("keeps one handle and lets placement decide what it does", () => {
+    // Visibility and position are CSS from the host attribute, so switching
+    // placement moves the grip rather than leaving the one it mounted with.
+    const el = mount();
+    const handle = shadow(el).querySelector(".resize-handle");
+    expect(handle).not.toBeNull();
+    el.setAttribute("placement", "full");
+    expect(shadow(el).querySelector(".resize-handle")).toBe(handle);
+  });
+
+  it("measures which edges the layout holds still, rather than assuming", () => {
+    // The reported defect: the anchor was derived from `placement`, so a host
+    // that right-aligns the panel got a resize that shrank when dragged outward
+    // and travelled by the opposite corner. It is now probed.
+    const el = mount();
+    // A right-anchored layout: growing the panel moves its left edge outward.
+    let width = 300;
+    el.getBoundingClientRect = () =>
+      ({ left: 500 - width, top: 100, right: 500, bottom: 500 }) as DOMRect;
+    const original = el.style.setProperty.bind(el.style);
+    el.style.setProperty = (name: string, value: string) => {
+      if (name === "--ag-ui-width") {
+        width = Number.parseFloat(value);
+      }
+      original(name, value);
+    };
+
+    const handle = shadow(el).querySelector<HTMLElement>(".resize-handle");
+    const down = new Event("pointerdown", { bubbles: true, cancelable: true });
+    Object.assign(down, { clientX: 200, clientY: 100 });
+    handle?.dispatchEvent(down);
+    const move = new Event("pointermove", { bubbles: true });
+    Object.assign(move, { clientX: 150, clientY: 100 });
+    window.dispatchEvent(move);
+
+    // right (500) - pointer (150) = 350. A left-anchored reading would have
+    // given 150 - left, clamped to the 280 minimum.
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("350px");
+  });
+
+  it("allows the axes the placement allows, and no others", () => {
+    const cases: Array<[string, boolean]> = [
+      ["full", false],
+      ["page", false],
+      ["side", true],
+      ["sidebar", true],
+      ["embedded", true],
+    ];
+    for (const [placement, resizable] of cases) {
+      sessionStorage.removeItem(SIZE_KEY);
+      const el = mount({ placement });
+      el.getBoundingClientRect = () => ({ left: 0, top: 0, right: 300, bottom: 400 }) as DOMRect;
+      const handle = shadow(el).querySelector<HTMLElement>(".resize-handle");
+      const down = new Event("pointerdown", { bubbles: true, cancelable: true });
+      Object.assign(down, { clientX: 0, clientY: 0 });
+      handle?.dispatchEvent(down);
+      const move = new Event("pointermove", { bubbles: true });
+      Object.assign(move, { clientX: 400, clientY: 0 });
+      window.dispatchEvent(move);
+      const up = new Event("pointerup", { bubbles: true });
+      Object.assign(up, { clientX: 400, clientY: 0 });
+      window.dispatchEvent(up);
+      const changed = el.style.getPropertyValue("--ag-ui-width") !== "";
+      expect(changed, placement).toBe(resizable);
+      // Height only where both axes are allowed.
+      const heightChanged = el.style.getPropertyValue("--ag-ui-height") !== "";
+      expect(heightChanged, `${placement} height`).toBe(
+        resizable && placement !== "side" && placement !== "sidebar",
+      );
+    }
+  });
+
+  it("does nothing at all where the placement is full-bleed", () => {
+    const el = mount({ placement: "full" });
+    const handle = shadow(el).querySelector<HTMLElement>(".resize-handle");
+    const down = new Event("pointerdown", { bubbles: true, cancelable: true });
+    Object.assign(down, { clientX: 200, clientY: 200 });
+    handle?.dispatchEvent(down);
+    const move = new Event("pointermove", { bubbles: true });
+    Object.assign(move, { clientX: 50, clientY: 50 });
+    window.dispatchEvent(move);
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("");
+  });
+
+  it("writes the custom properties, not inline width and height", () => {
+    // The placement rules set those same properties; an inline dimension would
+    // outrank them and survive a placement change.
+    const el = mount();
+    const handle = shadow(el).querySelector<HTMLElement>(".resize-handle");
+    const down = new Event("pointerdown", { bubbles: true, cancelable: true });
+    Object.assign(down, { clientX: 200, clientY: 200 });
+    handle?.dispatchEvent(down);
+    const move = new Event("pointermove", { bubbles: true });
+    Object.assign(move, { clientX: 150, clientY: 150 });
+    window.dispatchEvent(move);
+
+    expect(el.style.getPropertyValue("--ag-ui-width")).not.toBe("");
+    expect(el.style.width).toBe("");
+    const up = new Event("pointerup", { bubbles: true });
+    Object.assign(up, { clientX: 150, clientY: 150 });
+    window.dispatchEvent(up);
+    expect(sessionStorage.getItem(SIZE_KEY)).toContain("width");
+  });
+
+  it("restores a persisted size on mount", () => {
+    sessionStorage.setItem(SIZE_KEY, JSON.stringify({ width: 640, height: 700 }));
+    const el = mount();
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("640px");
+    expect(el.style.getPropertyValue("--ag-ui-height")).toBe("700px");
+  });
+
+  it("falls back to the placement size when the stored entry is corrupt", () => {
+    sessionStorage.setItem(SIZE_KEY, "{not json");
+    const el = mount();
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("");
+  });
+
+  it("ignores a stored entry that is not an object", () => {
+    sessionStorage.setItem(SIZE_KEY, "42");
+    const el = mount();
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("");
+  });
+});

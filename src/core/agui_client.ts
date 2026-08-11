@@ -181,6 +181,13 @@ export class AgUiClient {
   readonly #executeTool: ExecuteTool | null;
   readonly #resolveInterrupts: ResolveInterrupts | null;
   readonly #onPersist: (messages: readonly Message[]) => void;
+  /**
+   * Message ids the server has already closed, so a reuse can be reported.
+   *
+   * Per client rather than per run: the merge happens across runs, which is the
+   * case a per-run set would miss entirely.
+   */
+  readonly #closedMessageIds = new Set<string>();
   readonly #connectionLostMessage: string;
   // Set by cancel(); reset at the top of each #run(). Checked by the loop so
   // a cancel between frontend-tool rounds doesn't start another round.
@@ -397,14 +404,33 @@ export class AgUiClient {
 
   #buildSubscriber(pending: AgUiToolCall[], runState: RunState): AgentSubscriber {
     const h = this.#handlers;
+    const closed = this.#closedMessageIds;
     return {
       onRunInitialized() {
         h.onRunStart();
       },
+      onTextMessageStartEvent({ event }) {
+        // A server that reuses a message id gets its two answers merged into
+        // one transcript entry, silently, and that merged entry is what gets
+        // persisted. The protocol has no rule to enforce here and refusing the
+        // event would be worse than the merge, so this warns and continues —
+        // but it should not be silent, because the corruption outlives the
+        // session and reads as a client bug. Found by a demo harness doing
+        // exactly this.
+        if (closed.has(event.messageId)) {
+          console.warn(
+            `<ag-ui-chat>: the server reused message id "${event.messageId}", which was ` +
+              "already closed. Its content will be appended to that earlier message rather " +
+              "than starting a new one, and the merged result is what gets persisted. " +
+              "Issue a fresh id per message.",
+          );
+        }
+      },
       onTextMessageContentEvent({ textMessageBuffer }) {
         h.onTextDelta(textMessageBuffer);
       },
-      onTextMessageEndEvent({ textMessageBuffer }) {
+      onTextMessageEndEvent({ event, textMessageBuffer }) {
+        closed.add(event.messageId);
         h.onTextEnd(textMessageBuffer);
       },
       onToolCallEndEvent({ event, toolCallName, toolCallArgs }) {

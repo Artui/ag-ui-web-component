@@ -1,5 +1,5 @@
 import type { Context, Interrupt, Tool } from "@ag-ui/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MAX_TOOL_ROUNDS } from "../src/constants.js";
 import {
   AgUiClient,
@@ -601,5 +601,52 @@ describe("AgUiClient", () => {
       expect(fake.runParams).toHaveLength(1); // no resume run after cancel
       expect(handlers.calls).toContain("cancelled");
     });
+  });
+});
+
+describe("duplicate message ids", () => {
+  it("warns when a server reuses a message id it already closed", async () => {
+    // The merge is silent and durable: @ag-ui/client appends to the existing
+    // message rather than starting a new one, and that merged entry is what
+    // gets persisted. Found by a demo harness streaming every answer under one
+    // hardcoded id.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.textStart("m1");
+        emit.text("first");
+        emit.textEnd("first", "m1");
+      },
+    });
+    const client = new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() });
+
+    await client.send("one");
+    expect(warn).not.toHaveBeenCalled();
+
+    await client.send("two");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("m1");
+    warn.mockRestore();
+  });
+
+  it("stays quiet when every message carries a fresh id", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let n = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        n += 1;
+        const id = `m${n}`;
+        emit.textStart(id);
+        emit.text("hi");
+        emit.textEnd("hi", id);
+      },
+    });
+    const client = new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() });
+
+    await client.send("one");
+    await client.send("two");
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

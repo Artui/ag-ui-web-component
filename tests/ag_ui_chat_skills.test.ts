@@ -75,8 +75,11 @@ describe("AgUiChat skills", () => {
     expect(shadow(el).querySelectorAll(".skill-chip")).toHaveLength(0);
   });
 
-  it("opens the slash palette and picks with Enter, pre-filling the input", () => {
-    const el = mount({ "data-skills": embed([SUM]), "data-slash-commands": "true" });
+  it("opens the slash palette and picks with Enter, pre-filling when asked", () => {
+    const el = mount({
+      "data-skills": embed([{ ...SUM, sendImmediately: false }]),
+      "data-slash-commands": "true",
+    });
     typeQuery(el, "/");
     expect(shadow(el).querySelectorAll(".skill-item")).toHaveLength(1);
     input(el).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
@@ -84,20 +87,29 @@ describe("AgUiChat skills", () => {
     expect(shadow(el).querySelector<HTMLElement>(".skill-palette")?.hidden).toBe(true);
   });
 
-  it("blocks the pick and shows a hint when a placeholder is unfilled", () => {
+  it("blocks the pick, and hands back the template to complete", () => {
     const el = mount({ "data-skills": embed([FIND]), "data-prompt-chips": "true" });
     shadow(el).querySelector<HTMLButtonElement>(".skill-chip")?.click();
     const hint = shadow(el).querySelector<HTMLElement>(".skill-hint");
     expect(hint?.hidden).toBe(false);
     expect(hint?.textContent).toContain("q");
-    expect(input(el).value).toBe("");
+    // Not sent, but not a dead end either: the composer holds the partially
+    // filled prompt with its unresolved placeholder selected, so the next
+    // keystroke replaces it. A bare refusal left whatever the user typed to
+    // open the palette sitting there, saying nothing about what was wanted.
+    expect(input(el).value).toBe("Find {q}.");
+    expect(input(el).selectionStart).toBe(5);
+    expect(input(el).selectionEnd).toBe(8);
     // typing clears the hint
     typeQuery(el, "x");
     expect(hint?.hidden).toBe(true);
   });
 
   it("fills placeholders from skillContext", () => {
-    const el = mount({ "data-skills": embed([FIND]), "data-prompt-chips": "true" });
+    const el = mount({
+      "data-skills": embed([{ ...FIND, sendImmediately: false }]),
+      "data-prompt-chips": "true",
+    });
     el.skillContext = () => ({ q: "widgets" });
     shadow(el).querySelector<HTMLButtonElement>(".skill-chip")?.click();
     expect(input(el).value).toBe("Find widgets.");
@@ -165,5 +177,41 @@ describe("opt-in flag attributes", () => {
   it("still honours an explicit false", () => {
     const el = mount({ "data-skills": embed([SUM]), "data-prompt-chips": "false" });
     expect(shadow(el).querySelectorAll(".skill-chip")).toHaveLength(0);
+  });
+});
+
+describe("server-resolved skills", () => {
+  it("sends the bare token for a skill that ships no prompt", async () => {
+    // The prompt never reaches the browser: the catalog carries name and label
+    // only, and the agent decides what the token means.
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-prompt-chips", "true");
+    el.setAttribute("data-skills", embed([{ name: "triage", title: "Triage", chip: true }]));
+    const fake = makeFakeAgent({ script: () => {} });
+    el.agentFactory = () => fake.agent;
+    document.body.appendChild(el);
+
+    shadow(el).querySelector<HTMLButtonElement>(".skill-chip")?.click();
+    await flush();
+
+    expect(fake.messages.at(-1)?.content).toBe("/triage");
+    // Nothing was parked in the composer waiting for a second click.
+    expect(input(el).value).toBe("");
+  });
+
+  it("sends a prompt-carrying skill on pick, without a second click", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-prompt-chips", "true");
+    el.setAttribute("data-skills", embed([SUM]));
+    const fake = makeFakeAgent({ script: () => {} });
+    el.agentFactory = () => fake.agent;
+    document.body.appendChild(el);
+
+    shadow(el).querySelector<HTMLButtonElement>(".skill-chip")?.click();
+    await flush();
+
+    expect(fake.messages.at(-1)?.content).toBe("Summarize this.");
   });
 });

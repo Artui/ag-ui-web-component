@@ -73,6 +73,18 @@ async function streamReasoning(res, messageId, chunks) {
   emit(res, { type: "REASONING_END", messageId });
 }
 
+/** The most recent user turn, which is what the scripted agent dispatches on. */
+function lastUserText(messages) {
+  const last = [...messages].reverse().find((m) => m.role === "user");
+  return typeof last?.content === "string" ? last.content.trim() : "";
+}
+
+/**
+ * The scripted agent.
+ *
+ * Dispatches on the latest user turn so the playground can exercise each
+ * surface on its own, rather than replaying one canned script for everything.
+ */
 async function handleAgent(res, body) {
   const input = JSON.parse(body);
   const { threadId, runId, messages } = input;
@@ -84,14 +96,44 @@ async function handleAgent(res, body) {
   });
   emit(res, { type: "RUN_STARTED", threadId, runId });
 
-  const isFollowUp = messages.some((m) => m.role === "tool");
+  const prompt = lastUserText(messages);
+  // The *last* message, not any message: a thread that has ever run a tool
+  // keeps those results in history forever, so `some()` made every later turn
+  // look like a tool follow-up and answer "Done" to everything.
+  const isFollowUp = messages.at(-1)?.role === "tool";
+
   if (isFollowUp) {
+    await streamText(res, id("msg"), ["Done — ", "the article ", "is filled in ", "and saved. ✅"]);
+  } else if (prompt.startsWith("/")) {
+    // A server-resolved skill: the client sent only the token, so this is the
+    // first point at which the prompt behind it exists at all. Answering here
+    // is what demonstrates that the wording never left the server.
     await streamText(res, id("msg"), [
-      "Done — ",
-      "the article ",
-      "is filled in ",
-      "and saved. ✅",
+      `Resolved **${prompt}** server-side. `,
+      "The browser only ever sent the token — ",
+      "the prompt behind it lives here.",
     ]);
+  } else if (/\bask\b/i.test(prompt)) {
+    // Drives the built-in ask_user frontend tool, so the question card is
+    // reachable without a real agent.
+    const parent = id("msg");
+    await streamText(res, parent, ["Before I continue —"]);
+    emitToolCall(
+      res,
+      id("call"),
+      "ask_user",
+      {
+        question: "Which status should the article go out with?",
+        options: ["draft", "published"],
+        allowCustom: true,
+      },
+      parent,
+    );
+  } else if (/\bfail|error|break\b/i.test(prompt)) {
+    // A tool that throws, so the card's error region is reachable.
+    const parent = id("msg");
+    await streamText(res, parent, ["Trying the flaky one…"]);
+    emitToolCall(res, id("call"), "break_something", {}, parent);
   } else {
     await streamReasoning(res, id("reasoning"), [
       "The user wants the article filled. ",
@@ -100,12 +142,7 @@ async function handleAgent(res, body) {
       "then save.",
     ]);
     const parent = id("msg");
-    await streamText(res, parent, [
-      "On it — ",
-      "filling in ",
-      "the article form ",
-      "now.",
-    ]);
+    await streamText(res, parent, ["On it — ", "filling in ", "the article form ", "now."]);
     emitToolCall(res, id("call"), "fill_field", { field: "title", value: "Hello, AG-UI" }, parent);
     emitToolCall(res, id("call"), "fill_field", { field: "slug", value: "hello-ag-ui" }, parent);
     emitToolCall(res, id("call"), "select_option", { field: "status", value: "published" }, parent);

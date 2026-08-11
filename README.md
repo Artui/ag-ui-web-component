@@ -529,10 +529,16 @@ visible. Style them via the `tool-card-args` / `tool-card-result` parts, their h
 transcript, the way `data-answer-well` does — the modes are pure visibility over one DOM shape,
 selected by the shadow CSS from the host attribute.
 
-A call gated behind the confirmation card also carries the decision (`approved by you` /
-`declined by you`, part `tool-card-decision`, attribute `data-decision`). The prompt itself
-disappears once answered: a prompt and a record are different objects, and the record is the
-card.
+A gated call carries the decision (`approved by you` / `declined by you`, part
+`tool-card-decision`, attribute `data-decision`) — from the client-side confirmation card and
+from the server-side approval interrupt alike. The prompt itself disappears once answered: a
+prompt and a record are different objects, and the record is the card.
+
+⚠ **The annotation is session-scoped**, like the "run interrupted" notice. AG-UI carries no
+approval message — the answer rides `resume[]` as transient run input — so a reload restores the
+tool call and its result but not the note that a human waved it through. If you need "who
+approved what" durably, that is an audit concern rather than a transcript one; record it
+server-side.
 
 If a tool's schema carries an `x-summary` string (use `X_SUMMARY_KEY`), the card shows it on the
 label instead of the raw tool name.
@@ -546,6 +552,43 @@ speed; the spin respects `prefers-reduced-motion`).
 ```html
 <ag-ui-chat endpoint="/agent/" data-tool-display="compact"></ag-ui-chat>
 ```
+
+---
+
+## Resizing the panel
+
+The panel carries a drag handle on its leading corner (or leading edge, docked),
+so a reader can widen it without the host having to re-theme anything.
+
+- `placement="full"` / `placement="page"` get **no handle** — a full-bleed layout
+  is `100vw`/`100vh` by definition, so there is nothing to drag.
+- `placement="sidebar"` / `placement="side"` get **width only**; the placement
+  owns the height.
+- Everything else resizes on both axes.
+
+**The grip sits at the corner your layout grows toward, and the component
+measures which one that is.** A resize has to be computed from the edge that
+stays still, and that belongs to *your* CSS rather than to `placement` — a
+floating panel is pinned bottom-right, an embedded one goes wherever the page
+puts it. The element probes its own geometry and reflects the result as
+`data-resize-anchor` (e.g. `bottom-right` means those two edges are fixed), which
+is what positions the grip.
+
+A drag writes `--ag-ui-width` / `--ag-ui-height` on the host **as custom
+properties, not inline `width`/`height`** — the placement rules set those same
+properties, so an inline dimension would outrank them and a panel dragged while
+floating would keep that width after switching to fullscreen.
+
+⚠ **A host rule that sizes the element wins over both.** `ag-ui-chat { flex: 1 }`
+stretches the panel to its container and the dragged width has no visible
+effect — which reads as a broken control rather than as your stylesheet winning.
+Give the element `flex: 0 1 auto` (plus `max-width: 100%`) if it lives in a flex
+container.
+
+The size persists per tab (`sessionStorage`, namespaced per element like the
+collapsed and theme preferences) and is restored before the first paint.
+Arrow keys resize from the keyboard (`Shift` for a larger step); style the grip
+via the `resize-handle` part.
 
 ---
 
@@ -614,7 +657,7 @@ opt-in via two attributes:
 <ag-ui-chat endpoint="/agent/" data-prompt-chips="true" data-slash-commands="true"></ag-ui-chat>
 ```
 
-A `Skill` is `{ name, title, description?, prompt, sendImmediately?, chip? }`. Skills are merged
+A `Skill` is `{ name, title, description?, prompt?, sendImmediately?, chip? }`. Skills are merged
 from three sources — **backend → embed → client** (later wins by `name`):
 
 - `data-skills-url` — a JSON endpoint, fetched with the element's `headers`.
@@ -623,17 +666,31 @@ from three sources — **backend → embed → client** (later wins by `name`):
 
 ```js
 chat.setSkills([
+  // Server-resolved: no prompt here, so picking it sends the bare "/triage"
+  // token and the agent decides what it means.
+  { name: "triage", title: "Triage this", chip: true },
+  // Client-side: the page owns the wording and fills the placeholders.
   { name: "summarize", title: "Summarize page", prompt: "Summarize {title}.", chip: true },
 ]);
 ```
 
-A skill `prompt` may contain `{placeholder}` tokens; the `skillContext` property
+**Prefer omitting `prompt` for anything internal.** A skill is often where a project's workflow is
+written down most plainly, and a catalog is either a plain `GET` or sits in the page source — so
+shipping the wording to the browser publishes it. Without a `prompt` the component sends `/name`
+and the agent expands it (from the harness `Skills` capability, or your own instructions); the text
+never leaves the server. `django-ag-ui`'s `SkillRegistry` supports this by leaving `prompt` unset.
+
+A skill that *does* carry a `prompt` may use `{placeholder}` tokens; the `skillContext` property
 (`() => Record<string, unknown>`) supplies the values, filled in before send. A missing placeholder
 blocks the send and shows a hint instead.
 
 ```js
 chat.skillContext = () => ({ title: document.title });
 ```
+
+**Picking a skill sends it.** A chip that needs a second click to do anything is a two-step
+shortcut. Set `sendImmediately: false` on a prompt-carrying skill to pre-fill the composer instead —
+useful when the user is expected to edit before sending. A server-resolved skill always sends.
 
 ---
 

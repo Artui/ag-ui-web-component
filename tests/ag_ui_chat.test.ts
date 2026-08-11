@@ -484,6 +484,10 @@ describe("AgUiChat", () => {
     ]);
     const card = shadow(el).querySelector<HTMLElement>(".tool-call");
     expect(card?.querySelector(".tool-call-result")?.textContent).toBe("deleted widget-1");
+    // The server-side gate annotates the card exactly as the client-side
+    // confirmation does. Without it, the gate guarding the tools that run on
+    // the backend was the one leaving no trace.
+    expect(card?.getAttribute("data-decision")).toBe("approved");
   });
 
   it("denies a gated server-side tool, settles its card, and tells the server", async () => {

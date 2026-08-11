@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-08-11
+
+### Added
+
+- **The panel is resizable.** A drag handle on the corner the layout grows
+  toward (or the inner edge when docked), with the size persisted per tab and
+  restored before the first paint. Arrow keys resize from the keyboard, since a pointer-only control
+  has no equivalent elsewhere in the UI; style it via the `resize-handle` part.
+
+  Which axes are draggable is the placement's call: `full` and `page` get no
+  handle at all (a `100vw`/`100vh` layout has nothing to drag), `sidebar` /
+  `side` get width only, everything else gets both.
+
+  ⚠ **It writes the custom properties, not inline `width` / `height`.** The
+  placement rules set those same properties, so an inline dimension would
+  outrank them — a panel dragged while floating would keep that width after
+  switching to fullscreen.
+
+  ⭐ **Which corner the grip sits on is measured, not assumed.** A resize is
+  computed from the edge that stays still, and which edge that is belongs to the
+  *host's* layout rather than to `placement` — a floating panel is pinned
+  bottom-right, an embedded one goes wherever the page's CSS puts it. Deriving
+  it from `placement` was wrong for any host that right-aligns the element, and
+  the symptom was bad enough to read as a broken control: the panel shrank when
+  dragged outward and travelled by its opposite corner. The element now probes
+  its own geometry and reflects the result as `data-resize-anchor`.
+
+### Changed
+
+- **The `/` palette leads with the command.** Each row now reads
+  `/fill-article Fill the article` rather than the label alone (part
+  `skill-item-token`), and a chip's tooltip names the token it stands for. A
+  palette that shows only labels cannot teach its own vocabulary — a user who
+  never sees `/fill-article` has no way to learn to type it.
+
+- **A skill blocked on an unfilled `{placeholder}` now hands back the
+  template.** The partially-filled prompt goes into the composer with the first
+  unresolved placeholder selected, so the next keystroke replaces it. Previously
+  the pick was refused with a hint and whatever the user had typed to open the
+  palette — a lone `/` — was left in the composer, which said nothing about what
+  the skill wanted or how to supply it. The hint now says what to do, too.
+
+- ⚠ **Picking a skill now sends it.** It used to write the text into the
+  composer and wait for a second click unless the skill set
+  `sendImmediately: true` — so the default behaviour of a shortcut was to not
+  take the shortcut. Set `sendImmediately: false` to keep pre-filling, which is
+  worth doing where the user is expected to edit before sending.
+
+- **`Skill.prompt` is now optional, and omitting it is the better default for
+  anything internal.** A skill with no prompt is **server-resolved**: picking it
+  sends the bare `/name` token and the agent expands it, from the harness
+  `Skills` capability or the server's own instructions.
+
+  ⛔ **The prompt was the leak.** A catalog is either a fetched `GET` or an
+  inline `data-skills` attribute sitting in the page source, and a skill is
+  often where a project's internal workflow is written down most plainly — so
+  the client-side catalog published it to anyone who opened the page. Sending a
+  token instead keeps the wording on the server entirely, which is what
+  "trigger a `/command` without exposing the prompt" actually requires; hiding
+  the text behind a chip label would only have moved it off screen.
+
+  `parseSkills` accepts a catalog entry with no `prompt` rather than dropping
+  it — requiring the field would have silently discarded exactly the skills
+  whose wording was kept off the browser. Pairs with `django-ag-ui`'s
+  `SkillSpec.prompt` becoming optional.
+
 ## [0.19.0] — 2026-08-11
 
 ### Changed
@@ -45,10 +111,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **A gated call records the decision.** The tool card carries `approved by you`
-  / `declined by you` (part `tool-card-decision`, attribute `data-decision`).
-  Previously only a *refusal* left a trace — an approved call simply ran, making
-  a gated call's transcript identical to one that was never gated.
+- **A gated call records the decision**, from the client-side confirmation card
+  **and** the server-side approval interrupt. The tool card carries
+  `approved by you` / `declined by you` (part `tool-card-decision`, attribute
+  `data-decision`). Previously only a *refusal* left a trace — an approved call
+  simply ran, making a gated call's transcript identical to one that was never
+  gated, and the server-side gate left nothing at all even though it is the one
+  guarding tools that run on the backend.
+
+  ⚠ **Session-scoped, like the "run interrupted" notice.** AG-UI carries no
+  approval message — the answer rides `resume[]` as transient run input — so a
+  reload restores the call and its result but not the note. Durable "who
+  approved what" is an audit concern, not a transcript one.
 
 - **Each header control takes its own icon slot** — `icon-history`,
   `icon-checkpoints`, `icon-new`, `icon-collapse` — with the built-in glyph as
@@ -63,6 +137,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mode.
 
 ### Fixed
+
+- **A server that reuses a message id now gets a warning.** `@ag-ui/client`
+  appends to a message id already in its history rather than starting a new one,
+  so two answers merge into one transcript entry — silently, and the merged
+  entry is what gets persisted. The protocol has no rule to enforce and refusing
+  the event would be worse than the merge, so this warns and continues.
+
+  ⭐ Found because the demo harness was doing exactly this, which is the
+  argument for the harness in miniature: the bug was the consumer's, the
+  invisibility was ours.
+
+- **The demo playground covers the surface it is meant to demonstrate.** The
+  scripted agent now dispatches on the latest turn — a server-resolved skill, a
+  tool that throws, an `ask_user` question, or the form-filling script — instead
+  of replaying one script for everything, and the page gained header-icon,
+  German-strings and reset-size controls plus a short "what to try" guide.
+
+  ⚠ Two harness defects were making the component look broken. Its follow-up
+  detection matched **any** tool message in the thread, so once a conversation
+  had run a single tool every later turn answered "Done" to everything. And the
+  page forced `flex: 1` on the element, which silently outranks the width a
+  resize writes — the drag worked and nothing moved.
 
 - **The demo harness reused message ids**, which produced three symptoms that
   all read as component bugs and were none of them. It streamed every follow-up
@@ -943,7 +1039,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.16.0...v0.17.0

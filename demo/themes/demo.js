@@ -13,10 +13,36 @@ import {
   X_DESTRUCTIVE_KEY,
 } from "/bundle.js";
 
-defineAgUiChat();
-
 const $ = (id) => document.getElementById(id);
 const chat = $("chat");
+
+// A localized string table, which is also the quickest check that every label
+// is sourced from UiStrings rather than hard-coded.
+const DE = {
+  title: "Assistent",
+  argumentsLabel: "Argumente",
+  resultLabel: "Ergebnis",
+  errorLabel: "Fehler",
+  details: "Einzelheiten",
+  decisionApproved: "von dir bestätigt",
+  decisionDeclined: "von dir abgelehnt",
+  resizePanel: "Panelgröße ändern",
+  toolRunning: "läuft…",
+  toolDone: "✓ fertig",
+  confirm: "Bestätigen",
+  cancel: "Abbrechen",
+};
+
+// `data-strings` is read once while connecting, so it has to be on the element
+// before the definition upgrades it. Hence the flag-then-reload dance in the
+// toggle below rather than setting the attribute live.
+const german = sessionStorage.getItem("demo:i18n") === "1";
+if (german) {
+  chat.setAttribute("data-strings", JSON.stringify(DE));
+  $("cfg-i18n").checked = true;
+}
+
+defineAgUiChat();
 
 // ── Frontend tools (driven by the mock agent) ──────────────────────────────
 chat.registerTool({
@@ -59,6 +85,15 @@ chat.registerTool({
 });
 
 chat.registerTool({
+  name: "break_something",
+  description: "Always throws — shows a failed tool card.",
+  parameters: { type: "object", properties: {}, "x-summary": "Flaky operation" },
+  handler: async () => {
+    throw new Error("the upstream service refused the request");
+  },
+});
+
+chat.registerTool({
   name: "click_save",
   description: "Save the article. Destructive — asks for confirmation.",
   parameters: {
@@ -97,6 +132,16 @@ chat.setSkills([
     title: "Suggest a better title",
     description: "Uses the current Title as the topic.",
     prompt: "Suggest three catchy titles for an article about: {topic}.",
+    // Pre-fills rather than sends, so the user can edit before committing.
+    sendImmediately: false,
+  },
+  {
+    // No prompt: server-resolved. Picking it sends "/triage" and the agent
+    // decides what that means, so the wording never reaches this file.
+    name: "triage",
+    title: "Triage this article",
+    description: "Server-resolved — the prompt never reaches the browser.",
+    chip: true,
   },
 ]);
 chat.skillContext = () => ({ topic: $("title").value.trim() });
@@ -113,9 +158,49 @@ bind("cfg-placement", "placement");
 bind("cfg-text", "data-text-animation");
 bind("cfg-tools", "data-tool-display");
 
+// The question card needs the built-in ask_user tool offered to the agent.
+chat.askUser = true;
+
 // The well is a boolean attribute (presence = on), so toggle rather than set.
 $("cfg-well").addEventListener("change", (event) => {
   chat.toggleAttribute("data-answer-well", event.target.checked);
+});
+
+// Header control icons: the glyphs are slot fallbacks, so projecting light-DOM
+// markup into `icon-*` replaces them without touching the shadow styles.
+const HEADER_ICONS = {
+  "icon-history": "🗂",
+  "icon-new": "🆕",
+  "icon-collapse": "🔽",
+};
+$("cfg-icons").addEventListener("change", (event) => {
+  for (const [slot, glyph] of Object.entries(HEADER_ICONS)) {
+    const existing = chat.querySelector(`[slot="${slot}"]`);
+    if (!event.target.checked) {
+      existing?.remove();
+      continue;
+    }
+    if (existing === null) {
+      const span = document.createElement("span");
+      span.slot = slot;
+      span.textContent = glyph;
+      chat.appendChild(span);
+    }
+  }
+});
+
+$("cfg-i18n").addEventListener("change", (event) => {
+  sessionStorage.setItem("demo:i18n", event.target.checked ? "1" : "0");
+  window.location.reload();
+});
+
+// A dragged size persists per tab, which is confusing when you are flipping
+// placements to compare handles.
+$("cfg-reset-size").addEventListener("click", () => {
+  chat.style.removeProperty("--ag-ui-width");
+  chat.style.removeProperty("--ag-ui-height");
+  sessionStorage.removeItem("ag-ui-chat:size:/agent/");
+  sessionStorage.removeItem("ag-ui-chat:size");
 });
 
 $("save").addEventListener("click", () => {
