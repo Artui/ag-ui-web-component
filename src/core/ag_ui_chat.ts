@@ -277,14 +277,17 @@ export class AgUiChat extends HTMLElement {
   ];
 
   /**
-   * Per-run context provider. Defaults to the compact page map (when a
-   * {@link getPageMap} provider is set and {@link autoInjectPageMap} is on)
-   * plus a one-line manifest of the files attached to the message being sent,
-   * so the agent knows which `read_attachment` ids are available.
+   * Per-run context provider. Defaults to the compact page map, when a
+   * {@link getPageMap} provider is set and {@link autoInjectPageMap} is on.
+   *
+   * It used to append a one-line manifest of the message's attachments too.
+   * The server now derives that manifest from the refs riding the messages, so
+   * the client's copy only duplicated it, on exactly the turn a file was
+   * attached. Attachments still reach the agent; they reach it through the
+   * message, which is where they were already.
    */
   getContext: () => Context[] = () => [
     ...createPageMapContext(this.getPageMap, this.autoInjectPageMap),
-    ...this.#attachmentContext(),
   ];
 
   /**
@@ -430,9 +433,6 @@ export class AgUiChat extends HTMLElement {
   #voice: VoiceInput | null = null;
   /** Whether the element is currently in the DOM; gates the connect-time warning. */
   #connected = false;
-
-  /** Refs attached to the message currently being sent (the context manifest). */
-  #runAttachments: readonly AttachmentRef[] = [];
 
   #client: AgUiClient | null = null;
   // Seed for the next client. Once one exists it owns the live value (the
@@ -1242,22 +1242,6 @@ export class AgUiChat extends HTMLElement {
     });
   }
 
-  /** The one-line manifest of the message's attachments, for the run context. */
-  #attachmentContext(): Context[] {
-    if (this.#runAttachments.length === 0) {
-      return [];
-    }
-    const lines = this.#runAttachments.map(
-      (ref) => `- ${ref.name} (id: ${ref.id}, ${ref.mime || "unknown type"}, ${ref.size} bytes)`,
-    );
-    return [
-      {
-        description: "Files the user attached to this message",
-        value: `${lines.join("\n")}\nUse the read_attachment tool with an id to read a file's contents.`,
-      },
-    ];
-  }
-
   /**
    * When `data-threads-url` is set, route thread enumeration / load / rename /
    * delete through that server endpoint (wrapping the current store as the
@@ -1687,7 +1671,6 @@ export class AgUiChat extends HTMLElement {
     this.#toolCards.clear();
     this.#serverSettled.clear();
     this.#initialMessages = [];
-    this.#runAttachments = [];
     this.#attachTray?.clear();
     // Keep the empty-state region; everything else clears.
     this.#messages.replaceChildren(this.#emptyWrap);
@@ -2439,8 +2422,6 @@ export class AgUiChat extends HTMLElement {
     if (attachments.length > 0) {
       bubble.appendChild(renderAttachmentChips(attachments));
     }
-    // Surfaced to the run via the context manifest until the run settles.
-    this.#runAttachments = attachments;
     this.dispatchEvent(
       new CustomEvent<SubmitDetail>(SUBMIT_EVENT, {
         detail: { content, attachments },
@@ -2804,9 +2785,6 @@ export class AgUiChat extends HTMLElement {
         this.#hidePending();
         this.#setRunning(false);
         this.#streamingBubble = null;
-        // The attachment manifest was for this run only; the model has read what
-        // it needed (results now live in history).
-        this.#runAttachments = [];
         // Belt-and-suspenders: a tool card still pending at settle (e.g. a
         // server tool whose result never streamed because the connection
         // dropped) would hang forever — settle it to the no-result fallback.

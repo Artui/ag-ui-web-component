@@ -139,7 +139,7 @@ describe("AgUiChat — attachments", () => {
     expect(shadow(el).querySelector(".attachment-chip--ready")).not.toBeNull();
   });
 
-  it("sends ready refs: bubble chips, run-context manifest, cleared tray", async () => {
+  it("sends ready refs: bubble chips, refs on the message, cleared tray", async () => {
     const { el, handle } = mount();
     await attachReady(el);
 
@@ -154,32 +154,20 @@ describe("AgUiChat — attachments", () => {
     expect(bubble?.querySelector(".attachment-chips")).not.toBeNull();
     expect(shadow(el).querySelector<HTMLElement>(".attachment-tray")?.hidden).toBe(true);
 
-    // The model learns the id via the run context manifest.
-    const context = handle.lastRunParams?.context as Context[];
-    const manifest = context.find(
-      (c) => c.description === "Files the user attached to this message",
-    );
-    expect(manifest?.value).toContain("id: a1");
-    expect(manifest?.value).toContain("read_attachment");
-
     // The refs ride on the persisted user message and on the submit event.
     expect(events[0]?.attachments).toEqual([REF]);
     const sent = handle.messages[0] as Message & { attachments?: AttachmentRef[] };
     expect(sent.attachments).toEqual([REF]);
   });
 
-  it("labels an unknown content type in the manifest", async () => {
+  it("leaves the attachment manifest to the server, sending none in context", async () => {
+    // The server derives the manifest from the refs riding the messages, so a
+    // client-side copy only duplicated it on the turn a file was attached.
     const { el, handle } = mount();
-    drop(el, [file("blob.bin", "")]);
-    xhr.last().succeed(201, JSON.stringify({ id: "a9", name: "blob.bin", mime: "", size: 3 }));
+    await attachReady(el);
+    submit(el, "summarise this");
     await flush();
-    submit(el, "what is this");
-    await flush();
-    const context = handle.lastRunParams?.context as Context[];
-    const manifest = context.find(
-      (c) => c.description === "Files the user attached to this message",
-    );
-    expect(manifest?.value).toContain("unknown type");
+    expect(handle.lastRunParams?.context as Context[]).toEqual([]);
   });
 
   it("allows an attachments-only message with no typed text", async () => {
@@ -197,19 +185,6 @@ describe("AgUiChat — attachments", () => {
     await flush();
     expect(handle.messages).toHaveLength(0);
     expect(shadow(el).querySelector(".message--user")).toBeNull();
-  });
-
-  it("clears the run manifest after the run settles", async () => {
-    const { el, handle } = mount();
-    await attachReady(el);
-    submit(el, "first");
-    await flush();
-    submit(el, "second");
-    await flush();
-    const context = handle.lastRunParams?.context as Context[];
-    expect(context.some((c) => c.description === "Files the user attached to this message")).toBe(
-      false,
-    );
   });
 
   it("toggles a drag-over outline", () => {
