@@ -1494,6 +1494,14 @@ export const STYLES = `
   overflow-wrap: anywhere;
 }
 
+/* A chip carries its own text colour because it carries its own background.
+   The same chip renders in two places with opposite inherited colours: in the
+   composer tray it inherits the panel's, but on a sent user bubble it inherits
+   the user foreground, which is white on the stock light theme. Against the
+   assistant surface underneath that was a 1.13:1 filename — invisible, and only
+   the size stayed legible because it sets its own muted colour. Pair the colour
+   with the background it belongs to, and both placements read the same.
+   Overridden below for an errored chip, which must keep its red. */
 .attachment-chip {
   display: inline-flex;
   align-items: center;
@@ -1503,6 +1511,7 @@ export const STYLES = `
   border: 1px solid var(--_border);
   border-radius: 999px;
   background: var(--_assistant-bg);
+  color: var(--_text);
   font-size: 0.85em;
   position: relative;
 }
