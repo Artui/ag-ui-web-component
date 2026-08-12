@@ -1454,11 +1454,24 @@ export const STYLES = `
   display: contents;
 }
 
+/* The padding is the only separation the tray gets: its slot is display:
+   contents, so the tray is a direct child of the .chat column, and that column
+   sets no gap. The bottom value keeps a chip off the composer's top edge.
+   Change the values, not the shape of this declaration — the page placement
+   overrides padding-inline to compute its reading-column gutter, and splitting
+   the shorthand into longhands would put that override at risk. */
 .attachment-tray {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 12px 0;
+  padding: 8px 12px;
+}
+
+/* The tray sets the hidden property while empty, and an author display beats
+   the UA stylesheet's rule for it, so without this the empty tray keeps
+   laying out and its padding is permanent dead space above the composer. */
+.attachment-tray[hidden] {
+  display: none;
 }
 
 .attachment-chips {

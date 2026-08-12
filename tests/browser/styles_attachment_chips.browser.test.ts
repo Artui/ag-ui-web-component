@@ -8,15 +8,20 @@ import { renderAttachmentChips } from "../../src/ui/attachment_chips.js";
 /**
  * Attachment chips, asserted against a real cascade.
  *
- * A chip carries the assistant surface as its background but sits inside a
- * user bubble, whose foreground is white on the stock light theme, so the
- * filename rendered at 1.13:1 against its own chip -- a real accessibility
- * failure that survived because the demoed themes are dark, where the same
- * rule happens to pass.
+ * Two defects lived here and neither was visible to happy-dom. A chip carries
+ * the assistant surface as its background but sits inside a user bubble, whose
+ * foreground is white on the stock light theme, so the filename rendered at
+ * 1.13:1 against its own chip -- a real accessibility failure that survived
+ * because the demoed themes are dark, where the same rule happens to pass.
  *
- * This is a cascade question, and happy-dom reports its own agreeable answer
- * for a computed colour, so a green happy-dom run was compatible with the
- * defect. The assertions below are on resolved colours for that reason.
+ * The composer tray sets the hidden property while empty but declared an
+ * author display, which beats the UA stylesheet's rule for it, so the tray
+ * never collapsed and its padding was permanent dead space above the composer.
+ *
+ * Both are cascade-and-layout questions: happy-dom reports its own agreeable
+ * answer for a computed colour and does not lay boxes out at all, so a green
+ * happy-dom run was compatible with either defect. The assertions below are on
+ * resolved colours and measured geometry for that reason.
  */
 
 const BODY_TEXT = "rgb(26, 26, 46)";
@@ -48,6 +53,13 @@ function part(root: ParentNode, selector: string): HTMLElement {
     throw new Error(`expected ${selector}`);
   }
   return found;
+}
+
+function shadow(el: AgUiChat): ShadowRoot {
+  if (el.shadowRoot === null) {
+    throw new Error("expected a shadow root");
+  }
+  return el.shadowRoot;
 }
 
 /** A sent user bubble carrying read-only chips, as sendMessage() builds it. */
@@ -88,5 +100,36 @@ describe("attachment chips (real browser)", () => {
     chip.classList.remove("attachment-chip--ready");
     chip.classList.add("attachment-chip--error");
     expect(getComputedStyle(chip).color).toBe(DANGER);
+  });
+
+  it("collapses the empty tray instead of holding dead space above the composer", () => {
+    const el = mount();
+    const tray = part(shadow(el), ".attachment-tray");
+    expect(tray.hidden).toBe(true);
+    expect(getComputedStyle(tray).display).toBe("none");
+    expect(tray.offsetHeight).toBe(0);
+  });
+
+  it("pads a populated tray on both sides so a chip clears the composer", () => {
+    const el = mount();
+    const tray = part(shadow(el), ".attachment-tray");
+    tray.hidden = false;
+    const style = getComputedStyle(tray);
+    expect(style.display).toBe("flex");
+    expect(style.paddingTop).toBe("8px");
+    expect(style.paddingBottom).toBe("8px");
+  });
+
+  it("keeps the page placement's reading-column gutter on the tray", () => {
+    // The tray's padding is a shorthand and the placement rule overrides only
+    // its inline axis; this is the assertion that a rewrite of the shorthand
+    // has not taken the gutter with it.
+    const el = mount({ placement: "page" });
+    el.style.setProperty("--ag-ui-content-max-width", "100px");
+    const tray = part(shadow(el), ".attachment-tray");
+    tray.hidden = false;
+    const style = getComputedStyle(tray);
+    expect(Number.parseFloat(style.paddingLeft)).toBeGreaterThan(12);
+    expect(style.paddingLeft).toBe(style.paddingRight);
   });
 });
