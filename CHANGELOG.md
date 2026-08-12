@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-08-12
+
 Attachment chips, which turned out to be the least finished corner of 0.22.
 
 ### Fixed
@@ -55,8 +57,15 @@ Attachment chips, which turned out to be the least finished corner of 0.22.
   server now derives that from the refs riding the messages, so the client's
   copy only duplicated it on the turn a file was attached. Attachments still
   reach the agent — through the message, which is where they already were. The
-  page-map half of `getContext()` is unchanged. This is only visible to a host
-  that was reading the manifest out of the run context itself.
+  page-map half of `getContext()` is unchanged.
+
+  **This needs a server that derives the manifest itself.** `django-ag-ui`
+  does so from 0.42.0. Against an older server nothing replaces the client's
+  copy, so the agent stops being told which attachment ids exist and answers a
+  question about an attached file by asking for the file — which is the defect
+  the server-side derivation was written to fix. Upgrade the server first, or
+  together. A host that read the manifest out of the run context itself is
+  likewise affected.
 
 ## [0.22.0] — 2026-08-11
 
@@ -1301,7 +1310,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.0...v0.20.1
