@@ -181,15 +181,31 @@ const server = createServer((req, res) => {
   }
   if (req.method === "POST" && req.url === "/attachments/") {
     // Uploads: a real backend would store the file and hand back a durable
-    // ref; the demo drains the body and echoes one, so the composer's paperclip
-    // and the pending-attachment tray are both reachable.
-    let bytes = 0;
-    req.on("data", (chunk) => {
-      bytes += chunk.length;
-    });
+    // ref; the demo buffers the body and echoes one, so the composer's
+    // paperclip and the pending-attachment tray are both reachable.
+    //
+    // The ref has to carry name and mime as well as id and size: the client
+    // rejects a body missing any of the four, and while this handler answered
+    // with only id/size every demo upload settled into an error chip. Both live
+    // in the multipart part headers, so read them from there rather than
+    // inventing them.
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
+      const body = Buffer.concat(chunks);
+      const headers = body.subarray(0, 1024).toString("latin1");
+      const name = /filename="([^"]*)"/.exec(headers)?.[1] || "upload.bin";
+      const mime = /Content-Type:\s*([^\r\n]+)/i.exec(headers)?.[1]?.trim() || "";
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ id: id("file"), url: `/uploads/${id("f")}`, size: bytes }));
+      res.end(
+        JSON.stringify({
+          id: id("file"),
+          url: `/uploads/${id("f")}`,
+          name,
+          mime,
+          size: body.length,
+        }),
+      );
     });
     return;
   }
