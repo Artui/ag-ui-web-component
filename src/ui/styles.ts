@@ -1457,9 +1457,10 @@ export const STYLES = `
 /* The padding is the only separation the tray gets: its slot is display:
    contents, so the tray is a direct child of the .chat column, and that column
    sets no gap. The bottom value keeps a chip off the composer's top edge.
-   Change the values, not the shape of this declaration — the page placement
-   overrides padding-inline to compute its reading-column gutter, and splitting
-   the shorthand into longhands would put that override at risk. */
+   The inline value here is only the default: the page placement overrides
+   padding-inline further down to compute its reading-column gutter, and wins
+   on specificity whichever way this declaration is written. Read the two
+   together before changing either. */
 .attachment-tray {
   display: flex;
   flex-wrap: wrap;
