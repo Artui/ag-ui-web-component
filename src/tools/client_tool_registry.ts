@@ -27,8 +27,8 @@ export class ClientToolRegistry {
   /**
    * Register a tool, replacing any existing one with the same name.
    *
-   * Idempotent on the name so re-fired host refs / React StrictMode's
-   * double-invoke don't throw — re-registering is a replace, not an error.
+   * Idempotent on the name so a re-fired host ref or React StrictMode's
+   * double-invoke replaces rather than throws.
    */
   register(tool: ClientTool): void {
     this.#tools.set(tool.name, tool);

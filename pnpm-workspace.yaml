@@ -11,7 +11,7 @@ allowBuilds:
 overrides:
   vite: ">=7.3.5 <8"
   postcss: ">=8.5.18"
-  # ⚠ Upper bound is load-bearing: brace-expansion 5.x changed its export
+  # Upper bound is load-bearing: brace-expansion 5.x changed its export
   # shape, and minimatch@9 calls it as a CJS default export. An unbounded
   # ">=2.1.2" resolves to 5.x and breaks glob at runtime.
   brace-expansion@2: ">=2.1.2 <3"

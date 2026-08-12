@@ -13,12 +13,7 @@ export interface RunRow {
 /** Live header source, read per request so rotated tokens / CSRF reach the server. */
 type HeadersProvider = () => Record<string, string>;
 
-/**
- * Live cookie policy, read per request. A provider rather than a value because
- * the index is built once (on connect) and kept, while a host may configure the
- * element after inserting it — a captured value would pin whatever was set
- * during that first frame.
- */
+/** Live cookie policy, read per request; see `RemoteConversationStore`'s note. */
 type CredentialsProvider = () => RequestCredentials | undefined;
 
 /**
@@ -29,17 +24,14 @@ type CredentialsProvider = () => RequestCredentials | undefined;
  *
  * - `GET <url>` → the user's runs, newest first.
  *
- * **Only `continuable` rows can be resumed.** The server reports whether a run
- * has a saved snapshot to seed from; a run that never reached a provider-valid
- * boundary has none, so resuming it would start from nothing. Callers should
- * offer the action only for those rows and treat the rest as informational — a
- * crashed run worth showing, not worth continuing. {@link continuable} filters
- * for exactly that.
+ * Only `continuable` rows can be resumed: the server reports whether a run has
+ * a saved snapshot to seed from, and a run that never reached a provider-valid
+ * boundary has none. Offer the action only for those rows ({@link continuable}
+ * filters them) and treat the rest as informational.
  *
- * **Resume and fork are siblings of the index**, not separate configuration.
- * django-ag-ui mounts all three under one prefix whenever a step store is
- * configured (`runs/`, `resume/<id>/`, `fork/<id>/`), so one URL locates them
- * all and there is no way to configure a half-working set.
+ * Resume and fork are siblings of the index rather than separate configuration
+ * — django-ag-ui mounts `runs/`, `resume/<id>/` and `fork/<id>/` under one
+ * prefix — so this one URL locates all three.
  */
 export class RunIndex {
   readonly #url: string;
@@ -57,10 +49,9 @@ export class RunIndex {
   }
 
   /**
-   * The user's runs, or `[]` when the endpoint is unreachable or answers with
-   * an error. A history affordance that cannot load is empty, never broken:
-   * the caller renders its empty state rather than surfacing a transport fault
-   * the user can do nothing about.
+   * The user's runs, or `[]` when the endpoint is unreachable or errors — the
+   * caller renders its empty state rather than a transport fault the user can
+   * do nothing about.
    */
   async list(): Promise<readonly RunRow[]> {
     try {
@@ -102,9 +93,9 @@ export class RunIndex {
   /**
    * `<mount>/<verb>/<runId>/`, derived from the index URL's own prefix.
    *
-   * Built by string surgery on the trailing `runs/` rather than with `new URL`,
-   * because the configured value may be root-relative (`/agent/runs/`) — the
-   * common case in a Django template — and `new URL` needs an absolute base.
+   * String surgery on the trailing `runs/` rather than `new URL`, because the
+   * configured value may be root-relative (`/agent/runs/`), the common case in
+   * a Django template, and `new URL` needs an absolute base.
    */
   #sibling(verb: string, runId: string): string {
     const prefix = this.#url.slice(0, -"runs/".length);

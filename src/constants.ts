@@ -1,55 +1,40 @@
-// The package's single home for enums and constant-like values. Per
-// CLAUDE.md this is the only file allowed to export multiple symbols.
+// The package's single home for enums and constant-like values, and per
+// CLAUDE.md the only file allowed to export multiple symbols.
 
 /** The Custom Element tag name registered by {@link defineAgUiChat}. */
 export const ELEMENT_TAG = "ag-ui-chat";
 
-/**
- * Event dispatched by `<ag-ui-chat>` when the user submits a message.
- * `detail` carries `{ content: string }`. Later phases wire this to the
- * AG-UI client; for now it is the public seam for host integration.
- */
+/** User submitted a message. `detail` is {@link SubmitDetail}. */
 export const SUBMIT_EVENT = "ag-ui-submit";
 
 /**
- * Event dispatched by `<ag-ui-chat>` when its collapsed state changes (via the
- * built-in toggle or {@link setCollapsed}). `detail` carries
- * `{ collapsed: boolean }`. A host can listen to drive its own chrome, or hide
- * the built-in toggle and drive the `collapsed` attribute itself.
+ * Collapsed state changed, via the built-in toggle or `setCollapsed`.
+ * `detail` is {@link ToggleDetail}.
  */
 export const TOGGLE_EVENT = "ag-ui-toggle";
 
 /**
- * Event dispatched by `<ag-ui-chat>` when the number of answers that arrived
- * while it was collapsed changes — one more finished, or expanding cleared them
- * all. `detail` carries `{ unread: number }`.
- *
- * The built-in badge on the launcher renders exactly this. A host driving its
- * own chrome can turn the badge off with `data-unread-badge="false"` and listen
- * here instead.
+ * The count of answers that arrived while collapsed changed. `detail` is
+ * {@link UnreadDetail}. The built-in launcher badge renders exactly this; a
+ * host driving its own chrome sets `data-unread-badge="false"` and listens.
  */
 export const UNREAD_EVENT = "ag-ui-unread";
 
 /**
- * Event dispatched by `<ag-ui-chat>` when AG-UI **shared state** changes — the
- * server streamed a `STATE_SNAPSHOT` / `STATE_DELTA`, or the host assigned
- * {@link AgUiChat.sharedState}. `detail` carries `{ state }`.
+ * AG-UI shared state changed — a streamed `STATE_SNAPSHOT` / `STATE_DELTA`, or
+ * a host assignment to `sharedState`. `detail` is {@link StateDetail}.
  *
- * This is the protocol's own state channel, distinct from `registerPageState`,
- * which exposes host state to the agent as ordinary *tools*.
+ * The protocol's own state channel, distinct from `registerPageState`, which
+ * exposes host state to the agent as ordinary tools.
  */
 export const STATE_EVENT = "ag-ui-state";
 
 /**
- * Event dispatched by `<ag-ui-chat>` whenever the attachment tray changes — a
- * file queued, an upload finishing or failing, a chip removed, the tray
- * cleared after a send. `detail` carries `{ attachments, pending }`:
- * the durable refs of everything that has finished uploading, and how many are
- * still in flight.
- *
- * This is the seam for a host that drives its own composer: without it the tray
- * only ever spoke to the built-in Send button, so a custom send had no way to
- * know whether a file was ready or still uploading.
+ * The attachment tray changed — a file queued, an upload finishing or failing,
+ * a chip removed, the tray cleared after a send. `detail` is
+ * {@link AttachmentsDetail}, carrying the refs that finished uploading and how
+ * many are still in flight. A host driving its own composer uses this to know
+ * whether a send would leave files behind.
  */
 export const ATTACHMENT_EVENT = "ag-ui-attachments";
 
@@ -60,43 +45,35 @@ export const MESSAGE_ROLE = {
 } as const;
 
 /**
- * JSON-Schema extension key marking a tool as destructive. Mirrors the
- * `django-ag-ui` server side. When a tool's `parameters` carries
- * `{ "x-destructive": true }`, the element gates its execution behind the
- * confirmation modal (unless `autoConfirm` is set).
+ * Schema-root key marking a tool destructive: the element gates its execution
+ * behind the confirmation card unless `autoConfirm` is set. All four `x-*` keys
+ * below mirror the `django-ag-ui` server side.
  */
 export const X_DESTRUCTIVE_KEY = "x-destructive";
 
 /**
- * JSON-Schema extension key carrying a human-readable confirmation prompt for a
- * destructive tool (e.g. `"Activate this project?"`). Mirrors the `django-ag-ui`
- * server side. When present, the inline confirmation card shows this instead of
- * the generic `Run "<tool>"?`.
+ * Schema-root key holding a confirmation prompt (e.g. `"Activate this
+ * project?"`), shown instead of the generic `Run "<tool>"?`.
  */
 export const X_CONFIRM_KEY = "x-confirm";
 
 /**
- * JSON-Schema extension key carrying a short human-readable label for a tool
- * (e.g. `"Query orders"` for `query_model`). Mirrors the `django-ag-ui` server
- * side; the tool-call card shows it instead of the raw tool name when present.
+ * Schema-root key holding a short label for a tool (e.g. `"Query orders"` for
+ * `query_model`), shown on the card instead of the raw tool name.
  */
 export const X_SUMMARY_KEY = "x-summary";
 
 /**
- * JSON-Schema extension key marking a tool as navigating — its handler triggers
- * a full page reload (an MPA navigation). When a tool's `parameters` carries
- * `{ "x-navigates": true }`, the element checkpoints the call before the reload
- * and resumes the run loop once the next page mounts. Mirrors `x-destructive`.
+ * Schema-root key marking a tool as navigating — its handler triggers a full
+ * page reload. The element checkpoints the call before the reload and resumes
+ * the run loop once the next page mounts.
  */
 export const X_NAVIGATES_KEY = "x-navigates";
 
 /**
- * Name of the built-in tool that re-reads the current page.
- *
- * Registered only when a page-map provider is set. Named here because it is
- * also the documented recovery from a stale page, so the stale-page guard has
- * to exempt it — refusing the very call that would refresh the agent's view
- * would be a deadlock.
+ * The built-in tool that re-reads the current page, registered only when a
+ * page-map provider is set. Named here because the stale-page guard must exempt
+ * it: refusing the one call that would refresh the agent's view deadlocks.
  */
 export const READ_PAGE_TOOL = "read_page";
 
@@ -127,23 +104,20 @@ export const ATTACHMENT_STATUS = {
 
 /**
  * Default client-side upload size cap (10 MiB), matching django-ag-ui's
- * `ATTACHMENT_MAX_BYTES` default. Overridable per element via
- * `data-attachment-max-bytes`; the server stays authoritative.
+ * `ATTACHMENT_MAX_BYTES`. Overridable via `data-attachment-max-bytes`; the
+ * server stays authoritative.
  */
 export const DEFAULT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 
 /**
- * How much detail a tool-call card shows. Set via the `data-tool-display`
- * attribute on `<ag-ui-chat>`; defaults to `full` (back-compatible).
+ * How much detail a tool-call card shows. Set via `data-tool-display`; the
+ * default is `full`.
  *
- * - `inline` — the lightest mode: a single status row (icon + summary) with no
- *   surrounding card chrome, the result tucked behind its own toggle. Reads as
- *   one line of the answer rather than a boxed card — pairs with the answer
- *   well (page mode).
- * - `minimal` — just the tool name + status pill. No args, no result body.
- * - `compact` — name + status, with args *and* result tucked behind a single
- *   collapsed "Details" toggle. The light default for dense UIs.
- * - `full` — args shown inline, result behind its own toggle (the original).
+ * - `inline` — one status row (icon + summary), no card chrome, result behind
+ *   its own toggle. Reads as a line of the answer rather than a boxed card.
+ * - `minimal` — tool name + status pill only. No args, no result body.
+ * - `compact` — name + status, args and result behind one "Details" toggle.
+ * - `full` — args inline, result behind its own toggle.
  */
 export const TOOL_DISPLAY = {
   INLINE: "inline",
@@ -153,32 +127,32 @@ export const TOOL_DISPLAY = {
 } as const;
 
 /**
- * `activityType` of the AG-UI `ACTIVITY_SNAPSHOT` event `django-ag-ui` emits
- * when a compaction capability trimmed the message history. Its `content`
- * carries `{ removed, before, after }`.
+ * `activityType` of the `ACTIVITY_SNAPSHOT` event django-ag-ui emits when a
+ * compaction capability trimmed the history. `content` carries
+ * `{ removed, before, after }`.
  */
 export const COMPACTION_ACTIVITY_TYPE = "compaction";
 
 /**
- * Pydantic-AI's built-in tool the model calls to load a *deferred* capability,
- * with `{ id }` naming it. Agent skills are deferred capabilities whose id is
- * the skill name, so a call to this tool is how "the agent picked skill X"
- * reaches the client — there is no separate event for it.
+ * Pydantic-AI's built-in tool for loading a deferred capability, with `{ id }`
+ * naming it. Agent skills are deferred capabilities keyed by skill name, so a
+ * call to this tool is the only signal that the agent picked a skill.
  *
- * Not to be confused with the host-provided {@link Skill} catalog, which is a
- * *human* affordance (a prompt the user launches from the `/`-palette).
+ * Distinct from the host-provided {@link Skill} catalog, which is a human
+ * affordance launched from the slash palette.
  */
 export const LOAD_CAPABILITY_TOOL = "load_capability";
 
 /**
  * The chrome's glyphs, as inline SVG markup.
  *
- * Static, author-written markup assigned to a `<slot>`'s fallback content, so
- * it never passes through the sanitiser — nothing here is user or server data.
- * Each icon is a 24x24 viewBox carrying the shared `glyph` class, which
- * `STYLES` sizes and paints from `currentColor`; `glyph--solid` fills instead
- * of stroking. A host that wants its own mark projects a matching
- * `slot="icon-…"` child rather than editing these.
+ * Static author-written markup assigned as a `<slot>`'s fallback content, so it
+ * never passes through the sanitiser — nothing here is user or server data, and
+ * nothing user-supplied may be interpolated into it. Each icon is a 24x24
+ * viewBox carrying the shared `glyph` class, which `STYLES` sizes and paints
+ * from `currentColor`; `glyph--solid` fills instead of stroking. A host wanting
+ * its own mark projects a matching `slot="icon-…"` child instead of editing
+ * these.
  */
 export const ICON_SEND = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19.5V5m-6.5 6.5L12 5l6.5 6.5"/></svg>`;
 
@@ -195,13 +169,10 @@ export const ICON_VOICE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="t
 export const ICON_LAUNCHER = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-5 4z"/></svg>`;
 
 /**
- * The attachment-chip type marks, one per coarse file family. Same contract as
- * the chrome's glyphs above: static author-written markup on a 24x24 viewBox
- * carrying the shared `glyph` class. A chip picks one by MIME family through
- * `iconFor`; the MIME string selects a constant and is never interpolated into
- * one, so nothing user- or server-supplied reaches the markup.
- *
- * The generic mark, for a family with nothing more specific to say.
+ * The generic attachment-chip mark, for a file family with nothing more
+ * specific to say. The chip marks share the contract of the chrome glyphs
+ * above; `iconFor` selects one by MIME family, never interpolating the MIME
+ * string into the markup.
  */
 export const ICON_FILE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>`;
 

@@ -8,16 +8,15 @@ export type CheckpointVerb = "resume" | "fork";
 /**
  * The checkpoint panel: continuable runs, each offering **resume** or **fork**.
  *
- * A separate surface from the thread drawer on purpose — they are different
- * axes. A thread is a conversation you switch *to*; a checkpoint is a run you
- * continue *from*, and one thread can hold many. Folding them into one list
- * would make "resume" look like "open", which it isn't: resuming starts a new
+ * Deliberately separate from the thread drawer: a thread is a conversation you
+ * switch to, a checkpoint is a run you continue from, and one thread holds
+ * many. One list would make "resume" read as "open", when resuming starts a new
  * run seeded from a snapshot.
  *
- * Only rows the server marked `continuable` are worth offering, so the host
- * feeds those; a run with no snapshot would resume from nothing. Pure DOM in
- * the spirit of {@link SkillsMenu} — the host appends {@link element}, toggles
- * it, feeds rows via {@link setRuns}, and acts on {@link onPick}.
+ * The host feeds only rows the server marked `continuable`, a run without a
+ * snapshot having nothing to resume from. Pure DOM, like {@link SkillsMenu}:
+ * append {@link element}, toggle it, feed {@link setRuns}, act on
+ * {@link onPick}.
  */
 export class CheckpointMenu {
   /** The panel root. Append to the chat shell; hidden until opened. */

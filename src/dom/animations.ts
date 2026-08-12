@@ -28,12 +28,11 @@ function delay(ms: number): Promise<void> {
 /**
  * Whether the user has asked the OS/browser to minimise motion.
  *
- * Honoured by every primitive that *moves* something: the action animations
- * skip their hold delays, `scrollIntoCenterView` jumps instead of gliding, and
- * the focus flash drops its fade while still holding the ring long enough to be
- * seen — reduced motion asks for no animation, not for no feedback. The
- * character-typing and highlight primitives predate this and keep their
- * explicit-duration contract.
+ * Honoured by every primitive that moves something: hold delays are skipped,
+ * `scrollIntoCenterView` jumps instead of gliding, and the flash drops its fade
+ * but still holds the ring long enough to be seen — reduced motion asks for no
+ * animation, not for no feedback. `typeInto` and `highlightThenClick` keep
+ * their explicit-duration contract instead.
  */
 export function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -48,11 +47,11 @@ function motionDelay(ms: number): Promise<void> {
 }
 
 /**
- * Resolve the accent colour from the **target's** computed style.
+ * Resolve the accent colour from the target's own computed style.
  *
- * `--ag-ui-accent` inherits, so reading it off the element the agent is about
- * to touch picks up whatever the host's cascade produced there — a themed page
- * gets flashed in its own colour instead of this package's indigo.
+ * `--ag-ui-accent` inherits, so reading it off the element about to be touched
+ * picks up whatever the host's cascade produced there, and a themed page is
+ * flashed in its own colour rather than this package's indigo.
  */
 function accentColor(el: HTMLElement, fallback: string): string {
   const themed = window.getComputedStyle(el).getPropertyValue(ACCENT_PROPERTY).trim();
@@ -72,8 +71,8 @@ export interface TypeOptions {
 }
 
 /**
- * Clear ``el`` and type ``value`` one character at a time, firing ``input``
- * events as a real user would, then a final ``change`` event.
+ * Clear `el` and type `value` one character at a time, firing an `input` event
+ * per character as a real user would, then a final `change`.
  */
 export async function typeInto(
   el: TextLikeElement,
@@ -98,7 +97,7 @@ export interface HighlightClickOptions {
   highlightMs?: number;
 }
 
-/** Outline ``el``, pause so the user sees it, then click and restore. */
+/** Outline `el`, pause so the user sees it, then click and restore. */
 export async function highlightThenClick(
   el: HTMLElement,
   options: HighlightClickOptions = {},
@@ -128,12 +127,11 @@ const SCROLL_SETTLE_MS = 600;
 const SCROLL_START_MS = 100;
 
 /**
- * Scroll ``el`` to the vertical centre of the viewport.
+ * Scroll `el` to the vertical centre of the viewport.
  *
- * The returned promise resolves once the scroll has settled, so a caller can
- * hold its animation until the element has stopped moving — a ring drawn
- * mid-glide lands somewhere the user is not looking yet. Awaiting is optional;
- * the scroll itself is requested synchronously.
+ * Resolves once the scroll settles, so a caller can hold its animation until
+ * the element stops moving — a ring drawn mid-glide lands where the user is not
+ * looking yet. Awaiting is optional; the scroll is requested synchronously.
  */
 export function scrollIntoCenterView(el: HTMLElement, options: ScrollOptions = {}): Promise<void> {
   const reduced = prefersReducedMotion();
@@ -161,12 +159,10 @@ export function scrollIntoCenterView(el: HTMLElement, options: ScrollOptions = {
     // Neither event bubbles, and both fire on whichever ancestor actually
     // scrolled, so listen on the document in the capture phase.
     //
-    // Two timeouts, because two things can go wrong. An element already in
-    // view never scrolls and so never fires scrollend — waiting the full
-    // budget for it would add dead time to every action, hence the short
-    // did-anything-move probe. Once something is moving, the longer budget
-    // covers browsers that do not implement scrollend at all (Safari gained it
-    // only recently).
+    // Two timeouts, for two failure modes: an element already in view never
+    // scrolls and so never fires scrollend (the short did-anything-move probe),
+    // and once something is moving the longer budget covers browsers without
+    // scrollend at all.
     timer = setTimeout(settle, SCROLL_START_MS);
     document.addEventListener("scroll", started, true);
     document.addEventListener("scrollend", settle, true);
@@ -180,10 +176,7 @@ const FLASH_MS = 1200;
 const FLASH_FADE_RATIO = 1 / 3;
 
 export interface FlashOptions {
-  /**
-   * Total milliseconds the ring is on screen, hold plus fade. Default 1200 —
-   * long enough for someone who does not yet know where to look to find it.
-   */
+  /** Total milliseconds the ring is on screen, hold plus fade. Default 1200. */
   flashMs?: number;
   /** Ring colour. Defaults to the target's `--ag-ui-accent`, else the package accent. */
   color?: string;
@@ -220,8 +213,8 @@ async function flashRing(
   const fadeMs = prefersReducedMotion() ? 0 : Math.round(flashMs * FLASH_FADE_RATIO);
   await delay(flashMs - fadeMs);
   if (fadeMs > 0) {
-    // Setting the transition and the new colour in the same task is fine: the
-    // browser starts transitions from the after-change style.
+    // Transition and new colour in the same task is fine: the browser starts
+    // transitions from the after-change style.
     el.style.transition = `outline-color ${fadeMs}ms ease-out`;
     el.style.outline = "3px solid transparent";
     await delay(fadeMs);
@@ -232,9 +225,9 @@ async function flashRing(
 }
 
 /**
- * Flash a ring around ``el`` without touching focus.
+ * Flash a ring around `el` without touching focus.
  *
- * Prefer this over {@link focusWithFlash} when the point is to *show* the user
+ * Prefer this over {@link focusWithFlash} when the point is to show the user
  * something: moving focus steals it from the composer, can fire blur validation
  * on whatever they were mid-edit in, and can close an open menu.
  */
@@ -243,11 +236,8 @@ export function flash(el: HTMLElement, options: FlashOptions = {}): Promise<void
 }
 
 /**
- * Focus ``el`` and flash a ring around it.
- *
- * Focus moves unless ``options.focus`` says otherwise — that is the documented
- * behaviour of this name. Use {@link flash} for a highlight that leaves focus
- * where the user put it.
+ * Focus `el` and flash a ring around it. Focus moves unless `options.focus`
+ * says otherwise; use {@link flash} to leave focus where the user put it.
  */
 export function focusWithFlash(el: HTMLElement, options: FlashOptions = {}): Promise<void> {
   return flashRing(el, options, true);
@@ -259,9 +249,9 @@ export interface PressOptions {
 }
 
 /**
- * Show a brief "pressed" affordance on a button/control — a slight scale-down
- * plus accent ring — then click it and restore. Reads as an actual press, not
- * just an outline (cf. {@link highlightThenClick}).
+ * Show a brief pressed affordance on a control — a slight scale-down plus
+ * accent ring — then click it and restore. Reads as a press rather than the
+ * plain outline {@link highlightThenClick} draws.
  */
 export async function pressThenClick(el: HTMLElement, options: PressOptions = {}): Promise<void> {
   const pressMs = options.pressMs ?? 140;
@@ -283,7 +273,7 @@ export interface SelectOptions {
   highlightMs?: number;
 }
 
-/** Find an option in ``el`` whose value or visible text equals ``value``. */
+/** Find an option in `el` whose value or visible text equals `value`. */
 function findOption(el: HTMLSelectElement, value: string): HTMLOptionElement | null {
   for (const option of Array.from(el.options)) {
     if (option.value === value || option.text === value) {
@@ -295,7 +285,7 @@ function findOption(el: HTMLSelectElement, value: string): HTMLOptionElement | n
 
 /**
  * Outline a `<select>`, pause so the user sees the pick, then set it to the
- * option matching ``value`` (by value or visible text) and fire `input` +
+ * option matching `value` (by value or visible text) and fire `input` +
  * `change`. Throws when no option matches.
  */
 export async function selectOption(
@@ -326,7 +316,7 @@ export interface ToggleOptions {
 }
 
 /**
- * Flash a ring around a checkbox/radio, set its ``checked`` state, and fire
+ * Flash a ring around a checkbox/radio, set its `checked` state, and fire
  * `input` + `change` so frameworks observe the flip.
  */
 export async function toggleControl(

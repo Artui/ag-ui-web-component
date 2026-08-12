@@ -33,9 +33,9 @@ export interface ToolExecution {
 /**
  * Executes a frontend tool call.
  *
- * Returns the {@link ToolExecution} to post back to the agent, or ``null`` when
- * the call is not a frontend tool the host owns (a server-side tool the server
- * already executed — the client must not re-run for it).
+ * Returns the {@link ToolExecution} to post back to the agent, or `null` when
+ * the call is not a frontend tool the host owns — a server-side tool the server
+ * already executed, which the client must not re-run.
  */
 export type ExecuteTool = (call: AgUiToolCall) => Promise<ToolExecution | null>;
 
@@ -50,11 +50,10 @@ export type InterruptResponse = { status: "resolved"; payload?: unknown } | { st
 /**
  * Resolves the approval interrupts a run finished on, keyed by interrupt id.
  *
- * When a gated **server-side** tool defers instead of executing, the run
- * finishes on an AG-UI interrupt outcome; the host renders an approval card per
- * interrupt and returns each decision here, and the loop resumes the run with
- * the answers. Omit for agents that never gate server-side tools — an
- * unresolved interrupt then simply ends the loop.
+ * A gated server-side tool defers instead of executing, so the run finishes on
+ * an interrupt outcome; the host collects one decision per interrupt and the
+ * loop resumes with the answers. Omit for agents that never gate server-side
+ * tools — an unresolved interrupt then ends the loop.
  */
 export type ResolveInterrupts = (
   interrupts: readonly Interrupt[],
@@ -67,9 +66,9 @@ export type ResolveInterrupts = (
  */
 export interface AgUiClientHandlers {
   onRunStart(): void;
-  /** Fired on every streamed token; ``buffer`` is the full text so far. */
+  /** Fired on every streamed token; `buffer` is the full text so far. */
   onTextDelta(buffer: string): void;
-  /** Fired when the assistant message completes; ``buffer`` is the final text. */
+  /** Fired when the assistant message completes; `buffer` is the final text. */
   onTextEnd(buffer: string): void;
   /** Fired when the agent finishes calling a tool (server- or frontend-side). */
   onToolCall(call: AgUiToolCall): void;
@@ -95,17 +94,15 @@ export interface AgUiClientHandlers {
   onError(message: string): void;
   /**
    * Fired when the user cancelled the run ({@link AgUiClient.cancel}) — the
-   * deliberate-stop sibling of `onError`. Any partial assistant text already
-   * streamed stays valid; the host should keep the bubble and show a muted
-   * "stopped" affordance rather than an error. `onSettled` still follows.
+   * deliberate-stop sibling of `onError`. Partial assistant text already
+   * streamed stays valid, so the host keeps the bubble and shows a stopped
+   * affordance rather than an error. `onSettled` still follows.
    */
   onCancelled(): void;
   /**
-   * Fired exactly once when the whole interaction settles — after the run loop
-   * ends for any reason (a server-only round, frontend-tool rounds exhausted,
-   * a cancellation, or an error). The terminal guarantee that the UI returns
-   * to rest (pending indicator cleared, input re-enabled) no matter how the
-   * run finished.
+   * Fired exactly once when the interaction settles, however the run loop ended
+   * — server-only round, rounds exhausted, cancellation, or error. The terminal
+   * guarantee that the UI returns to rest.
    */
   onSettled(): void;
 }
@@ -138,17 +135,15 @@ export interface AgUiClientConfig extends AgUiRunInputs {
    */
   onPersist?: (messages: readonly Message[]) => void;
   /**
-   * Called whenever AG-UI shared state changes — the server streamed a
-   * `STATE_SNAPSHOT` / `STATE_DELTA`, or {@link AgUiClient.setState} was
-   * called. `@ag-ui/client` owns applying those events; this only forwards
-   * the result so a host can react.
+   * Called whenever AG-UI shared state changes — a streamed `STATE_SNAPSHOT` /
+   * `STATE_DELTA`, or {@link AgUiClient.setState}. `@ag-ui/client` owns applying
+   * those events; this only forwards the result.
    */
   onStateChanged?: (state: Readonly<Record<string, unknown>>) => void;
   /**
-   * Error text surfaced to {@link AgUiClientHandlers.onError} when a run's
-   * stream closes without a terminal AG-UI event (`RUN_FINISHED`/`RUN_ERROR`) —
-   * a dropped connection. Defaults to `"Connection lost"`; the host passes its
-   * localized string.
+   * Error text for {@link AgUiClientHandlers.onError} when a run's stream closes
+   * without a terminal AG-UI event. Defaults to `"Connection lost"`; the host
+   * passes its localized string.
    */
   connectionLostMessage?: string;
 }
@@ -182,10 +177,9 @@ export class AgUiClient {
   readonly #resolveInterrupts: ResolveInterrupts | null;
   readonly #onPersist: (messages: readonly Message[]) => void;
   /**
-   * Message ids the server has already closed, so a reuse can be reported.
-   *
-   * Per client rather than per run: the merge happens across runs, which is the
-   * case a per-run set would miss entirely.
+   * Message ids the server has already closed, so a reuse can be reported. Per
+   * client rather than per run — the merge happens across runs, which a per-run
+   * set would miss entirely.
    */
   readonly #closedMessageIds = new Set<string>();
   readonly #connectionLostMessage: string;
@@ -205,8 +199,8 @@ export class AgUiClient {
     const onStateChanged = config.onStateChanged;
     if (onStateChanged !== undefined) {
       // The agent applies STATE_SNAPSHOT / STATE_DELTA itself; subscribing is
-      // how we learn the result rather than re-deriving it from the event
-      // stream. Lives for the agent's lifetime, which is this client's.
+      // how the result is learned rather than re-derived from the event stream.
+      // Lives for the agent's lifetime, which is this client's.
       this.#agent.subscribe({
         onStateChanged: ({ state }) => {
           onStateChanged(state as Record<string, unknown>);
@@ -243,9 +237,8 @@ export class AgUiClient {
    * tools (bounded by {@link MAX_TOOL_ROUNDS}).
    *
    * `attachments` ride on the user message as a non-standard field so the
-   * default client store round-trips them for history replay; the agent learns
-   * the ids from the run context (the server's strict validation ignores the
-   * unknown message field), then reads bytes via the `read_attachment` tool.
+   * default store round-trips them for history replay; see
+   * {@link messageAttachments}.
    */
   async send(content: string, attachments: readonly AttachmentRef[] = []): Promise<void> {
     // Cast at the AG-UI boundary: `attachments` is a web-component augmentation
@@ -263,7 +256,7 @@ export class AgUiClient {
   /**
    * Resume the run loop after a navigating tool's result was supplied
    * post-reload (via {@link addToolResult}). Unlike {@link send}, adds no user
-   * message — it simply continues the conversation already in history.
+   * message; it continues the conversation already in history.
    */
   async resume(): Promise<void> {
     await this.#run();
@@ -309,21 +302,21 @@ export class AgUiClient {
   }
 
   #onCancelled(): void {
-    // The truncated exchange (including any partial assistant text the agent
-    // already applied) survives a reload.
+    // Persist so the truncated exchange, partial assistant text included,
+    // survives a reload.
     this.#onPersist(this.#agent.messages);
     this.#handlers.onCancelled();
   }
 
   async #runLoop(): Promise<void> {
-    // Carries the resolved approval answers into the *next* run when a round
-    // finished on a server-side-tool interrupt. Distinct from the public
-    // resume() navigation-reload path (which continues an unfinished
-    // frontend-tool round after a page load) — this stays inside one #run().
+    // Carries resolved approval answers into the next run when a round finished
+    // on a server-side-tool interrupt. Distinct from the public resume(), which
+    // continues an unfinished frontend-tool round after a page load; this stays
+    // inside one #run().
     let resume: ResumeEntry[] | undefined;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-      // A cancel during the previous round's frontend-tool execution lands
-      // here: the running handler completed, but no further round starts.
+      // A cancel during the previous round's tool execution lands here: the
+      // running handler completed, but no further round starts.
       if (this.#cancelled) {
         return;
       }
@@ -339,29 +332,28 @@ export class AgUiClient {
       await this.#agent.runAgent(params, this.#buildSubscriber(pending, runState));
       resume = undefined;
       this.#onPersist(this.#agent.messages);
-      // Cancelled mid-stream: the user said stop — don't execute the tool
-      // calls collected before the abort.
+      // Cancelled mid-stream: don't execute the tool calls collected before the
+      // abort.
       if (this.#cancelled) {
         return;
       }
-      // The stream resolved without RUN_FINISHED / RUN_ERROR: the transport
-      // dropped mid-run. Surface it as an error so the UI doesn't rest silently
-      // with a stuck pending indicator (caught by #run → onError).
+      // The stream resolved without RUN_FINISHED / RUN_ERROR, so the transport
+      // dropped mid-run. Surface it as an error (via #run) rather than resting
+      // silently with a stuck pending indicator.
       if (!runState.terminal) {
         throw new ConnectionLostError(this.#connectionLostMessage);
       }
-      // RUN_ERROR is terminal: the agent already reported the failure via
-      // onError. Don't execute the tool calls collected before it or start
-      // another round — that would run into a broken context and surface a
-      // confusing second error. Any pending tool card is swept at onSettled.
+      // RUN_ERROR is terminal and the agent already reported it via onError.
+      // Executing the calls collected before it, or starting another round,
+      // would run into a broken context and raise a confusing second error.
+      // Pending tool cards are swept at onSettled.
       if (runState.errored) {
         return;
       }
-      // A gated server-side tool deferred instead of executing: the run finished
-      // on an interrupt outcome. Ask the host to resolve each interrupt, then
-      // re-enter the loop carrying the answers — the follow-up run runs or denies
-      // the tool (its result streams back as TOOL_CALL_RESULT). Takes precedence
-      // over the frontend-tool sweep below: a server-side tool isn't ours to run.
+      // A gated server-side tool deferred, so the run finished on an interrupt
+      // outcome: resolve each interrupt, then re-enter carrying the answers so
+      // the follow-up run executes or denies the tool. Must precede the
+      // frontend-tool sweep below — a server-side tool isn't ours to run.
       if (runState.interrupts.length > 0) {
         if (this.#resolveInterrupts === null) {
           return;
@@ -410,13 +402,10 @@ export class AgUiClient {
         h.onRunStart();
       },
       onTextMessageStartEvent({ event }) {
-        // A server that reuses a message id gets its two answers merged into
-        // one transcript entry, silently, and that merged entry is what gets
-        // persisted. The protocol has no rule to enforce here and refusing the
-        // event would be worse than the merge, so this warns and continues —
-        // but it should not be silent, because the corruption outlives the
-        // session and reads as a client bug. Found by a demo harness doing
-        // exactly this.
+        // A reused message id merges two answers into one persisted transcript
+        // entry. The protocol has no rule to enforce and refusing the event
+        // would be worse than the merge, so warn and continue — but do not stay
+        // silent, since the corruption outlives the session.
         if (closed.has(event.messageId)) {
           console.warn(
             `<ag-ui-chat>: the server reused message id "${event.messageId}", which was ` +
@@ -448,9 +437,9 @@ export class AgUiClient {
       onActivitySnapshotEvent({ event }) {
         h.onActivity(event.activityType, event.content);
       },
-      // Reasoning. `@ag-ui/client` already maps the deprecated
-      // THINKING_* events onto these REASONING_* callbacks, so handling the
-      // reasoning family alone covers both protocol versions.
+      // `@ag-ui/client` maps the deprecated THINKING_* events onto these
+      // REASONING_* callbacks, so the reasoning family alone covers both
+      // protocol versions.
       onReasoningStartEvent() {
         h.onReasoningStart();
       },
@@ -462,9 +451,9 @@ export class AgUiClient {
       },
       onRunFinishedEvent(params) {
         // RUN_FINISHED is terminal for both a normal finish and an interrupt.
-        // Capturing the interrupts here (rather than reading the agent's
-        // `pendingInterrupts` field afterwards) keeps the loop self-contained
-        // and independent of that field's cross-run clearing semantics.
+        // Capture the interrupts here rather than reading the agent's
+        // `pendingInterrupts` afterwards, to stay independent of that field's
+        // cross-run clearing semantics.
         runState.terminal = true;
         if (params.outcome === "interrupt") {
           runState.interrupts = params.interrupts;

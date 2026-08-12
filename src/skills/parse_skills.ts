@@ -1,11 +1,10 @@
 import type { Skill } from "./skill.js";
 
 /**
- * Whether ``value`` has the required string fields of a {@link Skill}.
+ * Whether `value` has the required string fields of a {@link Skill}.
  *
- * `prompt` is optional and must stay so: a server-resolved skill deliberately
- * omits it, and requiring it here would silently drop exactly the skills whose
- * wording was kept off the client.
+ * `prompt` must stay optional: a server-resolved skill omits it, and requiring
+ * it would silently drop exactly the skills kept off the client.
  */
 function isSkill(value: unknown): value is Skill {
   if (typeof value !== "object" || value === null) {

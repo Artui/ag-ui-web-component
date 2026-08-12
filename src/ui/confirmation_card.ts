@@ -24,9 +24,9 @@ function actionButton(modifier: string, label: string): HTMLButtonElement {
 /** Options for {@link requestConfirmation}. */
 export interface ConfirmationOptions {
   /**
-   * Aborting this signal resolves the card as declined (buttons disabled,
-   * `data-resolved="declined"`) — the hook a Stop control uses to dismiss a
-   * pending confirmation when the user cancels the whole run.
+   * Aborting this signal resolves the card as declined, with buttons disabled
+   * and `data-resolved="declined"` — how a Stop control dismisses a pending
+   * confirmation.
    */
   signal?: AbortSignal;
   /** Localized strings; defaults to the English {@link DEFAULT_UI_STRINGS}. */
@@ -34,20 +34,15 @@ export interface ConfirmationOptions {
 }
 
 /**
- * Append an inline confirmation card to ``host`` (the chat message list) and
- * resolve when the user decides.
+ * Append an inline confirmation card to `host` (the chat message list) and
+ * resolve `true` on confirm, `false` on cancel.
  *
- * Unlike a modal overlay, the card lives in the transcript right where the
- * action is — it reads naturally after the assistant's explanation and never
- * steals focus from the page. Resolves ``true`` on confirm, ``false`` on
- * cancel.
+ * The card lives in the transcript rather than in a modal overlay, so it reads
+ * after the assistant's explanation and never steals focus from the page.
  *
- * **Answering it removes it.** A prompt and a record are two different objects:
- * the prompt owns the user's attention until it is answered, and the record of
- * what was decided belongs in the transcript, in order, scrolling with
- * everything else. The tool card this gates is that record — it settles to
- * `done` or `declined` and carries the decision. Leaving the spent form in
- * place made an answered question read as outstanding.
+ * Answering it removes it: the record of the decision belongs to the tool card
+ * this gates, which settles to `done` or `declined` and carries it. A spent
+ * form left in place reads as still outstanding.
  */
 export function requestConfirmation(
   host: Node & ParentNode,

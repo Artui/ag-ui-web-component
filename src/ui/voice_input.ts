@@ -20,13 +20,13 @@ export interface VoiceInputOptions {
  * `MediaRecorder`, then POSTs the clip through a {@link TranscribeHandler} and
  * hands the transcript back via `onText`.
  *
- * Click to start recording (browser mic permission prompt), click again to stop
- * — the clip is transcribed and dropped into the composer. The button reflects
- * its `idle` / `recording` / `transcribing` state on `data-state` for theming
- * and is exposed as `part="voice-button"`. A capture or transcription failure
- * returns the button to idle and surfaces the message on its tooltip.
+ * Click to start recording, which prompts for mic permission, and again to stop
+ * and transcribe. The button reflects its `idle` / `recording` / `transcribing`
+ * state on `data-state` for theming and is exposed as `part="voice-button"`; a
+ * capture or transcription failure returns it to idle and surfaces the message
+ * on its tooltip.
  *
- * Pure DOM (no framework); the host mounts {@link element} in the input row.
+ * Pure DOM. The host mounts {@link element} in the input row.
  */
 export class VoiceInput {
   /** The mic button; mount this in the composer. */
@@ -102,11 +102,10 @@ export class VoiceInput {
   }
 
   /**
-   * Tear the control down — the teardown path when the host element is removed
-   * mid-recording. Stops any live `MediaRecorder`, releases the mic tracks (so
-   * the browser's recording indicator clears), and suppresses the pending
-   * transcription: a disconnected control must not fire `onText` back into a
-   * detached element.
+   * Tear the control down, for a host element removed mid-recording. Stops any
+   * live `MediaRecorder`, releases the mic tracks so the browser's recording
+   * indicator clears, and suppresses the pending transcription — a
+   * disconnected control must not fire `onText` into a detached element.
    */
   dispose(): void {
     this.#disposed = true;

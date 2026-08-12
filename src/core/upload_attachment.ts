@@ -3,16 +3,13 @@ import type { AttachmentRef } from "./attachment.js";
 /**
  * The composer's upload contract: take a `File`, report `0..1` progress, and
  * resolve to a durable {@link AttachmentRef}. The built-in handler is
- * {@link uploadAttachment} (multipart POST); a host swaps in its own — e.g. a
- * `tus-js-client` or direct-to-S3 adapter — via `AgUiChat.uploadHandler`,
- * **without** touching the tray, the chips, or the AG-UI wire (refs are
- * transport-agnostic).
+ * {@link uploadAttachment}; a host swaps in its own (a `tus-js-client` or
+ * direct-to-S3 adapter) via `AgUiChat.uploadHandler` without touching the tray,
+ * the chips, or the AG-UI wire, refs being transport-agnostic.
  *
- * The optional third `signal` argument lets the tray abort an in-flight upload
- * when its chip is removed (or the element is torn down), so a cancelled upload
- * doesn't orphan a server-side file. It is non-breaking: existing two-argument
- * handlers keep working (the extra argument is simply ignored), and a custom
- * handler that honours it should abort its own transport when the signal fires.
+ * The optional `signal` fires when the tray removes a chip or the element is
+ * torn down; a handler that honours it should abort its own transport, so a
+ * cancelled upload doesn't orphan a server-side file.
  */
 export type UploadHandler = (
   file: File,
@@ -28,11 +25,11 @@ export interface UploadOptions {
   readonly headers?: Record<string, string>;
   /**
    * Cookie policy, spelled as `fetch`'s `credentials` mode for consistency with
-   * the component's other endpoints — but carried by `XMLHttpRequest`, which
-   * only has the two-state `withCredentials`. `"include"` sets it; every other
-   * value leaves it off, which matches `"same-origin"`. `"omit"` therefore
-   * **cannot** be honoured for a same-origin upload (XHR always sends cookies
-   * there); use a custom {@link UploadHandler} if that matters.
+   * the other endpoints, but carried by `XMLHttpRequest`'s two-state
+   * `withCredentials`: `"include"` sets it and every other value leaves it off,
+   * matching `"same-origin"`. `"omit"` therefore cannot be honoured for a
+   * same-origin upload, XHR always sending cookies there; use a custom
+   * {@link UploadHandler} if that matters.
    */
   readonly credentials?: RequestCredentials;
   /** Progress callback, `0..1`, fired as the body uploads. */
@@ -45,10 +42,10 @@ export interface UploadOptions {
  * Upload one file to the attachments endpoint and resolve to its durable
  * {@link AttachmentRef}.
  *
- * Uses `XMLHttpRequest` (not `fetch`) for real upload-progress events: the file
- * is sent as multipart under the `file` field, with the element's `headers` so
- * CSRF / auth ride along exactly like the skills/tools fetches. A non-2xx
- * response or a network/abort error rejects, so the tray can show an error chip.
+ * Uses `XMLHttpRequest` rather than `fetch` for real upload-progress events.
+ * The file goes as multipart under the `file` field with the element's
+ * `headers`, so CSRF / auth ride along; a non-2xx response or a network/abort
+ * error rejects, letting the tray show an error chip.
  */
 export function uploadAttachment(file: File, options: UploadOptions): Promise<AttachmentRef> {
   return new Promise<AttachmentRef>((resolve, reject) => {
@@ -57,9 +54,9 @@ export function uploadAttachment(file: File, options: UploadOptions): Promise<At
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", options.url);
-    // Cross-origin cookies ride only when asked for, exactly as with the fetch
-    // sites; without this an upload to another subdomain is anonymous and 401s
-    // while the run itself succeeds.
+    // Cross-origin cookies ride only when asked for, as at the fetch sites.
+    // Without this an upload to another subdomain goes anonymous and 401s while
+    // the run itself succeeds.
     xhr.withCredentials = options.credentials === "include";
     for (const [key, value] of Object.entries(options.headers ?? {})) {
       xhr.setRequestHeader(key, value);

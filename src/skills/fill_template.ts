@@ -9,12 +9,11 @@ export interface TemplateResult {
 const PLACEHOLDER_RE = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
 
 /**
- * Substitute `{name}` placeholders in ``template`` from ``values``.
+ * Substitute `{name}` placeholders in `template` from `values`.
  *
- * A placeholder whose value is missing, ``null``, or an empty string is left
- * verbatim and reported in ``missing`` — the caller blocks send and tells the
- * user what's needed (e.g. "select rows first") rather than sending a
- * half-filled prompt.
+ * A placeholder whose value is missing, `null`, or an empty string is left
+ * verbatim and reported in `missing`, so the caller can block the send rather
+ * than dispatch a half-filled prompt.
  */
 export function fillTemplate(template: string, values: Record<string, unknown>): TemplateResult {
   const missing: string[] = [];

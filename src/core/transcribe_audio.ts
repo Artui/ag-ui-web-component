@@ -2,10 +2,10 @@ import { withCredentials } from "./utils.js";
 
 /**
  * The composer's voice-transcription contract: take a recorded audio `Blob` and
- * resolve to the transcript text. The built-in handler is {@link transcribeAudio}
- * (multipart POST to `data-transcribe-url`); a host swaps in its own — e.g. a
- * browser Web Speech adapter or a direct-to-provider call — via
- * `AgUiChat.transcribeHandler`, without touching the mic button.
+ * resolve to the transcript text. The built-in handler is
+ * {@link transcribeAudio}; a host swaps in its own (a Web Speech adapter, a
+ * direct-to-provider call) via `AgUiChat.transcribeHandler` without touching
+ * the mic button.
  */
 export type TranscribeHandler = (audio: Blob) => Promise<string>;
 
@@ -27,15 +27,14 @@ export interface TranscribeOptions {
 /**
  * POST a recorded clip to the transcription endpoint and resolve to its text.
  *
- * The clip is sent as multipart under the `audio` field with the element's
- * `headers`, mirroring {@link uploadAttachment}; the server replies
- * `{ "text": "<transcript>" }`. A non-2xx response or a network error rejects so
- * the mic button can surface the failure.
+ * The clip goes as multipart under the `audio` field with the element's
+ * `headers`, mirroring {@link uploadAttachment}, and the server replies
+ * `{ "text": "<transcript>" }`. A non-2xx response or a network error rejects
+ * so the mic button can surface the failure.
  */
 export async function transcribeAudio(audio: Blob, options: TranscribeOptions): Promise<string> {
   const form = new FormData();
-  // A filename hints the server/codec; the extension is cosmetic (the server
-  // reads the blob's content type).
+  // The extension is cosmetic: the server reads the blob's content type.
   form.append("audio", audio, "recording.webm");
 
   const response = await fetch(

@@ -7,11 +7,9 @@ import type { ClientTool } from "./client_tool_registry.js";
  * Ergonomic sugar over `registerTool` for SPA state (Redux/Zustand/signals):
  * generates a read tool and, when `write` is given, a destructive set tool.
  *
- * This is **not** AG-UI shared state. `STATE_SNAPSHOT` / `STATE_DELTA` are
- * protocol events carrying state between agent and client; this is a pair of
- * ordinary client tools the agent calls like any other. The two are unrelated,
- * which is why this no longer carries the word "hook" — the old name read as
- * protocol state sync, which this component does not implement.
+ * Not AG-UI shared state. `STATE_SNAPSHOT` / `STATE_DELTA` are protocol events
+ * carrying state between agent and client; these are ordinary client tools the
+ * agent calls like any other.
  */
 export interface PageState {
   /** Base name; tools become `read_<name>` and `set_<name>`. */
@@ -59,9 +57,8 @@ export function createPageStateTools(binding: PageState): ClientTool[] {
 }
 
 /**
- * @deprecated Renamed to {@link PageState}. The old name read as AG-UI
- * shared-state sync (`STATE_SNAPSHOT` / `STATE_DELTA`), which this component
- * does not implement. Will be removed in a future major.
+ * @deprecated Renamed to {@link PageState} — the old name read as AG-UI
+ * shared-state sync. Will be removed in a future major.
  */
 export type StateHook = PageState;
 

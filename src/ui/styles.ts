@@ -8,12 +8,11 @@ export const STYLES = `
    only the alias is used by the rules below.
 
    The indirection is what makes ancestor theming work. Declaring the public
-   name on :host would set it *on the host element*, and a value on an element
-   always beats one inherited from an ancestor — so a page that put the tokens
-   on a wrapper would see no effect at all, which is the one thing the API is
-   documented to support. Reading the public name with the default as a var()
-   fallback leaves it undeclared on the element, so an ancestor's value is
-   inherited normally while a value aimed at the element still wins over it.
+   name on :host would set it on the host element, and a value on an element
+   always beats one inherited from an ancestor, so tokens put on a wrapper
+   would have no effect. Reading the public name with the default as a var()
+   fallback leaves it undeclared on the element, so an ancestor's value
+   inherits normally while one aimed at the element still wins.
 
    Two invariants hold this together:
    1. No rule outside this file's :host blocks may reference a public name
@@ -40,11 +39,9 @@ export const STYLES = `
   --_border: var(--ag-ui-border, #e2e2ec);
   --_radius: var(--ag-ui-radius, 12px);
 
-  /* Body text and raised chrome. Both are referenced by the code-block copy
-     button; neither had a default before, so the declarations reading them
-     were dropped and the button fell back to the inherited colour over a
-     transparent box. The defaults below restate exactly that, so this is a
-     rename with no repaint — see the note on .code-copy. */
+  /* Body text and raised chrome, read only by the code-block copy button.
+     The defaults restate what it inherits, so a host that sets neither sees
+     no repaint — see the note on .code-copy. */
   --_text: var(--ag-ui-text, var(--_fg));
   --_surface: var(--ag-ui-surface, transparent);
 
@@ -97,9 +94,9 @@ export const STYLES = `
   --_launcher-inset: var(--ag-ui-launcher-inset, auto 0 0 auto);
 
   /* Motion. One duration and two curves drive every collapse, expand and
-     slide-over, so the whole widget accelerates and settles as one thing.
-     The default curve is a long-tailed ease-out (a fast start that decelerates
-     into place); the pop curve overshoots slightly, for something arriving. */
+     slide-over, so the widget accelerates and settles as one thing. The
+     default curve decelerates into place; the pop curve overshoots slightly,
+     for something arriving. */
   --_motion: var(--ag-ui-motion, 0.28s);
   --_ease: var(--ag-ui-ease, cubic-bezier(0.32, 0.72, 0, 1));
   --_ease-pop: var(--ag-ui-ease-pop, cubic-bezier(0.34, 1.36, 0.64, 1));
@@ -123,7 +120,7 @@ export const STYLES = `
   /* Reading-column width for placement="page" (full-bleed, centred content). */
   --_content-max-width: var(--ag-ui-content-max-width, 820px);
   /* Slim rail the sidebar placement collapses to. Only that placement reads
-     it, but it is declared here so invariant 2 holds for every alias. */
+     it, but it is declared here so every alias has a default in one place. */
   --_rail-width: var(--ag-ui-rail-width, 52px);
 
   position: var(--_position);
@@ -215,11 +212,11 @@ export const STYLES = `
   --_radius: var(--ag-ui-radius, 0);
 }
 
-/* Page: full-bleed background with a centred reading column. Unlike
-   "full" (edge-to-edge, left-aligned messages) the content sits in a column
-   capped at --ag-ui-content-max-width. The column is produced by symmetric auto
-   padding on the scroll area + composer (no per-row wrapper), so user pills
-   still right-align and the assistant well spans the column. */
+/* Page: full-bleed background with a centred reading column capped at
+   --ag-ui-content-max-width, where "full" is edge-to-edge and left-aligned.
+   The column comes from symmetric auto padding on the scroll area and
+   composer rather than a per-row wrapper, so user pills still right-align and
+   the assistant well spans the column. */
 :host([placement="page"]) {
   --_inset: var(--ag-ui-inset, 0);
   --_width: var(--ag-ui-width, 100vw);
@@ -237,9 +234,8 @@ export const STYLES = `
   padding-inline: max(12px, calc((100% - var(--_content-max-width)) / 2));
 }
 
-/* The rows between the message list and the composer (skill chips, the
-   /-command palette, the missing-placeholder hint, the upload tray) line up
-   with the column too — chips are padding-based, the palette/hint/tray are
+/* The rows between the message list and the composer line up with the column
+   too. Chips and tray are padding-based while palette and hint are
    margin-based, so each gets its own inline axis nudged by the same gutter. */
 :host([placement="page"]) .skill-chips,
 :host([placement="page"]) .attachment-tray {
@@ -348,13 +344,12 @@ export const STYLES = `
     visibility var(--_motion) var(--_ease);
 }
 
-/* The launcher grows out of the corner the panel shrank into.
-   It is laid out at rest rather than display:none, which is what lets it
-   animate in *and* out: an element that was not rendered has no before-change
-   style to transition from, and one whose display flips to none cannot
-   transition at all. visibility keeps it unpaintable, untabbable and
-   unclickable in between -- the expanded panel's own controls sit under it and
-   must stay reachable. */
+/* The launcher grows out of the corner the panel shrank into. It stays laid
+   out at rest rather than display:none, which is what lets it animate both in
+   and out: an unrendered element has no before-change style to transition
+   from, and one flipping display to none cannot transition at all. visibility
+   keeps it unpaintable, untabbable and unclickable in between, so the expanded
+   panel's own controls underneath stay reachable. */
 :host([collapsed]) .launcher {
   opacity: 1;
   transform: none;
@@ -515,20 +510,18 @@ export const STYLES = `
 
 /* ── Collapse ───────────────────────────────────────────────────────────────
    Collapsing shrinks the widget to the round floating launcher: the panel
-   scales down toward the launcher's corner and fades out, the launcher pops in
-   from that same point. Both halves are transform and opacity only, so the
-   morph runs on the compositor and never reflows the host page.
+   scales toward the launcher's corner and fades, the launcher pops in from the
+   same point. Both halves are transform and opacity only, so the morph runs on
+   the compositor and never reflows the host page.
 
-   The host box keeps its expanded size. Animating it would animate layout, and
-   a dragged --ag-ui-width would then fight the launcher's own size. Nothing
-   paints there once the panel is gone, so the box only has to stop swallowing
-   clicks: pointer events go to none, and the launcher takes them back.
+   The host box keeps its expanded size, since animating it would animate
+   layout and a dragged --ag-ui-width would fight the launcher's own size.
+   Nothing paints there once the panel is gone, so the box only has to stop
+   swallowing clicks: pointer events go to none and the launcher takes them.
 
-   Two placements collapse to something else and restore what they need:
-   "sidebar" slides to its rail (below), while "embedded" and "page" keep the
-   original header bar — embedded is laid out by the host page, where a
-   floating circle would escape the layout, and page is a full-screen route
-   with no corner to float in. */
+   Two placements collapse differently: "sidebar" slides to its rail (below),
+   while "embedded" and "page" keep the header bar, having no corner for a
+   floating circle that would escape the host's layout. */
 :host([collapsed]) {
   pointer-events: none;
 }
@@ -539,11 +532,11 @@ export const STYLES = `
   visibility: hidden;
 }
 
-/* visibility is what keeps the panel out of the tab order and the a11y tree at
-   rest without display:none killing the transition. It interpolates so that any
-   progress below 1 still counts as visible: the panel stays on screen for the
-   whole collapse and flips hidden exactly at the end, and on expand it is
-   visible from the first frame. */
+/* visibility keeps the panel out of the tab order and the a11y tree at rest
+   without display:none killing the transition. It interpolates so any progress
+   below 1 still counts as visible: the panel stays on screen for the whole
+   collapse, flips hidden exactly at the end, and on expand is visible from the
+   first frame. */
 .chat {
   transform-origin: bottom right;
   transition:
@@ -570,10 +563,9 @@ export const STYLES = `
   visibility: visible;
 }
 
-/* These two keep the header bar, so the launcher must stay out of the way —
-   an embedded host is position: static, which would otherwise leave an
-   absolutely-positioned circle to escape the layout entirely and land against
-   whatever the page happens to position. */
+/* These two keep the header bar, so the launcher must stay out of the way: an
+   embedded host is position: static, which would let an absolutely-positioned
+   circle escape the layout and land against whatever the page positions. */
 :host([collapsed]:is([placement="embedded"], [placement="page"])) .launcher {
   visibility: hidden;
   opacity: 0;
@@ -613,7 +605,7 @@ export const STYLES = `
    and the pending indicator so a whole answer reads (and can be boxed) as one
    unit. A flex column on the message-list gap, stretched to the list width so
    its children keep their own left/right alignment. data-answer-well opts into
-   the bordered "well"; without it the layout is today's flat stack. */
+   the bordered "well"; without it the turn renders as a flat stack. */
 .answer {
   display: flex;
   flex-direction: column;
@@ -739,13 +731,9 @@ export const STYLES = `
   position: relative;
 }
 
-/* This button is the only reader of --ag-ui-surface and --ag-ui-text, and
-   neither had a default until the alias layer gave them one. Both references
-   used to resolve to nothing, dropping the declaration: the background fell
-   back to the initial transparent, and the hover/copied colour to the
-   inherited body colour. The defaults chosen upstream (transparent, and the
-   body foreground) reproduce that, so the rename repaints nothing. A raised
-   surface behind the button is a separate design question. */
+/* The only reader of --ag-ui-surface and --ag-ui-text. Their defaults are
+   transparent and the body foreground, which is what this button rendered as
+   before either token existed; changing them repaints only this control. */
 .code-copy {
   position: absolute;
   top: 4px;
@@ -791,12 +779,10 @@ export const STYLES = `
   color: var(--_muted);
 }
 
-/* Markdown tables. table/thead/tbody/tr/th/td are all in
-   the sanitizer's ALLOWED_TAGS, so an agent emitting one renders it — and until
-   now rendered it entirely unstyled, overflowing the bubble. A wide table
-   scrolls inside its own box rather than stretching the message: the bubble is
-   width-constrained, so without this the columns either crush or push the
-   layout sideways. */
+/* Markdown tables. table/thead/tbody/tr/th/td are all in the sanitizer's
+   ALLOWED_TAGS, so an agent can emit one. A wide table must scroll inside its
+   own box rather than stretch the message: the bubble is width-constrained, so
+   without this the columns either crush or push the layout sideways. */
 .message--assistant table {
   display: block;
   width: fit-content;
@@ -1053,8 +1039,6 @@ export const STYLES = `
   color: var(--_muted);
 }
 
-/* The record of a human decision on a gated call. An approved call used to
-   look exactly like one that was never gated. */
 .skill-item-token {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.92em;
@@ -1062,6 +1046,8 @@ export const STYLES = `
   margin-right: 6px;
 }
 
+/* The lasting record of a human decision on a gated call — without it an
+   approved call looks exactly like one that was never gated. */
 .tool-call-decision {
   flex: none;
   font-size: 11px;
@@ -1084,10 +1070,8 @@ export const STYLES = `
 }
 
 /* Display modes are pure visibility over one DOM shape, selected from the host
-   attribute rather than a value stamped on the card when it was built. That is
-   what lets a host flip data-tool-display and have every card already on screen
-   re-read it, the way data-answer-well behaves. Baking the structure per mode
-   meant the setting only reached cards created afterwards.
+   attribute rather than a value stamped on the card at build time, so flipping
+   data-tool-display re-styles cards already on screen. See ToolCallCard.
 
    Default (no attribute) is the full mode: arguments always visible, result
    behind the toggle. */
@@ -1184,20 +1168,19 @@ export const STYLES = `
 }
 
 /* Then the measurement corrects it. Which edges are held still belongs to the
-   host's layout rather than to placement -- a floating panel a host right-aligns
-   is anchored bottom-left, not bottom-right -- so the element measures the edges
-   that stay put and stamps them here as "<y>-<x>". Equal specificity to the
-   rules above, so source order is what lets the measured value win.
+   host's layout, not to placement -- a floating panel a host right-aligns is
+   anchored bottom-left -- so the element measures them and stamps a single
+   hyphenated "<y>-<x>" token here. Equal specificity to the rules above, so
+   source order is what lets the measured value win.
 
-   These must not be written as [data-resize-anchor~="left"]: the stamped value
-   is one hyphenated token, and ~= matches whitespace-separated words, so such a
-   selector cannot ever match. It did not, which left the grip drawn at the
-   corner that moves while the cursor pointed along the right diagonal.
+   Two traps, both of which silently draw the grip on the corner that moves:
 
-   Each rule also sets both sides of its axis rather than only the side it
-   moves. One that flipped a single way could not undo a placement guess that
-   had flipped the other, which put the grip on the anchored corner for an
-   embedded panel its host right-aligns. */
+   Never write these as [data-resize-anchor~="left"]. The stamped value is one
+   hyphenated token and ~= matches whitespace-separated words, so it can never
+   match.
+
+   Each rule must set both sides of its axis, not only the side it moves, or it
+   cannot undo a placement guess that flipped the other way. */
 :host([data-resize-anchor$="-left"]) .resize-handle {
   left: auto;
   right: 0;
@@ -1258,10 +1241,9 @@ export const STYLES = `
 }
 
 /* ── Composer ───────────────────────────────────────────────────────────────
-   One surface owns the border, the background and the focus ring; the field and
-   its tool row sit inside it. The row used to be four siblings stretched to the
-   textarea's height, which gave a paperclip the same visual weight as the field
-   and turned Send into a full-height slab. */
+   One surface owns the border, the background and the focus ring; the field
+   and its tool row sit inside it, rather than being siblings stretched to the
+   textarea's height. */
 .input-row {
   display: flex;
   padding: 12px;
@@ -1509,13 +1491,12 @@ export const STYLES = `
 }
 
 /* A chip carries its own text colour because it carries its own background.
-   The same chip renders in two places with opposite inherited colours: in the
-   composer tray it inherits the panel's, but on a sent user bubble it inherits
-   the user foreground, which is white on the stock light theme. Against the
-   assistant surface underneath that was a 1.13:1 filename — invisible, and only
-   the size stayed legible because it sets its own muted colour. Pair the colour
-   with the background it belongs to, and both placements read the same.
-   Overridden below for an errored chip, which must keep its red. */
+   The same chip renders in two places with opposite inherited colours: the
+   composer tray gives it the panel's, a sent user bubble gives it the user
+   foreground, which is white on the stock light theme and near-invisible
+   against the chip. Pairing the colour with the background it belongs to makes
+   both placements read alike. Overridden below for an errored chip, which
+   keeps its red. */
 .attachment-chip {
   display: inline-flex;
   align-items: center;

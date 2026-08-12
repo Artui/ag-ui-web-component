@@ -36,13 +36,13 @@ interface TrayItem {
 
 /**
  * The composer's pending-attachments tray: a chip per picked file with a
- * progress bar while it uploads, settling to a ready chip (holding the durable
- * ref) or an error chip (with retry). A *stateful view* in the spirit of
- * {@link ThreadDrawer} — the host appends {@link element}, calls {@link add} on
- * pick/drop, reads {@link readyRefs} when the user sends, and clears it.
+ * progress bar while it uploads, settling to a ready chip holding the durable
+ * ref or an error chip with retry. A stateful view like {@link ThreadDrawer}:
+ * the host appends {@link element}, calls {@link add} on pick or drop, reads
+ * {@link readyRefs} on send, and clears it.
  *
- * Client-side size/type guards reject a bad file into an error chip without
- * uploading — instant feedback, but the server is the authority.
+ * Client-side size and type guards reject a bad file into an error chip without
+ * uploading, for instant feedback, but the server stays the authority.
  */
 export class AttachmentTray {
   /** The tray root; append above the input row. Hidden while empty. */

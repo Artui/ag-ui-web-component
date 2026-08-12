@@ -5,14 +5,9 @@
  * or its `data-strings` JSON attribute) and the rest fall back to the English
  * defaults.
  *
- * A handful of values are **templates** carrying `{token}` placeholders the call
- * site fills in (e.g. `minutesAgo` → `"{n}m ago"`); the token names are noted on
- * each key. Translators keep the token verbatim.
- *
- * This module is one cohesive unit — the `UiStrings` shape, its `DEFAULT_UI_STRINGS`
- * constant-like backing, and the {@link mergeUiStrings} merge over those defaults —
- * so it bends the one-symbol-per-file rule the way `tool_call_card.ts` (class +
- * its types) and `route_map.ts` (factory + its types) already do.
+ * Some values are templates carrying `{token}` placeholders the call site fills
+ * in; the token names are noted on each key, and a translation must keep them
+ * verbatim.
  */
 export interface UiStrings {
   // ── Header ────────────────────────────────────────────────────────────────
@@ -27,10 +22,9 @@ export interface UiStrings {
   /** Expand affordance (the launcher, and the sidebar rail). */
   expand: string;
   /**
-   * The launcher's label while unread answers are waiting behind it, with
-   * `{count}` replaced by how many. It replaces {@link expand} rather than
-   * appending to it, so a translation can order the two parts as its language
-   * needs.
+   * The launcher's label while unread answers wait behind it. Token: `{count}`.
+   * Replaces {@link expand} rather than appending to it, so a translation can
+   * order the two parts as its language needs.
    */
   expandUnread: string;
   /** Built-in header theme toggle (light ⇄ dark). */

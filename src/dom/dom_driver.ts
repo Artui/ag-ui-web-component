@@ -25,16 +25,16 @@ import { setNativeChecked, setNativeValue } from "./native_setter.js";
  */
 
 /**
- * A field has to hold focus to be typed into, so ``focus`` is not on offer
- * here — everything else the flash takes is.
+ * Every flash option except `focus`, which is not on offer: a field has to hold
+ * focus to be typed into.
  */
 export interface FillFieldOptions extends TypeOptions, Omit<FlashOptions, "focus"> {}
 
 /**
- * Scroll to, focus (with a flash), and type ``value`` into a text field.
+ * Scroll to, focus (with a flash), and type `value` into a text field.
  *
- * The scroll is awaited: typing into an element that is still gliding past
- * shows the user nothing.
+ * The scroll is awaited — typing into an element still gliding past shows the
+ * user nothing.
  */
 export async function fillField(
   el: TextLikeElement,
@@ -82,8 +82,8 @@ export async function toggleCheckbox(
 }
 
 /**
- * Set a `<select>` or checkbox value without typing animation, dispatching the
- * ``input`` and ``change`` events frameworks listen for.
+ * Set a `<select>` or checkbox value without animation, dispatching the `input`
+ * and `change` events frameworks listen for.
  */
 export function setControlValue(
   el: HTMLInputElement | HTMLSelectElement,

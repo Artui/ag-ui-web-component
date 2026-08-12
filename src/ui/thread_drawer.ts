@@ -17,13 +17,14 @@ export interface ThreadDrawerCallbacks {
 /**
  * The chat-history drawer: a slide-over listing the user's threads (title,
  * relative time, preview), with select / new / rename / delete actions and an
- * empty state. Pure DOM in the spirit of {@link SkillsMenu} — the host appends
+ * empty state. Pure DOM, like {@link SkillsMenu}: the host appends
  * {@link element}, toggles it, feeds rows via {@link setThreads}, and acts on
- * the callbacks. The drawer is a *view*: it does not mutate the store; after a
- * callback the host updates the store and calls {@link setThreads} to refresh.
+ * the callbacks.
  *
- * All visible text comes from {@link UiStrings}; {@link setStrings} re-localizes
- * a drawer the host built before its strings resolved.
+ * A view only — it never mutates the store. After a callback the host updates
+ * the store and calls {@link setThreads} to refresh. All visible text comes
+ * from {@link UiStrings}; {@link setStrings} re-localizes a drawer built before
+ * its strings resolved.
  */
 export class ThreadDrawer {
   /** The drawer root (backdrop + panel). Append to the chat shell; hidden until opened. */

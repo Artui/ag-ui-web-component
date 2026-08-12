@@ -41,29 +41,24 @@ function formatPayload(text: string): string {
 /**
  * A live tool-call card for the chat transcript.
  *
- * Construction renders a status icon, the tool name, a `running…` pill, and the
- * card's body: an **arguments** region and a **result** region, each with its own
- * heading and its own `part`. {@link settle} fills in the result and flips the
- * pill. Both payloads are pretty-printed, and the two are never concatenated —
- * the previous compact layout ran `args: {...}` and the result together in one
- * `<pre>`, leaving no way to see where the call ended and the answer began.
+ * Construction renders a status icon, the tool name, a status pill, and a body
+ * of two separately-headed regions — arguments and result — each with its own
+ * `part`. {@link settle} fills in the result and flips the pill. Both payloads
+ * are pretty-printed and never concatenated into one block.
  *
- * **The card renders one DOM shape in every display mode, and CSS decides what
- * shows.** That is what makes `data-tool-display` behave like `data-answer-well`
- * — flip it on the host and every card already on screen re-reads it. Building a
- * different structure per mode meant only cards created *after* the change
- * picked it up, so the setting appeared not to work until the next conversation.
- * Visibility is selected from the host attribute rather than a value copied onto
- * the card at construction, for the same reason.
+ * The card renders one DOM shape in every display mode and lets CSS decide what
+ * shows, selecting visibility from the host attribute rather than a value
+ * copied onto the card at construction. That is what lets `data-tool-display`
+ * be flipped on the host and re-read by every card already on screen; building
+ * a different structure per mode would leave existing cards stale.
  *
- * The leading icon carries no text of its own: its glyph/spinner is drawn by
- * the shadow CSS keyed off the card's `data-status`, so a host themes it via
- * the `--ag-ui-tool-icon-*` custom properties (or the `tool-card-icon` part)
- * without the card reaching into the host stylesheet.
+ * The leading icon carries no text: the shadow CSS draws its glyph or spinner
+ * from the card's `data-status`, so a host themes it through the
+ * `--ag-ui-tool-icon-*` custom properties or the `tool-card-icon` part without
+ * the card reaching into the host stylesheet.
  *
- * Pure DOM (no framework); the host appends {@link element} into its shadow
- * root and themes it via the `--ag-ui-*` custom properties or the exposed
- * `tool-card*` `part`s. All visible text is sourced from {@link UiStrings}.
+ * Pure DOM. The host appends {@link element} into its shadow root; all visible
+ * text comes from {@link UiStrings}.
  */
 export class ToolCallCard {
   /** The card's root element; append this into the message list. */
@@ -97,9 +92,8 @@ export class ToolCallCard {
     head.className = "tool-call-head";
     head.setAttribute("part", "tool-card-head");
 
-    // The leading status icon — a spinner while pending, a check/cross/slash on
-    // settle. Empty in the DOM: the shadow CSS draws it from `data-status`, so
-    // the glyphs stay themeable (`--ag-ui-tool-icon-*`) and the spin is real.
+    // Left empty in the DOM on purpose: the shadow CSS draws the spinner or
+    // settled mark from `data-status`, keeping the glyphs themeable.
     const icon = document.createElement("span");
     icon.className = "tool-call-icon";
     icon.setAttribute("part", "tool-card-icon");
@@ -125,16 +119,15 @@ export class ToolCallCard {
 
     const argsSection = this.#section("args", strings.argumentsLabel);
     argsSection.body.textContent = JSON.stringify(args, null, 2);
-    // A call with no arguments renders an empty object in a box of its own,
-    // which is a frame around nothing. Drop the region instead.
+    // Drop the region rather than frame an empty object.
     argsSection.root.hidden = Object.keys(args).length === 0;
 
     const resultSection = this.#section("result", strings.resultLabel);
     this.#resultSection = resultSection.root;
     this.#resultLabel = resultSection.label;
     this.#resultBody = resultSection.body;
-    // Nothing to show until `settle` supplies it; a pending card would
-    // otherwise expand onto an empty region.
+    // Nothing to show until `settle` supplies it, or a pending card expands
+    // onto an empty region.
     resultSection.root.hidden = true;
 
     this.#toggle = document.createElement("button");
@@ -155,11 +148,8 @@ export class ToolCallCard {
 
   /**
    * Record that a human approved or declined this call, as a line in the card.
-   *
-   * Approval used to leave no trace at all: a declined call became a tool
-   * result saying so, while an approved one simply ran, making the transcript
-   * of a gated call byte-identical to one that was never gated. The prompt is
-   * gone once answered, so this is where the decision lives.
+   * The prompt disappears once answered, so this is the only lasting trace that
+   * the call was gated at all.
    */
   recordDecision(kind: "approved" | "declined"): void {
     this.element.setAttribute("data-decision", kind);

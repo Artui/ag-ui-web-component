@@ -25,9 +25,8 @@ function actionButton(modifier: string, label: string): HTMLButtonElement {
 /** Options for {@link requestApproval}. */
 export interface ApprovalOptions {
   /**
-   * Aborting this signal resolves the card as **denied** (buttons disabled,
-   * `data-resolved="denied"`) — the hook a Stop control uses to dismiss a
-   * pending approval when the user cancels the whole run.
+   * Aborting this signal resolves the card as denied, with buttons disabled and
+   * `data-resolved="denied"` — how a Stop control dismisses a pending approval.
    */
   signal?: AbortSignal;
   /** Localized strings; defaults to the English {@link DEFAULT_UI_STRINGS}. */
@@ -36,13 +35,11 @@ export interface ApprovalOptions {
 
 /**
  * A fully custom renderer for a server-side-tool approval, set via
- * `AgUiChat.approvalRenderer`. Receives the {@link ApprovalRequest} (the
- * interrupt's message + tool name) and an `AbortSignal` that fires when the run
- * is stopped, and resolves `true` to approve or `false` to deny. When provided
- * it **replaces** the built-in {@link requestApproval} card entirely — the host
- * owns the DOM, so it can render a native modal, a framework component, or
- * anything else. See the `strings` / `::part()` seams for styling the built-in
- * card instead of replacing it.
+ * `AgUiChat.approvalRenderer`. Receives the {@link ApprovalRequest} and an
+ * `AbortSignal` that fires when the run is stopped, and resolves `true` to
+ * approve or `false` to deny. Replaces the built-in {@link requestApproval}
+ * card entirely, the host owning the DOM; to restyle the built-in card instead,
+ * use the `strings` and `::part()` seams.
  */
 export type ApprovalRenderer = (
   request: ApprovalRequest,
@@ -50,17 +47,15 @@ export type ApprovalRenderer = (
 ) => Promise<boolean>;
 
 /**
- * Append an inline **approval** card to ``host`` and resolve when the user
- * decides whether a gated *server-side* tool may run.
+ * Append an inline approval card to `host` and resolve `true` to run a gated
+ * server-side tool or `false` to deny it.
  *
- * The server-side approval gate is distinct from the client-tool confirmation
- * card ({@link requestConfirmation}): a destructive server tool defers instead
- * of executing, and the run finishes on an AG-UI *interrupt* the client answers
- * with `resume[]`. This card is the browser half of that loop — it reads
- * naturally after the tool-call card whose execution it gates, and resolves
- * ``true`` to approve (run the tool) or ``false`` to deny. The card stays in the
- * transcript as a resolved record (buttons disabled, `data-resolved` set)
- * rather than vanishing.
+ * Distinct from the client-tool confirmation card
+ * ({@link requestConfirmation}): a gated server tool defers instead of
+ * executing, so the run finishes on an AG-UI interrupt the client answers with
+ * `resume[]`, and this is the browser half of that loop. Unlike the
+ * confirmation card, this one stays in the transcript as a resolved record,
+ * buttons disabled and `data-resolved` set.
  */
 export function requestApproval(
   host: Node & ParentNode,
