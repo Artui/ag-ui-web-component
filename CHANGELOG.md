@@ -55,8 +55,15 @@ Attachment chips, which turned out to be the least finished corner of 0.22.
   server now derives that from the refs riding the messages, so the client's
   copy only duplicated it on the turn a file was attached. Attachments still
   reach the agent — through the message, which is where they already were. The
-  page-map half of `getContext()` is unchanged. This is only visible to a host
-  that was reading the manifest out of the run context itself.
+  page-map half of `getContext()` is unchanged.
+
+  **This needs a server that derives the manifest itself.** `django-ag-ui`
+  does so from 0.42.0. Against an older server nothing replaces the client's
+  copy, so the agent stops being told which attachment ids exist and answers a
+  question about an attached file by asking for the file — which is the defect
+  the server-side derivation was written to fix. Upgrade the server first, or
+  together. A host that read the manifest out of the run context itself is
+  likewise affected.
 
 ## [0.22.0] — 2026-08-11
 
