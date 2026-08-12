@@ -36,6 +36,11 @@ const REF: AttachmentRef = {
   size: 128_000,
 };
 
+/** A ref whose name cannot fit any chip, however wide the bubble grows. */
+function longRef(): AttachmentRef {
+  return { ...REF, id: "a2", name: `${"very-long-segment-".repeat(12)}tail.pdf` };
+}
+
 function mount(attrs: Record<string, string> = {}): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
@@ -131,5 +136,40 @@ describe("attachment chips (real browser)", () => {
     const style = getComputedStyle(tray);
     expect(Number.parseFloat(style.paddingLeft)).toBeGreaterThan(12);
     expect(style.paddingLeft).toBe(style.paddingRight);
+  });
+
+  it("shows a filename the chip has room for in full", () => {
+    const el = mount();
+    const name = part(bubbleWithChips(el, [REF]), ".attachment-chip-name");
+    expect(name.scrollWidth).toBe(name.clientWidth);
+  });
+
+  it("ellipsises a name too long for the bubble without overflowing it", () => {
+    const el = mount();
+    const bubble = bubbleWithChips(el, [longRef()]);
+    const name = part(bubble, ".attachment-chip-name");
+    expect(name.scrollWidth).toBeGreaterThan(name.clientWidth);
+    expect(getComputedStyle(name).textOverflow).toBe("ellipsis");
+    const chips = part(bubble, ".attachment-chips");
+    expect(part(bubble, ".attachment-chip").getBoundingClientRect().right).toBeLessThanOrEqual(
+      chips.getBoundingClientRect().right,
+    );
+  });
+
+  it("applies the same name rules to a composer tray chip", () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    // An upload that never settles leaves the chip in its uploading state, so
+    // the tray renders synchronously with no transport involved.
+    el.uploadHandler = () => new Promise<AttachmentRef>(() => {});
+    document.body.appendChild(el);
+    expect(el.attachFile(new File(["x"], longRef().name, { type: "application/pdf" }))).toBe(true);
+    const tray = part(shadow(el), ".attachment-tray");
+    const name = part(tray, ".attachment-chip-name");
+    expect(getComputedStyle(name).maxWidth).toBe("none");
+    expect(name.scrollWidth).toBeGreaterThan(name.clientWidth);
+    expect(part(tray, ".attachment-chip").getBoundingClientRect().right).toBeLessThanOrEqual(
+      tray.getBoundingClientRect().right,
+    );
   });
 });

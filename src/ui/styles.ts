@@ -1519,6 +1519,11 @@ export const STYLES = `
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* Without this the 100% below caps the content box, so the chip still
+     overflows its container by its own padding and border. Invisible while a
+     character cap kept names short; routine once the container is what bounds
+     the name. */
+  box-sizing: border-box;
   max-width: 100%;
   padding: 4px 8px;
   border: 1px solid var(--_border);
@@ -1534,11 +1539,15 @@ export const STYLES = `
   color: var(--_danger);
 }
 
+/* No character cap: the chip is already max-width 100%, so its container is
+   what bounds the name, and a fixed cap only truncated names the chip had room
+   for. min-width: 0 is what lets the flex item shrink past its content, so the
+   ellipsis appears at the container edge instead of the chip overflowing. */
 .attachment-chip-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 14ch;
+  min-width: 0;
 }
 
 .attachment-chip-size {
