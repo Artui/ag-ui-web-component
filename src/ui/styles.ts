@@ -1539,6 +1539,22 @@ export const STYLES = `
   color: var(--_danger);
 }
 
+/* The type mark. Painted from currentColor, so it carries the chip's state
+   with it and turns red along with an errored one; muted by opacity rather
+   than a colour, which is what keeps that true. Sized from the chip's own text
+   rather than --ag-ui-glyph-size, the way an icon holder's glyph takes the
+   holder's size: the composer's 18px buttons would make a chip button-height. */
+.attachment-chip-icon {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.75;
+}
+
+.attachment-chip-icon .glyph {
+  width: 1.25em;
+  height: 1.25em;
+}
+
 /* No character cap: the chip is already max-width 100%, so its container is
    what bounds the name, and a fixed cap only truncated names the chip had room
    for. min-width: 0 is what lets the flex item shrink past its content, so the
