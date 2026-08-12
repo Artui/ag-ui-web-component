@@ -193,3 +193,23 @@ export const ICON_VOICE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="t
 
 /** The default launcher mark (a speech bubble), shown when the host slots none. */
 export const ICON_LAUNCHER = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-5 4z"/></svg>`;
+
+/**
+ * The attachment-chip type marks, one per coarse file family. Same contract as
+ * the chrome's glyphs above: static author-written markup on a 24x24 viewBox
+ * carrying the shared `glyph` class. A chip picks one by MIME family through
+ * `iconFor`; the MIME string selects a constant and is never interpolated into
+ * one, so nothing user- or server-supplied reaches the markup.
+ *
+ * The generic mark, for a family with nothing more specific to say.
+ */
+export const ICON_FILE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>`;
+
+/** An image attachment: a framed picture with a horizon and a sun. */
+export const ICON_FILE_IMAGE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.5"/><path d="M4.5 17.5 9 13.5l3.5 3 3-2.5 4.5 4"/></svg>`;
+
+/** A PDF: the generic page, banded to read as a labelled document. */
+export const ICON_FILE_PDF = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><rect class="glyph--solid" x="7.5" y="13.5" width="9" height="4.5" rx="1"/></svg>`;
+
+/** A text document: the generic page, ruled. */
+export const ICON_FILE_TEXT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M8.5 13.5h7M8.5 17h4.5"/></svg>`;

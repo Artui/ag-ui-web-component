@@ -1454,11 +1454,25 @@ export const STYLES = `
   display: contents;
 }
 
+/* The padding is the only separation the tray gets: its slot is display:
+   contents, so the tray is a direct child of the .chat column, and that column
+   sets no gap. The bottom value keeps a chip off the composer's top edge.
+   The inline value here is only the default: the page placement overrides
+   padding-inline further down to compute its reading-column gutter, and wins
+   on specificity whichever way this declaration is written. Read the two
+   together before changing either. */
 .attachment-tray {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 12px 0;
+  padding: 8px 12px;
+}
+
+/* The tray sets the hidden property while empty, and an author display beats
+   the UA stylesheet's rule for it, so without this the empty tray keeps
+   laying out and its padding is permanent dead space above the composer. */
+.attachment-tray[hidden] {
+  display: none;
 }
 
 .attachment-chips {
@@ -1494,15 +1508,29 @@ export const STYLES = `
   overflow-wrap: anywhere;
 }
 
+/* A chip carries its own text colour because it carries its own background.
+   The same chip renders in two places with opposite inherited colours: in the
+   composer tray it inherits the panel's, but on a sent user bubble it inherits
+   the user foreground, which is white on the stock light theme. Against the
+   assistant surface underneath that was a 1.13:1 filename — invisible, and only
+   the size stayed legible because it sets its own muted colour. Pair the colour
+   with the background it belongs to, and both placements read the same.
+   Overridden below for an errored chip, which must keep its red. */
 .attachment-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* Without this the 100% below caps the content box, so the chip still
+     overflows its container by its own padding and border. Invisible while a
+     character cap kept names short; routine once the container is what bounds
+     the name. */
+  box-sizing: border-box;
   max-width: 100%;
   padding: 4px 8px;
   border: 1px solid var(--_border);
   border-radius: 999px;
   background: var(--_assistant-bg);
+  color: var(--_text);
   font-size: 0.85em;
   position: relative;
 }
@@ -1512,11 +1540,31 @@ export const STYLES = `
   color: var(--_danger);
 }
 
+/* The type mark. Painted from currentColor, so it carries the chip's state
+   with it and turns red along with an errored one; muted by opacity rather
+   than a colour, which is what keeps that true. Sized from the chip's own text
+   rather than --ag-ui-glyph-size, the way an icon holder's glyph takes the
+   holder's size: the composer's 18px buttons would make a chip button-height. */
+.attachment-chip-icon {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.75;
+}
+
+.attachment-chip-icon .glyph {
+  width: 1.25em;
+  height: 1.25em;
+}
+
+/* No character cap: the chip is already max-width 100%, so its container is
+   what bounds the name, and a fixed cap only truncated names the chip had room
+   for. min-width: 0 is what lets the flex item shrink past its content, so the
+   ellipsis appears at the container edge instead of the chip overflowing. */
 .attachment-chip-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 14ch;
+  min-width: 0;
 }
 
 .attachment-chip-size {

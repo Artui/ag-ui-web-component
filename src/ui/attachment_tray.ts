@@ -215,7 +215,8 @@ export class AttachmentTray {
     const icon = document.createElement("span");
     icon.className = "attachment-chip-icon";
     icon.setAttribute("part", "attachment-chip-icon");
-    icon.textContent = iconFor(item.file.type);
+    // Author-written glyph markup, selected by MIME family — see iconFor.
+    icon.innerHTML = iconFor(item.file.type);
     icon.setAttribute("aria-hidden", "true");
 
     const name = document.createElement("span");

@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Attachment chips, which turned out to be the least finished corner of 0.22.
+
+### Fixed
+
+- **A filename on a sent attachment chip was invisible on the stock light
+  theme.** `.attachment-chip` set the assistant surface as its background but no
+  colour, so on a user bubble it inherited `--ag-ui-user-fg` — white on
+  `#f1f1f6`, a contrast ratio of 1.13:1 where WCAG AA wants 4.5:1. Only the size
+  stayed legible, because it sets its own muted colour, which is exactly how the
+  bug read to a user: an icon, a blank gap, and a size. The chip now takes
+  `--ag-ui-text`, the same consumer-overridable token the rest of the body text
+  uses, so a page that themes its text themes the chip with it. The dark and
+  code themes were never affected, which is why this shipped.
+
+- **The composer's attachment tray never collapsed.** The tray sets `hidden`
+  while it holds no chips, but its rule declared `display: flex` with no
+  `[hidden]` guard, and an author `display` beats the UA stylesheet's
+  `[hidden] { display: none }`. Every embed that wired uploads therefore carried
+  8px of dead space above the composer at all times. With the tray genuinely
+  collapsing, its padding is also symmetric again (`8px 12px`), so a chip clears
+  the composer's top edge instead of sitting flush against it.
+
+- **Filenames truncated far short of the space available.**
+  `.attachment-chip-name` capped itself at `14ch`, so
+  `LQ27552-7006-EXHIBIT-A.pdf` rendered as `LQ27552-7006 …` inside a chip with
+  room to spare. The cap is gone: the chip is already `max-width: 100%` with the
+  name ellipsising, so its container bounds it, and a genuinely long name now
+  ellipsises at the edge it actually reaches. The chip is `box-sizing:
+  border-box` with it, which stops that `100%` from overflowing its container by
+  the chip's own padding and border.
+
+### Changed
+
+- **Attachment chip icons are inline SVG.** 0.22 moved the chrome's glyphs to
+  inline SVG and stopped at the chips, leaving emoji sitting beside SVG send,
+  attach and mic buttons — a different optical weight, varying by platform, and
+  taking neither `currentColor` nor a size from CSS. Four marks (image, PDF,
+  text, generic) now follow the same contract as the rest, painted from the
+  chip's own colour so an errored chip turns red glyph and all. Both the sent
+  bubble's chips and the composer tray's change together.
+
+### Removed
+
+- **The client-side attachment manifest in `RunAgentInput.context`.**
+  `getContext()` appended a one-line summary of the message's attachments; the
+  server now derives that from the refs riding the messages, so the client's
+  copy only duplicated it on the turn a file was attached. Attachments still
+  reach the agent — through the message, which is where they already were. The
+  page-map half of `getContext()` is unchanged. This is only visible to a host
+  that was reading the manifest out of the run context itself.
+
 ## [0.22.0] — 2026-08-11
 
 Two complaints about how the widget *feels*, and both turned out to be structural
