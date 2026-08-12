@@ -4,10 +4,8 @@ import type { ClientTool } from "./client_tool_registry.js";
 
 /**
  * Resolve a page-action target string to a host-page element, or `null` when it
- * matches nothing. The default (`document.querySelector`) treats the string as a
- * CSS selector; a host with a page map overrides it to map its own element ids,
- * the same way host packages wrap the DOM-driver primitives with environment-
- * aware lookups.
+ * matches nothing. The default treats the string as a CSS selector; a host with
+ * a page map overrides it to map its own element ids.
  */
 export type ResolvePageTarget = (target: string) => HTMLElement | null;
 
@@ -24,13 +22,12 @@ export const PAGE_ACTIONS = {
  * - `scroll_to` — scroll a target (`top` / `bottom` / a resolver target) into
  *   view. Benign; no confirmation.
  * - `drag_and_drop` — drag one element onto another, firing the standard HTML5
- *   drag sequence so the host page's own drop handler reacts. Not stamped
- *   destructive: a drag rearranges transient state and the durable change
- *   happens at the page's explicit commit. A host whose page persists *on drop*
- *   gates it with the element's `confirmPredicate`.
+ *   drag sequence so the host page's own drop handler reacts. Deliberately not
+ *   stamped destructive: a drag rearranges transient state, and the durable
+ *   change happens at the page's explicit commit. A host whose page persists on
+ *   drop must gate it with the element's `confirmPredicate`.
  *
- * Both report a clean, model-readable error when a target resolves to nothing,
- * rather than throwing an opaque crash.
+ * Both report a model-readable error when a target resolves to nothing.
  */
 export function createPageActionTools(
   enabled: ReadonlySet<string>,
@@ -106,11 +103,11 @@ function dragTool(resolveTarget: ResolvePageTarget): ClientTool {
 }
 
 /**
- * Fire the standard HTML5 drag sequence — `dragstart` on the source, then
- * `dragenter` / `dragover` / `drop` on the target, then `dragend` on the source —
- * sharing one {@link DataTransfer}. Dispatched as typed, bubbling events (the
- * `dataTransfer` is attached explicitly so a drop handler reads it in every
- * environment).
+ * Fire the standard HTML5 drag sequence in the order a page's own handlers
+ * expect — `dragstart` on the source, `dragenter` / `dragover` / `drop` on the
+ * target, `dragend` on the source — all sharing one {@link DataTransfer}, which
+ * is attached to each event explicitly so a drop handler reads it in every
+ * environment.
  */
 function dispatchDragSequence(from: HTMLElement, to: HTMLElement): void {
   const dataTransfer = new DataTransfer();

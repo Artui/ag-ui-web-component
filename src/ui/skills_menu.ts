@@ -1,11 +1,10 @@
 import type { Skill } from "../skills/skill.js";
 
 /**
- * The two skill surfaces over a single catalog: a **chips** row (the
- * `chip: true` subset) and a **`/`-command palette** (all skills, filtered).
- * Both are opt-in. Pure DOM; the host ({@link AgUiChat}) appends
- * {@link chips} + {@link palette}, feeds input via {@link onInput} /
- * {@link onKeydown}, and acts on the {@link onPick} callback.
+ * The two skill surfaces over a single catalog: a chips row (the `chip: true`
+ * subset) and a slash-command palette (all skills, filtered). Both opt-in.
+ * Pure DOM; the host appends {@link chips} and {@link palette}, feeds input via
+ * {@link onInput} / {@link onKeydown}, and acts on {@link onPick}.
  */
 export class SkillsMenu {
   /** Chips row — append above the input. Hidden unless chips are enabled and present. */

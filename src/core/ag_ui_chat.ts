@@ -119,14 +119,13 @@ export interface UnreadDetail {
  * Attributes read once while connecting, to decide what chrome exists at all.
  *
  * Changing one afterwards is silently ignored: the tray, the mic, the skills
- * menu and the header icon are built (or not) during connect, and no later read
- * revisits the decision. Observed only so the element can say so — see
- * `attributeChangedCallback`.
+ * menu and the header icon are built during connect and no later read revisits
+ * the decision. Observed only so `attributeChangedCallback` can warn.
  *
- * Deliberately excludes the attributes that *are* re-read per use, where a late
- * change works and a warning would be wrong: `data-runs-url`,
- * `data-page-actions`, `data-text-animation`, `data-tool-display`, `endpoint`,
- * and the CSS-reactive `theme` / `collapsed`.
+ * Excludes the attributes that are re-read per use, where a late change works
+ * and a warning would be wrong: `data-runs-url`, `data-page-actions`,
+ * `data-text-animation`, `data-tool-display`, `endpoint`, and the CSS-reactive
+ * `theme` / `collapsed`.
  */
 const CONNECT_TIME_ATTRIBUTES = [
   "data-attachments-url",
@@ -169,43 +168,36 @@ const THEME_KEY = "ag-ui-chat:theme";
  * `<ag-ui-chat>` — a framework-free chat sidebar Web Component over AG-UI.
  *
  * Owns the Shadow DOM shell (header, scrolling message list, input row),
- * builds an {@link AgUiClient} on first send (via the overridable
- * {@link agentFactory}), and renders streaming assistant text plus tool-call
+ * builds an {@link AgUiClient} on first send via the overridable
+ * {@link agentFactory}, and renders streaming assistant text plus tool-call
  * activity. Emits a {@link SUBMIT_EVENT} for host visibility.
  *
- * The per-run frontend tool catalog and context are supplied by
- * {@link getTools} / {@link getContext}, which later phases (the tool
- * registry, DOM driver) populate.
+ * The per-run frontend tool catalog and context come from {@link getTools} and
+ * {@link getContext}.
  */
 export class AgUiChat extends HTMLElement {
   /** Agent factory; override to inject a custom or fake agent (tests). */
   agentFactory: AgentFactory = createHttpAgent;
 
   /**
-   * Static extra HTTP headers, sent with **every** request this element makes —
-   * the agent run, the thread index and its messages, the tool and skill
-   * catalogs, the run index, uploads and transcription.
+   * Static extra HTTP headers, sent with every request this element makes: the
+   * agent run, the thread index and its messages, the tool and skill catalogs,
+   * the run index, uploads and transcription.
    *
-   * Right for values fixed for the element's lifetime. A credential that
-   * rotates (a short-lived JWT, a re-issued CSRF token) belongs in
-   * {@link getHeaders} instead: this is read at request time, but only a
-   * re-assignment updates it, so a token captured here is pinned until the host
-   * remembers to assign again.
+   * For values fixed for the element's lifetime. A rotating credential belongs
+   * in {@link getHeaders} instead — only a re-assignment updates this, so a
+   * token captured here is pinned until the host assigns again.
    */
   headers: Record<string, string> = {};
 
   /**
-   * Live header source, consulted immediately before every request — the way to
-   * supply rotating credentials.
+   * Live header source, called afresh immediately before every request — the
+   * way to supply rotating credentials, with nothing to re-assign or keep in
+   * sync.
    *
-   * Set it to a function and each request calls it afresh: a token refreshed by
-   * the host between two requests reaches the second one, with nothing to
-   * re-assign and nothing to keep in sync.
-   *
-   * Composes with {@link headers} rather than replacing it: the two are merged
-   * per key with `getHeaders()` winning, so a static `X-Client` and a rotating
-   * `Authorization` can be configured independently and neither silently drops
-   * the other.
+   * Composes with {@link headers} rather than replacing it: merged per key with
+   * `getHeaders()` winning, so a static `X-Client` and a rotating
+   * `Authorization` are configured independently and neither drops the other.
    */
   getHeaders: (() => Record<string, string>) | null = null;
 
@@ -222,40 +214,34 @@ export class AgUiChat extends HTMLElement {
 
   /**
    * When true, the built-in `ask_user` frontend tool is offered to the agent:
-   * calling it renders an inline question card (radio choices and/or a free-text
-   * field) and returns the user's answer. Off by default — like the other
-   * built-in tool groups (route / page-action), it is opt-in so it doesn't
-   * change the advertised catalog until a host asks for it.
+   * calling it renders an inline question card and returns the user's answer.
+   * Off by default, like the other built-in tool groups, so the advertised
+   * catalog does not change until a host asks for it.
    */
   askUser = false;
 
   /**
-   * Optional full replacement for the `ask_user` question UI. When set, calling
-   * `ask_user` invokes this instead of the built-in inline card: the host
-   * renders whatever it likes (a native modal, a framework component, …) and
-   * resolves with the answer. Unset (default) uses the built-in
-   * {@link requestQuestion} card — style that via the `strings` override and the
-   * `question*` CSS `::part()`s. Requires {@link askUser} to be enabled.
+   * Optional full replacement for the `ask_user` question UI, resolving with
+   * the answer; the same seam as {@link approvalRenderer}, styled via `strings`
+   * and the `question*` `::part()`s when left unset. Requires {@link askUser}.
    */
   askUserRenderer: QuestionRenderer | null = null;
 
   /**
-   * Optional full replacement for the server-side-tool approval UI. When set, an
-   * approval interrupt invokes this instead of the built-in inline approval
-   * card: the host renders whatever it likes and resolves `true` to approve /
-   * `false` to deny. Unset (default) uses the built-in {@link requestApproval}
-   * card — style that via the `strings` override and the `approval*` CSS
-   * `::part()`s. The gate itself is enabled server-side; this only changes how
-   * the decision is collected.
+   * Optional full replacement for the server-side-tool approval UI: an approval
+   * interrupt invokes this instead of the built-in {@link requestApproval}
+   * card, resolving `true` to approve or `false` to deny. Style the built-in
+   * card via `strings` and the `approval*` `::part()`s instead. The gate itself
+   * is enabled server-side; this only changes how the decision is collected.
    */
   approvalRenderer: ApprovalRenderer | null = null;
 
   /**
-   * Optional per-call confirmation predicate. When set, it is authoritative:
-   * given a tool name + args it decides whether *this* call needs confirmation
-   * (so one tool can be instant for some args and confirmed for others — what a
-   * static `x-destructive` flag can't express). When unset, the `x-destructive`
-   * schema flag is used. `autoConfirm` short-circuits both.
+   * Optional per-call confirmation predicate. When set it is authoritative,
+   * deciding from the tool name and args whether this particular call needs
+   * confirmation — so one tool can be instant for some args and confirmed for
+   * others, which a static `x-destructive` flag cannot express. When unset the
+   * `x-destructive` flag decides. `autoConfirm` short-circuits both.
    */
   confirmPredicate:
     | ((toolName: string, args: Record<string, unknown>) => boolean | Promise<boolean>)
@@ -280,11 +266,8 @@ export class AgUiChat extends HTMLElement {
    * Per-run context provider. Defaults to the compact page map, when a
    * {@link getPageMap} provider is set and {@link autoInjectPageMap} is on.
    *
-   * It used to append a one-line manifest of the message's attachments too.
-   * The server now derives that manifest from the refs riding the messages, so
-   * the client's copy only duplicated it, on exactly the turn a file was
-   * attached. Attachments still reach the agent; they reach it through the
-   * message, which is where they were already.
+   * Attachments are deliberately not restated here: the server derives its own
+   * manifest from the refs riding the messages.
    */
   getContext: () => Context[] = () => [
     ...createPageMapContext(this.getPageMap, this.autoInjectPageMap),
@@ -318,22 +301,18 @@ export class AgUiChat extends HTMLElement {
 
   /**
    * How attached files are uploaded. `null` (default) uses the built-in
-   * multipart `POST` to `data-attachments-url`. Set a custom
-   * {@link UploadHandler} — `(file, onProgress) => Promise<AttachmentRef>` — to
-   * swap the transport (e.g. a `tus-js-client` resumable adapter or
-   * direct-to-S3 multipart) without changing the tray, the chips, or the AG-UI
-   * wire (refs are transport-agnostic). When set, the 📎 affordance appears even
-   * with no `data-attachments-url`; the handler owns its own endpoint + headers.
+   * multipart `POST` to `data-attachments-url`; a custom {@link UploadHandler}
+   * swaps the transport without changing the tray, the chips, or the AG-UI
+   * wire. When set, the 📎 affordance appears even with no
+   * `data-attachments-url`, and the handler owns its own endpoint and headers.
    */
   uploadHandler: UploadHandler | null = null;
 
   /**
    * How recorded voice clips are transcribed. `null` (default) POSTs the clip
-   * to `data-transcribe-url` (django-ag-ui's `TranscribeView`). Set a custom
-   * {@link TranscribeHandler} — `(audio: Blob) => Promise<string>` — to swap the
-   * transport (a different STT endpoint, a browser Web Speech adapter) without
-   * touching the mic button. When set, the 🎤 affordance appears even with no
-   * `data-transcribe-url`.
+   * to `data-transcribe-url`; a custom {@link TranscribeHandler} swaps the
+   * transport without touching the mic button. When set, the 🎤 affordance
+   * appears even with no `data-transcribe-url`.
    */
   transcribeHandler: TranscribeHandler | null = null;
 
@@ -355,12 +334,10 @@ export class AgUiChat extends HTMLElement {
   skillContext: () => Record<string, unknown> = () => ({});
 
   /**
-   * Friendly display labels for tool-call cards, keyed by tool name (e.g.
-   * `{ list_projects: "Search projects" }`). Used as a fallback when a tool has
-   * no `x-summary` in its own schema — chiefly **server-side tools** (drf-mcp,
-   * `@tool` registry), whose schema never reaches the browser (AG-UI streams
-   * only the tool-call name). Client tools should prefer `x-summary` on their
-   * schema; this map is the seam for everything else.
+   * Friendly display labels for tool-call cards, keyed by tool name. The
+   * fallback when a tool has no `x-summary` in its own schema, which chiefly
+   * means server-side tools: AG-UI streams only the tool-call name, so their
+   * schema never reaches the browser. Client tools should prefer `x-summary`.
    */
   toolSummaries: Record<string, string> = {};
 
@@ -540,13 +517,10 @@ export class AgUiChat extends HTMLElement {
    * Continue `runId` as a **new** run, seeded server-side from its snapshot.
    *
    * Uses a short-lived agent pointed at the resume / fork endpoint and seeded
-   * with **no** history, so the request carries only the turn typed here — the
-   * contract those endpoints assume, since the server supplies the prior turns
-   * from the snapshot and re-sending them would duplicate. Building a separate
-   * agent makes that structural: the main agent keeps its own history, and
-   * "only the new turn" can't be got wrong by forgetting to clear it. The
-   * fresh `run_id` the endpoints also require comes free — a new agent mints
-   * one per run.
+   * with no history, because those endpoints supply the prior turns from the
+   * snapshot and re-sending them would duplicate. A separate agent makes that
+   * structural — the main agent keeps its own history — and mints the fresh
+   * `run_id` the endpoints also require.
    *
    * Handlers are the element's own, so the continuation streams into the same
    * transcript the user is looking at.
@@ -627,12 +601,11 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     // Everything else here is read once, in connectedCallback, to build chrome
-    // that then exists (or does not). Setting it afterwards is silently
-    // ignored, and the symptom is an affordance that simply never appears —
-    // which reads as a broken component rather than a mis-timed assignment.
-    // This is the common React/Vue shape: the element mounts on the first
-    // render pass and the framework patches attributes in on the next one.
-    // Observed purely so this can be said out loud.
+    // that then exists or does not. A later change is silently ignored and the
+    // symptom is an affordance that never appears, which reads as a broken
+    // component rather than a mis-timed assignment — the common React/Vue shape,
+    // where the element mounts on one render pass and attributes are patched in
+    // on the next. Observed purely so this can be said out loud.
     if (previous === value || !this.#connected) {
       return;
     }
@@ -657,10 +630,8 @@ export class AgUiChat extends HTMLElement {
    * when the server streams `STATE_SNAPSHOT` / `STATE_DELTA`. Assigning seeds
    * the next run; reading returns whatever the agent last applied.
    *
-   * Listen for {@link STATE_EVENT} to react to server-driven changes.
-   *
-   * Not to be confused with {@link registerPageState}, which exposes host
-   * state to the agent as ordinary *tools*.
+   * Listen for {@link STATE_EVENT} to react to server-driven changes. Distinct
+   * from {@link registerPageState}, which exposes host state as ordinary tools.
    */
   get sharedState(): Readonly<Record<string, unknown>> {
     return this.#client?.state ?? this.#sharedState;
@@ -681,11 +652,9 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * @deprecated Renamed to {@link registerPageState}. The old name read as
-   * AG-UI shared-state sync (`STATE_SNAPSHOT` / `STATE_DELTA`), which this
-   * component does not implement — these are ordinary client tools over host
-   * page state. Behaviour is unchanged; this alias will be removed in a future
-   * major.
+   * @deprecated Renamed to {@link registerPageState} — the old name read as
+   * AG-UI shared-state sync. Behaviour is unchanged; the alias will be removed
+   * in a future major.
    */
   registerStateHook(binding: PageState): void {
     this.registerPageState(binding);
@@ -762,10 +731,9 @@ export class AgUiChat extends HTMLElement {
   /**
    * The built-in `ask_user` frontend tool, or `[]` when {@link askUser} is off.
    *
-   * A generic "ask the user a typed question" primitive: the agent calls it, the
-   * client executes it locally via the normal frontend-tool path (rendering a
-   * {@link requestQuestion} card), and the chosen/typed answer flows back as the
-   * tool result — no new protocol, reusing the machinery already in place.
+   * The agent calls it, the client executes it locally through the normal
+   * frontend-tool path by rendering a {@link requestQuestion} card, and the
+   * answer flows back as the tool result. No new protocol.
    */
   #askUserTool(): ClientTool[] {
     if (!this.askUser) {
@@ -855,19 +823,18 @@ export class AgUiChat extends HTMLElement {
    * `credentials` mode (`"omit"` / `"same-origin"` / `"include"`). Mirrored to
    * the `credentials` attribute, so markup embeds can set it without script.
    *
-   * `null` (the default) leaves the browser's default of `same-origin` in
-   * place. That default sends **no cookies at all** when the endpoints live on
-   * a different origin from the page — app.example.com calling
-   * api.example.com is cross-origin — and the request goes out anonymously
-   * rather than failing, so the symptom is a 401 from a server that looks
-   * correctly configured. A cookie-authenticated cross-origin deployment wants
-   * `"include"`, plus `Access-Control-Allow-Credentials: true` and a concrete
-   * (non-wildcard) `Access-Control-Allow-Origin` on the server.
+   * `null` (the default) leaves the browser's `same-origin` default in place,
+   * which sends no cookies at all to an endpoint on a different origin — and
+   * the request goes out anonymously rather than failing, so the symptom is a
+   * 401 from a server that looks correctly configured. A cookie-authenticated
+   * cross-origin deployment wants `"include"`, plus
+   * `Access-Control-Allow-Credentials: true` and a concrete, non-wildcard
+   * `Access-Control-Allow-Origin` on the server.
    *
    * Read per request, so a late assignment applies to everything after it.
-   * `"omit"` cannot be honoured by the built-in **upload** transport, which is
-   * an `XMLHttpRequest` and only has a two-state cookie switch; every other
-   * endpoint honours all three modes.
+   * `"omit"` cannot be honoured by the built-in upload transport, an
+   * `XMLHttpRequest` with only a two-state cookie switch; every other endpoint
+   * honours all three modes.
    */
   get credentials(): RequestCredentials | null {
     const attr = this.getAttribute("credentials");
@@ -1004,25 +971,21 @@ export class AgUiChat extends HTMLElement {
    * The catalog requests the element issues on startup: the tool labels
    * (`data-tools-url`) and the backend skills (`data-skills-url`).
    *
-   * Deliberately one microtask behind `connectedCallback`. A host that
-   * configures the element through a framework ref necessarily does so *after*
-   * inserting the node — React attaches refs and runs layout effects in the
-   * same commit as the insertion, but strictly afterwards — so a request issued
-   * from `connectedCallback` itself goes out before `headers`,
-   * {@link getHeaders} or {@link credentials} exist, and comes back 401 in a
-   * way that reads as a server fault rather than a mis-timed assignment. A
-   * microtask lands after that commit and still before paint.
+   * Deliberately one microtask behind `connectedCallback`. A framework ref is
+   * attached after the node is inserted but within the same commit, so a
+   * request issued from `connectedCallback` itself goes out before `headers`,
+   * {@link getHeaders} or {@link credentials} exist and 401s in a way that
+   * reads as a server fault. A microtask lands after that commit, still before
+   * paint.
    *
-   * Two things it is **not**. It is not a fix for configuration that arrives
-   * later than the commit (a passive `useEffect`, an awaited token fetch):
-   * configure before insertion (`createElement` → configure → `append`) or call
-   * {@link reload} once configured, because a longer timer would hide that race
-   * rather than close it. And it deliberately excludes the *history* replay,
-   * which stays in `connectedCallback`: the replay renders into the transcript,
-   * so deferring it lets a `sendMessage()` issued in the same task land first
-   * and the replay then duplicate it. The thread history is therefore the one
-   * request that can still go out before a ref is attached — {@link reload}
-   * covers it.
+   * It is not a fix for configuration arriving later than the commit (a passive
+   * effect, an awaited token fetch): configure before insertion, or call
+   * {@link reload}, since a longer timer would hide that race rather than close
+   * it.
+   *
+   * The history replay stays in `connectedCallback` on purpose. It renders into
+   * the transcript, so deferring it would let a `sendMessage()` in the same
+   * task land first and be duplicated by the replay.
    */
   #startup(): void {
     // An element can be inserted and removed inside one task (a discarded
@@ -1040,15 +1003,13 @@ export class AgUiChat extends HTMLElement {
    * the backend skill catalog and the thread's history — with the transport
    * configuration as it stands now.
    *
-   * This is the answer for a host that can only configure the element after the
-   * fact (a token fetched in a passive effect, an async auth handshake): the
-   * startup requests already went out with whatever was set then, and this says
-   * "try again, properly authenticated" without removing and re-inserting the
-   * node.
+   * For a host that can only configure the element after the fact (a token
+   * fetched in a passive effect, an async auth handshake), this re-issues the
+   * startup requests authenticated, without removing and re-inserting the node.
    *
-   * A reload, not a merge — the in-flight run is cancelled and the transcript
-   * is rebuilt from the persisted history, so anything streamed since is
-   * dropped. Call it once, when configuration lands; not between turns.
+   * A reload, not a merge: the in-flight run is cancelled and the transcript is
+   * rebuilt from persisted history, so anything streamed since is dropped. Call
+   * it once, when configuration lands, not between turns.
    */
   async reload(): Promise<void> {
     this.#cancelRun();
@@ -1058,12 +1019,10 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Tear down live resources when the element leaves the DOM (a removed node, a
-   * client-side route swap): cancel the in-flight run so its SSE stream closes,
-   * abort any in-flight uploads so they don't orphan server-side files, and
-   * release the mic so the browser's recording indicator clears. Without this a
-   * removed `<ag-ui-chat>` leaks a streaming request, uploads, and a live
-   * `MediaRecorder`.
+   * Tear down live resources when the element leaves the DOM: cancel the
+   * in-flight run so its stream closes, abort in-flight uploads so they do not
+   * orphan server-side files, and release the mic so the browser's recording
+   * indicator clears. Without this a removed element leaks all three.
    */
   disconnectedCallback(): void {
     this.#connected = false;
@@ -1075,14 +1034,10 @@ export class AgUiChat extends HTMLElement {
   /**
    * Read an opt-in flag attribute the way HTML reads a boolean attribute.
    *
-   * Present means on — bare (`data-prompt-chips`), empty
-   * (`data-prompt-chips=""`) or any value except the literal `"false"`. These
-   * were compared against the string `"true"`, so writing the attribute bare —
-   * the spelling every native boolean attribute uses, and the one a reader
-   * reaches for first — silently *disabled* the feature it names, with nothing
-   * to indicate why the chips never appeared.
-   *
-   * `="false"` still turns it off, so an explicit opt-out keeps working.
+   * Present means on: bare (`data-prompt-chips`), empty (`=""`), or any value
+   * except the literal `"false"`. Comparing against `"true"` instead would make
+   * the bare spelling every native boolean attribute uses silently disable the
+   * feature it names. `="false"` still turns it off.
    */
   #flag(name: string): boolean {
     const value = this.getAttribute(name);
@@ -1335,21 +1290,16 @@ export class AgUiChat extends HTMLElement {
   /**
    * Act on a picked skill.
    *
-   * A skill that ships no `prompt` is **server-resolved**: the catalog carries
-   * only its name and label, and picking it sends the bare `/name` token for
-   * the agent to expand — from the harness `Skills` capability, or from the
-   * server's own instructions. That is the shape to prefer, because the prompt
-   * then never reaches the browser at all: a skill is often where a project's
-   * internal workflow is written down most plainly, and a catalog endpoint is a
-   * plain GET.
+   * A skill with no `prompt` is server-resolved: picking it sends the bare
+   * `/name` token for the agent to expand, so the wording never reaches the
+   * browser. Prefer that shape — a skill often states a project's internal
+   * workflow most plainly, and a catalog endpoint is a plain GET.
    *
-   * A skill that does carry a `prompt` keeps the older behaviour — the client
-   * fills its `{placeholder}`s from the page and sends (or pre-fills) the text.
-   * Right for a user-facing convenience, and for placeholders only the page can
-   * supply.
+   * A skill carrying a `prompt` has the client fill its `{placeholder}`s from
+   * the page instead, which is right for placeholders only the page can supply.
    *
-   * Either way a pick now **sends**, rather than parking text in the composer
-   * for a second click; `sendImmediately: false` opts back into pre-filling.
+   * Either way a pick sends; `sendImmediately: false` opts into pre-filling the
+   * composer instead.
    */
   #applySkill(skill: Skill): void {
     if (skill.prompt === undefined) {
@@ -1483,18 +1433,13 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Which edges the layout is holding still, by measuring rather than guessing.
+   * Which edges the layout is holding still, by measuring rather than guessing:
+   * nudge the size by a pixel, see which edges stayed put, and undo. One forced
+   * reflow per drag.
    *
-   * A resize has to be computed from the edge that does not move, and which
-   * edge that is belongs to the **host's layout**, not to `placement`: a
-   * floating panel is pinned bottom-right, while an embedded one goes wherever
-   * the page's own CSS puts it — flex-start, flex-end, a grid cell. Mapping
-   * placement to a corner got this wrong for any host that right-aligns the
-   * element, and the symptom is bad enough to read as a broken control: the
-   * panel shrinks when dragged outward, travelling by its opposite corner.
-   *
-   * So: nudge the size by a pixel, see which edges stayed put, and undo. One
-   * forced reflow per drag, which is cheap next to being wrong.
+   * `placement` cannot answer this — an embedded panel goes wherever the page's
+   * CSS puts it — and see {@link createResizeHandle} for why guessing produces
+   * a visibly broken control.
    */
   #measureAnchor(): ResizeAnchor {
     const before = this.getBoundingClientRect();
@@ -1533,14 +1478,13 @@ export class AgUiChat extends HTMLElement {
   /**
    * Write a dragged size onto the host, on the axes this placement leaves free.
    *
-   * ⚠ Writing the custom property rather than inline `width` / `height` does
-   * **not** by itself leave placement in charge — an inline custom property
-   * still outranks a `:host([placement=…])` rule setting the same property, so
-   * a height dragged while floating capped a docked sidebar that had asked for
-   * `100vh`. The cascade cannot arbitrate this; the axis check has to.
-   *
-   * So the rule is explicit: a placement owns the axes it fixes, and a
-   * persisted size is only ever applied to the ones it does not.
+   * Writing the custom property rather than inline `width` / `height` does not
+   * by itself leave placement in charge: an inline custom property still
+   * outranks a `:host([placement=…])` rule setting the same property, so a
+   * height dragged while floating would cap a docked sidebar asking for
+   * `100vh`. The cascade cannot arbitrate this, so the axis check must — a
+   * placement owns the axes it fixes, and a persisted size is applied only to
+   * the ones it leaves free.
    */
   #applySize(size: ResizeSize): void {
     const axis = this.#resizeAxis();
@@ -1622,12 +1566,10 @@ export class AgUiChat extends HTMLElement {
    * Open the thread-history drawer: the imperative route to the control that
    * renders as `::part(history-button)`.
    *
-   * A host that hides `::part(header)` to render its own title bar hides the
-   * history, new-chat and collapse buttons with it — and thread switching then
-   * has no route at all, because those controls live inside the header. Each of
-   * them has a method, so a host chrome can rebuild the set: this one,
-   * {@link openCheckpoints}, {@link newChat}, {@link toggleCollapsed} and
-   * {@link toggleTheme}.
+   * A host that hides `::part(header)` for its own title bar hides the history,
+   * new-chat and collapse buttons with it. Each has a method so that chrome can
+   * be rebuilt: this one, {@link openCheckpoints}, {@link newChat},
+   * {@link toggleCollapsed} and {@link toggleTheme}.
    */
   openThreads(): void {
     void this.#refreshDrawer();
@@ -1743,23 +1685,17 @@ export class AgUiChat extends HTMLElement {
   /**
    * Notice a previous run that never produced a response.
    *
-   * {@link AgUiClient.send} persists the user's message *before* starting the
-   * run, so a transcript whose last entry is that user message means nothing
-   * ever came back: the page navigated or reloaded mid-run, the tab closed, or
-   * the process died. No extra persistence is needed to detect it — the shape
-   * of the transcript already says so, which is why this needs no
-   * {@link ClientConversationStore} method and no `pagehide` listener (neither
-   * of which fires on a crash or a force-quit anyway).
+   * {@link AgUiClient.send} persists the user's message before starting the
+   * run, so a transcript ending on that user message means nothing came back.
+   * The transcript's shape alone detects it, needing no store method and no
+   * `pagehide` listener — neither of which fires on a crash or force-quit.
    *
-   * The *agent*-initiated reload is not this case: a navigating tool leaves a
-   * checkpoint and resumes, which is why the caller returns early on one before
-   * reaching here.
+   * An agent-initiated reload is not this case: a navigating tool leaves a
+   * checkpoint and resumes, so the caller returns early on one.
    *
-   * Deliberately a notice and never a resume. AG-UI has no
-   * resume-an-aborted-run primitive; re-sending the accumulated messages is
-   * semantically a **new** run, so any server-side tool the agent had already
-   * executed before the interruption would run a second time. Saying plainly
-   * that the answer was lost is the honest option, and the user can re-ask.
+   * Deliberately a notice, never a resume. AG-UI has no resume-an-aborted-run
+   * primitive, and re-sending the accumulated messages is semantically a new
+   * run, so any server-side tool already executed would run a second time.
    */
   /**
    * Build a round's context, recording which page it describes.
@@ -1881,13 +1817,12 @@ export class AgUiChat extends HTMLElement {
   /**
    * Append a message bubble and return it.
    *
-   * Assistant content is rendered as sanitised markdown/HTML; user content
-   * stays literal text (no need to parse what the user typed, and it avoids
-   * rendering user-authored markup).
+   * Assistant content renders as sanitised markdown/HTML; user content stays
+   * literal text, which also avoids rendering user-authored markup.
    *
-   * Assistant bubbles land in the current answer group, opening one if
-   * needed; a user bubble closes the prior group and sits directly in the list
-   * (the well wraps the *assistant* turn, the user message precedes it).
+   * Assistant bubbles land in the current answer group, opening one if needed;
+   * a user bubble closes the prior group and sits directly in the list, the
+   * well wrapping only the assistant turn.
    */
   appendMessage(role: MessageRole, content: string): HTMLDivElement {
     const bubble = document.createElement("div");
@@ -2153,12 +2088,9 @@ export class AgUiChat extends HTMLElement {
    * Build a header control button: a named slot a host can project markup into,
    * with the built-in glyph as the slot's fallback.
    *
-   * The glyph used to be the button's own `textContent`, which left a host able
-   * to restyle the control through its `part` but unable to replace it — a CSS
-   * `content` override could swap one character for another, and nothing could
-   * supply a brand `<img>` or `<svg>`. This is the same slot-with-fallback
-   * idiom the header icon already uses, so existing embeds render exactly as
-   * before.
+   * The slot is what lets a host replace the mark with its own `<img>` or
+   * `<svg>` rather than only restyle it through the `part`; the same
+   * slot-with-fallback idiom the header icon uses.
    */
   #headerButton(modifier: string, label: string, glyph: string): HTMLButtonElement {
     const button = document.createElement("button");
@@ -2400,19 +2332,16 @@ export class AgUiChat extends HTMLElement {
    * Send a message as if the user had typed it — renders the user bubble,
    * dispatches {@link SUBMIT_EVENT}, and starts the run.
    *
-   * The programmatic half of the composer, for a host driving its own input
-   * (a "Ask about this order" button, a command palette, a custom composer
-   * replacing the built-in one). Everything the built-in Send does happens
-   * here; Send itself now reads the composer, clears it, and calls this.
+   * The programmatic half of the composer, for a host driving its own input.
+   * Everything the built-in Send does happens here; Send reads the composer,
+   * clears it, and calls this.
    *
-   * `attachments` are durable {@link AttachmentRef}s — the shape
-   * {@link attachFile}'s upload resolves to, and the shape
-   * {@link ATTACHMENT_EVENT} reports. Pass them to attach files to the message.
+   * `attachments` are durable {@link AttachmentRef}s — what {@link attachFile}
+   * resolves to and what {@link ATTACHMENT_EVENT} reports.
    *
-   * No-ops while a run is in flight (a second concurrent run would orphan the
-   * first) and for an entirely empty message. Unlike the built-in Send, this
-   * does **not** consult the tray: what you pass is what is sent, so a host
-   * composer stays in charge of its own state.
+   * No-ops on an empty message, and while a run is in flight, since a second
+   * concurrent run would orphan the first. Unlike the built-in Send it does not
+   * consult the tray: what you pass is what is sent.
    */
   async sendMessage(content: string, attachments: readonly AttachmentRef[] = []): Promise<void> {
     if (this.#running || (content === "" && attachments.length === 0)) {
@@ -2437,11 +2366,11 @@ export class AgUiChat extends HTMLElement {
    * picker and drag-and-drop do — validation, progress chip, and all.
    *
    * Returns `false` when uploads are not configured (no `data-attachments-url`
-   * and no {@link uploadHandler}), which is the only way for a host to tell;
-   * the tray does not exist to report anything in that case.
+   * and no {@link uploadHandler}) — the only signal a host gets, since the tray
+   * does not exist to report anything then.
    *
    * Uploading is asynchronous: watch {@link ATTACHMENT_EVENT} for the resulting
-   * {@link AttachmentRef}, and pass it to {@link sendMessage} once `pending`
+   * {@link AttachmentRef} and pass it to {@link sendMessage} once `pending`
    * reaches zero.
    */
   attachFile(file: File): boolean {
@@ -2546,17 +2475,15 @@ export class AgUiChat extends HTMLElement {
       return null;
     }
     // The page moved under this round. Acting now would target whatever
-    // happens to match on the *new* page — usually nothing, which the handler
-    // would report as a miss anyway, but occasionally a same-named control that
-    // matches silently. That last case is the one worth preventing: it is the
-    // only way the agent acts on the wrong page without either side noticing.
+    // matches on the new page, and the case worth preventing is a same-named
+    // control matching silently — the only way the agent acts on the wrong page
+    // without either side noticing.
     //
-    // Placed before the confirmation prompt so the user is never asked to
-    // approve an action that is about to be refused. Navigating tools are
-    // exempt (moving the page is their job — including re-navigating after a
-    // move), as is `read_page`, which is the documented recovery. Gated on a
-    // page-map provider: without one there is no `read_page` to recommend and
-    // the host's tools are not page-scoped in the first place.
+    // Must precede the confirmation prompt, so the user is never asked to
+    // approve an action about to be refused. Navigating tools are exempt, since
+    // moving the page is their job, as is read_page, the documented recovery.
+    // Gated on a page-map provider: without one there is no read_page to
+    // recommend and the host's tools are not page-scoped anyway.
     if (
       this.getPageMap !== null &&
       call.name !== READ_PAGE_TOOL &&
@@ -2632,12 +2559,11 @@ export class AgUiChat extends HTMLElement {
    * Render an approval card per server-side-tool interrupt and collect the
    * user's decisions (approve → run it, deny → decline it).
    *
-   * The run is suspended on these cards; a Stop while any is open aborts the
+   * The run is suspended on these cards. A Stop while any is open aborts the
    * shared {@link #confirmAbort} controller, resolving every still-open card as
-   * denied (and the client loop then sees the cancellation and stops). An
-   * approved tool runs on the follow-up (resume) run and streams its result
-   * back into the same pending card; a denied one is settled here, since no
-   * result will ever arrive for it.
+   * denied. An approved tool runs on the follow-up resume run and streams its
+   * result into the same pending card; a denied one settles here, since no
+   * result will ever arrive.
    */
   async #resolveInterrupts(
     interrupts: readonly Interrupt[],
@@ -2937,11 +2863,10 @@ export class AgUiChat extends HTMLElement {
  * The skill name a `load_capability` call activated, or `null` when the call is
  * something else.
  *
- * Every deferred capability loads through this one tool, so the id is only a
- * *skill* name when the project wired agent skills — a project deferring some
- * other capability would surface its id here too. That is acceptable for a
- * muted notice and preferable to inventing a parallel signal: the id is exactly
- * what the model selected, which is what the notice reports.
+ * Every deferred capability loads through this one tool, so the id is a skill
+ * name only when the project wired agent skills; another project's capability
+ * id surfaces here too. Acceptable for a muted notice, and better than a
+ * parallel signal — the id is exactly what the model selected.
  */
 function skillNameFrom(call: AgUiToolCall): string | null {
   if (call.name !== LOAD_CAPABILITY_TOOL) {

@@ -7,9 +7,8 @@ export interface Route {
   readonly id: string;
   /**
    * The URL path to navigate to. May contain `:name` placeholders for dynamic
-   * segments (e.g. `/admin/shop/book/:pk/change/`); the agent fills them via
-   * the `navigate_to_route` `params` argument. Real apps are mostly
-   * parameterised — few pages have a truly static path.
+   * segments (e.g. `/admin/shop/book/:pk/change/`), which the agent fills via
+   * `navigate_to_route`'s `params` argument.
    */
   readonly path: string;
   /** Human label shown to the agent. */
@@ -33,20 +32,19 @@ const PATH_PARAM_RE = /:([A-Za-z_][A-Za-z0-9_]*)/g;
 
 /** The `:name` path-parameter names declared in a path template, in order. */
 function pathParamNames(path: string): string[] {
-  // Slicing the ":" off the whole match rather than reading the capture group:
-  // the group is mandatory, so under `noUncheckedIndexedAccess` indexing it
-  // forces an `undefined` guard on a case the regex cannot produce — an
-  // unreachable branch no test can ever cover.
+  // Slice the ":" off the whole match rather than read the capture group: under
+  // `noUncheckedIndexedAccess`, indexing the group forces an `undefined` guard
+  // on a case the regex cannot produce, which no test can cover.
   return [...path.matchAll(PATH_PARAM_RE)].map((match) => match[0].slice(1));
 }
 
 /**
- * Substitute `:name` placeholders in ``path`` from ``params``.
+ * Substitute `:name` placeholders in `path` from `params`.
  *
- * Returns the concrete path plus the params *not* consumed by a placeholder, so
- * the caller can append those as a query string. Throws (referencing
- * ``routeId``) when a declared path param is missing or empty — a half-filled
- * path must never be navigated to.
+ * Returns the concrete path plus the params no placeholder consumed, for the
+ * caller to append as a query string. Throws (naming `routeId`) when a declared
+ * path param is missing or empty — a half-filled path must never be navigated
+ * to.
  */
 function fillPath(
   routeId: string,
@@ -79,13 +77,11 @@ function withQuery(path: string, params: Record<string, unknown>): string {
  * The built-in `route.*` tools, bound to live getters so a host can set
  * `routeMap` / `navigate` before or after mount.
  *
- * `list_routes` is read-only and advertises each route's dynamic
- * `pathParams` so the model knows what to supply. `navigate_to_route` is marked
- * `x-navigates` so an MPA reload checkpoints + resumes; it substitutes path
- * params into the template and appends any remaining params as a query string.
- * When the host supplies a `navigate(path)` callback (an SPA), the element
- * routes client-side instead and the run loop simply continues — see
- * `AgUiChat`'s execute path.
+ * `list_routes` is read-only and advertises each route's `pathParams` so the
+ * model knows what to supply. `navigate_to_route` fills those params, appends
+ * the rest as a query string, and is stamped `x-navigates` so an MPA reload
+ * checkpoints and resumes; with a host `navigate(path)` callback (an SPA) it
+ * routes client-side and the run loop continues instead.
  */
 export function createRouteTools(
   getRouteMap: () => RouteMap,

@@ -2,10 +2,10 @@ import { ICON_FILE, ICON_FILE_IMAGE, ICON_FILE_PDF, ICON_FILE_TEXT } from "../co
 import type { AttachmentRef } from "../core/attachment.js";
 
 /**
- * Render the read-only attachment chips shown on a sent user message bubble
- * (and on restored history) — one chip per ref with a type icon, the filename,
- * and a human size. Static by design: no progress, no remove (that lives in the
- * composer tray); a restored bubble re-renders these with no animation.
+ * Render the read-only attachment chips on a sent user message bubble and on
+ * restored history — one chip per ref with a type icon, filename, and human
+ * size. Static: no progress and no remove, both of which live in the composer
+ * tray.
  */
 export function renderAttachmentChips(refs: readonly AttachmentRef[]): HTMLDivElement {
   const list = document.createElement("div");
@@ -45,12 +45,9 @@ function renderChip(ref: AttachmentRef): HTMLDivElement {
 
 /**
  * A coarse type mark for a chip — image, PDF, text document, or generic file —
- * as the inline SVG markup of one of the built-in glyphs.
- *
- * Returns markup rather than a character because chips sit beside the
- * composer's SVG send, attach and mic buttons: emoji render at a different
- * optical weight, vary by platform, and take neither the glyph size nor
- * `currentColor`, so the two never matched.
+ * as inline SVG markup rather than a character, so it matches the composer's
+ * SVG buttons in weight and takes the glyph size and `currentColor`, which
+ * emoji do not.
  *
  * The MIME string only selects among author-written constants and is never
  * interpolated into one, so the result is safe to assign as markup.

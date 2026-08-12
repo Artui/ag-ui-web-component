@@ -4,11 +4,9 @@ import type { Message } from "@ag-ui/core";
  * A durable, lightweight reference to one uploaded file — what an upload
  * returns and what rides on a sent message, never the bytes.
  *
- * Mirrors django-ag-ui's `AttachmentRef`: a file uploads out-of-band to the
+ * Mirrors django-ag-ui's `AttachmentRef`: the file uploads out-of-band to the
  * attachments endpoint, the server hands back this ref, and the agent reads the
- * actual content server-side via the `read_attachment` tool. Keeping the AG-UI
- * message stream free of base64 mirrors how the tool catalog keeps schemas off
- * the wire.
+ * content server-side via the `read_attachment` tool.
  */
 export interface AttachmentRef {
   /** Opaque, owner-scoped handle the server resolves back to bytes. */
@@ -26,17 +24,14 @@ export interface AttachmentRef {
 /**
  * The attachment refs a user message carries.
  *
- * Refs are stored on the user message as a non-standard `attachments` field: a
- * web-component augmentation that the default client store round-trips and
- * `@ag-ui/client` preserves through `addMessage` / `structuredClone`, so a
- * restored conversation re-renders its attachment chips. The server's strict
- * `RunAgentInput` validation ignores the unknown field — the model learns the
- * ids from the run context manifest instead.
+ * Refs ride on the message as a non-standard `attachments` field, which the
+ * default store round-trips and `@ag-ui/client` preserves through `addMessage`
+ * / `structuredClone`, so a restored conversation re-renders its chips. The
+ * server's strict `RunAgentInput` validation ignores the unknown field.
  *
- * The persisted array is untrusted (it can be hand-edited, truncated, or
- * corrupted in storage), so every entry is validated and malformed ones are
- * dropped — a `null` or shapeless entry would otherwise throw in `iconFor` and
- * abort the whole history replay.
+ * Storage is untrusted — hand-edited, truncated, or corrupted — so malformed
+ * entries are dropped here; a shapeless one would throw in `iconFor` and abort
+ * the whole history replay.
  */
 export function messageAttachments(message: Message): readonly AttachmentRef[] {
   const refs = (message as { attachments?: unknown }).attachments;

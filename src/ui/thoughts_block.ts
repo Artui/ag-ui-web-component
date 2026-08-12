@@ -4,15 +4,13 @@ import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
  * A muted, collapsible "thinking" region for a reasoning model's streamed
  * chain-of-thought.
  *
- * Lives at the top of the current answer group (the turn container): it
- * opens expanded while the model reasons — {@link stream} replaces its body with
- * the running reasoning buffer — and {@link collapse} folds it away once the
- * answer's first text token arrives, so the thoughts don't crowd the answer.
- * The header toggle lets the reader reopen it.
+ * Sits at the top of the current answer group. It opens expanded while the
+ * model reasons, {@link stream} replacing its body with the running buffer, and
+ * {@link collapse} folds it away once the answer's first text token arrives.
+ * The header toggle reopens it.
  *
- * Pure DOM (no framework); the host inserts {@link element} and themes it via
- * the `--ag-ui-*` custom properties or the `thoughts*` `part`s. All visible
- * chrome text is sourced from {@link UiStrings}.
+ * Pure DOM. The host inserts {@link element}; all visible chrome text comes
+ * from {@link UiStrings}.
  */
 export class ThoughtsBlock {
   /** The block's root element; insert this at the top of the answer group. */
@@ -30,8 +28,8 @@ export class ThoughtsBlock {
     this.element = document.createElement("div");
     this.element.className = "thoughts";
     this.element.setAttribute("part", "thoughts");
-    // `data-streaming` lets CSS animate the header (e.g. a pulse) while the
-    // model is still reasoning; dropped on collapse.
+    // Lets CSS animate the header while the model is still reasoning; dropped
+    // on collapse.
     this.element.setAttribute("data-streaming", "");
 
     this.#toggle = document.createElement("button");
@@ -63,9 +61,9 @@ export class ThoughtsBlock {
   }
 
   /**
-   * Fold the region away — called when the answer's first text token arrives.
-   * Idempotent (the per-token text handler calls it repeatedly) and flips the
-   * header label from "thinking…" to the settled "Thoughts" affordance.
+   * Fold the region away when the answer's first text token arrives, flipping
+   * the header label to its settled form. Idempotent, since the per-token text
+   * handler calls it repeatedly.
    */
   collapse(): void {
     if (this.#collapsed) {

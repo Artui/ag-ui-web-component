@@ -19,10 +19,9 @@ interface ServerThreadRow {
 type HeadersProvider = () => Record<string, string>;
 
 /**
- * Live cookie policy, read per request. A provider rather than a value because
- * the store is built once (on connect) and kept, while a host may configure the
- * element after inserting it — a captured value would pin whatever was set
- * during that first frame.
+ * Live cookie policy, read per request. A provider rather than a value: the
+ * store is built once on connect, but a host may configure the element after
+ * inserting it, and a captured value would pin that first frame's setting.
  */
 type CredentialsProvider = () => RequestCredentials | undefined;
 
@@ -36,11 +35,11 @@ type CredentialsProvider = () => RequestCredentials | undefined;
  * - `PATCH <url><id>/`  → rename (`{ "title": … }`);
  * - `DELETE <url><id>/` → delete.
  *
- * It wraps a local store (default {@link SessionStorageStore}) for the
- * client-only concerns — the active thread id, the navigation checkpoint, and a
- * message cache — and as the graceful fallback when a request fails. Rename and
- * delete apply **optimistically** (a small local overlay) so the drawer
- * reflects them at once, before the fire-and-forget server round-trip lands.
+ * Wraps a local store (default {@link SessionStorageStore}) for the client-only
+ * concerns — active thread id, navigation checkpoint, message cache — and as
+ * the fallback when a request fails. Rename and delete apply optimistically via
+ * a local overlay, so the drawer reflects them before the fire-and-forget
+ * round-trip lands.
  */
 export class RemoteConversationStore implements ClientConversationStore {
   readonly #url: string;
@@ -108,9 +107,9 @@ export class RemoteConversationStore implements ClientConversationStore {
     if (response === null || !response.ok) {
       return this.#local.loadMessages(threadId);
     }
-    // A 200 whose body isn't the expected JSON (a proxy's HTML error page, a
-    // truncated stream) must not throw an unhandled rejection that the caller's
-    // `void #rehydrate()` swallows — fall back to the local cache instead.
+    // A 200 whose body isn't JSON (a proxy's HTML error page, a truncated
+    // stream) must not throw an unhandled rejection that the caller's
+    // `void #rehydrate()` swallows; fall back to the local cache.
     const body = await this.#readJson<{ messages?: readonly Message[] }>(response);
     if (body === null) {
       return this.#local.loadMessages(threadId);
@@ -143,9 +142,9 @@ export class RemoteConversationStore implements ClientConversationStore {
     return {
       threadId: row.thread_id,
       title: this.#renamed.get(row.thread_id) ?? row.title,
-      // `null` or an unparseable date both become `NaN` (Date.parse's own
-      // signal), which `relativeTime` renders as a neutral label rather than
-      // "~2950w ago" (epoch 0) or "NaNw ago".
+      // `null` and an unparseable date both become NaN, Date.parse's own
+      // signal, which `relativeTime` renders as a neutral label rather than an
+      // epoch-0 or NaN duration.
       updatedAt: row.updated_at === null ? Number.NaN : Date.parse(row.updated_at),
       preview: row.preview,
     };

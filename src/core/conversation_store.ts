@@ -13,13 +13,11 @@ export interface NavigationCheckpoint {
 }
 
 /**
- * Lightweight metadata for one conversation — the thread-drawer row shape.
- *
- * Returned by {@link ClientConversationStore.listThreads} so the drawer can
- * render a list without loading message bodies. `title` defaults to a
- * truncation of the first user message (until an explicit rename); `preview`
- * is a one-line excerpt of the latest message; `updatedAt` is epoch ms of the
- * last change, used to order the list.
+ * Lightweight metadata for one conversation — the thread-drawer row shape, so
+ * the drawer renders without loading message bodies. `title` defaults to a
+ * truncation of the first user message until an explicit rename, `preview` is a
+ * one-line excerpt of the latest message, and `updatedAt` is epoch ms of the
+ * last change, which orders the list.
  */
 export interface ThreadMeta {
   readonly threadId: string;
@@ -32,16 +30,14 @@ export interface ThreadMeta {
  * Client-side persistence seam for the conversation and a pending-navigation
  * checkpoint, keyed by `thread_id`.
  *
- * The default {@link SessionStorageStore} keeps everything per-tab in
- * `sessionStorage`, so the chat survives the full page reloads of a
- * multi-page app. A host may inject a server-backed store instead (e.g. one
- * that rehydrates from a history endpoint); `loadMessages` and `listThreads`
- * are therefore async-friendly. The checkpoint methods stay synchronous — the
- * marker is a tiny local hint a server store can derive from history and no-op.
+ * The default {@link SessionStorageStore} keeps everything per-tab. A host may
+ * inject a server-backed store instead, which is why `loadMessages` and
+ * `listThreads` are async. The checkpoint methods stay synchronous: the marker
+ * is a small local hint a server store can derive from history and no-op.
  *
- * Thread enumeration (`listThreads` / `setActiveThread` / `renameThread`) backs
- * the chat-history drawer; "delete a thread" reuses {@link clear} and "new
- * chat" reuses {@link threadId} after clearing the active thread.
+ * Thread enumeration backs the chat-history drawer; deleting a thread reuses
+ * {@link clear} and "new chat" reuses {@link threadId} after clearing the
+ * active thread.
  */
 export interface ClientConversationStore {
   /** The active conversation id, generated and persisted on first read. */
@@ -86,18 +82,15 @@ interface StoredThread {
 /**
  * Default {@link ClientConversationStore}: per-tab `sessionStorage`.
  *
- * Survives full page reloads and same-tab navigation, clears on tab close —
- * the right scope for an embedded agent's conversation in a multi-page app.
- * Tracks multiple threads per tab: the active id lives under one key, the
- * message history / checkpoint are namespaced by id, and a small index feeds
- * the drawer so it works with no server.
+ * Survives full page reloads and same-tab navigation, clears on tab close.
+ * Tracks multiple threads per tab: the active id under one key, message history
+ * and checkpoint namespaced by id, and a small index feeding the drawer with no
+ * server involved.
  *
- * An optional `namespace` scopes every key to one element (its `id`, else its
- * endpoint), so two `<ag-ui-chat>` instances — or two apps — on the same origin
- * keep separate active-thread pointers and drawer indexes instead of clobbering
- * each other. Constructing with a namespace migrates any pre-namespacing
- * (`ag-ui-chat:*`) keys into it once, so an existing conversation survives the
- * upgrade; the default empty namespace keeps the legacy origin-global keys.
+ * An optional `namespace` scopes every key to one element, so two
+ * `<ag-ui-chat>` instances on the same origin keep separate active-thread
+ * pointers and drawer indexes instead of clobbering each other. The default
+ * empty namespace keeps the origin-global keys; see {@link #migrateLegacyKeys}.
  */
 export class SessionStorageStore implements ClientConversationStore {
   readonly #root: string;
@@ -219,12 +212,11 @@ export class SessionStorageStore implements ClientConversationStore {
   }
 
   /**
-   * One-time move of pre-namespacing (`ag-ui-chat:*`) keys into this instance's
-   * namespace, so an existing conversation isn't orphaned by the upgrade. Only
-   * this store's own keys move (thread pointer, drawer index, per-thread
-   * messages/checkpoints) — the element's `collapsed`/`theme` keys are left
-   * alone. The first namespaced instance to mount adopts the legacy data; a
-   * second namespace finds it gone and starts fresh.
+   * One-time move of un-namespaced `ag-ui-chat:*` keys into this instance's
+   * namespace, so an existing conversation isn't orphaned. Only this store's own
+   * keys move — the element's `collapsed` / `theme` keys are left alone. The
+   * first namespaced instance to mount adopts the data; a second namespace
+   * finds it gone and starts fresh.
    */
   #migrateLegacyKeys(): void {
     const legacyRoot = `${KEY_ROOT}:`;

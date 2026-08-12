@@ -61,7 +61,7 @@ jobs:
         # that broke the build.
         run: git --no-pager diff --stat pnpm-lock.yaml || true
 
-      # ⚠ Required, not optional. The sanitisation tests run in real Chromium
+      # Required, not optional. The sanitisation tests run in real Chromium
       # because DOMPurify silently stops sanitising under happy-dom, so without
       # this step they cannot start and the suite goes green having skipped the
       # assertions that matter most. A 0.15.0 release once published at 0%

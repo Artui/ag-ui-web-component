@@ -420,7 +420,7 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
 
 - Partial assistant text already streamed **stays in the transcript** and is persisted via
   `onPersist`, so a reload shows the truncated exchange. A muted **"⏹ Stopped"** note is appended
-  (`.stopped-note`) — a deliberate stop is not an error, so no ⚠️ bubble.
+  (`.stopped-note`) — a deliberate stop is not an error, so no bubble.
 - The run loop stops: tool calls collected before the abort are **not executed**, and no further
   round starts. A frontend tool handler already running completes, but its result doesn't trigger
   a re-run.
@@ -784,7 +784,7 @@ A gated call carries the decision (`approved by you` / `declined by you`, part
 from the server-side approval interrupt alike. The prompt itself disappears once answered: a
 prompt and a record are different objects, and the record is the card.
 
-⚠ **The annotation is session-scoped**, like the "run interrupted" notice. AG-UI carries no
+**The annotation is session-scoped**, like the "run interrupted" notice. AG-UI carries no
 approval message — the answer rides `resume[]` as transient run input — so a reload restores the
 tool call and its result but not the note that a human waved it through. If you need "who
 approved what" durably, that is an audit concern rather than a transcript one; record it
@@ -827,14 +827,14 @@ is what positions the grip.
 A drag writes `--ag-ui-width` / `--ag-ui-height` on the host as custom
 properties.
 
-⚠ **That alone does not leave placement in charge** — an inline custom property
+**That alone does not leave placement in charge** — an inline custom property
 still outranks a `:host([placement=…])` rule setting the same property. So the
 component enforces the split directly: **a placement owns the axes it fixes**,
 and a dragged or persisted size is only ever applied to the ones it leaves free.
 Switching placement hands the owned axes back. Without that, a height dragged
 while floating capped a docked sidebar that had asked for `100vh`.
 
-⚠ **A host rule that sizes the element wins over both.** `ag-ui-chat { flex: 1 }`
+**A host rule that sizes the element wins over both.** `ag-ui-chat { flex: 1 }`
 stretches the panel to its container and the dragged width has no visible
 effect — which reads as a broken control rather than as your stylesheet winning.
 Give the element `flex: 0 1 auto` (plus `max-width: 100%`) if it lives in a flex
@@ -1149,7 +1149,7 @@ error — a history affordance that fails is empty, not broken.
 ## File uploads
 
 Set **`data-attachments-url`** (django-ag-ui's `AttachmentsView`) to let the user attach files
-to a message. A 📎 button and drag-and-drop appear on the composer; each picked file uploads
+to a message. A button and drag-and-drop appear on the composer; each picked file uploads
 out-of-band (multipart, with the element's `headers`) and shows a chip in a pending tray —
 `uploading` (with a progress bar) → `ready`, or `error` with a retry. On send, the ready files'
 **refs** ride on the user bubble as read-only chips and the agent reads their contents
@@ -1178,7 +1178,7 @@ See [Authenticating requests](#authenticating-requests).
 `uploadHandler`. Set your own to use a different transport — a resumable
 [`tus-js-client`](https://github.com/tus/tus-js-client) adapter, direct-to-S3 multipart, etc.
 — without touching the tray, the chips, or the AG-UI wire (refs are transport-agnostic). The
-handler is `(file, onProgress) => Promise<AttachmentRef>`; when set, the 📎 affordance appears
+handler is `(file, onProgress) => Promise<AttachmentRef>`; when set, the affordance appears
 even with no `data-attachments-url`, and your handler owns its own endpoint and headers:
 
 ```js
@@ -1409,7 +1409,7 @@ have to hand-tune the variables:
 See [`src/ui/styles.ts`](src/ui/styles.ts) for the full variable + preset list. The
 [`demo/`](demo/) live playground (`node demo/mock-server.mjs`) flips theme, density, placement,
 text-animation, tool-display, and the answer well live from a single page, and demos the
-streamed thoughts region, the 🎤 mic, and the header theme toggle.
+streamed thoughts region, the mic, and the header theme toggle.
 
 ### Parts and slots
 

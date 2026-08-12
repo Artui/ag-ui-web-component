@@ -6,17 +6,11 @@ const CONFIRM_MS = 1500;
 /**
  * Give every fenced code block in `root` a copy button.
  *
- * An agent that answers with code is answering with something the reader means
- * to *use*, and selecting it by hand out of a scrolling transcript — inside a
- * shadow root, in a narrow sidebar — is the one interaction the chat surface
- * made harder than the page around it.
+ * Call only on finished bubbles: the streaming bubble reassigns its `innerHTML`
+ * on every delta, so a button attached mid-stream is discarded and rebuilt for
+ * each one.
  *
- * Applied to **finished** bubbles only. The streaming bubble reassigns its
- * `innerHTML` on every delta, so a button attached mid-stream would be
- * discarded and rebuilt for each one; waiting until the turn ends costs
- * nothing and does that work once.
- *
- * Idempotent: a bubble already processed is skipped, so a re-render or a second
+ * Idempotent — a bubble already processed is skipped, so a re-render or a second
  * call cannot stack buttons.
  */
 export function attachCopyButtons(root: ParentNode, strings: UiStrings): void {
@@ -43,9 +37,8 @@ function button(code: Element, strings: UiStrings): HTMLButtonElement {
   copy.setAttribute("aria-label", strings.copyCode);
   copy.addEventListener("click", () => {
     void writeText(text).then((ok) => {
-      // Say which of the two happened. A button that always claims success is
-      // worse than no button: the reader pastes stale clipboard content and
-      // finds out somewhere else entirely.
+      // Report the real outcome: a button that always claims success leaves the
+      // reader pasting stale clipboard content.
       confirm(copy, ok ? strings.copied : strings.copyFailed, strings);
     });
   });
@@ -53,11 +46,9 @@ function button(code: Element, strings: UiStrings): HTMLButtonElement {
 }
 
 /**
- * Copy `text`, reporting whether it landed.
- *
- * The Clipboard API needs a secure context and a user gesture, and is simply
- * absent in some embeddings, so its absence is an ordinary outcome rather than
- * an error worth throwing at the host page.
+ * Copy `text`, reporting whether it landed. The Clipboard API needs a secure
+ * context and a user gesture and is absent in some embeddings, so failure is an
+ * ordinary outcome rather than an error to throw at the host page.
  */
 async function writeText(text: string): Promise<boolean> {
   const clipboard = navigator.clipboard;

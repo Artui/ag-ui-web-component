@@ -7,10 +7,8 @@ export interface ResizeAnchor {
 }
 
 /**
- * What the current placement allows: both axes, width only, or nothing.
- *
- * Which *corner* the grip sits on is not part of this — that follows the host's
- * layout, which the component measures rather than assumes.
+ * What the current placement allows: both axes, width only, or nothing. Which
+ * corner the grip sits on is separate, and is measured rather than assumed.
  */
 export type ResizeAxis = "none" | "width" | "both";
 
@@ -31,22 +29,16 @@ export interface PanelRect {
 /** What the handle needs from its host to do its job. */
 export interface ResizeOptions {
   /**
-   * Which axes the current placement allows, read **per interaction**.
-   *
-   * A getter rather than a value because `placement` is a live attribute: read
-   * once at construction, a handle built while floating kept its axes after the
-   * host switched to a docked or full-bleed layout.
+   * Which axes the current placement allows, read per interaction. A getter
+   * because `placement` is a live attribute, and a value read at construction
+   * would survive the host switching to a docked or full-bleed layout.
    */
   readonly axis: () => ResizeAxis;
   /**
-   * Which edges the layout is holding still, measured at the moment of the
-   * drag.
-   *
-   * **Measured, not derived from `placement`.** A floating panel is pinned
-   * bottom-right and an embedded one goes wherever the host's own CSS puts it —
-   * the demo playground drops it in a right-aligned flex slot, so "embedded"
-   * alone says nothing. Guessing produced a panel that shrank when dragged
-   * outward and travelled by its opposite corner.
+   * Which edges the layout is holding still, measured at the moment of the drag
+   * rather than derived from `placement`: a floating panel is pinned
+   * bottom-right, while an embedded one goes wherever the host's CSS puts it,
+   * so `placement` alone cannot answer the question.
    */
   readonly anchor: () => ResizeAnchor;
   /** The panel's current bounding box. */
@@ -66,25 +58,20 @@ const MIN_HEIGHT = 240;
 /**
  * A drag handle that resizes the chat panel.
  *
- * The size was previously fixed by whatever the host set `--ag-ui-width` /
- * `--ag-ui-height` to: themeable by the page, immovable by the person reading a
- * long answer in a 380px column.
+ * Two rules keep it correct, and both are easy to break invisibly:
  *
- * **The new size is measured from the edge that is not moving, never from a
- * delta**, and which edge that is is **measured rather than assumed**. A
- * floating panel is pinned bottom-right; an embedded one goes wherever the
- * host's CSS puts it, so `placement` does not answer the question. Getting it
- * wrong is very visible: the panel shrinks when dragged outward and travels by
- * its opposite corner.
+ * - The new size is measured from the edge that is *not* moving, never from a
+ *   delta, and that edge is measured rather than assumed. Getting it wrong is
+ *   very visible: the panel shrinks when dragged outward and travels by its
+ *   opposite corner.
+ * - It writes the `--ag-ui-width` / `--ag-ui-height` custom properties, not
+ *   inline `width` / `height`. The placement rules set those same properties,
+ *   so an inline dimension would outrank and fight them — a sidebar would keep
+ *   its dragged width after switching to fullscreen. Writing the property
+ *   leaves placement the final say.
  *
- * **It writes the custom properties rather than inline `width` / `height`.**
- * The placement rules set those same properties, so an inline dimension would
- * fight them — a sidebar would keep a dragged width after switching to
- * fullscreen. Writing the property means placement still has the final say.
- *
- * The axes are read per interaction, so switching `placement` at runtime takes
- * effect immediately rather than leaving whichever ones the element happened to
- * mount with.
+ * Axes and anchor are both read per interaction, so a runtime `placement`
+ * change takes effect at once.
  */
 export function createResizeHandle(options: ResizeOptions): HTMLDivElement {
   const handle = document.createElement("div");
@@ -116,7 +103,7 @@ export function createResizeHandle(options: ResizeOptions): HTMLDivElement {
     if (axis === "none") {
       return;
     }
-    // Captured once: the fixed edges cannot move during the drag, and reading
+    // Captured once: the pinned edges cannot move during the drag, and reading
     // them live would chase the panel as it resizes.
     const anchor = options.anchor();
     const rect = options.rect();
@@ -140,7 +127,7 @@ export function createResizeHandle(options: ResizeOptions): HTMLDivElement {
     event.preventDefault();
   });
 
-  // Keyboard parity. A pointer-only resize is unreachable without a mouse, and
+  // Keyboard parity: a pointer-only resize is unreachable without a mouse, and
   // this control has no equivalent elsewhere in the UI.
   handle.addEventListener("keydown", (event: KeyboardEvent) => {
     const axis = options.axis();
@@ -150,8 +137,8 @@ export function createResizeHandle(options: ResizeOptions): HTMLDivElement {
     const anchor = options.anchor();
     const rect = options.rect();
     const step = event.shiftKey ? 64 : 16;
-    // An arrow moves the grip, and whether that grows or shrinks depends on
-    // which side the grip is on — the same asymmetry the pointer path handles.
+    // An arrow moves the grip, so whether it grows or shrinks depends on which
+    // side the grip is on — the asymmetry the pointer path also handles.
     const outward = anchor.x === "right" ? -1 : 1;
     const width = rect.right - rect.left;
     const height = rect.bottom - rect.top;

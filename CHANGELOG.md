@@ -206,7 +206,7 @@ hosts that both arrange the page the way it expects.
   `overflow: hidden` ancestor sharing the element's box — a card, a table cell —
   clipped it entirely while the tool reported success. And 200 ms is below the
   threshold at which someone who does not know where to look notices anything.
-  ⭐ Neither our tests nor the consumer's could have found the second one:
+  Neither our tests nor the consumer's could have found the second one:
   headless Chromium hides the scroll race, and no automated check has an opinion
   about whether a human sees a 200 ms ring.
 
@@ -222,7 +222,7 @@ hosts that both arrange the page the way it expects.
   explicit-duration contract, and the docs now say so instead of overclaiming.
 
 - **The tool and skill catalog fetches are deferred by one microtask**, so a React
-  `ref` assigned in the same commit as insertion is honoured. ⚠ The thread-history
+  `ref` assigned in the same commit as insertion is honoured. The thread-history
   request is deliberately **not** deferred: a deferred replay can land after a
   `sendMessage()` and duplicate the transcript. Configure before you insert, or
   call `reload()`; the new React recipe in the README shows both.
@@ -234,7 +234,7 @@ hosts that both arrange the page the way it expects.
   `data-resize-anchor="<y>-<x>"`, but the rules meant to read it were written as
   `[data-resize-anchor~="left"]` — and `~=` matches whitespace-separated words
   while the stamped value is a single hyphenated token, so they could never
-  match. ⚠ **The cursor rules used `=` and did match**, so the pointer followed
+  match. **The cursor rules used `=` and did match**, so the pointer followed
   the measurement while the grip stayed where `placement` had guessed: for any
   host that aligns the panel the other way, the cursor promised a diagonal the
   grip was not on, and the grip sat on the corner that stays put.
@@ -260,14 +260,14 @@ hosts that both arrange the page the way it expects.
 
 ### Fixed
 
-- ⛔ **`placement="side"` (and `sidebar`) stopped being full height once the
+- **`placement="side"` (and `sidebar`) stopped being full height once the
   panel had been resized.** A dragged size is written as a custom property on
   the host, and an inline custom property **outranks a `:host([placement=…])`
   rule setting the same property** — so a height dragged while floating capped a
   docked sidebar that had asked for `100vh`. Since the size persists per tab,
   one drag broke every later visit.
 
-  ⚠ **The previous release claimed this was already handled, and the reasoning
+  **The previous release claimed this was already handled, and the reasoning
   was wrong.** Writing `--ag-ui-height` rather than inline `height` was supposed
   to leave placement with the final say; it does not, because the indirection
   changes nothing about the cascade. The fix is explicit rather than
@@ -291,12 +291,12 @@ hosts that both arrange the page the way it expects.
   handle at all (a `100vw`/`100vh` layout has nothing to drag), `sidebar` /
   `side` get width only, everything else gets both.
 
-  ⚠ **It writes the custom properties, not inline `width` / `height`.** The
+  **It writes the custom properties, not inline `width` / `height`.** The
   placement rules set those same properties, so an inline dimension would
   outrank them — a panel dragged while floating would keep that width after
   switching to fullscreen.
 
-  ⭐ **Which corner the grip sits on is measured, not assumed.** A resize is
+  **Which corner the grip sits on is measured, not assumed.** A resize is
   computed from the edge that stays still, and which edge that is belongs to the
   *host's* layout rather than to `placement` — a floating panel is pinned
   bottom-right, an embedded one goes wherever the page's CSS puts it. Deriving
@@ -320,7 +320,7 @@ hosts that both arrange the page the way it expects.
   palette — a lone `/` — was left in the composer, which said nothing about what
   the skill wanted or how to supply it. The hint now says what to do, too.
 
-- ⚠ **Picking a skill now sends it.** It used to write the text into the
+- **Picking a skill now sends it.** It used to write the text into the
   composer and wait for a second click unless the skill set
   `sendImmediately: true` — so the default behaviour of a shortcut was to not
   take the shortcut. Set `sendImmediately: false` to keep pre-filling, which is
@@ -331,7 +331,7 @@ hosts that both arrange the page the way it expects.
   sends the bare `/name` token and the agent expands it, from the harness
   `Skills` capability or the server's own instructions.
 
-  ⛔ **The prompt was the leak.** A catalog is either a fetched `GET` or an
+  **The prompt was the leak.** A catalog is either a fetched `GET` or an
   inline `data-skills` attribute sitting in the page source, and a skill is
   often where a project's internal workflow is written down most plainly — so
   the client-side catalog published it to anyone who opened the page. Sending a
@@ -355,10 +355,10 @@ hosts that both arrange the page the way it expects.
   `part` (`tool-card-args` / `tool-card-result`, headings via
   `tool-card-section-label`, body via `tool-card-body`), and are pretty-printed.
 
-  ⚠ Breaking for anyone styling `tool-card-result` as a single combined block.
+  Breaking for anyone styling `tool-card-result` as a single combined block.
   A call with no arguments no longer renders an empty `{}` in a box of its own.
 
-- ⭐ **`data-tool-display` is now live.** Changing it restyles every card already
+- **`data-tool-display` is now live.** Changing it restyles every card already
   in the transcript, the way `data-answer-well` always has. The modes are pure
   visibility over **one DOM shape**, selected by the shadow CSS from the host
   attribute; previously each card baked its structure at construction from the
@@ -373,7 +373,7 @@ hosts that both arrange the page the way it expects.
   different objects: the record is the tool card it gates, which settles to the
   outcome and scrolls with the rest of the transcript.
 
-- ⛔ **The confirmation card was appended to the wrong parent**, and it is the
+- **The confirmation card was appended to the wrong parent**, and it is the
   reason it drifted to the foot of a turn. Every other inline card — tool,
   approval, `ask_user`, run notices — goes into the turn's answer group; this
   one went into the message list, so it became a sibling *after* the group and
@@ -390,7 +390,7 @@ hosts that both arrange the page the way it expects.
   gated, and the server-side gate left nothing at all even though it is the one
   guarding tools that run on the backend.
 
-  ⚠ **Session-scoped, like the "run interrupted" notice.** AG-UI carries no
+  **Session-scoped, like the "run interrupted" notice.** AG-UI carries no
   approval message — the answer rides `resume[]` as transient run input — so a
   reload restores the call and its result but not the note. Durable "who
   approved what" is an audit concern, not a transcript one.
@@ -415,7 +415,7 @@ hosts that both arrange the page the way it expects.
   entry is what gets persisted. The protocol has no rule to enforce and refusing
   the event would be worse than the merge, so this warns and continues.
 
-  ⭐ Found because the demo harness was doing exactly this, which is the
+  Found because the demo harness was doing exactly this, which is the
   argument for the harness in miniature: the bug was the consumer's, the
   invisibility was ours.
 
@@ -425,7 +425,7 @@ hosts that both arrange the page the way it expects.
   of replaying one script for everything, and the page gained header-icon,
   German-strings and reset-size controls plus a short "what to try" guide.
 
-  ⚠ Two harness defects were making the component look broken. Its follow-up
+  Two harness defects were making the component look broken. Its follow-up
   detection matched **any** tool message in the thread, so once a conversation
   had run a single tool every later turn answered "Done" to everything. And the
   page forced `flex: 1` on the element, which silently outranks the width a
@@ -454,7 +454,7 @@ hosts that both arrange the page the way it expects.
   keyboard user), styleable via the `code-copy` part, with `copyCode` /
   `copied` / `copyFailed` in `UiStrings`.
 
-  ⚠ **It reports failure rather than always claiming success.** The Clipboard
+  **It reports failure rather than always claiming success.** The Clipboard
   API needs a secure context and is simply absent in some embeddings; a button
   that always says "Copied" sends the reader off to paste stale clipboard
   content and find out somewhere else entirely.
@@ -473,7 +473,7 @@ hosts that both arrange the page the way it expects.
   drawer had done this correctly all along. Focus now moves in on open, is
   restored on close, and Tab is trapped while it is open.
 
-  ⚠ **With no continuable runs the panel holds no controls**, so the panel
+  **With no continuable runs the panel holds no controls**, so the panel
   itself is focusable as the fallback — otherwise "move focus to the first
   control" silently does nothing in exactly the case where the user has least to
   go on.
@@ -495,7 +495,7 @@ hosts that both arrange the page the way it expects.
   the composer, clears it, and calls this, so the two paths cannot drift.
 
   It no-ops while a run is in flight — a second concurrent run would orphan the
-  first — and for an entirely empty message. ⚠ Unlike the built-in Send it does
+  first — and for an entirely empty message. Unlike the built-in Send it does
   **not** consult the attachment tray: what you pass is what is sent, so a host
   composer stays in charge of its own state.
 
@@ -511,7 +511,7 @@ hosts that both arrange the page the way it expects.
   a send. `detail` carries `{ attachments, pending }`: the durable refs of
   everything settled, and how many are still in flight.
 
-  ⭐ **This is what makes `sendMessage` usable with files at all.** The tray only
+  **This is what makes `sendMessage` usable with files at all.** The tray only
   ever spoke to the built-in Send button, so a host composer had no way to tell a
   settled upload from one still uploading — the same information the built-in
   Send needs, which was simply not exposed. The tray's `onChange` hook already
@@ -527,13 +527,13 @@ hosts that both arrange the page the way it expects.
   `data-strings`, `data-icon-url`.
 
   Each is read once while connecting, to decide what chrome exists at all, and
-  no later read revisits the decision. ⚠ **The symptom is an affordance that
+  no later read revisits the decision. **The symptom is an affordance that
   simply never appears** — which reads as a broken component rather than a
   mis-timed assignment, and it is the common React/Vue shape: the element mounts
   on the first render pass and the framework patches attributes in on the next.
 
   Set them before the element enters the DOM, or remove and re-insert it to
-  apply a new value. ⭐ The attributes that genuinely *are* re-read per use —
+  apply a new value. The attributes that genuinely *are* re-read per use —
   `data-runs-url`, `data-page-actions`, `data-text-animation`,
   `data-tool-display`, `endpoint`, and CSS-reactive `theme` / `collapsed` — are
   deliberately excluded, since a late change works there and a warning would be
@@ -547,7 +547,7 @@ hosts that both arrange the page the way it expects.
   So the panel ignored `theme="dark"` entirely and rendered light-on-dark unless
   a host happened to set three variables documented nowhere. Now derived from the
   real theme tokens, with a new theme-aware `--ag-ui-hover` defined in every
-  theme block. ⭐ The fallbacks are what hid it: they made an unthemed panel look
+  theme block. The fallbacks are what hid it: they made an unthemed panel look
   deliberate.
 
   `checkpoints-title` and `checkpoint-label` also gain `part` attributes — they
@@ -592,11 +592,11 @@ hosts that both arrange the page the way it expects.
   building both and diffing; only the source maps move), so consumers see no
   change.
 
-  ⚠ **Vitest 4 takes a provider *instance*, not the string `"playwright"`.**
+  **Vitest 4 takes a provider *instance*, not the string `"playwright"`.**
   The provider moved to its own package (`@vitest/browser-playwright`) and, with
   v8 coverage, the old string form is a hard error rather than a deprecation.
 
-  ⚠ **TypeScript 7 requires `rootDir` explicitly** (TS5011) instead of
+  **TypeScript 7 requires `rootDir` explicitly** (TS5011) instead of
   inferring it from the common source directory. Set to the value 5.x inferred,
   so the published layout is unchanged.
 
@@ -629,7 +629,7 @@ hosts that both arrange the page the way it expects.
   transcription error body, and a restored history message with an unrecognised
   role.
 
-  ⭐ **One was a flaw in the test harness, not a missing test.** `makeFakeAgent`
+  **One was a flaw in the test harness, not a missing test.** `makeFakeAgent`
   ended a clean run by calling `onRunFinalized` alone, so the client's
   `RUN_FINISHED` path could only ever be reached through `emit.interrupt()` —
   the ordinary success outcome every real run carries was never exercised. The
@@ -648,13 +648,13 @@ hosts that both arrange the page the way it expects.
   (Playwright) for the tests whose subject is sanitisation. Coverage stays
   unified at 100% across both.
 
-  ⚠ **A correctness requirement, not an optimisation.** DOMPurify 3.4.8+
+  **A correctness requirement, not an optimisation.** DOMPurify 3.4.8+
   silently stops sanitising under happy-dom — `<script>` and `<img>` pass
   straight through, and ordinary markdown loses its `<p>` wrapper. A
   happy-dom-only suite can therefore go green while this component ships no
   sanitisation at all, which is the one failure it must never ship.
 
-  ⭐ **The experiment settles what the pin never could**: dompurify 3.4.13
+  **The experiment settles what the pin never could**: dompurify 3.4.13
   sanitises correctly in Chromium. The defect is happy-dom's DOM emulation, not
   a DOMPurify regression — so **consumers were never exposed**, and the risk was
   confined to the test environment the whole time.
@@ -680,13 +680,13 @@ hosts that both arrange the page the way it expects.
   are transitive, so they are pinned through `overrides` — there is no direct
   dependency to bump.
 
-  ⚠ **`overrides` now live in `pnpm-workspace.yaml`**, not the `pnpm` field in
+  **`overrides` now live in `pnpm-workspace.yaml`**, not the `pnpm` field in
   `package.json`; pnpm 11 ignores the latter and only warns. And an override
   must be scoped to its major — an unbounded `brace-expansion: ">=2.1.2"`
   resolves to 5.x, whose export shape `minimatch` cannot call, breaking `glob`
   at runtime.
 
-- ⛔ **Four `dompurify` advisories are knowingly left open** (three LOW, one
+- **Four `dompurify` advisories are knowingly left open** (three LOW, one
   MEDIUM), and the dependency is now pinned to **exactly `3.4.7`** rather than
   `^3.4.7`.
 
@@ -695,7 +695,7 @@ hosts that both arrange the page the way it expects.
   again against dompurify 3.4.13 with happy-dom 20.11.1 — moving the test DOM
   forward does not fix it.
 
-  ⭐ **The pin was previously a caret range**, so the hold existed only in the
+  **The pin was previously a caret range**, so the hold existed only in the
   lockfile and nowhere in the manifest, undocumented — a `pnpm update` would
   have silently disabled sanitisation. It is now exact, explained at the import
   site in `src/ui/render_markdown.ts`, and recorded in `CLAUDE.md`.
@@ -722,7 +722,7 @@ hosts that both arrange the page the way it expects.
     client. It now renders as `Using skill <id>` **instead of** the raw tool
     card it would otherwise produce.
 
-    ⚠ Not to be confused with the existing `Skill` catalog — that is a *human*
+    Not to be confused with the existing `Skill` catalog — that is a *human*
     affordance (a prompt the user launches from the chip row or `/`-palette).
     An agent skill is chosen by the model mid-run. Only the latter emits a
     notice.
@@ -929,7 +929,7 @@ hosts that both arrange the page the way it expects.
   / `onReasoningEnd`, wired from `@ag-ui/client`'s `REASONING_*` subscriber
   callbacks (which also cover the deprecated `THINKING_*` family).
 - **Voice input.** Set `data-transcribe-url` (django-ag-ui's
-  `TranscribeView`) to reveal a 🎤 mic button in the composer (part
+  `TranscribeView`) to reveal a mic button in the composer (part
   `voice-button`): it records via `MediaRecorder`, POSTs the clip, and drops the
   returned transcript into the textarea. A pluggable `transcribeHandler` —
   `(audio: Blob) => Promise<string>` — swaps the transport (a different STT
@@ -974,7 +974,7 @@ hosts that both arrange the page the way it expects.
   + summary, no box chrome) with the result behind its own toggle. Every
   tool-call card now leads with a CSS-drawn **status icon** (part
   `tool-card-icon`): a spinning ring while running, then a check / cross / slash
-  on success / error / decline, replacing the hardcoded `🔧` glyph. Re-theme via
+  on success / error / decline, replacing the hardcoded `` glyph. Re-theme via
   `--ag-ui-tool-icon-done` / `--ag-ui-tool-icon-error` / `--ag-ui-tool-icon-declined`
   and `--ag-ui-tool-spin-duration`; the spin respects `prefers-reduced-motion`.
 
@@ -1025,7 +1025,7 @@ hosts that both arrange the page the way it expects.
 ### Added
 
 - **File uploads.** Set `data-attachments-url` (django-ag-ui's `AttachmentsView`)
-  to reveal a 📎 picker + drag-and-drop on the composer. Each file uploads
+  to reveal a picker + drag-and-drop on the composer. Each file uploads
   out-of-band (multipart, with the element's `headers`) into a pending tray —
   one chip per file with a progress bar, settling to `ready` or `error` (with
   retry / remove). On send, the ready files' refs render as read-only chips on
@@ -1041,7 +1041,7 @@ hosts that both arrange the page the way it expects.
   `(file, onProgress) => Promise<AttachmentRef>` — swaps the built-in multipart
   upload for a custom one (a resumable `tus-js-client` adapter, direct-to-S3
   multipart, …) without touching the tray, chips, or AG-UI wire. When set, the
-  📎 affordance appears even with no `data-attachments-url`. Defaults to the
+  affordance appears even with no `data-attachments-url`. Defaults to the
   built-in `uploadAttachment`.
 - **New exports:** `uploadAttachment` + `UploadOptions` + `UploadHandler`, the
   `AttachmentRef` type, and `messageAttachments`. `AgUiClient.send` gains an

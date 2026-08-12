@@ -8,20 +8,18 @@ export interface HttpAgentOptions {
   headers?: Record<string, string>;
   /**
    * Cookie policy for the run request, as `fetch`'s own `credentials` mode.
-   * Unset leaves the browser default (`same-origin`) alone — which sends **no**
-   * cookies when the agent endpoint is on a different origin (or a different
-   * subdomain) from the page. A cookie-authenticated cross-origin deployment
-   * needs `"include"` here, and a server that answers it with
-   * `Access-Control-Allow-Credentials: true` and a concrete origin.
+   * Unset leaves the browser default (`same-origin`), which sends no cookies
+   * to an agent endpoint on a different origin or subdomain. A
+   * cookie-authenticated cross-origin deployment needs `"include"` here plus a
+   * server answering with `Access-Control-Allow-Credentials: true` and a
+   * concrete origin.
    */
   credentials?: RequestCredentials;
   /**
-   * Live header source, re-read on **every** request. `HttpAgent` bakes the
-   * static `headers` into its constructor and the element caches the agent
-   * for the whole conversation — so a rotated token (CSRF, short-lived JWT)
-   * would otherwise never reach the agent endpoint and a long session 401s
-   * mid-conversation. When set, the fetch wrapper overlays these values on
-   * each call; `headers` still seeds the initial/static configuration.
+   * Live header source, re-read on every request, overlaid on `headers`.
+   * `HttpAgent` bakes static `headers` in at construction and the element
+   * caches the agent for the whole conversation, so rotating credentials (CSRF,
+   * short-lived JWT) must come through here.
    */
   getHeaders?: () => Record<string, string>;
   /** Stable conversation id, so the agent's runs share a thread. */
@@ -37,11 +35,11 @@ export interface HttpAgentOptions {
 }
 
 /**
- * Build an AG-UI {@link HttpAgent} pointed at ``endpoint``.
+ * Build an AG-UI {@link HttpAgent} pointed at `endpoint`.
  *
- * This is the default agent factory used by ``<ag-ui-chat>``. Tests and
- * advanced hosts override the element's ``agentFactory`` to inject a
- * different {@link AbstractAgent} (e.g. a fake, or a middleware-wrapped one).
+ * The default agent factory for `<ag-ui-chat>`; tests and advanced hosts
+ * override the element's `agentFactory` to inject a different
+ * {@link AbstractAgent}.
  */
 export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
   return new HttpAgent({
@@ -49,12 +47,10 @@ export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
     headers: options.headers ?? {},
     initialState: { ...(options.initialState ?? {}) },
     // HttpAgent invokes its configured fetch as a method (`this.fetch(...)`),
-    // which would rebind the global `fetch` to the agent instance and trigger
-    // "Illegal invocation" in browsers. Wrap it so `fetch` is always called as
-    // a free function with the correct receiver. The wrapper also overlays
-    // `getHeaders()` per request, so header rotation (CSRF, short-lived JWT)
-    // reaches the stream even though the agent instance is cached, and applies
-    // the configured cookie policy — the agent's own config has no seam for it.
+    // rebinding the global `fetch` to the agent instance — "Illegal invocation"
+    // in browsers. The wrapper keeps `fetch` a free call, and is also where the
+    // per-request `getHeaders()` overlay and the cookie policy go, the agent's
+    // own config having no seam for either.
     fetch: (url, init) => {
       const fresh = options.getHeaders?.();
       if (fresh === undefined) {
@@ -67,7 +63,7 @@ export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
       return fetch(url, withCredentials({ ...init, headers }, options.credentials));
     },
     // Spread conditionally: under `exactOptionalPropertyTypes` an explicit
-    // `undefined` is not assignable to these optional config fields.
+    // `undefined` is not assignable to an optional field.
     ...(options.threadId !== undefined ? { threadId: options.threadId } : {}),
     ...(options.initialMessages !== undefined
       ? { initialMessages: [...options.initialMessages] }

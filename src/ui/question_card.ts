@@ -19,9 +19,8 @@ export interface QuestionRequest {
 /** Options for {@link requestQuestion}. */
 export interface QuestionOptions {
   /**
-   * Aborting this signal resolves the card with an empty answer (fields
-   * disabled) — the hook a Stop control uses to dismiss an open question when
-   * the user cancels the whole run.
+   * Aborting this signal resolves the card with an empty answer and disabled
+   * fields — how a Stop control dismisses an open question.
    */
   signal?: AbortSignal;
   /** Localized strings; defaults to the English {@link DEFAULT_UI_STRINGS}. */
@@ -32,11 +31,9 @@ export interface QuestionOptions {
  * A fully custom renderer for the `ask_user` question, set via
  * `AgUiChat.askUserRenderer`. Receives the parsed {@link QuestionRequest} and an
  * `AbortSignal` that fires when the run is stopped, and resolves with the user's
- * answer (an empty string signals "no answer", e.g. on abort). When provided it
- * **replaces** the built-in {@link requestQuestion} card entirely — the host owns
- * the DOM, so it can render a native modal, a framework component, or anything
- * else. See the `strings` / `::part()` seams for styling the built-in card
- * instead of replacing it.
+ * answer; an empty string means no answer. Replaces the built-in
+ * {@link requestQuestion} card entirely — see {@link ApprovalRenderer} for the
+ * same seam on approvals.
  */
 export type QuestionRenderer = (
   request: QuestionRequest,
@@ -54,14 +51,14 @@ function answerInput(placeholder: string): HTMLInputElement {
 }
 
 /**
- * Append an inline **question** card to ``host`` and resolve with the user's
- * answer — the browser half of the built-in `ask_user` frontend tool.
+ * Append an inline question card to `host` and resolve with the user's answer —
+ * the browser half of the built-in `ask_user` frontend tool.
  *
- * Unlike the confirmation/approval cards (which resolve a yes/no), this collects
- * a typed answer: a radio pick from ``options``, or free text (when
- * ``allowCustom`` or no ``options`` are given). The card stays in the transcript
- * as a resolved record (controls disabled, `data-resolved` set) rather than
- * vanishing. A Stop while it is open resolves it with an empty string.
+ * Collects a typed answer rather than the yes/no the confirmation and approval
+ * cards return: a radio pick from `options`, or free text when `allowCustom` is
+ * set or no `options` are given. Stays in the transcript as a resolved record,
+ * controls disabled and `data-resolved` set; a Stop while it is open resolves
+ * it with an empty string.
  */
 export function requestQuestion(
   host: Node & ParentNode,

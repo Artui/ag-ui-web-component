@@ -15,17 +15,16 @@ export interface Skill {
    * The prompt to send. May contain `{placeholder}`s filled from the host's
    * skill context before send; an unfilled placeholder blocks send.
    *
-   * **Omit it to keep the prompt on the server.** The skill then sends the bare
-   * `/name` token and the agent resolves what it means, so the wording never
-   * reaches the browser — worth preferring for anything internal, since a
-   * fetched catalog is a plain GET and an embedded one sits in the page source.
+   * Omit it to keep the prompt server-side: the skill then sends the bare
+   * `/name` token for the agent to resolve, and the wording never reaches the
+   * browser. Prefer that for anything internal — a fetched catalog is a plain
+   * GET and an embedded one sits in the page source.
    */
   readonly prompt?: string;
   /**
-   * Set `false` to pre-fill the composer instead of sending on pick. Only
-   * meaningful for a skill that carries its own `prompt`; a server-resolved one
-   * always sends. Defaults to sending — a chip that needs a second click to do
-   * anything is a two-step shortcut.
+   * Set `false` to pre-fill the composer instead of sending on pick. Defaults
+   * to sending, and is only meaningful for a skill carrying its own `prompt`;
+   * a server-resolved one always sends.
    */
   readonly sendImmediately?: boolean;
   /** Also surface this skill as a chip (default false; the palette shows all). */

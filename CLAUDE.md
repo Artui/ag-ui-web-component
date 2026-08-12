@@ -207,17 +207,17 @@ closed unmerged. DOMPurify closed the mirror reports
 [#1496](https://github.com/cure53/DOMPurify/issues/1496)) as wontfix — its
 README names happy-dom as **not safe** and supports jsdom only.
 
-⚠ So the old exact pin at 3.4.7 was never the safety it appeared to be; cure53
+So the old exact pin at 3.4.7 was never the safety it appeared to be; cure53
 notes it "doesn't really work, it just appears so". Neither side has a fix in
 flight, which is why the browser project is the durable answer rather than a
 version constraint.
 
-⚠ **Do not move `tests/browser/**` back under happy-dom to save the ~2s of
+**Do not move `tests/browser/**` back under happy-dom to save the ~2s of
 browser startup.** Those are the only assertions that this component sanitises
 at all. CI installs Chromium explicitly for the same reason — without it the
 tests cannot start, and the suite would pass having skipped what matters most.
 
-⚠ **Both `tests.yml` and `release.yml` need the `playwright install` step.**
+**Both `tests.yml` and `release.yml` need the `playwright install` step.**
 The release gate runs the suite a second time, so it needs its own browsers;
 the 0.15.0 release failed at 0% coverage because only `tests.yml` had the step.
 Any future workflow that runs `pnpm test` needs it too.
