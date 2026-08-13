@@ -58,6 +58,23 @@ export interface ClientConversationStore {
   setActiveThread(threadId: string): void;
   /** Set a thread's display title (the drawer renaming a row). */
   renameThread(threadId: string, title: string): void;
+  /**
+   * Whether `threadId` was minted here and has never been saved — a thread in
+   * which nothing has been sent yet.
+   *
+   * Exists so a server-backed store can skip asking a server for history that
+   * cannot be there: the element mints an id on first mount and immediately tries
+   * to restore it, which answers `404` and logs one in the console on every first
+   * visit. Nothing is wrong, and it looks exactly like something being wrong.
+   *
+   * Optional, and deliberately narrow. A store that cannot tell omits it and the
+   * fetch happens as before, which is also the right answer for a store that
+   * holds nothing locally: "I have no messages for this id" is not the same claim
+   * as "this id is new", and only the store that minted the id can make the
+   * second one. A thread picked from the drawer was never minted here, so it is
+   * still fetched.
+   */
+  isUnsent?(threadId: string): boolean;
 }
 
 const KEY_ROOT = "ag-ui-chat";
@@ -65,6 +82,9 @@ const THREAD_SUFFIX = "thread";
 const THREADS_SUFFIX = "threads";
 const MESSAGES_SUFFIX = "messages:";
 const CHECKPOINT_SUFFIX = "checkpoint:";
+// Marks an id this store minted and nothing has been sent in yet. Dropped on
+// the first save, so it never outlives the one question it answers.
+const MINTED_SUFFIX = "minted:";
 
 const TITLE_LIMIT = 60;
 const PREVIEW_LIMIT = 100;
@@ -110,7 +130,15 @@ export class SessionStorageStore implements ClientConversationStore {
     }
     const id = randomUUID();
     sessionStorage.setItem(key, id);
+    sessionStorage.setItem(this.#key(MINTED_SUFFIX + id), "1");
     return id;
+  }
+
+  isUnsent(threadId: string): boolean {
+    return (
+      sessionStorage.getItem(this.#key(MINTED_SUFFIX + threadId)) !== null &&
+      sessionStorage.getItem(this.#key(MESSAGES_SUFFIX + threadId)) === null
+    );
   }
 
   loadMessages(threadId: string): Promise<readonly Message[] | null> {
@@ -119,6 +147,7 @@ export class SessionStorageStore implements ClientConversationStore {
 
   saveMessages(threadId: string, messages: readonly Message[]): void {
     sessionStorage.setItem(this.#key(MESSAGES_SUFFIX + threadId), JSON.stringify(messages));
+    sessionStorage.removeItem(this.#key(MINTED_SUFFIX + threadId));
     this.#touchThread(threadId, messages);
   }
 
@@ -138,6 +167,7 @@ export class SessionStorageStore implements ClientConversationStore {
   clear(threadId: string): void {
     sessionStorage.removeItem(this.#key(MESSAGES_SUFFIX + threadId));
     sessionStorage.removeItem(this.#key(CHECKPOINT_SUFFIX + threadId));
+    sessionStorage.removeItem(this.#key(MINTED_SUFFIX + threadId));
     this.#writeThreads(this.#readThreads().filter((thread) => thread.threadId !== threadId));
     // Only drop the active pointer when the active thread itself is cleared, so
     // the next `threadId()` mints a fresh one. Deleting another thread from the

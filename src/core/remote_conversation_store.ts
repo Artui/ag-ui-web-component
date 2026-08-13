@@ -69,6 +69,11 @@ export class RemoteConversationStore implements ClientConversationStore {
     this.#local.setActiveThread(threadId);
   }
 
+  /** Delegated, so wrapping a store does not lose what it knows about its own ids. */
+  isUnsent(threadId: string): boolean {
+    return this.#local.isUnsent?.(threadId) === true;
+  }
+
   saveMessages(threadId: string, messages: readonly Message[]): void {
     // The agent run persists server-side; keep a local cache for offline replay.
     this.#local.saveMessages(threadId, messages);
@@ -103,6 +108,15 @@ export class RemoteConversationStore implements ClientConversationStore {
   }
 
   async loadMessages(threadId: string): Promise<readonly Message[] | null> {
+    // Don't ask the server for a thread it cannot have. The element mints an id
+    // on first mount and immediately tries to restore it, so every first visit
+    // spent a request to be told `404` — and logged one in the console, on a page
+    // where nothing had gone wrong. Only the store that minted the id can say
+    // that; a thread chosen from the drawer, or one created on another device, is
+    // still fetched. See `ClientConversationStore.isUnsent`.
+    if (this.#local.isUnsent?.(threadId) === true) {
+      return null;
+    }
     const response = await this.#get(`${this.#url}${encodeURIComponent(threadId)}/`);
     if (response === null || !response.ok) {
       return this.#local.loadMessages(threadId);

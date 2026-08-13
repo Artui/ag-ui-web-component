@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
+import { SessionStorageStore } from "../src/core/conversation_store.js";
 import type { HttpAgentOptions } from "../src/core/create_http_agent.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { makeFakeAgent } from "./helpers/fake_agent.js";
@@ -123,6 +124,19 @@ afterEach(() => {
 });
 
 /**
+ * Make the tab's active thread one that has been used, so its history is fetched.
+ *
+ * The element skips the history request for a thread it just minted, so a mount
+ * on a virgin tab has no `/agent/threads/:id/` call to inspect. Written through
+ * the store's own API rather than by poking `sessionStorage`, so it keeps working
+ * if the keys change.
+ */
+function seedUsedThread(): void {
+  const store = new SessionStorageStore();
+  store.saveMessages(store.threadId(), [{ id: "m1", role: "user", content: "earlier" }] as never);
+}
+
+/**
  * Drive every request the element can make, once, and report what went out.
  *
  * Deliberately one helper rather than a test per endpoint: the property under
@@ -132,6 +146,11 @@ afterEach(() => {
 async function driveEveryRequest(el: AgUiChat): Promise<void> {
   const media = installFakeMedia();
   try {
+    // Pre-seed the tab's active thread with a saved message, so mounting fetches
+    // that thread's history. A freshly minted thread deliberately makes no such
+    // request -- the server cannot have it -- and this helper's whole point is
+    // that every request site the element has is exercised once.
+    seedUsedThread();
     document.body.appendChild(el);
     // The startup catalogs (deferred a microtask) and the thread's history.
     await flush();

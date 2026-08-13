@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every first visit spent a request to be told `404`.** With
+  `data-threads-url` set, the element minted a thread id on mount and
+  immediately asked the server for its history — history that cannot exist,
+  because the id was three lines old. The response was correct and harmless, and
+  it put a red `404` in the console of a page where nothing had gone wrong, on
+  every first visit to every host. `ClientConversationStore` gained an optional
+  `isUnsent(threadId)`, which the session store answers from a marker it sets when
+  it mints and drops on the first save, and the remote store skips the fetch when
+  it is `true`. Deliberately narrow: *"I hold no messages for this id"* is not the
+  same claim as *"this id is new"*, and only the store that minted it can make the
+  second one — so a thread picked from the drawer, or created on another device,
+  is still fetched.
 - **An approved call's tool card broke its own name into pieces.** The card's
   head is a flex row in which the name is the only flexible child, so every
   fixed badge the row gains is taken out of it. The decision badge ("approved by
