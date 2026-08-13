@@ -7,7 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`toggleCheckpoints()` and `closeCheckpoints()`.** The built-in ⭯ control now
+  calls the toggle, so pressing it a second time dismisses the panel;
+  `openCheckpoints()` keeps its open-only meaning for a host that wants exactly
+  that.
+- **The checkpoint rows show a short run id.** A time is not an identity: two runs
+  of the same minute both read "just now", and choosing between them was choosing
+  blind. Eight characters of the id, muted, beside the time — with the whole id on
+  its own `title` rather than on the row's label, so hovering a row no longer
+  raises a full UUID over it. The proper fix is a preview of the run's first
+  message, which the server's run index does not send yet.
+
 ### Fixed
+
+- **The checkpoint panel could not be closed by the control that opened it.**
+  The button called `open()`, which returns early when the panel is already open,
+  so the first gesture anyone tries did nothing. Escape worked, and answering a row
+  worked, and that was all. It now toggles, and a pointer landing anywhere else in
+  the widget dismisses it — the thread drawer has a backdrop that swallows such a
+  click, and this popover has none.
+
+- **The thread drawer and the checkpoint popover could be open at once.** Opening
+  either now closes the other. The pointer case was already covered by the
+  click-away above, but a host driving its own chrome through `openThreads()` /
+  `openCheckpoints()` raises no pointer event, and the drawer would slide open
+  underneath a popover still floating over it.
+
+- **The panel read as a list of clickable rows.** Each row painted itself on hover
+  while nothing about the row was pressable: the two buttons that *were* pressable
+  sat on that highlight as transparent outlines. The row now carries a resting
+  surface and no hover at all, and the actions carry the filled-primary /
+  outlined-secondary pair the confirmation and approval cards already use, plus
+  `:active` and — new — a visible `:focus-visible` ring, in a panel that traps
+  focus and is reached by Tab.
+
+- **A narrow panel crushed the timestamp to nothing.** The row is a flex line whose
+  only flexible child is the label, so it absorbs every fixed-width element the row
+  gains; at 320px the label kept its text, reported it correctly, and measured 0px.
+  This is the tool-call head's defect (0.24.0) one panel along, and it is now
+  measured in a real browser at both widths — happy-dom lays out no boxes and
+  called the broken row a pass.
+
+- **The ⭯ glyph is now ↺.** The old one has no font behind it in most browsers and
+  rendered as an unreadable mark at 14px. A header control nobody can name is one
+  nobody presses.
 
 - **The composer painted a paperclip that could not upload anything.** The element
   sets `hidden` on the attach button until a host gives it somewhere to upload —

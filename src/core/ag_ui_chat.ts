@@ -1596,6 +1596,11 @@ export class AgUiChat extends HTMLElement {
    * {@link toggleCollapsed} and {@link toggleTheme}.
    */
   openThreads(): void {
+    // Two overlapping surfaces, so opening one dismisses the other. Clicking away
+    // already covers the built-in buttons, but a host driving its own chrome
+    // through these methods raises no pointer event — and the drawer would then
+    // open *underneath* a popover still floating over it.
+    this.#checkpoints.close();
     void this.#refreshDrawer();
     this.#drawer.open();
   }
@@ -1608,8 +1613,29 @@ export class AgUiChat extends HTMLElement {
    * an empty panel.
    */
   openCheckpoints(): void {
+    // The other half of the pair — see `openThreads`.
+    this.#drawer.close();
     void this.#refreshCheckpoints();
     this.#checkpoints.open();
+  }
+
+  /** Close the checkpoints panel, if it is open. */
+  closeCheckpoints(): void {
+    this.#checkpoints.close();
+  }
+
+  /**
+   * Open the checkpoints panel, or close it if it is already open — what the
+   * built-in ⭯ button does, because a control that opens a panel is read as the
+   * control that also dismisses it. {@link openCheckpoints} stays open-only for a
+   * host that means exactly that.
+   */
+  toggleCheckpoints(): void {
+    if (this.#checkpoints.open_) {
+      this.#checkpoints.close();
+      return;
+    }
+    this.openCheckpoints();
   }
 
   /**
@@ -1933,8 +1959,11 @@ export class AgUiChat extends HTMLElement {
     const history = this.#headerButton("history", this.#strings.chatHistory, "☰");
     history.addEventListener("click", () => this.openThreads());
 
-    const checkpoints = this.#headerButton("checkpoints", this.#strings.checkpoints, "⭯");
-    checkpoints.addEventListener("click", () => this.openCheckpoints());
+    // ↺ rather than ⭯: the same idea in a glyph that has a font behind it in
+    // every browser. The obscure one rendered as an unreadable mark at 14px, and a
+    // header control nobody can name is one nobody presses.
+    const checkpoints = this.#headerButton("checkpoints", this.#strings.checkpoints, "↺");
+    checkpoints.addEventListener("click", () => this.toggleCheckpoints());
 
     const newChat = this.#headerButton("new", this.#strings.newChat, "✚");
     newChat.addEventListener("click", () => this.newChat());
@@ -2076,6 +2105,25 @@ export class AgUiChat extends HTMLElement {
       this.#drawer.element,
       this.#checkpoints.element,
     );
+
+    // Clicking away dismisses the checkpoints popover. Escape already did, and the
+    // drawer has a backdrop that swallows the click — this popover has neither, so
+    // it could only be closed by answering it.
+    //
+    // `pointerdown`, and the header button excluded: pointerdown runs *before* the
+    // button's own click, so closing here and toggling there would land back open.
+    // Composed path rather than `target`, because the event is retargeted at the
+    // shadow boundary and every one of these nodes is inside it.
+    this.#chat.addEventListener("pointerdown", (event) => {
+      if (!this.#checkpoints.open_) {
+        return;
+      }
+      const path = event.composedPath();
+      if (path.includes(this.#checkpoints.element) || path.includes(checkpoints)) {
+        return;
+      }
+      this.#checkpoints.close();
+    });
 
     // What a collapsed widget shrinks to: a round floating button, or the slim
     // edge rail under `placement="sidebar"` — one element, shaped by CSS.

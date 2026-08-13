@@ -102,10 +102,12 @@ describe("loading the panel", () => {
     (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
     await flush();
 
-    const labels = [...shadow(el).querySelectorAll<HTMLElement>(".checkpoint-label")].map(
+    // Identified by the short id the row now shows, rather than by a `title` on
+    // the label — which is where the full id used to hide.
+    const listed = [...shadow(el).querySelectorAll<HTMLElement>(".checkpoint-id")].map(
       (n) => n.title,
     );
-    expect(labels).toEqual(["r1"]);
+    expect(listed).toEqual(["r1"]);
   });
 
   it("opens the panel", async () => {
@@ -192,15 +194,22 @@ describe("when the host withdraws the endpoint", () => {
   });
 
   it("empties the panel when refreshed with no endpoint", async () => {
+    // Refreshed by the public method, not by a second press of the button: the
+    // button toggles now, so pressing it twice closes the panel and refreshes
+    // nothing — which left this test asserting an empty state that had been there
+    // since the first open.
+    stubRuns([row()]);
     const { el } = mount();
     (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
     await flush();
+    expect(shadow(el).querySelectorAll(".checkpoint-row")).toHaveLength(1);
 
     el.removeAttribute("data-runs-url");
-    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    el.openCheckpoints();
     await flush();
 
     expect(shadow(el).querySelector(".checkpoints-empty")).not.toBeNull();
+    expect(shadow(el).querySelectorAll(".checkpoint-row")).toHaveLength(0);
   });
 });
 
@@ -349,5 +358,182 @@ describe("checkpoint panel focus management", () => {
     panel?.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
 
     expect(panel?.hidden).toBe(false);
+  });
+});
+
+describe("dismissing the panel", () => {
+  /**
+   * The ⭯ button opened the panel and had no way to close it: pressing it again
+   * called `open()` on an already-open panel, which returns early. Escape worked
+   * and picking an action worked, so the one gesture a person tries first was the
+   * one that did nothing.
+   */
+  it("closes on a second press of the button that opened it", async () => {
+    const { el } = mount();
+    await flush();
+    stubRuns([row()]);
+    const button = shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement;
+
+    button.click();
+    await flush();
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(false);
+
+    button.click();
+    await flush();
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(true);
+  });
+
+  it("reopens on the press after that", async () => {
+    const { el } = mount();
+    await flush();
+    stubRuns([row()]);
+    const button = shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement;
+
+    button.click();
+    await flush();
+    button.click();
+    await flush();
+    button.click();
+    await flush();
+
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(false);
+  });
+
+  it("closes when the pointer goes down anywhere else in the widget", async () => {
+    // The drawer has a backdrop that swallows the click; this popover has none,
+    // so without this it could only be dismissed by answering it or by Escape.
+    const { el } = mount();
+    await flush();
+    stubRuns([row()]);
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+
+    shadow(el)
+      .querySelector(".messages")
+      ?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+    await flush();
+
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(true);
+  });
+
+  it("stays open when the pointer goes down inside it", async () => {
+    const { el } = mount();
+    await flush();
+    stubRuns([row()]);
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+
+    shadow(el)
+      .querySelector(".checkpoints-title")
+      ?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+    await flush();
+
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(false);
+  });
+
+  it("does not fight the button it is dismissed by", async () => {
+    // pointerdown on the button would close the panel before the button's own
+    // click toggled it back open, so a press would look like it did nothing.
+    const { el } = mount();
+    await flush();
+    stubRuns([row()]);
+    const button = shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement;
+    button.click();
+    await flush();
+
+    button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+    await flush();
+
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(false);
+  });
+
+  it("ignores a pointer that goes down while it is already closed", async () => {
+    const { el } = mount();
+    await flush();
+
+    shadow(el)
+      .querySelector(".messages")
+      ?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+    await flush();
+
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(true);
+  });
+
+  it("closes from the host's own call", async () => {
+    const { el } = mount();
+    await flush();
+    stubRuns([row()]);
+    el.openCheckpoints();
+    await flush();
+
+    el.closeCheckpoints();
+
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(true);
+  });
+});
+
+describe("opening the panel without an endpoint", () => {
+  it("renders the empty state rather than asking a URL that is not there", async () => {
+    // No `data-runs-url`, so the built-in button is never rendered — but the
+    // method behind it is public and documented, and it has to answer somehow.
+    const { el } = mount(false);
+    await flush();
+
+    el.openCheckpoints();
+    await flush();
+
+    const panel = shadow(el).querySelector<HTMLElement>(".checkpoints");
+    expect(panel?.hidden).toBe(false);
+    expect(panel?.querySelector(".checkpoints-empty")).not.toBeNull();
+    expect(panel?.querySelectorAll(".checkpoint-row")).toHaveLength(0);
+  });
+});
+
+describe("the two overlapping surfaces", () => {
+  /**
+   * The drawer and the checkpoint popover both float over the transcript, and the
+   * built-in buttons sit next to each other. Clicking away covers the pointer
+   * case; these cover the host-driven one, where no pointer event is raised and
+   * the drawer would otherwise open underneath a popover still floating over it.
+   */
+  it("closes the checkpoints panel when the thread drawer is opened", async () => {
+    const { el } = mount();
+    await flush();
+    stubRuns([row()]);
+    el.openCheckpoints();
+    await flush();
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(false);
+
+    el.openThreads();
+    await flush();
+
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(true);
+  });
+
+  it("closes the thread drawer when the checkpoints panel is opened", async () => {
+    const { el } = mount();
+    await flush();
+    el.openThreads();
+    await flush();
+    expect(shadow(el).querySelector<HTMLElement>(".drawer")?.hidden).toBe(false);
+
+    el.openCheckpoints();
+    await flush();
+
+    expect(shadow(el).querySelector<HTMLElement>(".drawer")?.hidden).toBe(true);
+  });
+
+  it("closes the popover when the drawer's own button is pressed", async () => {
+    const { el } = mount();
+    await flush();
+    stubRuns([row()]);
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+
+    (shadow(el).querySelector(".header-btn--history") as HTMLButtonElement).click();
+    await flush();
+
+    expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(true);
+    expect(shadow(el).querySelector<HTMLElement>(".drawer")?.hidden).toBe(false);
   });
 });
