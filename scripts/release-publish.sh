@@ -8,11 +8,19 @@
 #             extract CHANGELOG section, write release metadata under
 #             .release-metadata/. Emits `released=true|false` and `version=…`
 #             to $GITHUB_OUTPUT when running under GitHub Actions.
-#   finalize  Tag, push tag, and create a GitHub Release. Skipped automatically
-#             if prepare decided no release.
+#   finalize  Tag, push the tag (retried), and create a GitHub Release. Skipped
+#             automatically if prepare decided no release.
 #   all       prepare → pnpm publish → finalize. Used for manual workstation
 #             releases (CI does the npm publish via the workflow between prepare
 #             and finalize so OIDC provenance is attached).
+#
+# Re-running a failed release job is the intended recovery, so no phase repeats an
+# effect that already landed: `prepare` no-ops once the tag exists, and `finalize`
+# skips a tag or a Release that is already there. The publish between them belongs
+# to the workflow, and skips a version the registry already has for the same
+# reason — without that, a failure in any step after the publish can only be
+# repaired by hand, and the obvious shortcut (pushing the tag manually) makes
+# `prepare` short-circuit, which skips everything after it.
 #
 # Required env:
 #   PACKAGE_NAME    Display name (npm name). Used in logs only.
@@ -94,6 +102,32 @@ tag_exists() {
     return 1
 }
 
+push_tag() {
+    # Retried, because the failure it protects against is transport rather than
+    # state. GitHub rejects a healthy tag push with a server-side
+    # `remote: fatal error in commit_refs` often enough to have cost a release:
+    # the package was already on the registry, so the tag, the GitHub Release and
+    # the docs deploy were all lost to one flake in the one step that cannot be
+    # re-run cheaply. Seconds of retry buys back a manual recovery.
+    local tag="$1" attempt=1 delay=5
+    until git push origin "$tag"; do
+        # A push can land and still report failure. Ask the remote rather than
+        # retrying into a "tag already exists" error and reporting that instead.
+        if [[ -n "$(git ls-remote --tags origin "$tag" 2>/dev/null)" ]]; then
+            log "$tag reached the remote despite the error, continuing"
+            return 0
+        fi
+        if ((attempt >= 3)); then
+            echo "tag push of $tag failed after $attempt attempts" >&2
+            return 1
+        fi
+        log "tag push failed (attempt $attempt of 3), retrying in ${delay}s"
+        sleep "$delay"
+        attempt=$((attempt + 1))
+        delay=$((delay * 2))
+    done
+}
+
 extract_changelog_section() {
     local version="$1" out_file="$2"
     awk -v ver="$version" '
@@ -167,7 +201,7 @@ do_finalize() {
         git config user.name 'github-actions[bot]'
         git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
         git tag -a "v$version" -m "$version"
-        git push origin "v$version"
+        push_tag "v$version"
     fi
 
     if gh release view "v$version" >/dev/null 2>&1; then
