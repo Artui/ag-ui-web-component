@@ -49,7 +49,25 @@ jobs:
 
       - name: Publish to npm
         if: steps.prepare.outputs.released == 'true'
-        run: pnpm publish --no-git-checks --access public
+        env:
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
+          # Idempotent on purpose, for the reason the Python siblings pass
+          # `skip-existing` to their upload. What gates a release is the git tag,
+          # not the registry (see `prepare`), so re-running this job after a
+          # failure in a later step arrives here having already published this
+          # version. Without the guard the publish is the step that makes that
+          # re-run impossible, and every recovery becomes manual: one sibling
+          # release lost its tag, its GitHub Release and its docs deploy to a
+          # single transient push failure, with the package already published.
+          # npm never lets a version be republished, so skipping one cannot
+          # overwrite what is on the registry.
+          name="$(node -p "require('./package.json').name")"
+          if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+            echo "$name@$VERSION is already on the registry, skipping publish"
+          else
+            pnpm publish --no-git-checks --access public
+          fi
 
       - name: Tag + GitHub Release
         if: steps.prepare.outputs.released == 'true'
