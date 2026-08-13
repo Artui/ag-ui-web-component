@@ -387,6 +387,45 @@ with the configuration as it then stands. It is a reload, not a merge: the in-fl
 cancelled and the transcript is rebuilt from the persisted history, so call it when configuration
 lands rather than between turns.
 
+#### The same boundary in four frameworks
+
+Each framework reaches that pre-insertion window differently, and only one of them reaches it
+declaratively. Built and driven in all four:
+
+| Host | Pre-insertion window | What to do |
+| --- | --- | --- |
+| React | None — refs attach after insertion | `createElement`, configure, `appendChild` (above) |
+| **Vue 3** | **Yes** — a directive's `beforeMount` | Attributes in the template, properties in the directive |
+| Svelte 5 | None — `use:` actions and `$effect` run after insertion | Same as React |
+| Angular | None — bindings apply during change detection | Same as React, in `ngOnInit` with `@ViewChild({ static: true })` |
+
+**Vue** is the one host that can configure declaratively, because a custom directive's `beforeMount`
+runs while the element is still detached:
+
+```vue
+<script setup>
+const vConfigure = {
+  beforeMount(element) {
+    element.getHeaders = () => ({ Authorization: `Bearer ${token()}` });
+    element.registerTool(myTool);
+  },
+};
+</script>
+
+<template>
+  <ag-ui-chat v-configure endpoint="/agent/" data-threads-url="/agent/threads/" />
+</template>
+```
+
+Tell Vue's compiler the tag is a custom element, or it will warn and try to resolve a component:
+`vue({ template: { compilerOptions: { isCustomElement: (tag) => tag === "ag-ui-chat" } } })`.
+
+**Svelte 5**'s `use:` action and `$effect` both run after the node is in the DOM, so build the
+element by hand in an `$effect` and append it — the React shape, in runes. **Angular** needs
+`CUSTOM_ELEMENTS_SCHEMA` on the component and, if it wraps the panel in its own component, one line
+of CSS: `:host { display: contents }`. Angular's host element otherwise lands between your grid and
+the children it sizes, and the panel renders a few hundred pixels tall in the middle of the page.
+
 ---
 
 ## Core concepts
@@ -520,6 +559,30 @@ This uses the AG-UI protocol's own interrupt/resume mechanism (`RunAgentInput.re
 wire stays vanilla AG-UI. A **Stop** while an approval card is open denies every open card and
 cancels the run. No configuration is needed on the client; the gate is enabled server-side.
 
+**What the card asks.** An AG-UI interrupt carries the question as `message`, and the default is the
+call spelled out — `Approve create_event({"title": "Design sync", …})?` — which is accurate and not
+something to put in front of a person. A server can supply its own wording as **`x-confirm` in the
+interrupt's `metadata`**, the same key a client-side confirmation reads off the tool's schema, and
+the card prefers it:
+
+```json
+{ "id": "int-1", "reason": "tool_call", "toolCallId": "call-1",
+  "message": "Approve create_event({\"title\": \"Design sync\"})?",
+  "metadata": { "x-confirm": "Book Design sync on Friday at 14:00?" } }
+```
+
+Anything non-string or blank under that key is ignored in favour of `message`, and with neither the
+card falls back to `strings.approvalPrompt`.
+
+**The card approves or denies, and nothing else.** The interrupt's `responseSchema` also advertises
+`editedArgs` and `reason` — the protocol allows a client to rewrite a gated call's arguments before
+letting it run. The built-in card does not offer that; a host that wants it can implement
+`approvalRenderer` and resolve the interrupt itself.
+
+**A gated write is still a write the page cannot see.** Approving one runs a *server-side* tool, so
+if your page renders the data it touched, listen for
+[`ag-ui-run-finished`](#host-seams-the-spa-story) and refetch.
+
 Like the question card, the approval card is customizable at three levels: **text** (`strings`:
 `approveAction` / `approvalPrompt` / `approve` / `deny`), **CSS** (`::part()`: `approval`,
 `approval-body`, `approval-actions`, `approval-button`, `approval-approve`, `approval-deny`), and
@@ -648,10 +711,32 @@ want — so you control the agent's interaction surface:
 ```
 
 - **`scroll_to`** — scroll a target into view. `target` is `"top"`, `"bottom"`, or a CSS selector
-  / page-map element id. Read-only (no confirmation).
+  / page-map element id. Read-only (no confirmation). It centres the target **vertically** and
+  brings it into view **horizontally** (`inline: "nearest"`), so on a two-axis surface a
+  horizontal target lands at the near edge rather than in the middle. In view is the contract;
+  "centred" is not, in that axis.
 - **`drag_and_drop`** — drag the `from` element onto the `to` element (selectors / page-map ids),
   firing the standard HTML5 drag sequence (`dragstart` → `dragenter`/`dragover`/`drop` → `dragend`)
   so the page's own drop handler reacts. Useful for reordering sortable lists.
+
+**Your drag surface must listen to drag events, and many "modern" ones do not.** `drag_and_drop`
+dispatches the native HTML5 sequence with one shared `DataTransfer`. A surface built on a
+pointer-event drag library — dnd-kit, most React DnD packages, the Angular CDK — listens to
+`pointerdown`/`pointermove` and **never sees any of it**: the agent's drag is a silent no-op that
+still reports success. Either use the native API or pick a library that listens to drag events.
+React's synthetic `onDrop` does receive the dispatched sequence, `DataTransfer` included.
+
+**A page action reports that it fired, not that it worked.** `drag_and_drop` returns as soon as the
+sequence is dispatched; whether your drop handler's save succeeded is invisible to it, so a refused
+change still looks like a successful tool call. Two things follow. Have the page report its own
+refusals somewhere the agent can read them, and have the agent re-read the page before claiming
+anything. Where the outcome matters more than the gesture, call the operation as a **server tool**
+instead — it can return the real error.
+
+**A page that saves asynchronously should say so.** A verification read straight after a drag can
+outrun the page's own save and conclude that nothing happened. Report a busy flag in your
+`getPageMap` (`{ saving: true }` while a write is in flight) and the agent can wait for a page that
+says it is busy. It cannot wait for one that does not.
 
 Targets resolve through the overridable `resolvePageTarget` property — `(target) => HTMLElement |
 null`, defaulting to `document.querySelector`. A host with a page map overrides it to map its own
@@ -1027,6 +1112,13 @@ acts, the next round already sees the resulting page. Within a round the agent c
 view at any time with the built-in `read_page` tool, which is registered whenever this provider is
 set.
 
+**Check that your server reads `context` at all — pydantic-ai's AG-UI adapter does not.** The
+auto-injected `page_map` rides in `RunAgentInput.context`, and an adapter that ignores that field
+drops it silently: nothing errors, and the model simply never sees the page. On such a backend
+`read_page` is the channel that works, and it is the one to rely on. Nothing to configure — just do
+not assume the injected copy arrived, and if the page map matters to your prompt, put it there
+server-side or let the agent call `read_page`.
+
 That leaves one window: the page can move *after* a round's context was built but *before* the
 agent's tool call arrives — the user clicks a link, or presses back. Calls landing in that window
 are **refused** with a result telling the agent to call `read_page` and retry. Most would have
@@ -1095,6 +1187,34 @@ chat.navigate = (path) => router.push(path); // SPA: in-page, no reload
 ```
 
 Route map + `navigate()` and the reload model are the same feature seen from two ends.
+
+**`ag-ui-run-finished`** *(event)* — an interaction has ended, and here is what ran in it.
+`detail: { tools: readonly ToolRun[] }` (typed `RunFinishedDetail`), where each `ToolRun` is
+`{ name, side: "server" | "client" }` in settle order.
+
+**This is the seam for a host that renders data the agent can change.** A server-side tool writes
+without your page's knowledge: nothing else the element dispatches implies "something may have moved
+underneath you", so a page that fetched its data on mount has no reason to refetch and quietly goes
+stale. Approve a server-side booking on a calendar and the row exists while the calendar keeps
+showing the week it loaded.
+
+```js
+chat.addEventListener("ag-ui-run-finished", (e) => {
+  // A "client" tool ran in your own handler, so you already know what it did.
+  if (e.detail.tools.some((tool) => tool.side === "server")) {
+    void refetchBoard();
+  }
+});
+```
+
+It fires **once per interaction**, not once per tool round, and it fires on completion, error and
+cancellation alike — a partial write is still a write. A capability load (an agent skill activating)
+is not counted: it moves nothing a host renders.
+
+`sharedState` above is the richer channel and this is not a replacement for it — but it is not a
+substitute the other way round either, because shared state requires the *agent* to emit
+`STATE_SNAPSHOT`, which is not the host's decision to make. Use state when the two ends edit one
+object; use this when your page owns the data and just needs to know it moved.
 
 ## Resuming a run
 
@@ -1256,6 +1376,7 @@ re-export point. Internal modules import from leaf paths.
 | `createPageStateTools(binding)` | function | Build `read_<name>` / `set_<name>` tools. |
 | `PageState` | type | A page-state binding declaration. |
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
+| `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
 
 ### Durability
 
@@ -1307,10 +1428,11 @@ re-export point. Internal modules import from leaf paths.
 | `SUBMIT_EVENT` | The submit CustomEvent name. |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
+| `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
 | `MESSAGE_ROLE` | Message role constants. |
 | `TOOL_CALL_STATUS` | Tool-call card status constants. |
 | `TOOL_DISPLAY` | Tool-call display-mode constants (`minimal` / `compact` / `full`). |
-| `X_CONFIRM_KEY` | JSON-Schema key carrying a confirmation prompt. |
+| `X_CONFIRM_KEY` | Confirmation-prompt key: on a tool's JSON Schema for a client-side confirmation, and in an AG-UI interrupt's `metadata` for a server-side approval. |
 | `X_SUMMARY_KEY` | JSON-Schema key carrying a short tool-card label. |
 | `MAX_TOOL_ROUNDS` | Upper bound on tool-call → re-run rounds per send. |
 | `VERSION` | The package version string. |
@@ -1401,6 +1523,15 @@ have to hand-tune the variables:
 - `placement` — `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` /
   `embedded`. `embedded` drops the fixed positioning and z-index so the widget sits in normal
   document flow; `page` is a full-screen [centred reading column](#page-placement).
+
+**`embedded` fills the box your page gives it, so give it one.** It is the placement app-shell
+layouts reach for, and a grid or flex item defaults to `min-height: auto` — which lets a growing
+transcript push the composer off the bottom of the window instead of scrolling inside the panel. The
+fix belongs to the containing element, not to the widget:
+
+```css
+.assistant-pane { min-height: 0; overflow: hidden; }   /* the box the element is given */
+```
 
 ```html
 <ag-ui-chat endpoint="/agent/" theme="dark" density="compact" placement="side"></ag-ui-chat>

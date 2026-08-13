@@ -38,6 +38,22 @@ export const STATE_EVENT = "ag-ui-state";
  */
 export const ATTACHMENT_EVENT = "ag-ui-attachments";
 
+/**
+ * An interaction has finished, whatever ended it. `detail` is
+ * {@link RunFinishedDetail}, listing the tools that ran and which side ran them.
+ *
+ * For hosts that render data the agent can change. A server-side tool writes
+ * without the page's knowledge — nothing else the element dispatches implies
+ * "something may have moved underneath you", so a page showing that data has no
+ * reason to refetch and quietly goes stale. Shared state
+ * ({@link STATE_EVENT}) is the richer channel, but it needs the agent to emit
+ * state; this needs nothing of the agent at all.
+ *
+ * Fires once per interaction rather than once per tool round, on completion,
+ * error and cancellation alike, since a partial write is still a write.
+ */
+export const RUN_FINISHED_EVENT = "ag-ui-run-finished";
+
 /** Roles a chat message can take. */
 export const MESSAGE_ROLE = {
   USER: "user",

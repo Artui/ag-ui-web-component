@@ -7,6 +7,7 @@ export {
   LOAD_CAPABILITY_TOOL,
   MAX_TOOL_ROUNDS,
   MESSAGE_ROLE,
+  RUN_FINISHED_EVENT,
   STATE_EVENT,
   SUBMIT_EVENT,
   TOGGLE_EVENT,
@@ -22,9 +23,11 @@ export {
   AgUiChat,
   type AttachmentsDetail,
   type MessageRole,
+  type RunFinishedDetail,
   type StateDetail,
   type SubmitDetail,
   type ToggleDetail,
+  type ToolRun,
   type UnreadDetail,
 } from "./core/ag_ui_chat.js";
 export {

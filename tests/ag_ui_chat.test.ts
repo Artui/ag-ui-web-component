@@ -748,6 +748,76 @@ describe("AgUiChat", () => {
     });
   });
 
+  it("asks the server's question when the interrupt carries one", async () => {
+    // The generated question is the call spelled out -- accurate, and not
+    // something to put in front of a person. A server that supplies `x-confirm`
+    // in the interrupt's metadata gets its own wording, exactly as a client-side
+    // confirmation reads `x-confirm` off the tool's schema.
+    const { el } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.interrupt([
+          {
+            id: "int-x",
+            reason: "tool_call",
+            message: 'Approve create_event({"title": "Design sync"})?',
+            metadata: { "x-confirm": "Book Design sync on Friday at 14:00?" },
+          } as never,
+        ]);
+      } else {
+        emit.runEnd();
+      }
+    });
+
+    sendNoWait(el, "book it");
+    await flush();
+
+    expect(shadow(el).querySelector(".approval-body")?.textContent).toBe(
+      "Book Design sync on Friday at 14:00?",
+    );
+  });
+
+  it("keeps the generated question when the metadata phrase is unusable", async () => {
+    // `metadata` is `Record<string, any>` on the wire, so a number, an object or
+    // a blank string can arrive under that key. Rendering one would put
+    // "[object Object]" in the one place a person is asked to allow a write.
+    const { el } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.interrupt([
+          {
+            id: "int-x",
+            reason: "tool_call",
+            message: "Approve delete_thing?",
+            metadata: { "x-confirm": "   " },
+          } as never,
+        ]);
+      } else {
+        emit.runEnd();
+      }
+    });
+
+    sendNoWait(el, "delete it");
+    await flush();
+
+    expect(shadow(el).querySelector(".approval-body")?.textContent).toBe("Approve delete_thing?");
+  });
+
+  it("falls back to its own prompt when neither the metadata nor the message says anything", async () => {
+    const { el } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.interrupt([
+          { id: "int-x", reason: "tool_call", metadata: { "x-confirm": 7 } } as never,
+        ]);
+      } else {
+        emit.runEnd();
+      }
+    });
+
+    sendNoWait(el, "go");
+    await flush();
+
+    expect(shadow(el).querySelector(".approval-body")?.textContent).toBe("Approve this action?");
+  });
+
   it("resolves an interrupt that carries no tool call id", async () => {
     const { el, handle } = mountWithAgent((emit, params) => {
       if (params.resume === undefined) {
