@@ -1756,22 +1756,23 @@ export class AgUiChat extends HTMLElement {
         // wrap words.
         this.appendMessage(MESSAGE_ROLE.ASSISTANT, text).classList.add("message--restored");
       }
-      const toolCalls = message.toolCalls;
-      if (toolCalls !== undefined) {
-        for (const call of toolCalls) {
-          const restored = {
-            id: call.id,
-            name: call.function.name,
-            args: this.#parseArgs(call.function.arguments),
-          };
-          // Restored history goes through the same interception as the live
-          // stream — otherwise a reload resurrects the raw `load_capability`
-          // card the live path deliberately replaced.
-          if (this.#noticeIfSkillLoad(restored)) {
-            continue;
-          }
-          this.#cardFor(restored);
+      // Narrowed rather than trusted, for the same reason `messageAttachments`
+      // narrows the neighbouring field: anything that throws in this loop aborts
+      // the replay at this message, and every later turn silently disappears from
+      // the transcript. See `restoredToolCalls`.
+      for (const call of restoredToolCalls(message.toolCalls)) {
+        const restored = {
+          id: call.id,
+          name: call.function.name,
+          args: this.#parseArgs(call.function.arguments),
+        };
+        // Restored history goes through the same interception as the live
+        // stream — otherwise a reload resurrects the raw `load_capability`
+        // card the live path deliberately replaced.
+        if (this.#noticeIfSkillLoad(restored)) {
+          continue;
         }
+        this.#cardFor(restored);
       }
       return;
     }
@@ -1783,8 +1784,14 @@ export class AgUiChat extends HTMLElement {
     }
   }
 
-  /** Parse a tool call's JSON `arguments` string from history into an object. */
-  #parseArgs(raw: string): Record<string, unknown> {
+  /** Parse a tool call's JSON `arguments` from history into an object. */
+  #parseArgs(raw: unknown): Record<string, unknown> {
+    if (typeof raw !== "string") {
+      // A restored call whose `arguments` are missing or not a string still has
+      // a name worth showing, so this renders an empty-args card rather than
+      // dropping the card.
+      return {};
+    }
     try {
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed === "object" && parsed !== null) {
@@ -2857,6 +2864,46 @@ export class AgUiChat extends HTMLElement {
     this.#messages.scrollTop = this.#messages.scrollHeight;
     return card;
   }
+}
+
+/** One tool call as a restored assistant message carries it. */
+interface RestoredToolCall {
+  readonly id: string;
+  readonly function: { readonly name: string; readonly arguments?: unknown };
+}
+
+/**
+ * The tool calls a restored assistant turn carries, with anything shapeless dropped.
+ *
+ * Narrowing here rather than trusting the declared type, for three reasons that
+ * point the same way.
+ *
+ * **`null` is a value this field really takes.** `@ag-ui/core` types `toolCalls`
+ * as optional (`z.ZodOptional`), so TypeScript offers only `undefined` — but the
+ * protocol's Python models declare `tool_calls: list[ToolCall] | None`, and a
+ * server dumping them without `exclude_none` sends `null`. The two SDKs disagree
+ * about the wire, and a client cannot afford to take either one's word for it.
+ *
+ * **A throw here costs the rest of the transcript.** This runs inside the replay
+ * of stored history, one message at a time; an exception aborts the whole replay,
+ * so a single bad entry silently truncates the conversation from that point on —
+ * with no error state and nothing on screen to explain the gap.
+ *
+ * **Storage is untrusted anyway** — hand-edited, truncated, written by an older
+ * version, or supplied by a host's own store. `messageAttachments` already takes
+ * exactly this stance for the neighbouring field on the same message.
+ */
+function restoredToolCalls(value: unknown): readonly RestoredToolCall[] {
+  return Array.isArray(value) ? value.filter(isRestoredToolCall) : [];
+}
+
+/** Whether an unknown history entry has enough shape to render a tool card. */
+function isRestoredToolCall(value: unknown): value is RestoredToolCall {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const call = value as { id?: unknown; function?: { name?: unknown } };
+  return typeof call.id === "string" && typeof call.function?.name === "string";
 }
 
 /**
