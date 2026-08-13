@@ -38,13 +38,32 @@ describe("rendering", () => {
     );
   });
 
-  it("labels a row by when it started, with the id available on hover", () => {
+  it("labels a row by when it started", () => {
     const menu = new CheckpointMenu(() => {});
     menu.setRuns([row()]);
     const label = menu.element.querySelector(".checkpoint-label") as HTMLElement;
 
     expect(label.textContent).toBe(DEFAULT_UI_STRINGS.justNow);
-    expect(label.title).toBe("r1");
+    // Not on the label: a full uuid in a `title` opened a tooltip over the whole
+    // row on hover, in a row that is not otherwise interactive.
+    expect(label.title).toBe("");
+  });
+
+  it("shows enough of the run id to tell two runs of the same minute apart", () => {
+    const menu = new CheckpointMenu(() => {});
+    menu.setRuns([
+      row({ run_id: "5087f329-a842-473f-b16b-881f7c91668d" }),
+      row({ run_id: "c14b8a02-7d1e-4f77-9a30-2b6e5f0c8d41" }),
+    ]);
+
+    const shown = [...menu.element.querySelectorAll(".checkpoint-id")] as HTMLElement[];
+    expect(shown.map((el) => el.textContent)).toEqual(["5087f329", "c14b8a02"]);
+    expect(shown.map((el) => el.title)).toEqual([
+      "5087f329-a842-473f-b16b-881f7c91668d",
+      "c14b8a02-7d1e-4f77-9a30-2b6e5f0c8d41",
+    ]);
+    const labels = [...menu.element.querySelectorAll(".checkpoint-label")];
+    expect(new Set(labels.map((el) => el.textContent)).size).toBe(1);
   });
 
   it("falls back to the run id when the server sent no timestamp", () => {
@@ -52,6 +71,8 @@ describe("rendering", () => {
     menu.setRuns([row({ started_at: null })]);
 
     expect(menu.element.querySelector(".checkpoint-label")?.textContent).toBe("r1");
+    // The label already *is* the id, so a second copy of it would be noise.
+    expect(menu.element.querySelector(".checkpoint-id")).toBeNull();
   });
 
   it("marks a forked run so it doesn't read as a duplicate", () => {
@@ -147,5 +168,29 @@ describe("localization", () => {
   it("accepts strings at construction", () => {
     const menu = new CheckpointMenu(() => {}, { ...DEFAULT_UI_STRINGS, checkpoints: "Weiter" });
     expect(menu.element.getAttribute("aria-label")).toBe("Weiter");
+  });
+});
+
+describe("opening twice", () => {
+  it("keeps the focus it was going to restore", () => {
+    // Load-bearing idempotence: a second `open()` while open would record a
+    // button *inside* the panel as "what had focus", and closing would then send
+    // focus into a hidden dialog. Nothing in the built-in chrome does this any
+    // more — the header button toggles — but `openCheckpoints()` is public and a
+    // host may call it as often as it likes.
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    const menu = new CheckpointMenu(() => {});
+    document.body.append(menu.element);
+    menu.setRuns([row()]);
+    outside.focus();
+
+    menu.open();
+    menu.open();
+    menu.close();
+
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+    menu.element.remove();
   });
 });

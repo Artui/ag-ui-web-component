@@ -164,14 +164,27 @@ export class CheckpointMenu {
     const label = document.createElement("span");
     label.className = "checkpoint-label";
     label.setAttribute("part", "checkpoint-label");
-    // A run id is opaque to a person, so the time is the identifying detail;
-    // the id rides `title` for anyone who needs to correlate with server logs.
+    // A run id is opaque to a person, so the time leads.
     label.textContent =
       run.started_at === null
         ? run.run_id
         : relativeTime(Date.parse(run.started_at), Date.now(), this.#strings);
-    label.title = run.run_id;
     row.append(label);
+
+    if (run.started_at !== null) {
+      // The time alone is not an identity: two runs a few seconds apart both read
+      // "just now", and picking between them is picking blind. A short id is the
+      // only thing on the wire that differs, so it is shown rather than hidden in
+      // a tooltip — which also stops a full UUID appearing over the row on hover.
+      // The real fix is a preview of the run's first message, which the index does
+      // not send yet.
+      const short = document.createElement("span");
+      short.className = "checkpoint-id";
+      short.setAttribute("part", "checkpoint-id");
+      short.textContent = run.run_id.slice(0, 8);
+      short.title = run.run_id;
+      row.append(short);
+    }
 
     if (run.parent_run_id !== null) {
       // Lineage, so a branch doesn't read as a duplicate of its parent.
