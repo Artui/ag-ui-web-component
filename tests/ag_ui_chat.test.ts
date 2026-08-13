@@ -1464,6 +1464,90 @@ describe("AgUiChat", () => {
     }
   });
 
+  it("replays the whole transcript when a stored turn carries a null toolCalls", async () => {
+    // The shape a server sends, not one a client writes: the protocol's Python
+    // models declare `tool_calls: list[ToolCall] | None`, so a plain
+    // `model_dump()` emits `null` on every assistant turn that called no tool —
+    // while `@ag-ui/core` types the field optional-not-nullable. Iterating that
+    // `null` used to throw mid-replay and truncate the transcript from there on,
+    // which is invisible: the turns simply do not appear.
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [
+      { id: "1", role: "user", content: "what is on the board?" },
+      {
+        id: "2",
+        role: "assistant",
+        toolCalls: [
+          { id: "tc1", type: "function", function: { name: "list_events", arguments: "{}" } },
+        ],
+      },
+      { id: "3", role: "tool", toolCallId: "tc1", content: '"[]"' },
+      // The turn that used to end the replay.
+      { id: "4", role: "assistant", content: "Nothing scheduled.", toolCalls: null },
+      { id: "5", role: "user", content: "move standup to Friday" },
+      {
+        id: "6",
+        role: "assistant",
+        toolCalls: [
+          { id: "tc2", type: "function", function: { name: "drag_and_drop", arguments: "{}" } },
+        ],
+      },
+      { id: "7", role: "assistant", content: "Moved it.", toolCalls: null },
+    ] as never);
+
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.conversationStore = store;
+    document.body.appendChild(el);
+    await flush();
+
+    expect([...shadow(el).querySelectorAll(".message")].map((b) => b.textContent)).toEqual([
+      "what is on the board?",
+      "Nothing scheduled.",
+      "move standup to Friday",
+      "Moved it.",
+    ]);
+    expect(
+      [...shadow(el).querySelectorAll(".tool-call")].map((c) => c.getAttribute("data-tool-name")),
+    ).toEqual(["list_events", "drag_and_drop"]);
+  });
+
+  it("skips a shapeless stored tool call rather than losing the turns after it", async () => {
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [
+      {
+        id: "1",
+        role: "assistant",
+        toolCalls: [
+          null,
+          "not an object",
+          { id: "no-function" },
+          { function: { name: "no-id" } },
+          { id: "ok", type: "function", function: { name: "real_tool" } },
+        ],
+      },
+      { id: "2", role: "assistant", content: "Still here." },
+    ] as never);
+
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-tool-display", "full");
+    el.conversationStore = store;
+    document.body.appendChild(el);
+    await flush();
+
+    const cards = shadow(el).querySelectorAll(".tool-call");
+    expect([...cards].map((c) => c.getAttribute("data-tool-name"))).toEqual(["real_tool"]);
+    // Its `arguments` were absent, so the card renders with empty args instead of
+    // being dropped: the name is the part worth showing.
+    expect(cards[0]?.querySelector(".tool-call-args")?.textContent).toBe("{}");
+    expect([...shadow(el).querySelectorAll(".message")].map((b) => b.textContent)).toEqual([
+      "Still here.",
+    ]);
+  });
+
   it("resumes a checkpointed navigating tool call on mount", async () => {
     const store = new SessionStorageStore();
     const tid = store.threadId();

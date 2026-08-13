@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1] — 2026-08-13
+
+### Fixed
+
+- **A reloaded conversation lost every turn after the first plain answer.**
+  Restoring stored history iterated `message.toolCalls` behind an
+  `!== undefined` check, and an assistant turn that called no tool can arrive
+  carrying `null`: the protocol's Python models declare
+  `tool_calls: list[ToolCall] | None`, so a server dumping them without
+  `exclude_none` sends exactly that, while `@ag-ui/core` types the field
+  optional-and-not-nullable — TypeScript therefore offered no hint that the value
+  was reachable. Iterating it threw `TypeError: toolCalls is not iterable`
+  *inside* the replay, which aborted at that message and left every later turn
+  out of the transcript. Nothing surfaced: no error state, no partial-history
+  notice, just a short conversation. Measured against a server-backed store, a
+  54-message thread restored as two bubbles and one tool card.
+
+  Two things follow from where the throw happened, and both are now closed.
+  Tool calls are **narrowed rather than trusted** — the same stance
+  `messageAttachments` already takes for the neighbouring field on the same
+  message, and for the same reason. And a **shapeless entry is skipped instead of
+  ending the replay**: a stored call with no `id`, no `function.name`, or a
+  `null` where an object belongs no longer costs the rest of the conversation.
+  A call whose `arguments` are missing or not a string still renders, with empty
+  arguments, because its name is the part worth showing.
+
+  Only a **server-backed** history reaches this: the default
+  `SessionStorageStore` round-trips client-shaped objects through JSON, where an
+  absent field stays absent, so the `null` never appears. Anything reading a
+  thread index — `data-threads-url` — did, including every Django admin
+  configured with a conversation store. There the cost was worse than a short
+  transcript: each navigating tool reloads the page and the run continues only
+  because the component rehydrates and completes the pending call, so a thread
+  that had answered once abandoned its next multi-step task at the first
+  navigation.
+
 ## [0.23.0] — 2026-08-12
 
 Attachment chips, which turned out to be the least finished corner of 0.22.
@@ -1310,7 +1346,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.23.1...HEAD
+[0.23.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.20.1...v0.21.0
