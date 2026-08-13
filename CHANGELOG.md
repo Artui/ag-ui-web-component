@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ag-ui-run-finished`** — an event fired once per interaction, carrying the
+  tools that ran and which side ran each (`{ tools: [{ name, side }] }`, typed
+  `RunFinishedDetail` / `ToolRun`). **For hosts that render data the agent can
+  change.** A server-side tool writes without the page's knowledge, and nothing
+  the element dispatched implied "something may have moved underneath you": a
+  page that fetched its data on mount had no reason to refetch, so approving a
+  server-side write left it showing stale data with no way to notice. Shared
+  state was the only channel back, and it is not one a host can rely on, because
+  it needs the *agent* to emit `STATE_SNAPSHOT`. Fires on completion, error and
+  cancellation alike, since a partial write is still a write; a capability load
+  is not counted, since it moves nothing a host renders.
+
+### Changed
+
+- **A server-side approval can now ask a readable question.** An AG-UI
+  interrupt's question defaults to the call spelled out —
+  `Approve create_event({"title": "Design sync", …})?` — which is accurate and
+  not something to put in front of a person, while the *client-side*
+  confirmation card has had `x-confirm` for exactly this. The approval card now
+  prefers `x-confirm` from the interrupt's `metadata`, so one key covers both
+  gates, and a server that supplies nothing keeps the generated text. Anything
+  non-string or blank under that key is ignored rather than rendered, since a
+  wire field typed `Record<string, any>` can carry an object into the one place
+  a person is being asked to allow a write.
+
+### Fixed
+
+- **An approved call's tool card broke its own name into pieces.** The card's
+  head is a flex row in which the name is the only flexible child, so every
+  fixed badge the row gains is taken out of it. The decision badge ("approved by
+  you") appears only on the server-approval path, and in a sidebar-width panel it
+  left the name **37px** wide: `word-break: break-word` then split *Create event*
+  into "Creat / e / event" across three lines. The head wraps now and the name
+  keeps a floor instead of a zero min-width, so a badge drops to its own row
+  rather than shredding a word, while a genuinely unbreakable name still breaks
+  instead of overflowing the card. Measured in a real browser at 470px: the name
+  went 37px to 144px and three lines to one.
+
+### Documentation
+
+- **The four framework recipes, not just React's.** The connect-time
+  configuration boundary is reached differently by each host, and only **Vue**
+  has a hook that runs before insertion (a directive's `beforeMount`); React,
+  Svelte 5 and Angular all create the element by hand. Angular additionally needs
+  `:host { display: contents }` or its own host element breaks the page's layout.
+- **Page actions**: a page action reports that it *fired*, not that it worked;
+  a page that saves asynchronously should say so (a `saving` flag in the page
+  map) or a verification read will outrun the save; `drag_and_drop` dispatches
+  the **native HTML5 drag sequence**, which a pointer-event drag library
+  (dnd-kit, the Angular CDK) never sees; and `scroll_to` centres vertically but
+  brings into view horizontally.
+- **`placement="embedded"` fills the box the host gives it — so give it one.**
+  `min-height: 0` plus `overflow: hidden` on the containing element, or a growing
+  transcript pushes the composer off the bottom of the window.
+- **The auto-injected page map may go nowhere.** It rides in
+  `RunAgentInput.context`, and pydantic-ai's AG-UI adapter does not read that
+  field, so on such a backend the injected copy is silently dropped and
+  `read_page` is the channel that works.
+
 ## [0.23.1] — 2026-08-13
 
 ### Fixed

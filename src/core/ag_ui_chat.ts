@@ -10,6 +10,7 @@ import {
   LOAD_CAPABILITY_TOOL,
   MESSAGE_ROLE,
   READ_PAGE_TOOL,
+  RUN_FINISHED_EVENT,
   STATE_EVENT,
   SUBMIT_EVENT,
   TOGGLE_EVENT,
@@ -103,6 +104,23 @@ export interface AttachmentsDetail {
 /** `detail` shape of the {@link STATE_EVENT} CustomEvent. */
 export interface StateDetail {
   readonly state: Readonly<Record<string, unknown>>;
+}
+
+/** One tool that ran during an interaction, as {@link RunFinishedDetail} lists it. */
+export interface ToolRun {
+  readonly name: string;
+  /**
+   * Where it executed. `"server"` is the one a data-rendering host cares about:
+   * a `"client"` tool ran in the host's own handler, so the host already knows
+   * whatever it did.
+   */
+  readonly side: "server" | "client";
+}
+
+/** `detail` shape of the {@link RUN_FINISHED_EVENT} CustomEvent. */
+export interface RunFinishedDetail {
+  /** In settle order. Empty when the interaction called no tools. */
+  readonly tools: readonly ToolRun[];
 }
 
 /** `detail` shape of the {@link TOGGLE_EVENT} CustomEvent. */
@@ -375,6 +393,12 @@ export class AgUiChat extends HTMLElement {
    * the real output with the generic "executed on the server" fallback.
    */
   readonly #serverSettled = new Set<string>();
+  /**
+   * Tool calls made during the current interaction, in the order they started,
+   * so {@link RUN_FINISHED_EVENT} can report them once the whole thing settles.
+   * Spans tool rounds and an approval interrupt; cleared when the event fires.
+   */
+  #runTools: { readonly id: string; readonly name: string }[] = [];
   readonly #root: ShadowRoot;
   readonly #chat: HTMLDivElement;
   readonly #messages: HTMLDivElement;
@@ -2581,8 +2605,9 @@ export class AgUiChat extends HTMLElement {
     this.#hidePending();
     for (const interrupt of interrupts) {
       const request: ApprovalRequest = {};
-      if (interrupt.message !== undefined) {
-        request.message = interrupt.message;
+      const phrase = confirmPhrase(interrupt) ?? interrupt.message;
+      if (phrase !== undefined) {
+        request.message = phrase;
       }
       const card =
         interrupt.toolCallId !== undefined ? this.#toolCards.get(interrupt.toolCallId) : undefined;
@@ -2671,6 +2696,9 @@ export class AgUiChat extends HTMLElement {
         if (this.#noticeIfSkillLoad(call)) {
           return;
         }
+        // Recorded after the skill-load return: a capability load is the agent
+        // arranging itself, not work a host's data could have moved under.
+        this.#runTools.push({ id: call.id, name: call.name });
         this.#cardFor(call);
       },
       onActivity: (activityType, content) => {
@@ -2735,8 +2763,33 @@ export class AgUiChat extends HTMLElement {
         }
         this.#currentGroup = null;
         this.#thoughts = null;
+        this.#dispatchRunFinished();
       },
     };
+  }
+
+  /**
+   * Tell the host the interaction is over and what ran in it.
+   *
+   * Last thing in `onSettled`, so a listener that refetches sees a transcript
+   * that has already stopped changing. `side` is read from the streamed-result
+   * bookkeeping rather than from the tool list: whether a call executed on the
+   * server is a fact about the run, and a name can appear on both sides across a
+   * conversation.
+   */
+  #dispatchRunFinished(): void {
+    const tools: ToolRun[] = this.#runTools.map(({ id, name }) => ({
+      name,
+      side: this.#serverSettled.has(id) ? "server" : "client",
+    }));
+    this.#runTools = [];
+    this.dispatchEvent(
+      new CustomEvent<RunFinishedDetail>(RUN_FINISHED_EVENT, {
+        detail: { tools },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   /** A muted "⏹ Stopped" line in the transcript (distinct from the ⚠️ error bubble). */
@@ -2864,6 +2917,25 @@ export class AgUiChat extends HTMLElement {
     this.#messages.scrollTop = this.#messages.scrollHeight;
     return card;
   }
+}
+
+/**
+ * A server-authored question for a gated call, read off the interrupt's metadata.
+ *
+ * The question an AG-UI interrupt carries by default is the call itself, spelled
+ * out: `Approve create_event({"title": "Design sync", …})?`. Accurate, and not
+ * something to put in front of a person. A client-side confirmation has
+ * `x-confirm` on the tool's schema for exactly this, so the same key is read here
+ * — whichever end gates a call, the phrase comes from one place, and a server
+ * that supplies none keeps the generated text.
+ *
+ * Narrowed rather than trusted: `metadata` is `Record<string, any>` on the wire,
+ * so anything at all can arrive under that key, and a non-string would render as
+ * "[object Object]" in the one place a person is being asked to allow a write.
+ */
+function confirmPhrase(interrupt: Interrupt): string | undefined {
+  const phrase = interrupt.metadata?.[X_CONFIRM_KEY];
+  return typeof phrase === "string" && phrase.trim() !== "" ? phrase : undefined;
 }
 
 /** One tool call as a restored assistant message carries it. */

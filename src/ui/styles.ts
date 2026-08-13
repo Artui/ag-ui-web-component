@@ -923,18 +923,28 @@ export const STYLES = `
   color: var(--_tool-fg);
 }
 
+/* Wraps, because the name is the only flexible child and every badge the row
+   gains is taken out of it. An approved call adds a third fixed badge, which in
+   a sidebar-width panel left the name 37px and broke it mid-word. Badges drop to
+   their own row instead. */
 .tool-call-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
 .tool-call-name {
-  flex: 1;
-  min-width: 0;
+  /* An auto basis, and a min-width floor rather than zero: the name may shrink,
+     but not below something readable, so wrapping moves a badge instead of
+     shredding a word. Breaking anywhere still applies to a name that cannot fit
+     on a line of its own, which is what keeps a long unbroken tool name inside
+     the card. */
+  flex: 1 1 auto;
+  min-width: 6ch;
   font-weight: 600;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* Leading status icon. Empty in the DOM — the glyph/spinner is drawn
