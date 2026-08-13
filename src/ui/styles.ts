@@ -1333,6 +1333,20 @@ export const STYLES = `
   opacity: 0.6;
 }
 
+/* The same trap the attachment tray carries a note about, two rules along: an
+   author display beats the UA stylesheet's rule for the hidden property, so a
+   button the element has explicitly hidden keeps laying out and painting. The
+   clip is hidden until a host supplies an upload handler or an attachments URL,
+   and without this it is a visible control that cannot do anything.
+
+   The mic needs no such rule, and the asymmetry is worth knowing before adding
+   one: it is not hidden when unconfigured, it is never built. The voice wiring
+   returns before constructing the button, leaving only an empty voice slot that
+   is display: contents. A hidden-state rule for the mic would match nothing. */
+.attach-btn[hidden] {
+  display: none;
+}
+
 /* Send closes the row on the right: a circle, the only filled control in the
    composer, so "the thing that acts" reads at a glance. */
 .send {

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The composer painted a paperclip that could not upload anything.** The element
+  sets `hidden` on the attach button until a host gives it somewhere to upload —
+  an `uploadHandler` or `data-attachments-url` — but the button's own
+  `display: inline-flex` beat the UA stylesheet's rule for the hidden property, so
+  it stayed visible and clickable, opening a file picker whose file had nowhere to
+  go. This is the third instance of one trap: the attachment tray was fixed in
+  0.23.0 and carries a comment about it two rules away in the same file. Found in
+  the framework gallery, where three of the four host apps were in exactly that
+  state and nobody had noticed the clip was inert.
+
+  **The mic does not share it**, and the asymmetry is pinned by a test rather than
+  assumed: the clip is created and hidden, while the voice wiring returns before
+  constructing anything, leaving an empty slot that measures nothing. A
+  hidden-state rule for the mic would match no element, so there is one rule.
+
 ## [0.24.0] — 2026-08-13
 
 ### Added
