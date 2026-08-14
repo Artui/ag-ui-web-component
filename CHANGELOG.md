@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-08-14
+
 ### Added
 
 - **Every deferred call is asked about in its own card, and all of them at once.**
@@ -1535,7 +1537,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.23.1...v0.24.0
 [0.23.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.22.0...v0.23.0
