@@ -8,6 +8,16 @@ export interface RunRow {
   readonly started_at: string | null;
   /** Whether the run has a snapshot to seed from — see {@link RunIndex}. */
   readonly continuable: boolean;
+  /**
+   * The run's first user message, one line, already truncated by the server —
+   * the only field in a row a person recognises a conversation by.
+   *
+   * Optional because a server predating the field does not send it, and
+   * `null` where the run holds no words to show (seeded from history alone, or
+   * opened with an image and no caption). A row without one falls back to the
+   * time plus a short id, which is what every row used to be.
+   */
+  readonly preview?: string | null;
 }
 
 /** Live header source, read per request so rotated tokens / CSRF reach the server. */

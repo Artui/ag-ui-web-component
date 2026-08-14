@@ -99,9 +99,19 @@ export const MAX_TOOL_ROUNDS = 10;
 /**
  * Lifecycle status of a rendered tool-call card. A card opens as `PENDING`
  * while the call runs, then settles to `DONE`, `ERROR`, or `DECLINED`.
+ *
+ * `DEFERRED` is the one non-terminal state that is not "running": a server-side
+ * tool a `ToolGuard` gated never executed, the run finished on an interrupt, and
+ * the call is waiting on a person. Without it such a card sat at `PENDING` and
+ * read "running…" while the stream was over and the server idle — a status enum
+ * missing a state does not omit that state, it renders it as whichever neighbour
+ * is closest, and here the closest one claimed the opposite of the truth. A
+ * *frontend* tool waiting on its own card (`ask_user`) stays `PENDING`, because
+ * the browser really is running it.
  */
 export const TOOL_CALL_STATUS = {
   PENDING: "pending",
+  DEFERRED: "deferred",
   DONE: "done",
   ERROR: "error",
   DECLINED: "declined",
