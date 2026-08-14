@@ -7,13 +7,17 @@ export type ToolCallStatus = (typeof TOOL_CALL_STATUS)[keyof typeof TOOL_CALL_ST
 /** How much detail a card renders. */
 export type ToolDisplayMode = (typeof TOOL_DISPLAY)[keyof typeof TOOL_DISPLAY];
 
-/** The terminal states a card settles into (everything but `pending`). */
-export type SettledStatus = Exclude<ToolCallStatus, typeof TOOL_CALL_STATUS.PENDING>;
+/** The two states a card can sit in before an outcome exists. */
+export type UnsettledStatus = typeof TOOL_CALL_STATUS.PENDING | typeof TOOL_CALL_STATUS.DEFERRED;
+
+/** The terminal states a card settles into (everything unsettled excluded). */
+export type SettledStatus = Exclude<ToolCallStatus, UnsettledStatus>;
 
 /** Short pill text shown for each status, drawn from the string table. */
 function statusLabels(strings: UiStrings): Record<ToolCallStatus, string> {
   return {
     [TOOL_CALL_STATUS.PENDING]: strings.toolRunning,
+    [TOOL_CALL_STATUS.DEFERRED]: strings.toolDeferred,
     [TOOL_CALL_STATUS.DONE]: strings.toolDone,
     [TOOL_CALL_STATUS.ERROR]: strings.toolError,
     [TOOL_CALL_STATUS.DECLINED]: strings.toolDeclined,
@@ -63,6 +67,21 @@ function formatPayload(text: string): string {
 export class ToolCallCard {
   /** The card's root element; append this into the message list. */
   readonly element: HTMLDivElement;
+
+  /**
+   * Where a question about *this* call renders — the approval prompt for a
+   * server-side tool the run deferred.
+   *
+   * It belongs to the card rather than to the transcript because a run can defer
+   * several calls at once, and a prompt written per *tool* ("Add this event to
+   * the board?") is identical for every one of them. Rendered into the answer
+   * group they were three anonymous copies of one question, below the three
+   * cards they gated; rendered here, position identifies them and the arguments
+   * are already on screen above the question.
+   *
+   * Empty until used, and hidden while empty by the shadow CSS.
+   */
+  readonly approvalSlot: HTMLDivElement;
 
   readonly #status: HTMLSpanElement;
   readonly #decision: HTMLSpanElement;
@@ -143,7 +162,26 @@ export class ToolCallCard {
     body.setAttribute("part", "tool-card-body");
     body.append(argsSection.root, resultSection.root);
 
-    this.element.append(head, this.#toggle, body);
+    this.approvalSlot = document.createElement("div");
+    this.approvalSlot.className = "tool-call-approval";
+    this.approvalSlot.setAttribute("part", "tool-card-approval");
+
+    this.element.append(head, this.#toggle, body, this.approvalSlot);
+  }
+
+  /**
+   * Move between the two states that are not an outcome — `pending` (running)
+   * and `deferred` (gated, waiting on a person).
+   *
+   * Ignored once {@link settle} has run: a card that was declined must not be
+   * talked back into looking live by a late event.
+   */
+  mark(status: UnsettledStatus): void {
+    if (this.#settled) {
+      return;
+    }
+    this.element.setAttribute("data-status", status);
+    this.#status.textContent = statusLabels(this.#strings)[status];
   }
 
   /**

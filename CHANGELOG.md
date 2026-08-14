@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every deferred call is asked about in its own card, and all of them at once.**
+  A run can defer more than one call, and the wire takes a different answer for
+  each — so the UI has to let a person give one, which means saying which card is
+  which. Importing three rows gated three `create_event` calls and produced three
+  identical prompts: the text comes from the tool, so all three read "Add this
+  event to the board?", and nothing else on the card named the row. They were also
+  serial, each appearing only once the previous was answered, appended below the
+  three calls they gated — so a person answering the first could not compare them
+  or tell that two more were coming. **A batch gate that can only be answered
+  uniformly is one you have to answer blind.**
+
+  Each prompt now renders into the tool card of the call it gates, under that
+  call's own arguments, and every card opens at once. No new wire field was needed:
+  the arguments were already there, and the call site already held the card. A
+  card being asked about shows its arguments in every `data-tool-display` mode,
+  since a density setting must not hide the answer to "which one is this". New
+  part: `tool-card-approval`.
+
+- **A status for "deferred, awaiting a decision".** `TOOL_CALL_STATUS` was
+  `pending | done | error | declined`, so a gated call sat at `pending` and read
+  **running…** while the stream was over and the server idle. A status enum missing
+  a state does not omit that state, it renders it as whichever neighbour is
+  closest, and this one claimed the opposite of the truth. Gated cards now read
+  `waiting for you` (`data-status="deferred"`, `strings.toolDeferred`), with a
+  steady dot instead of a spinner, and go back to `pending` on approval — because
+  then the tool really is running. A **frontend** tool such as `ask_user` keeps
+  saying "running…" while its card is open: the browser is executing it.
+
+- **The checkpoint rows lead with what the run was about.** A run index that
+  answers `GET runs/` with a `preview` — the run's first user message — and the
+  panel now shows it, with the time demoted to a chip beside it (new part:
+  `checkpoint-time`). A row with no preview keeps the old time-plus-short-id
+  layout, so an older server is unaffected.
+
 - **`toggleCheckpoints()` and `closeCheckpoints()`.** The built-in ⭯ control now
   calls the toggle, so pressing it a second time dismisses the panel;
   `openCheckpoints()` keeps its open-only meaning for a host that wants exactly
@@ -17,10 +51,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the same minute both read "just now", and choosing between them was choosing
   blind. Eight characters of the id, muted, beside the time — with the whole id on
   its own `title` rather than on the row's label, so hovering a row no longer
-  raises a full UUID over it. The proper fix is a preview of the run's first
-  message, which the server's run index does not send yet.
+  raises a full UUID over it. Now the fallback rather than the rule: a row that
+  arrives with a `preview` leads with the words instead (see above).
+
+### Changed
+
+- **`approvalRenderer` is called once per interrupt, concurrently.** It used to be
+  awaited one at a time. A host that can only ask one question at a time should
+  queue inside its renderer.
 
 ### Fixed
+
+- **The README's parts list was missing an entire feature, and now a test reads
+  it.** Part names are declared public API there, and an undocumented part is not a
+  part: a host cannot style what it cannot know exists, and a name guessed wrong
+  fails silently. Absent were all twelve checkpoint-panel parts plus
+  `checkpoints-button`, and five strays from other features (`code-copy`,
+  `resize-handle`, `run-notice-icon`, `run-notice-text`, `skill-item-token`). The
+  list drifted because nothing read it, so the fix is not only the missing names:
+  it is now a table, spelled out in full rather than as `tool-card` *plus* `-icon`
+  shorthand, and a test collects every part the source sets and fails on one the
+  table does not name. The handful assembled at runtime are enumerated in that
+  test, and adding another such call site fails it too.
 
 - **The checkpoint panel could not be closed by the control that opened it.**
   The button called `open()`, which returns early when the panel is already open,

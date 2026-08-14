@@ -973,6 +973,13 @@ export const STYLES = `
   to { transform: rotate(360deg); }
 }
 
+/* Deferred: no spinner, because nothing is spinning. A steady accent dot, since
+   the state is waiting-on-you rather than an outcome. */
+.tool-call[data-status="deferred"] .tool-call-icon {
+  border-radius: 50%;
+  background: var(--_accent);
+}
+
 /* Settled: a themeable glyph coloured by outcome. */
 .tool-call[data-status="done"] .tool-call-icon::before {
   content: var(--_tool-icon-done);
@@ -1013,6 +1020,10 @@ export const STYLES = `
   font-weight: 600;
   background: rgba(127, 127, 127, 0.16);
   color: var(--_muted);
+}
+
+.tool-call[data-status="deferred"] .tool-call-status {
+  color: var(--_accent);
 }
 
 .tool-call[data-status="done"] .tool-call-status {
@@ -1108,10 +1119,39 @@ export const STYLES = `
 
 /* A pending card has no result yet, and in the modes where the arguments are
    hidden too there is nothing behind the toggle. Hide the control rather than
-   offer one that expands onto nothing. */
+   offer one that expands onto nothing. A deferred card is the same, and its
+   arguments are shown unconditionally by the rules below. */
 .tool-call[data-status="pending"] .tool-call-toggle,
+.tool-call[data-status="deferred"] .tool-call-toggle,
 :host([data-tool-display="inline"]) .tool-call[data-status="pending"] .tool-call-toggle {
   display: none;
+}
+
+/* The approval prompt for a gated call, rendered inside that call's own card.
+   Empty on every card nobody is being asked about, so it collapses instead of
+   adding a gap to each one. */
+.tool-call-approval:empty {
+  display: none;
+}
+
+.tool-call-approval {
+  margin-top: 8px;
+}
+
+/* A card that is asking a question shows what it is asking about, in every
+   display mode. Three gated calls of one tool ask the same words, so the
+   arguments are the only thing telling them apart, and a density setting must
+   not be able to hide the answer to "which one is this". */
+:host([data-tool-display="minimal"]) .tool-call[data-status="deferred"] .tool-call-body {
+  display: flex;
+}
+
+/* The arguments region only, never every section: the result region carries the
+   hidden attribute until a result exists, and a display value here overrides it,
+   framing an empty RESULT heading under the question. */
+:host([data-tool-display="compact"]) .tool-call[data-status="deferred"] .tool-call-section--args,
+:host([data-tool-display="inline"]) .tool-call[data-status="deferred"] .tool-call-section--args {
+  display: flex;
 }
 
 .tool-call-toggle {
@@ -1991,6 +2031,16 @@ export const STYLES = `
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* When the label holds the run's first message, the time moves here: still worth
+   showing, no longer what identifies the row. Muted and unshrinkable, so it does
+   not compete with the words beside it. */
+.checkpoint-time {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  opacity: 0.7;
+  white-space: nowrap;
 }
 
 /* Enough of the run id to tell two runs apart when both say "just now". Muted

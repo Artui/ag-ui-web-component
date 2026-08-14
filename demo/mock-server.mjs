@@ -58,6 +58,12 @@ function emitToolCall(res, id, name, args, parentMessageId) {
   emit(res, { type: "TOOL_CALL_END", toolCallId: id });
 }
 
+// A server-side tool's own result, which is how an approved gated call settles:
+// nothing runs in the browser, so the card is waiting on this event.
+function emitToolResult(res, toolCallId, content) {
+  emit(res, { type: "TOOL_CALL_RESULT", toolCallId, messageId: id("m"), content });
+}
+
 // A reasoning model's streamed chain-of-thought: the web component
 // renders it as a collapsible "thinking" region that folds on the first answer.
 async function streamReasoning(res, messageId, chunks) {
@@ -97,12 +103,55 @@ async function handleAgent(res, body) {
   emit(res, { type: "RUN_STARTED", threadId, runId });
 
   const prompt = lastUserText(messages);
+  // Answers to a previous round's approval interrupts. Only the approved calls
+  // ever produce a result; a denial is answered by the model instead.
+  const resume = Array.isArray(input.resume) ? input.resume : [];
   // The *last* message, not any message: a thread that has ever run a tool
   // keeps those results in history forever, so `some()` made every later turn
   // look like a tool follow-up and answer "Done" to everything.
   const isFollowUp = messages.at(-1)?.role === "tool";
 
-  if (isFollowUp) {
+  if (resume.length > 0) {
+    const approved = resume.filter((answer) => answer.status === "resolved");
+    for (const answer of approved) {
+      emitToolResult(res, answer.interruptId.replace("int-", ""), '{"created": true}');
+    }
+    await streamText(res, id("msg"), [
+      `Added ${approved.length} of ${resume.length}`,
+      approved.length === resume.length ? " — all of them." : ", and left the rest alone.",
+    ]);
+  } else if (/\bimport\b/i.test(prompt)) {
+    // Three gated calls in one run: the case a single approval never shows. Each
+    // interrupt is answered independently, and every prompt is the same sentence
+    // because a confirmation is written per *tool*, so the card has to say which
+    // call it belongs to some other way.
+    const parent = id("msg");
+    await streamText(res, parent, ["Three rows — ", "each needs your approval."]);
+    const rows = [
+      { title: "Design sync", day: "2026-08-14", start_hour: 14 },
+      { title: "Retro", day: "2026-08-15", start_hour: 10 },
+      { title: "One-on-one", day: "2026-08-15", start_hour: 16 },
+    ];
+    const interrupts = rows.map((row) => {
+      const callId = id("call");
+      emitToolCall(res, callId, "create_event", row, parent);
+      return {
+        id: `int-${callId}`,
+        reason: "tool_call",
+        toolCallId: callId,
+        message: `Approve create_event(${JSON.stringify(row)})?`,
+        metadata: { "x-confirm": "Add this event to the board?" },
+      };
+    });
+    emit(res, {
+      type: "RUN_FINISHED",
+      threadId,
+      runId,
+      outcome: { type: "interrupt", interrupts },
+    });
+    res.end();
+    return;
+  } else if (isFollowUp) {
     await streamText(res, id("msg"), ["Done — ", "the article ", "is filled in ", "and saved. ✅"]);
   } else if (prompt.startsWith("/")) {
     // A server-resolved skill: the client sent only the token, so this is the
@@ -171,6 +220,7 @@ const BOOTED = Date.now();
 const RUNS = [
   {
     run_id: "931fef34-e1ba-4eed-a239-0444a5bcb996",
+    preview: "Fill in the article form and publish it",
     thread_id: "t-demo",
     parent_run_id: null,
     started_at: new Date(BOOTED - 22 * 60_000).toISOString(),
@@ -178,6 +228,7 @@ const RUNS = [
   },
   {
     run_id: "5087f329-a842-473f-b16b-881f7c91668d",
+    preview: "Import these three events onto the board",
     thread_id: "t-demo",
     parent_run_id: "931fef34-e1ba-4eed-a239-0444a5bcb996",
     started_at: new Date(BOOTED - 4_000).toISOString(),
@@ -185,6 +236,7 @@ const RUNS = [
   },
   {
     run_id: "c14b8a02-7d1e-4f77-9a30-2b6e5f0c8d41",
+    preview: "Move standup to Friday at 11:00",
     thread_id: "t-demo",
     parent_run_id: "931fef34-e1ba-4eed-a239-0444a5bcb996",
     started_at: new Date(BOOTED - 2_000).toISOString(),

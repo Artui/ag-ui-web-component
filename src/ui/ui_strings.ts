@@ -84,6 +84,8 @@ export interface UiStrings {
   // ── Tool-call card ──────────────────────────────────────────────────────────
   /** Status pill while the call runs. */
   toolRunning: string;
+  /** Status pill on a gated call the run deferred, waiting on a person. */
+  toolDeferred: string;
   /** Status pill on success. */
   toolDone: string;
   /** Status pill on error. */
@@ -244,6 +246,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   transcriptionFailed: "Transcription failed",
 
   toolRunning: "running…",
+  toolDeferred: "waiting for you",
   toolDone: "✓ done",
   toolError: "⚠ error",
   toolDeclined: "⊘ declined",

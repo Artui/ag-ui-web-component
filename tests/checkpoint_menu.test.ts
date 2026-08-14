@@ -75,6 +75,48 @@ describe("rendering", () => {
     expect(menu.element.querySelector(".checkpoint-id")).toBeNull();
   });
 
+  it("leads with what the run was about when the server sends it", () => {
+    // The whole point of the field: two runs a minute apart both read "just now",
+    // and a run id is not something a person recognises.
+    const menu = new CheckpointMenu(() => {});
+    menu.setRuns([
+      row({ preview: "What is on the board?" }),
+      row({ run_id: "r2", preview: "Import these three events" }),
+    ]);
+
+    expect(
+      [...menu.element.querySelectorAll(".checkpoint-label")].map((el) => el.textContent),
+    ).toEqual(["What is on the board?", "Import these three events"]);
+    // The time is still shown, demoted to a chip; the id is no longer needed to
+    // tell the rows apart, so it is not competing for the space.
+    expect(
+      [...menu.element.querySelectorAll(".checkpoint-time")].map((el) => el.textContent),
+    ).toEqual([DEFAULT_UI_STRINGS.justNow, DEFAULT_UI_STRINGS.justNow]);
+    expect(menu.element.querySelector(".checkpoint-id")).toBeNull();
+  });
+
+  it("keeps the id when a preview would be blank", () => {
+    // A server older than the field sends nothing; a run seeded from history
+    // alone sends null; an empty string is neither an identity nor a label. All
+    // three fall back to what every row used to be.
+    const menu = new CheckpointMenu(() => {});
+    menu.setRuns([row(), row({ run_id: "r2", preview: null }), row({ run_id: "r3", preview: "" })]);
+
+    expect([...menu.element.querySelectorAll(".checkpoint-id")]).toHaveLength(3);
+    expect(menu.element.querySelector(".checkpoint-time")).toBeNull();
+  });
+
+  it("shows a preview even with no timestamp to go beside it", () => {
+    const menu = new CheckpointMenu(() => {});
+    menu.setRuns([row({ started_at: null, preview: "Move standup to Friday" })]);
+
+    expect(menu.element.querySelector(".checkpoint-label")?.textContent).toBe(
+      "Move standup to Friday",
+    );
+    expect(menu.element.querySelector(".checkpoint-time")).toBeNull();
+    expect(menu.element.querySelector(".checkpoint-id")).toBeNull();
+  });
+
   it("marks a forked run so it doesn't read as a duplicate", () => {
     const menu = new CheckpointMenu(() => {});
     menu.setRuns([row({ parent_run_id: "parent" })]);

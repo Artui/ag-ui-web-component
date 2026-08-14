@@ -2638,56 +2638,82 @@ export class AgUiChat extends HTMLElement {
    * Render an approval card per server-side-tool interrupt and collect the
    * user's decisions (approve → run it, deny → decline it).
    *
+   * **One card per gated call, in that call's own tool card, all at once.** A run
+   * can defer several calls, and the wire answers each independently — so the UI
+   * has to let a person answer each independently, which means saying which is
+   * which. The prompt cannot: it comes from the tool's `x-confirm` and is
+   * identical for every call of that tool. The tool card can, by position, and it
+   * is already showing the arguments. Asking them serially was the other half of
+   * the problem: the second question only appeared once the first was answered,
+   * so a person could neither compare them nor tell that more were coming.
+   *
+   * Each gated card is marked `deferred` for the wait. That is not cosmetic — at
+   * `pending` it read "running…" while the stream was over and the server idle.
+   *
    * The run is suspended on these cards. A Stop while any is open aborts the
    * shared {@link #confirmAbort} controller, resolving every still-open card as
    * denied. An approved tool runs on the follow-up resume run and streams its
-   * result into the same pending card; a denied one settles here, since no
-   * result will ever arrive.
+   * result into the same card (returned to `pending`, since it now really is
+   * running); a denied one settles here, as no result will ever arrive.
    */
   async #resolveInterrupts(
     interrupts: readonly Interrupt[],
   ): Promise<Record<string, InterruptResponse>> {
-    const responses: Record<string, InterruptResponse> = {};
     // One controller covers the whole batch: a single Stop denies all of them.
     this.#confirmAbort = new AbortController();
     this.#hidePending();
-    for (const interrupt of interrupts) {
-      const request: ApprovalRequest = {};
-      const phrase = confirmPhrase(interrupt) ?? interrupt.message;
-      if (phrase !== undefined) {
-        request.message = phrase;
-      }
-      const card =
-        interrupt.toolCallId !== undefined ? this.#toolCards.get(interrupt.toolCallId) : undefined;
-      const toolName = card?.element.getAttribute("data-tool-name");
-      if (toolName !== null && toolName !== undefined) {
-        request.toolName = toolName;
-      }
-      const signal = this.#confirmAbort.signal;
-      // A host-supplied renderer takes full control of the approval UI;
-      // otherwise the built-in inline card renders into the current answer group.
-      const approved =
-        this.approvalRenderer !== null
-          ? await this.approvalRenderer(request, { signal })
-          : await requestApproval(this.#ensureGroup(), request, { signal, strings: this.#strings });
-      this.#updateEmptyState();
-      this.#messages.scrollTop = this.#messages.scrollHeight;
-      // Same annotation as the client-side confirmation gate. Without it the
-      // two gates read differently for the same act: a locally-confirmed call
-      // said who let it through and a server-gated one said nothing, which is
-      // backwards, since the server-side gate is the one guarding the tools
-      // that actually run on the backend.
-      card?.recordDecision(approved ? "approved" : "declined");
-      if (approved) {
-        responses[interrupt.id] = { status: "resolved", payload: { approved: true } };
-      } else {
-        responses[interrupt.id] = { status: "cancelled" };
-        // No TOOL_CALL_RESULT will stream for a denied tool — settle its pending
-        // card now rather than leaving it hanging until the onSettled sweep.
-        card?.settle(TOOL_CALL_STATUS.DECLINED, this.#strings.declinedAction);
-      }
-    }
+    const signal = this.#confirmAbort.signal;
+    const answered = await Promise.all(
+      interrupts.map(async (interrupt) => {
+        const card =
+          interrupt.toolCallId !== undefined
+            ? this.#toolCards.get(interrupt.toolCallId)
+            : undefined;
+        const request: ApprovalRequest = {};
+        const phrase = confirmPhrase(interrupt) ?? interrupt.message;
+        if (phrase !== undefined) {
+          request.message = phrase;
+        }
+        const toolName = card?.element.getAttribute("data-tool-name");
+        if (toolName !== null && toolName !== undefined) {
+          request.toolName = toolName;
+        }
+        card?.mark(TOOL_CALL_STATUS.DEFERRED);
+        // A host-supplied renderer takes full control of the approval UI. The
+        // built-in card renders into the gated call's own card, falling back to
+        // the answer group when the interrupt names no call we hold one for.
+        const approved =
+          this.approvalRenderer !== null
+            ? await this.approvalRenderer(request, { signal })
+            : await requestApproval(card?.approvalSlot ?? this.#ensureGroup(), request, {
+                signal,
+                strings: this.#strings,
+              });
+        // Same annotation as the client-side confirmation gate. Without it the
+        // two gates read differently for the same act: a locally-confirmed call
+        // said who let it through and a server-gated one said nothing, which is
+        // backwards, since the server-side gate is the one guarding the tools
+        // that actually run on the backend.
+        card?.recordDecision(approved ? "approved" : "declined");
+        if (approved) {
+          card?.mark(TOOL_CALL_STATUS.PENDING);
+        } else {
+          // No TOOL_CALL_RESULT will stream for a denied tool — settle its card
+          // now rather than leaving it hanging until the onSettled sweep.
+          card?.settle(TOOL_CALL_STATUS.DECLINED, this.#strings.declinedAction);
+        }
+        return { id: interrupt.id, approved };
+      }),
+    );
+    this.#updateEmptyState();
+    this.#messages.scrollTop = this.#messages.scrollHeight;
     this.#confirmAbort = null;
+    const responses: Record<string, InterruptResponse> = {};
+    for (const { id, approved } of answered) {
+      responses[id] = approved
+        ? { status: "resolved", payload: { approved: true } }
+        : { status: "cancelled" };
+    }
     return responses;
   }
 

@@ -161,23 +161,35 @@ export class CheckpointMenu {
     row.className = "checkpoint-row";
     row.setAttribute("part", "checkpoint-row");
 
+    const preview =
+      run.preview !== undefined && run.preview !== null && run.preview !== "" ? run.preview : null;
+    const time =
+      run.started_at === null
+        ? null
+        : relativeTime(Date.parse(run.started_at), Date.now(), this.#strings);
+
     const label = document.createElement("span");
     label.className = "checkpoint-label";
     label.setAttribute("part", "checkpoint-label");
-    // A run id is opaque to a person, so the time leads.
-    label.textContent =
-      run.started_at === null
-        ? run.run_id
-        : relativeTime(Date.parse(run.started_at), Date.now(), this.#strings);
+    // What the run was about, if the server says. Otherwise the time, and only
+    // then the id — a person recognises the first, reads the second, and
+    // recognises nothing at all in the third.
+    label.textContent = preview ?? time ?? run.run_id;
     row.append(label);
 
-    if (run.started_at !== null) {
-      // The time alone is not an identity: two runs a few seconds apart both read
-      // "just now", and picking between them is picking blind. A short id is the
-      // only thing on the wire that differs, so it is shown rather than hidden in
-      // a tooltip — which also stops a full UUID appearing over the row on hover.
-      // The real fix is a preview of the run's first message, which the index does
-      // not send yet.
+    if (preview !== null && time !== null) {
+      // Demoted to a chip: with words in the label the time is no longer what
+      // identifies the run, but it still orders it.
+      const when = document.createElement("span");
+      when.className = "checkpoint-time";
+      when.setAttribute("part", "checkpoint-time");
+      when.textContent = time;
+      row.append(when);
+    } else if (run.started_at !== null) {
+      // No words to show, so the id has to do the identifying: two runs a few
+      // seconds apart both read "just now", and picking between them is picking
+      // blind. Shown rather than left in a tooltip, since a hover is not an
+      // identity either — and eight characters beats a full id on the row.
       const short = document.createElement("span");
       short.className = "checkpoint-id";
       short.setAttribute("part", "checkpoint-id");
