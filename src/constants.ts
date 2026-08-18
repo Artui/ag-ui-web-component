@@ -38,6 +38,22 @@ export const STATE_EVENT = "ag-ui-state";
  */
 export const ATTACHMENT_EVENT = "ag-ui-attachments";
 
+/**
+ * An interaction has finished, whatever ended it. `detail` is
+ * {@link RunFinishedDetail}, listing the tools that ran and which side ran them.
+ *
+ * For hosts that render data the agent can change. A server-side tool writes
+ * without the page's knowledge — nothing else the element dispatches implies
+ * "something may have moved underneath you", so a page showing that data has no
+ * reason to refetch and quietly goes stale. Shared state
+ * ({@link STATE_EVENT}) is the richer channel, but it needs the agent to emit
+ * state; this needs nothing of the agent at all.
+ *
+ * Fires once per interaction rather than once per tool round, on completion,
+ * error and cancellation alike, since a partial write is still a write.
+ */
+export const RUN_FINISHED_EVENT = "ag-ui-run-finished";
+
 /** Roles a chat message can take. */
 export const MESSAGE_ROLE = {
   USER: "user",
@@ -83,9 +99,19 @@ export const MAX_TOOL_ROUNDS = 10;
 /**
  * Lifecycle status of a rendered tool-call card. A card opens as `PENDING`
  * while the call runs, then settles to `DONE`, `ERROR`, or `DECLINED`.
+ *
+ * `DEFERRED` is the one non-terminal state that is not "running": a server-side
+ * tool a `ToolGuard` gated never executed, the run finished on an interrupt, and
+ * the call is waiting on a person. Without it such a card sat at `PENDING` and
+ * read "running…" while the stream was over and the server idle — a status enum
+ * missing a state does not omit that state, it renders it as whichever neighbour
+ * is closest, and here the closest one claimed the opposite of the truth. A
+ * *frontend* tool waiting on its own card (`ask_user`) stays `PENDING`, because
+ * the browser really is running it.
  */
 export const TOOL_CALL_STATUS = {
   PENDING: "pending",
+  DEFERRED: "deferred",
   DONE: "done",
   ERROR: "error",
   DECLINED: "declined",

@@ -10,6 +10,7 @@ import {
   LOAD_CAPABILITY_TOOL,
   MESSAGE_ROLE,
   READ_PAGE_TOOL,
+  RUN_FINISHED_EVENT,
   STATE_EVENT,
   SUBMIT_EVENT,
   TOGGLE_EVENT,
@@ -103,6 +104,23 @@ export interface AttachmentsDetail {
 /** `detail` shape of the {@link STATE_EVENT} CustomEvent. */
 export interface StateDetail {
   readonly state: Readonly<Record<string, unknown>>;
+}
+
+/** One tool that ran during an interaction, as {@link RunFinishedDetail} lists it. */
+export interface ToolRun {
+  readonly name: string;
+  /**
+   * Where it executed. `"server"` is the one a data-rendering host cares about:
+   * a `"client"` tool ran in the host's own handler, so the host already knows
+   * whatever it did.
+   */
+  readonly side: "server" | "client";
+}
+
+/** `detail` shape of the {@link RUN_FINISHED_EVENT} CustomEvent. */
+export interface RunFinishedDetail {
+  /** In settle order. Empty when the interaction called no tools. */
+  readonly tools: readonly ToolRun[];
 }
 
 /** `detail` shape of the {@link TOGGLE_EVENT} CustomEvent. */
@@ -375,6 +393,12 @@ export class AgUiChat extends HTMLElement {
    * the real output with the generic "executed on the server" fallback.
    */
   readonly #serverSettled = new Set<string>();
+  /**
+   * Tool calls made during the current interaction, in the order they started,
+   * so {@link RUN_FINISHED_EVENT} can report them once the whole thing settles.
+   * Spans tool rounds and an approval interrupt; cleared when the event fires.
+   */
+  #runTools: { readonly id: string; readonly name: string }[] = [];
   readonly #root: ShadowRoot;
   readonly #chat: HTMLDivElement;
   readonly #messages: HTMLDivElement;
@@ -1572,6 +1596,11 @@ export class AgUiChat extends HTMLElement {
    * {@link toggleCollapsed} and {@link toggleTheme}.
    */
   openThreads(): void {
+    // Two overlapping surfaces, so opening one dismisses the other. Clicking away
+    // already covers the built-in buttons, but a host driving its own chrome
+    // through these methods raises no pointer event — and the drawer would then
+    // open *underneath* a popover still floating over it.
+    this.#checkpoints.close();
     void this.#refreshDrawer();
     this.#drawer.open();
   }
@@ -1584,8 +1613,29 @@ export class AgUiChat extends HTMLElement {
    * an empty panel.
    */
   openCheckpoints(): void {
+    // The other half of the pair — see `openThreads`.
+    this.#drawer.close();
     void this.#refreshCheckpoints();
     this.#checkpoints.open();
+  }
+
+  /** Close the checkpoints panel, if it is open. */
+  closeCheckpoints(): void {
+    this.#checkpoints.close();
+  }
+
+  /**
+   * Open the checkpoints panel, or close it if it is already open — what the
+   * built-in ⭯ button does, because a control that opens a panel is read as the
+   * control that also dismisses it. {@link openCheckpoints} stays open-only for a
+   * host that means exactly that.
+   */
+  toggleCheckpoints(): void {
+    if (this.#checkpoints.open_) {
+      this.#checkpoints.close();
+      return;
+    }
+    this.openCheckpoints();
   }
 
   /**
@@ -1909,8 +1959,11 @@ export class AgUiChat extends HTMLElement {
     const history = this.#headerButton("history", this.#strings.chatHistory, "☰");
     history.addEventListener("click", () => this.openThreads());
 
-    const checkpoints = this.#headerButton("checkpoints", this.#strings.checkpoints, "⭯");
-    checkpoints.addEventListener("click", () => this.openCheckpoints());
+    // ↺ rather than ⭯: the same idea in a glyph that has a font behind it in
+    // every browser. The obscure one rendered as an unreadable mark at 14px, and a
+    // header control nobody can name is one nobody presses.
+    const checkpoints = this.#headerButton("checkpoints", this.#strings.checkpoints, "↺");
+    checkpoints.addEventListener("click", () => this.toggleCheckpoints());
 
     const newChat = this.#headerButton("new", this.#strings.newChat, "✚");
     newChat.addEventListener("click", () => this.newChat());
@@ -2052,6 +2105,25 @@ export class AgUiChat extends HTMLElement {
       this.#drawer.element,
       this.#checkpoints.element,
     );
+
+    // Clicking away dismisses the checkpoints popover. Escape already did, and the
+    // drawer has a backdrop that swallows the click — this popover has neither, so
+    // it could only be closed by answering it.
+    //
+    // `pointerdown`, and the header button excluded: pointerdown runs *before* the
+    // button's own click, so closing here and toggling there would land back open.
+    // Composed path rather than `target`, because the event is retargeted at the
+    // shadow boundary and every one of these nodes is inside it.
+    this.#chat.addEventListener("pointerdown", (event) => {
+      if (!this.#checkpoints.open_) {
+        return;
+      }
+      const path = event.composedPath();
+      if (path.includes(this.#checkpoints.element) || path.includes(checkpoints)) {
+        return;
+      }
+      this.#checkpoints.close();
+    });
 
     // What a collapsed widget shrinks to: a round floating button, or the slim
     // edge rail under `placement="sidebar"` — one element, shaped by CSS.
@@ -2566,55 +2638,82 @@ export class AgUiChat extends HTMLElement {
    * Render an approval card per server-side-tool interrupt and collect the
    * user's decisions (approve → run it, deny → decline it).
    *
+   * **One card per gated call, in that call's own tool card, all at once.** A run
+   * can defer several calls, and the wire answers each independently — so the UI
+   * has to let a person answer each independently, which means saying which is
+   * which. The prompt cannot: it comes from the tool's `x-confirm` and is
+   * identical for every call of that tool. The tool card can, by position, and it
+   * is already showing the arguments. Asking them serially was the other half of
+   * the problem: the second question only appeared once the first was answered,
+   * so a person could neither compare them nor tell that more were coming.
+   *
+   * Each gated card is marked `deferred` for the wait. That is not cosmetic — at
+   * `pending` it read "running…" while the stream was over and the server idle.
+   *
    * The run is suspended on these cards. A Stop while any is open aborts the
    * shared {@link #confirmAbort} controller, resolving every still-open card as
    * denied. An approved tool runs on the follow-up resume run and streams its
-   * result into the same pending card; a denied one settles here, since no
-   * result will ever arrive.
+   * result into the same card (returned to `pending`, since it now really is
+   * running); a denied one settles here, as no result will ever arrive.
    */
   async #resolveInterrupts(
     interrupts: readonly Interrupt[],
   ): Promise<Record<string, InterruptResponse>> {
-    const responses: Record<string, InterruptResponse> = {};
     // One controller covers the whole batch: a single Stop denies all of them.
     this.#confirmAbort = new AbortController();
     this.#hidePending();
-    for (const interrupt of interrupts) {
-      const request: ApprovalRequest = {};
-      if (interrupt.message !== undefined) {
-        request.message = interrupt.message;
-      }
-      const card =
-        interrupt.toolCallId !== undefined ? this.#toolCards.get(interrupt.toolCallId) : undefined;
-      const toolName = card?.element.getAttribute("data-tool-name");
-      if (toolName !== null && toolName !== undefined) {
-        request.toolName = toolName;
-      }
-      const signal = this.#confirmAbort.signal;
-      // A host-supplied renderer takes full control of the approval UI;
-      // otherwise the built-in inline card renders into the current answer group.
-      const approved =
-        this.approvalRenderer !== null
-          ? await this.approvalRenderer(request, { signal })
-          : await requestApproval(this.#ensureGroup(), request, { signal, strings: this.#strings });
-      this.#updateEmptyState();
-      this.#messages.scrollTop = this.#messages.scrollHeight;
-      // Same annotation as the client-side confirmation gate. Without it the
-      // two gates read differently for the same act: a locally-confirmed call
-      // said who let it through and a server-gated one said nothing, which is
-      // backwards, since the server-side gate is the one guarding the tools
-      // that actually run on the backend.
-      card?.recordDecision(approved ? "approved" : "declined");
-      if (approved) {
-        responses[interrupt.id] = { status: "resolved", payload: { approved: true } };
-      } else {
-        responses[interrupt.id] = { status: "cancelled" };
-        // No TOOL_CALL_RESULT will stream for a denied tool — settle its pending
-        // card now rather than leaving it hanging until the onSettled sweep.
-        card?.settle(TOOL_CALL_STATUS.DECLINED, this.#strings.declinedAction);
-      }
-    }
+    const signal = this.#confirmAbort.signal;
+    const answered = await Promise.all(
+      interrupts.map(async (interrupt) => {
+        const card =
+          interrupt.toolCallId !== undefined
+            ? this.#toolCards.get(interrupt.toolCallId)
+            : undefined;
+        const request: ApprovalRequest = {};
+        const phrase = confirmPhrase(interrupt) ?? interrupt.message;
+        if (phrase !== undefined) {
+          request.message = phrase;
+        }
+        const toolName = card?.element.getAttribute("data-tool-name");
+        if (toolName !== null && toolName !== undefined) {
+          request.toolName = toolName;
+        }
+        card?.mark(TOOL_CALL_STATUS.DEFERRED);
+        // A host-supplied renderer takes full control of the approval UI. The
+        // built-in card renders into the gated call's own card, falling back to
+        // the answer group when the interrupt names no call we hold one for.
+        const approved =
+          this.approvalRenderer !== null
+            ? await this.approvalRenderer(request, { signal })
+            : await requestApproval(card?.approvalSlot ?? this.#ensureGroup(), request, {
+                signal,
+                strings: this.#strings,
+              });
+        // Same annotation as the client-side confirmation gate. Without it the
+        // two gates read differently for the same act: a locally-confirmed call
+        // said who let it through and a server-gated one said nothing, which is
+        // backwards, since the server-side gate is the one guarding the tools
+        // that actually run on the backend.
+        card?.recordDecision(approved ? "approved" : "declined");
+        if (approved) {
+          card?.mark(TOOL_CALL_STATUS.PENDING);
+        } else {
+          // No TOOL_CALL_RESULT will stream for a denied tool — settle its card
+          // now rather than leaving it hanging until the onSettled sweep.
+          card?.settle(TOOL_CALL_STATUS.DECLINED, this.#strings.declinedAction);
+        }
+        return { id: interrupt.id, approved };
+      }),
+    );
+    this.#updateEmptyState();
+    this.#messages.scrollTop = this.#messages.scrollHeight;
     this.#confirmAbort = null;
+    const responses: Record<string, InterruptResponse> = {};
+    for (const { id, approved } of answered) {
+      responses[id] = approved
+        ? { status: "resolved", payload: { approved: true } }
+        : { status: "cancelled" };
+    }
     return responses;
   }
 
@@ -2671,6 +2770,9 @@ export class AgUiChat extends HTMLElement {
         if (this.#noticeIfSkillLoad(call)) {
           return;
         }
+        // Recorded after the skill-load return: a capability load is the agent
+        // arranging itself, not work a host's data could have moved under.
+        this.#runTools.push({ id: call.id, name: call.name });
         this.#cardFor(call);
       },
       onActivity: (activityType, content) => {
@@ -2735,8 +2837,33 @@ export class AgUiChat extends HTMLElement {
         }
         this.#currentGroup = null;
         this.#thoughts = null;
+        this.#dispatchRunFinished();
       },
     };
+  }
+
+  /**
+   * Tell the host the interaction is over and what ran in it.
+   *
+   * Last thing in `onSettled`, so a listener that refetches sees a transcript
+   * that has already stopped changing. `side` is read from the streamed-result
+   * bookkeeping rather than from the tool list: whether a call executed on the
+   * server is a fact about the run, and a name can appear on both sides across a
+   * conversation.
+   */
+  #dispatchRunFinished(): void {
+    const tools: ToolRun[] = this.#runTools.map(({ id, name }) => ({
+      name,
+      side: this.#serverSettled.has(id) ? "server" : "client",
+    }));
+    this.#runTools = [];
+    this.dispatchEvent(
+      new CustomEvent<RunFinishedDetail>(RUN_FINISHED_EVENT, {
+        detail: { tools },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   /** A muted "⏹ Stopped" line in the transcript (distinct from the ⚠️ error bubble). */
@@ -2864,6 +2991,25 @@ export class AgUiChat extends HTMLElement {
     this.#messages.scrollTop = this.#messages.scrollHeight;
     return card;
   }
+}
+
+/**
+ * A server-authored question for a gated call, read off the interrupt's metadata.
+ *
+ * The question an AG-UI interrupt carries by default is the call itself, spelled
+ * out: `Approve create_event({"title": "Design sync", …})?`. Accurate, and not
+ * something to put in front of a person. A client-side confirmation has
+ * `x-confirm` on the tool's schema for exactly this, so the same key is read here
+ * — whichever end gates a call, the phrase comes from one place, and a server
+ * that supplies none keeps the generated text.
+ *
+ * Narrowed rather than trusted: `metadata` is `Record<string, any>` on the wire,
+ * so anything at all can arrive under that key, and a non-string would render as
+ * "[object Object]" in the one place a person is being asked to allow a write.
+ */
+function confirmPhrase(interrupt: Interrupt): string | undefined {
+  const phrase = interrupt.metadata?.[X_CONFIRM_KEY];
+  return typeof phrase === "string" && phrase.trim() !== "" ? phrase : undefined;
 }
 
 /** One tool call as a restored assistant message carries it. */

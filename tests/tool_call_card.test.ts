@@ -174,4 +174,38 @@ describe("ToolCallCard", () => {
     // The raw name is still on the data attribute for selectors.
     expect(card.element.getAttribute("data-tool-name")).toBe("query_model");
   });
+  it("moves between the two states that are not an outcome", () => {
+    // A gated call is waiting on a person, not running — and at `pending` the
+    // pill said "running…" while the stream was over and the server idle.
+    const card = new ToolCallCard("create_event", { title: "Design sync" });
+    expect(card.element.querySelector(".tool-call-status")?.textContent).toBe("running…");
+
+    card.mark("deferred");
+    expect(card.element.getAttribute("data-status")).toBe("deferred");
+    expect(card.element.querySelector(".tool-call-status")?.textContent).toBe("waiting for you");
+
+    // Approved: the server runs it now, so it really is running.
+    card.mark("pending");
+    expect(card.element.getAttribute("data-status")).toBe("pending");
+  });
+
+  it("refuses to look live again after settling", () => {
+    // A declined card talked back into "waiting for you" by a late event would
+    // offer a decision that has already been made.
+    const card = new ToolCallCard("create_event", {});
+    card.settle("declined", "User declined the action.");
+    card.mark("deferred");
+
+    expect(card.element.getAttribute("data-status")).toBe("declined");
+    expect(card.element.querySelector(".tool-call-status")?.textContent).toBe("\u2298 declined");
+  });
+
+  it("carries an empty slot for a question about this call", () => {
+    // The prompt for a gated call belongs to the card, because a run can defer
+    // several and the prompt text is per tool, identical across them.
+    const card = new ToolCallCard("create_event", {});
+    expect(card.approvalSlot.getAttribute("part")).toBe("tool-card-approval");
+    expect(card.approvalSlot.childElementCount).toBe(0);
+    expect(card.element.contains(card.approvalSlot)).toBe(true);
+  });
 });

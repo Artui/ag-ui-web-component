@@ -293,6 +293,15 @@
               built-in <code>ask_user</code> card.
             </li>
             <li>
+              <strong>Three approvals at once.</strong> Say <em>import three rows</em>: the
+              server defers three <code>create_event</code> calls in one run and each is
+              answered on its own. Every prompt is the same sentence, because a
+              confirmation is written per tool — so each one renders inside its own card,
+              above the arguments that say which row it is. Approve two and deny one; the
+              cards settle differently. While they wait they read
+              <em>waiting for you</em>, not <em>running</em>, since nothing is running.
+            </li>
+            <li>
               <strong>Server-resolved skill.</strong> The <em>Triage this article</em>
               chip ships no prompt: it sends <code>/triage</code> and the server answers.
               Watch the request — the wording is never in this page.
@@ -371,6 +380,7 @@
           data-prompt-chips="true"
           data-transcribe-url="/transcribe/"
           data-attachments-url="/attachments/"
+          data-runs-url="/runs/"
           data-theme-toggle=""
         ></ag-ui-chat>
       </div>

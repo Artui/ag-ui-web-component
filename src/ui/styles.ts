@@ -923,18 +923,28 @@ export const STYLES = `
   color: var(--_tool-fg);
 }
 
+/* Wraps, because the name is the only flexible child and every badge the row
+   gains is taken out of it. An approved call adds a third fixed badge, which in
+   a sidebar-width panel left the name 37px and broke it mid-word. Badges drop to
+   their own row instead. */
 .tool-call-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
 .tool-call-name {
-  flex: 1;
-  min-width: 0;
+  /* An auto basis, and a min-width floor rather than zero: the name may shrink,
+     but not below something readable, so wrapping moves a badge instead of
+     shredding a word. Breaking anywhere still applies to a name that cannot fit
+     on a line of its own, which is what keeps a long unbroken tool name inside
+     the card. */
+  flex: 1 1 auto;
+  min-width: 6ch;
   font-weight: 600;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* Leading status icon. Empty in the DOM — the glyph/spinner is drawn
@@ -961,6 +971,13 @@ export const STYLES = `
 
 @keyframes ag-ui-tool-spin {
   to { transform: rotate(360deg); }
+}
+
+/* Deferred: no spinner, because nothing is spinning. A steady accent dot, since
+   the state is waiting-on-you rather than an outcome. */
+.tool-call[data-status="deferred"] .tool-call-icon {
+  border-radius: 50%;
+  background: var(--_accent);
 }
 
 /* Settled: a themeable glyph coloured by outcome. */
@@ -1003,6 +1020,10 @@ export const STYLES = `
   font-weight: 600;
   background: rgba(127, 127, 127, 0.16);
   color: var(--_muted);
+}
+
+.tool-call[data-status="deferred"] .tool-call-status {
+  color: var(--_accent);
 }
 
 .tool-call[data-status="done"] .tool-call-status {
@@ -1098,10 +1119,39 @@ export const STYLES = `
 
 /* A pending card has no result yet, and in the modes where the arguments are
    hidden too there is nothing behind the toggle. Hide the control rather than
-   offer one that expands onto nothing. */
+   offer one that expands onto nothing. A deferred card is the same, and its
+   arguments are shown unconditionally by the rules below. */
 .tool-call[data-status="pending"] .tool-call-toggle,
+.tool-call[data-status="deferred"] .tool-call-toggle,
 :host([data-tool-display="inline"]) .tool-call[data-status="pending"] .tool-call-toggle {
   display: none;
+}
+
+/* The approval prompt for a gated call, rendered inside that call's own card.
+   Empty on every card nobody is being asked about, so it collapses instead of
+   adding a gap to each one. */
+.tool-call-approval:empty {
+  display: none;
+}
+
+.tool-call-approval {
+  margin-top: 8px;
+}
+
+/* A card that is asking a question shows what it is asking about, in every
+   display mode. Three gated calls of one tool ask the same words, so the
+   arguments are the only thing telling them apart, and a density setting must
+   not be able to hide the answer to "which one is this". */
+:host([data-tool-display="minimal"]) .tool-call[data-status="deferred"] .tool-call-body {
+  display: flex;
+}
+
+/* The arguments region only, never every section: the result region carries the
+   hidden attribute until a result exists, and a display value here overrides it,
+   framing an empty RESULT heading under the question. */
+:host([data-tool-display="compact"]) .tool-call[data-status="deferred"] .tool-call-section--args,
+:host([data-tool-display="inline"]) .tool-call[data-status="deferred"] .tool-call-section--args {
+  display: flex;
 }
 
 .tool-call-toggle {
@@ -1321,6 +1371,20 @@ export const STYLES = `
 .voice-btn:disabled {
   cursor: default;
   opacity: 0.6;
+}
+
+/* The same trap the attachment tray carries a note about, two rules along: an
+   author display beats the UA stylesheet's rule for the hidden property, so a
+   button the element has explicitly hidden keeps laying out and painting. The
+   clip is hidden until a host supplies an upload handler or an attachments URL,
+   and without this it is a visible control that cannot do anything.
+
+   The mic needs no such rule, and the asymmetry is worth knowing before adding
+   one: it is not hidden when unconfigured, it is never built. The voice wiring
+   returns before constructing the button, leaving only an empty voice slot that
+   is display: contents. A hidden-state rule for the mic would match nothing. */
+.attach-btn[hidden] {
+  display: none;
 }
 
 /* Send closes the row on the right: a circle, the only filled control in the
@@ -1932,47 +1996,123 @@ export const STYLES = `
   opacity: 0.7;
 }
 
+/* A row is a label and two buttons, and nothing about the row itself is
+   pressable. It used to light up on hover, which is the affordance of something
+   clickable and made the buttons look like decoration on a clickable strip. The
+   resting surface groups the row instead, so hover can mean what it says: only
+   the buttons respond to it. */
+/* A row is a label and two buttons, and nothing about the row itself is
+   pressable. It used to light up on hover, which is the affordance of something
+   clickable and made the buttons look like decoration on a clickable strip. The
+   resting surface groups the row instead, so hover can mean what it says: only
+   the buttons respond to it.
+
+   It wraps for the same reason the tool-call head does. Every child but the label
+   is fixed-width, so in a narrow panel the label is the only thing that can give
+   -- and a flex-basis of zero lets it give everything. Adding the run id was
+   enough to crush "just now" to zero pixels: present, correct, and invisible.
+   Wrapping puts the buttons on their own line instead. */
 .checkpoint-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.25rem;
+  padding: 0.3125rem 0.4375rem;
   border-radius: 0.375rem;
-}
-
-.checkpoint-row:hover {
   background: var(--_hover);
 }
 
+/* Grows into spare room, and refuses to shrink past the shortest thing it ever
+   says. A time is short and bounded, so there is no case for eliding it. */
 .checkpoint-label {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 7ch;
   font-size: 0.8125rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* When the label holds the run's first message, the time moves here: still worth
+   showing, no longer what identifies the row. Muted and unshrinkable, so it does
+   not compete with the words beside it. */
+.checkpoint-time {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+/* Enough of the run id to tell two runs apart when both say "just now". Muted
+   and monospaced: it is a reference, not a name. */
+.checkpoint-id {
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  opacity: 0.55;
+}
+
+/* On the panel's own surface, not the row's: the row now paints the hover token
+   itself, and a badge the same colour as what it sits on is not a badge. */
 .checkpoint-branch {
   font-size: 0.6875rem;
   padding: 0 0.375rem;
   border-radius: 999px;
-  background: var(--_hover);
+  background: var(--_assistant-bg);
   opacity: 0.8;
 }
 
+/* The two things in the row that actually do something, so they are the two
+   things that look like it: a filled surface at rest rather than a transparent
+   outline, which on top of the old row highlight was nearly invisible. */
 .checkpoint-action {
   font: inherit;
   font-size: 0.75rem;
+  line-height: 1.4;
   cursor: pointer;
-  padding: 0.125rem 0.5rem;
+  padding: 0.1875rem 0.5625rem;
   border: 1px solid var(--_border);
   border-radius: 0.375rem;
-  background: transparent;
+  background: var(--_bg);
   color: inherit;
+  transition:
+    background var(--_motion) var(--_ease),
+    border-color var(--_motion) var(--_ease),
+    transform var(--_motion) var(--_ease);
 }
 
-.checkpoint-action:hover {
+/* Resume is what a reader wants nine times in ten; fork is the deliberate choice
+   beside it. Filled and outlined, the same pair the confirmation and approval
+   cards already use for their primary and secondary action. */
+.checkpoint-resume {
+  font-weight: 600;
+  border-color: var(--_accent);
+  background: var(--_accent);
+  color: #ffffff;
+}
+
+.checkpoint-fork:hover {
   background: var(--_hover);
+  border-color: var(--_accent);
+}
+
+/* The filled one cannot go lighter on hover without losing its contrast with the
+   white label, so it dims instead. */
+.checkpoint-resume:hover {
+  opacity: 0.88;
+}
+
+/* Pressed: a pixel down, so the click is felt as well as seen. */
+.checkpoint-action:active {
+  transform: translateY(1px);
+}
+
+/* Keyboard focus was invisible here, in a panel that traps focus and is reached
+   by Tab -- so the one navigation path guaranteed to land on these buttons was
+   the one with nothing to show for it. */
+.checkpoint-action:focus-visible {
+  outline: 2px solid var(--_accent);
+  outline-offset: 2px;
 }
 
 .drawer-backdrop {

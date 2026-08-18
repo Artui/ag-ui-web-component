@@ -52,6 +52,14 @@ function mount(attrs: Record<string, string> = {}): AgUiChat {
   return el;
 }
 
+/** A host with no upload path at all: no attachments URL, no `uploadHandler`. */
+function mountWithoutUploads(): AgUiChat {
+  const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+  el.setAttribute("endpoint", "/agent/");
+  document.body.appendChild(el);
+  return el;
+}
+
 function part(root: ParentNode, selector: string): HTMLElement {
   const found = root.querySelector(selector);
   if (!(found instanceof HTMLElement)) {
@@ -105,6 +113,41 @@ describe("attachment chips (real browser)", () => {
     chip.classList.remove("attachment-chip--ready");
     chip.classList.add("attachment-chip--error");
     expect(getComputedStyle(chip).color).toBe(DANGER);
+  });
+
+  it("hides the clip when nothing can be uploaded, rather than painting a dead button", () => {
+    // The same trap as the tray below, one control along. The element sets
+    // `hidden` on the button until an upload path exists, but the author `display`
+    // beat the UA rule for it -- so every host without uploads configured showed a
+    // paperclip that opened a file picker leading nowhere. Found in the framework
+    // gallery, where three of the four apps were in exactly that state.
+    const el = mountWithoutUploads();
+    const button = part(shadow(el), ".attach-btn");
+
+    expect(button.hidden).toBe(true);
+    expect(getComputedStyle(button).display).toBe("none");
+    expect(button.offsetWidth).toBe(0);
+  });
+
+  it("shows the clip once an attachments URL makes uploading possible", () => {
+    const el = mount(); // the shared helper wires `data-attachments-url`
+    const button = part(shadow(el), ".attach-btn");
+
+    expect(button.hidden).toBe(false);
+    expect(button.offsetWidth).toBeGreaterThan(0);
+  });
+
+  it("builds no mic at all when transcription is unconfigured, rather than hiding one", () => {
+    // Pins the asymmetry, so nobody adds a `.voice-btn[hidden]` rule that matches
+    // nothing -- or assumes the clip's defect applied here. `#wireVoice` returns
+    // before constructing the button, leaving an empty slot that costs nothing.
+    const el = mountWithoutUploads();
+    const root = shadow(el);
+
+    expect(root.querySelector(".voice-btn")).toBeNull();
+    const slot = part(root, ".voice-slot");
+    expect(getComputedStyle(slot).display).toBe("contents");
+    expect(slot.getBoundingClientRect().height).toBe(0);
   });
 
   it("collapses the empty tray instead of holding dead space above the composer", () => {

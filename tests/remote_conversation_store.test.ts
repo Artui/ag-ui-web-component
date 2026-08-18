@@ -104,6 +104,65 @@ describe("RemoteConversationStore", () => {
     expect(fetchMock).toHaveBeenCalledWith("https://x/threads/t1/", { headers: { k: "v" } });
   });
 
+  it("does not ask the server for a thread the local store just minted", async () => {
+    // Every first visit spent a request to be told 404, and logged one in the
+    // console of a page where nothing had gone wrong.
+    const local = new SessionStorageStore();
+    const minted = local.threadId();
+
+    expect(
+      await new RemoteConversationStore("https://x/threads/", () => ({}), local).loadMessages(
+        minted,
+      ),
+    ).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("asks for it once something has been sent in it", async () => {
+    const local = new SessionStorageStore();
+    const minted = local.threadId();
+    local.saveMessages(minted, [{ id: "m", role: "user", content: "hi" }] as never);
+    fetchMock.mockResolvedValue(ok({ messages: [{ id: "m", role: "user", content: "hi" }] }));
+
+    await new RemoteConversationStore("https://x/threads/", () => ({}), local).loadMessages(minted);
+
+    expect(fetchMock).toHaveBeenCalledWith(`https://x/threads/${minted}/`, { headers: {} });
+  });
+
+  it("asks for a thread it did not mint, which is how another device's thread loads", async () => {
+    // The narrow predicate matters here: "no local messages" is not the same
+    // claim as "new". A drawer row from another device has neither.
+    const local = new SessionStorageStore();
+    fetchMock.mockResolvedValue(
+      ok({ messages: [{ id: "m", role: "user", content: "elsewhere" }] }),
+    );
+
+    const store = new RemoteConversationStore("https://x/threads/", () => ({}), local);
+    expect(await store.loadMessages("from-another-device")).toEqual([
+      { id: "m", role: "user", content: "elsewhere" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("asks again after a minted thread is cleared and re-minted, having saved once", async () => {
+    // `clear` drops the marker, so the next mint is the only thing that can set
+    // it: a cleared-then-reused id must not inherit the old answer.
+    const local = new SessionStorageStore();
+    const first = local.threadId();
+    local.saveMessages(first, [{ id: "m", role: "user", content: "hi" }] as never);
+    const store = new RemoteConversationStore("https://x/threads/", () => ({}), local);
+
+    expect(store.isUnsent(first)).toBe(false);
+    local.clear(first);
+    expect(store.isUnsent(first)).toBe(false);
+    expect(store.isUnsent(local.threadId())).toBe(true);
+  });
+
+  it("reports nothing unsent when the wrapped store cannot tell", () => {
+    const store = new RemoteConversationStore("https://x/threads/");
+    expect(store.isUnsent("anything")).toBe(false);
+  });
+
   it("returns null when a loaded thread has no messages", async () => {
     fetchMock.mockResolvedValue(ok({ thread_id: "t1" }));
     expect(await new RemoteConversationStore("https://x/threads/").loadMessages("t1")).toBeNull();

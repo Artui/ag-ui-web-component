@@ -7,6 +7,197 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-08-14
+
+### Added
+
+- **Every deferred call is asked about in its own card, and all of them at once.**
+  A run can defer more than one call, and the wire takes a different answer for
+  each — so the UI has to let a person give one, which means saying which card is
+  which. Importing three rows gated three `create_event` calls and produced three
+  identical prompts: the text comes from the tool, so all three read "Add this
+  event to the board?", and nothing else on the card named the row. They were also
+  serial, each appearing only once the previous was answered, appended below the
+  three calls they gated — so a person answering the first could not compare them
+  or tell that two more were coming. **A batch gate that can only be answered
+  uniformly is one you have to answer blind.**
+
+  Each prompt now renders into the tool card of the call it gates, under that
+  call's own arguments, and every card opens at once. No new wire field was needed:
+  the arguments were already there, and the call site already held the card. A
+  card being asked about shows its arguments in every `data-tool-display` mode,
+  since a density setting must not hide the answer to "which one is this". New
+  part: `tool-card-approval`.
+
+- **A status for "deferred, awaiting a decision".** `TOOL_CALL_STATUS` was
+  `pending | done | error | declined`, so a gated call sat at `pending` and read
+  **running…** while the stream was over and the server idle. A status enum missing
+  a state does not omit that state, it renders it as whichever neighbour is
+  closest, and this one claimed the opposite of the truth. Gated cards now read
+  `waiting for you` (`data-status="deferred"`, `strings.toolDeferred`), with a
+  steady dot instead of a spinner, and go back to `pending` on approval — because
+  then the tool really is running. A **frontend** tool such as `ask_user` keeps
+  saying "running…" while its card is open: the browser is executing it.
+
+- **The checkpoint rows lead with what the run was about.** A run index that
+  answers `GET runs/` with a `preview` — the run's first user message — and the
+  panel now shows it, with the time demoted to a chip beside it (new part:
+  `checkpoint-time`). A row with no preview keeps the old time-plus-short-id
+  layout, so an older server is unaffected.
+
+- **`toggleCheckpoints()` and `closeCheckpoints()`.** The built-in ⭯ control now
+  calls the toggle, so pressing it a second time dismisses the panel;
+  `openCheckpoints()` keeps its open-only meaning for a host that wants exactly
+  that.
+- **The checkpoint rows show a short run id.** A time is not an identity: two runs
+  of the same minute both read "just now", and choosing between them was choosing
+  blind. Eight characters of the id, muted, beside the time — with the whole id on
+  its own `title` rather than on the row's label, so hovering a row no longer
+  raises a full UUID over it. Now the fallback rather than the rule: a row that
+  arrives with a `preview` leads with the words instead (see above).
+
+### Changed
+
+- **`approvalRenderer` is called once per interrupt, concurrently.** It used to be
+  awaited one at a time. A host that can only ask one question at a time should
+  queue inside its renderer.
+
+### Fixed
+
+- **The README's parts list was missing an entire feature, and now a test reads
+  it.** Part names are declared public API there, and an undocumented part is not a
+  part: a host cannot style what it cannot know exists, and a name guessed wrong
+  fails silently. Absent were all twelve checkpoint-panel parts plus
+  `checkpoints-button`, and five strays from other features (`code-copy`,
+  `resize-handle`, `run-notice-icon`, `run-notice-text`, `skill-item-token`). The
+  list drifted because nothing read it, so the fix is not only the missing names:
+  it is now a table, spelled out in full rather than as `tool-card` *plus* `-icon`
+  shorthand, and a test collects every part the source sets and fails on one the
+  table does not name. The handful assembled at runtime are enumerated in that
+  test, and adding another such call site fails it too.
+
+- **The checkpoint panel could not be closed by the control that opened it.**
+  The button called `open()`, which returns early when the panel is already open,
+  so the first gesture anyone tries did nothing. Escape worked, and answering a row
+  worked, and that was all. It now toggles, and a pointer landing anywhere else in
+  the widget dismisses it — the thread drawer has a backdrop that swallows such a
+  click, and this popover has none.
+
+- **The thread drawer and the checkpoint popover could be open at once.** Opening
+  either now closes the other. The pointer case was already covered by the
+  click-away above, but a host driving its own chrome through `openThreads()` /
+  `openCheckpoints()` raises no pointer event, and the drawer would slide open
+  underneath a popover still floating over it.
+
+- **The panel read as a list of clickable rows.** Each row painted itself on hover
+  while nothing about the row was pressable: the two buttons that *were* pressable
+  sat on that highlight as transparent outlines. The row now carries a resting
+  surface and no hover at all, and the actions carry the filled-primary /
+  outlined-secondary pair the confirmation and approval cards already use, plus
+  `:active` and — new — a visible `:focus-visible` ring, in a panel that traps
+  focus and is reached by Tab.
+
+- **A narrow panel crushed the timestamp to nothing.** The row is a flex line whose
+  only flexible child is the label, so it absorbs every fixed-width element the row
+  gains; at 320px the label kept its text, reported it correctly, and measured 0px.
+  This is the tool-call head's defect (0.24.0) one panel along, and it is now
+  measured in a real browser at both widths — happy-dom lays out no boxes and
+  called the broken row a pass.
+
+- **The ⭯ glyph is now ↺.** The old one has no font behind it in most browsers and
+  rendered as an unreadable mark at 14px. A header control nobody can name is one
+  nobody presses.
+
+- **The composer painted a paperclip that could not upload anything.** The element
+  sets `hidden` on the attach button until a host gives it somewhere to upload —
+  an `uploadHandler` or `data-attachments-url` — but the button's own
+  `display: inline-flex` beat the UA stylesheet's rule for the hidden property, so
+  it stayed visible and clickable, opening a file picker whose file had nowhere to
+  go. This is the third instance of one trap: the attachment tray was fixed in
+  0.23.0 and carries a comment about it two rules away in the same file. Found in
+  the framework gallery, where three of the four host apps were in exactly that
+  state and nobody had noticed the clip was inert.
+
+  **The mic does not share it**, and the asymmetry is pinned by a test rather than
+  assumed: the clip is created and hidden, while the voice wiring returns before
+  constructing anything, leaving an empty slot that measures nothing. A
+  hidden-state rule for the mic would match no element, so there is one rule.
+
+## [0.24.0] — 2026-08-13
+
+### Added
+
+- **`ag-ui-run-finished`** — an event fired once per interaction, carrying the
+  tools that ran and which side ran each (`{ tools: [{ name, side }] }`, typed
+  `RunFinishedDetail` / `ToolRun`). **For hosts that render data the agent can
+  change.** A server-side tool writes without the page's knowledge, and nothing
+  the element dispatched implied "something may have moved underneath you": a
+  page that fetched its data on mount had no reason to refetch, so approving a
+  server-side write left it showing stale data with no way to notice. Shared
+  state was the only channel back, and it is not one a host can rely on, because
+  it needs the *agent* to emit `STATE_SNAPSHOT`. Fires on completion, error and
+  cancellation alike, since a partial write is still a write; a capability load
+  is not counted, since it moves nothing a host renders.
+
+### Changed
+
+- **A server-side approval can now ask a readable question.** An AG-UI
+  interrupt's question defaults to the call spelled out —
+  `Approve create_event({"title": "Design sync", …})?` — which is accurate and
+  not something to put in front of a person, while the *client-side*
+  confirmation card has had `x-confirm` for exactly this. The approval card now
+  prefers `x-confirm` from the interrupt's `metadata`, so one key covers both
+  gates, and a server that supplies nothing keeps the generated text. Anything
+  non-string or blank under that key is ignored rather than rendered, since a
+  wire field typed `Record<string, any>` can carry an object into the one place
+  a person is being asked to allow a write.
+
+### Fixed
+
+- **Every first visit spent a request to be told `404`.** With
+  `data-threads-url` set, the element minted a thread id on mount and
+  immediately asked the server for its history — history that cannot exist,
+  because the id was three lines old. The response was correct and harmless, and
+  it put a red `404` in the console of a page where nothing had gone wrong, on
+  every first visit to every host. `ClientConversationStore` gained an optional
+  `isUnsent(threadId)`, which the session store answers from a marker it sets when
+  it mints and drops on the first save, and the remote store skips the fetch when
+  it is `true`. Deliberately narrow: *"I hold no messages for this id"* is not the
+  same claim as *"this id is new"*, and only the store that minted it can make the
+  second one — so a thread picked from the drawer, or created on another device,
+  is still fetched.
+- **An approved call's tool card broke its own name into pieces.** The card's
+  head is a flex row in which the name is the only flexible child, so every
+  fixed badge the row gains is taken out of it. The decision badge ("approved by
+  you") appears only on the server-approval path, and in a sidebar-width panel it
+  left the name **37px** wide: `word-break: break-word` then split *Create event*
+  into "Creat / e / event" across three lines. The head wraps now and the name
+  keeps a floor instead of a zero min-width, so a badge drops to its own row
+  rather than shredding a word, while a genuinely unbreakable name still breaks
+  instead of overflowing the card. Measured in a real browser at 470px: the name
+  went 37px to 144px and three lines to one.
+
+### Documentation
+
+- **The four framework recipes, not just React's.** The connect-time
+  configuration boundary is reached differently by each host, and only **Vue**
+  has a hook that runs before insertion (a directive's `beforeMount`); React,
+  Svelte 5 and Angular all create the element by hand. Angular additionally needs
+  `:host { display: contents }` or its own host element breaks the page's layout.
+- **Page actions**: a page action reports that it *fired*, not that it worked;
+  a page that saves asynchronously should say so (a `saving` flag in the page
+  map) or a verification read will outrun the save; `drag_and_drop` dispatches
+  the **native HTML5 drag sequence**, which a pointer-event drag library
+  (dnd-kit, the Angular CDK) never sees; and `scroll_to` centres vertically but
+  brings into view horizontally.
+- **`placement="embedded"` fills the box the host gives it — so give it one.**
+  `min-height: 0` plus `overflow: hidden` on the containing element, or a growing
+  transcript pushes the composer off the bottom of the window.
+- **The auto-injected page map may go nowhere.** It rides in
+  `RunAgentInput.context`, and pydantic-ai's AG-UI adapter does not read that
+  field, so on such a backend the injected copy is silently dropped and
+  `read_page` is the channel that works.
+
 ## [0.23.1] — 2026-08-13
 
 ### Fixed
@@ -1346,7 +1537,9 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.23.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.24.0...v0.25.0
+[0.24.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.23.1...v0.24.0
 [0.23.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.21.0...v0.22.0

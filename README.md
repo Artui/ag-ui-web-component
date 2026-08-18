@@ -387,6 +387,45 @@ with the configuration as it then stands. It is a reload, not a merge: the in-fl
 cancelled and the transcript is rebuilt from the persisted history, so call it when configuration
 lands rather than between turns.
 
+#### The same boundary in four frameworks
+
+Each framework reaches that pre-insertion window differently, and only one of them reaches it
+declaratively. Built and driven in all four:
+
+| Host | Pre-insertion window | What to do |
+| --- | --- | --- |
+| React | None — refs attach after insertion | `createElement`, configure, `appendChild` (above) |
+| **Vue 3** | **Yes** — a directive's `beforeMount` | Attributes in the template, properties in the directive |
+| Svelte 5 | None — `use:` actions and `$effect` run after insertion | Same as React |
+| Angular | None — bindings apply during change detection | Same as React, in `ngOnInit` with `@ViewChild({ static: true })` |
+
+**Vue** is the one host that can configure declaratively, because a custom directive's `beforeMount`
+runs while the element is still detached:
+
+```vue
+<script setup>
+const vConfigure = {
+  beforeMount(element) {
+    element.getHeaders = () => ({ Authorization: `Bearer ${token()}` });
+    element.registerTool(myTool);
+  },
+};
+</script>
+
+<template>
+  <ag-ui-chat v-configure endpoint="/agent/" data-threads-url="/agent/threads/" />
+</template>
+```
+
+Tell Vue's compiler the tag is a custom element, or it will warn and try to resolve a component:
+`vue({ template: { compilerOptions: { isCustomElement: (tag) => tag === "ag-ui-chat" } } })`.
+
+**Svelte 5**'s `use:` action and `$effect` both run after the node is in the DOM, so build the
+element by hand in an `$effect` and append it — the React shape, in runes. **Angular** needs
+`CUSTOM_ELEMENTS_SCHEMA` on the component and, if it wraps the panel in its own component, one line
+of CSS: `:host { display: contents }`. Angular's host element otherwise lands between your grid and
+the children it sizes, and the panel renders a few hundred pixels tall in the middle of the page.
+
 ---
 
 ## Core concepts
@@ -507,24 +546,62 @@ approval card below is for.
 ### Server-side tool approval (interrupts)
 
 When the server gates a destructive tool (e.g. django-ag-ui's `ToolGuard`), the tool **defers**
-instead of executing and the run finishes on an AG-UI *interrupt*. The element then appends an
+instead of executing and the run finishes on an AG-UI *interrupt*. The element then renders an
 **inline approval card** (a `<div class="approval">`) via
-[`requestApproval`](src/ui/approval_card.ts), next to the pending tool-call card:
+[`requestApproval`](src/ui/approval_card.ts) **inside the tool card of the call it gates**:
 
 - **Approve** → the run resumes and the server runs the tool; its result streams back into the
   same card.
 - **Deny** → the run resumes carrying a `cancelled` answer, so the model learns the tool was
-  declined; the pending card settles as declined.
+  declined; the card settles as declined.
 
 This uses the AG-UI protocol's own interrupt/resume mechanism (`RunAgentInput.resume[]`) — the
 wire stays vanilla AG-UI. A **Stop** while an approval card is open denies every open card and
 cancels the run. No configuration is needed on the client; the gate is enabled server-side.
 
+**A run can defer several calls, and each is answered on its own.** Importing three rows defers
+three `create_event` calls, and the wire takes a different answer for each. So every question is
+asked **at once**, each in its own tool card, above that call's own arguments — which is what says
+*which* call it is about. The prompt cannot: it comes from the tool, so all three read "Add this
+event to the board?". While the run waits, those cards read **`waiting for you`**
+(`data-status="deferred"`), not "running…" — nothing is running, the stream is over and the server
+is idle. A card asking a question shows its arguments in every `data-tool-display` mode, since
+hiding them would hide the answer to "which one is this".
+
+A **frontend** tool such as `ask_user` stays at "running…" while its card is open, because the
+browser really is running it. Only a deferred call was claiming something untrue.
+
+**What the card asks.** An AG-UI interrupt carries the question as `message`, and the default is the
+call spelled out — `Approve create_event({"title": "Design sync", …})?` — which is accurate and not
+something to put in front of a person. A server can supply its own wording as **`x-confirm` in the
+interrupt's `metadata`**, the same key a client-side confirmation reads off the tool's schema, and
+the card prefers it:
+
+```json
+{ "id": "int-1", "reason": "tool_call", "toolCallId": "call-1",
+  "message": "Approve create_event({\"title\": \"Design sync\"})?",
+  "metadata": { "x-confirm": "Book Design sync on Friday at 14:00?" } }
+```
+
+Anything non-string or blank under that key is ignored in favour of `message`, and with neither the
+card falls back to `strings.approvalPrompt`.
+
+**The card approves or denies, and nothing else.** The interrupt's `responseSchema` also advertises
+`editedArgs` and `reason` — the protocol allows a client to rewrite a gated call's arguments before
+letting it run. The built-in card does not offer that; a host that wants it can implement
+`approvalRenderer` and resolve the interrupt itself.
+
+**A gated write is still a write the page cannot see.** Approving one runs a *server-side* tool, so
+if your page renders the data it touched, listen for
+[`ag-ui-run-finished`](#host-seams-the-spa-story) and refetch.
+
 Like the question card, the approval card is customizable at three levels: **text** (`strings`:
-`approveAction` / `approvalPrompt` / `approve` / `deny`), **CSS** (`::part()`: `approval`,
-`approval-body`, `approval-actions`, `approval-button`, `approval-approve`, `approval-deny`), and
-**full replacement** via `chat.approvalRenderer` — given the request (`message` + `toolName`) and
-a Stop `AbortSignal`, render your own UI and resolve `true`/`false`:
+`approveAction` / `approvalPrompt` / `approve` / `deny` / `toolDeferred`), **CSS** (`::part()`:
+`approval`, `approval-body`, `approval-actions`, `approval-button`, `approval-approve`,
+`approval-deny`, and `tool-card-approval` for the region inside the card), and **full replacement**
+via `chat.approvalRenderer` — given the request (`message` + `toolName`) and a Stop `AbortSignal`,
+render your own UI and resolve `true`/`false`. A renderer is called **once per interrupt,
+concurrently**, so a host that can only ask one thing at a time should queue inside it:
 
 ```js
 chat.approvalRenderer = (request, { signal }) =>
@@ -648,10 +725,32 @@ want — so you control the agent's interaction surface:
 ```
 
 - **`scroll_to`** — scroll a target into view. `target` is `"top"`, `"bottom"`, or a CSS selector
-  / page-map element id. Read-only (no confirmation).
+  / page-map element id. Read-only (no confirmation). It centres the target **vertically** and
+  brings it into view **horizontally** (`inline: "nearest"`), so on a two-axis surface a
+  horizontal target lands at the near edge rather than in the middle. In view is the contract;
+  "centred" is not, in that axis.
 - **`drag_and_drop`** — drag the `from` element onto the `to` element (selectors / page-map ids),
   firing the standard HTML5 drag sequence (`dragstart` → `dragenter`/`dragover`/`drop` → `dragend`)
   so the page's own drop handler reacts. Useful for reordering sortable lists.
+
+**Your drag surface must listen to drag events, and many "modern" ones do not.** `drag_and_drop`
+dispatches the native HTML5 sequence with one shared `DataTransfer`. A surface built on a
+pointer-event drag library — dnd-kit, most React DnD packages, the Angular CDK — listens to
+`pointerdown`/`pointermove` and **never sees any of it**: the agent's drag is a silent no-op that
+still reports success. Either use the native API or pick a library that listens to drag events.
+React's synthetic `onDrop` does receive the dispatched sequence, `DataTransfer` included.
+
+**A page action reports that it fired, not that it worked.** `drag_and_drop` returns as soon as the
+sequence is dispatched; whether your drop handler's save succeeded is invisible to it, so a refused
+change still looks like a successful tool call. Two things follow. Have the page report its own
+refusals somewhere the agent can read them, and have the agent re-read the page before claiming
+anything. Where the outcome matters more than the gesture, call the operation as a **server tool**
+instead — it can return the real error.
+
+**A page that saves asynchronously should say so.** A verification read straight after a drag can
+outrun the page's own save and conclude that nothing happened. Report a busy flag in your
+`getPageMap` (`{ saving: true }` while a write is in flight) and the agent can wait for a page that
+says it is busy. It cannot wait for one that does not.
 
 Targets resolve through the overridable `resolvePageTarget` property — `(target) => HTMLElement |
 null`, defaulting to `document.querySelector`. A host with a page map overrides it to map its own
@@ -1027,6 +1126,13 @@ acts, the next round already sees the resulting page. Within a round the agent c
 view at any time with the built-in `read_page` tool, which is registered whenever this provider is
 set.
 
+**Check that your server reads `context` at all — pydantic-ai's AG-UI adapter does not.** The
+auto-injected `page_map` rides in `RunAgentInput.context`, and an adapter that ignores that field
+drops it silently: nothing errors, and the model simply never sees the page. On such a backend
+`read_page` is the channel that works, and it is the one to rely on. Nothing to configure — just do
+not assume the injected copy arrived, and if the page map matters to your prompt, put it there
+server-side or let the agent call `read_page`.
+
 That leaves one window: the page can move *after* a round's context was built but *before* the
 agent's tool call arrives — the user clicks a link, or presses back. Calls landing in that window
 are **refused** with a result telling the agent to call `read_page` and retry. Most would have
@@ -1096,6 +1202,34 @@ chat.navigate = (path) => router.push(path); // SPA: in-page, no reload
 
 Route map + `navigate()` and the reload model are the same feature seen from two ends.
 
+**`ag-ui-run-finished`** *(event)* — an interaction has ended, and here is what ran in it.
+`detail: { tools: readonly ToolRun[] }` (typed `RunFinishedDetail`), where each `ToolRun` is
+`{ name, side: "server" | "client" }` in settle order.
+
+**This is the seam for a host that renders data the agent can change.** A server-side tool writes
+without your page's knowledge: nothing else the element dispatches implies "something may have moved
+underneath you", so a page that fetched its data on mount has no reason to refetch and quietly goes
+stale. Approve a server-side booking on a calendar and the row exists while the calendar keeps
+showing the week it loaded.
+
+```js
+chat.addEventListener("ag-ui-run-finished", (e) => {
+  // A "client" tool ran in your own handler, so you already know what it did.
+  if (e.detail.tools.some((tool) => tool.side === "server")) {
+    void refetchBoard();
+  }
+});
+```
+
+It fires **once per interaction**, not once per tool round, and it fires on completion, error and
+cancellation alike — a partial write is still a write. A capability load (an agent skill activating)
+is not counted: it moves nothing a host renders.
+
+`sharedState` above is the richer channel and this is not a replacement for it — but it is not a
+substitute the other way round either, because shared state requires the *agent* to emit
+`STATE_SNAPSHOT`, which is not the host's decision to make. Use state when the two ends edit one
+object; use this when your page owns the data and just needs to know it moved.
+
 ## Resuming a run
 
 When the server persists run checkpoints (django-ag-ui's `step_store`), a run
@@ -1108,10 +1242,17 @@ component at the run index and a ⭯ button appears in the header:
 
 The panel lists runs the server marked **continuable** — those with a saved
 snapshot to seed from. A run that never reached a provider-valid boundary has
-none, so it isn't offered: resuming it would start from nothing. Each row shows
-when the run started (the id is on hover, for correlating with server logs) and
-marks a run that branched from another, so a fork doesn't read as a duplicate
-of its parent.
+none, so it isn't offered: resuming it would start from nothing.
+
+A row leads with the run's **first user message**, from the index's `preview`
+field, and shows when it started beside it. That is what makes the list a list of
+conversations: a time is not an identity, since two runs a minute apart both read
+"just now", and a run id is not something a person recognises. Where the server
+sends no preview — an older index, or a run that opened on an image with no
+caption — the row falls back to the time plus the first eight characters of the
+id (full id on hover, for correlating with server logs). Either way a run that
+branched from another is marked, so a fork doesn't read as a duplicate of its
+parent.
 
 Type the next turn in the composer, then pick a row:
 
@@ -1256,6 +1397,7 @@ re-export point. Internal modules import from leaf paths.
 | `createPageStateTools(binding)` | function | Build `read_<name>` / `set_<name>` tools. |
 | `PageState` | type | A page-state binding declaration. |
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
+| `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
 
 ### Durability
 
@@ -1267,7 +1409,7 @@ re-export point. Internal modules import from leaf paths.
 | `ThreadMeta` | type | A thread-drawer row (`{ threadId, title, updatedAt, preview }`). |
 | `NavigationCheckpoint` | type | The pre-reload checkpoint marker. |
 | `RunIndex` | class | Reads a `data-runs-url` run index and derives its resume / fork endpoints. |
-| `RunRow` | type | One run index row (`{ run_id, thread_id, parent_run_id, started_at, continuable }`). |
+| `RunRow` | type | One run index row (`{ run_id, thread_id, parent_run_id, started_at, continuable, preview? }`). |
 | `CheckpointMenu` | class | The *Continue a run* panel. |
 | `CheckpointVerb` | type | `"resume" | "fork"`. |
 
@@ -1307,10 +1449,11 @@ re-export point. Internal modules import from leaf paths.
 | `SUBMIT_EVENT` | The submit CustomEvent name. |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
+| `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
 | `MESSAGE_ROLE` | Message role constants. |
 | `TOOL_CALL_STATUS` | Tool-call card status constants. |
 | `TOOL_DISPLAY` | Tool-call display-mode constants (`minimal` / `compact` / `full`). |
-| `X_CONFIRM_KEY` | JSON-Schema key carrying a confirmation prompt. |
+| `X_CONFIRM_KEY` | Confirmation-prompt key: on a tool's JSON Schema for a client-side confirmation, and in an AG-UI interrupt's `metadata` for a server-side approval. |
 | `X_SUMMARY_KEY` | JSON-Schema key carrying a short tool-card label. |
 | `MAX_TOOL_ROUNDS` | Upper bound on tool-call → re-run rounds per send. |
 | `VERSION` | The package version string. |
@@ -1402,6 +1545,15 @@ have to hand-tune the variables:
   `embedded`. `embedded` drops the fixed positioning and z-index so the widget sits in normal
   document flow; `page` is a full-screen [centred reading column](#page-placement).
 
+**`embedded` fills the box your page gives it, so give it one.** It is the placement app-shell
+layouts reach for, and a grid or flex item defaults to `min-height: auto` — which lets a growing
+transcript push the composer off the bottom of the window instead of scrolling inside the panel. The
+fix belongs to the containing element, not to the widget:
+
+```css
+.assistant-pane { min-height: 0; overflow: hidden; }   /* the box the element is given */
+```
+
 ```html
 <ag-ui-chat endpoint="/agent/" theme="dark" density="compact" placement="side"></ag-ui-chat>
 ```
@@ -1424,30 +1576,28 @@ ag-ui-chat::part(send)    { text-transform: uppercase; }
 ag-ui-chat::part(tool-card) { font-family: var(--my-mono); }
 ```
 
-Available parts: `panel`, `header`, `title`, `icon`, `header-controls`, `header-button`
-(plus `history-button` / `new-button` / `collapse-button` / `theme-toggle`), `messages`,
-`answer` (the per-turn group), `thoughts` (plus `thoughts-toggle` / `thoughts-body` /
-`thoughts-label`), `message`
-(plus `message-user` / `message-assistant`), `empty`, `pending`, `stopped` (the "⏹ Stopped" note),
-`tool-card`
-(plus `tool-card-head` / `-icon` / `-name` / `-status` / `-args` / `-toggle` / `-result`),
-`confirm` (plus `confirm-body` /
-`-args` / `-actions` / `-button` / `-cancel` / `-confirm`),
-`approval` (plus `approval-body` / `-actions` / `-button` / `-approve` / `-deny`),
-`question` (plus `question-body` / `-options` / `-choice` / `-choice-text` / `-radio` / `-input` /
-`-actions` / `-button`), `composer` (plus `composer-surface` / `composer-tools`), `input`, `send`,
-`attach-button`, `voice-button`,
-the attachment chips — `attachment-tray` and `attachment-chips` (the read-only chips on sent
-bubbles) with the shared chip parts `attachment-chip` (plus `-icon` / `-name` / `-size` / `-bar` /
-`-bar-fill` / `-retry` / `-remove`),
-the skills UI (`skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`,
-`skill-item-desc`, and the missing-placeholder `skill-hint`),
-`launcher`, `launcher-icon`, `launcher-badge`, and the drawer parts
-(`drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`,
-`drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`,
-`drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`,
-`drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`,
-`drawer-confirm-yes`, `drawer-confirm-no`).
+Every part, by the feature it belongs to. Spelled out rather than abbreviated: the list used to
+read `tool-card` *plus* `-icon` / `-name`, which is compact and is also how an entire feature went
+missing from it for two releases. A test reads this table and compares it with the parts the
+component sets, so a new one cannot ship undocumented.
+
+| Feature | Parts |
+| --- | --- |
+| Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `pending`, `stopped`, `resize-handle` |
+| Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `collapse-button`, `theme-toggle` |
+| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge` |
+| Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
+| Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
+| Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`), `run-notice-icon`, `run-notice-text` |
+| Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval` |
+| Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`) |
+| Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`) |
+| Typed question | `question`, `question-body`, `question-options`, `question-choice`, `question-choice-text`, `question-radio`, `question-input`, `question-actions`, `question-button` |
+| Composer | `composer`, `composer-surface`, `composer-tools`, `input`, `send`, `attach-button`, `voice-button` |
+| Attachments | `attachment-tray`, `attachment-chips` (the read-only chips on sent bubbles), and the shared chip parts `attachment-chip`, `attachment-chip-icon`, `attachment-chip-name`, `attachment-chip-size`, `attachment-chip-bar`, `attachment-chip-bar-fill`, `attachment-chip-retry`, `attachment-chip-remove` |
+| Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the missing-placeholder hint) |
+| Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
+| Checkpoints panel | `checkpoints`, `checkpoints-header`, `checkpoints-title`, `checkpoints-list`, `checkpoints-empty`, `checkpoint-row`, `checkpoint-label`, `checkpoint-time`, `checkpoint-id`, `checkpoint-branch`, `checkpoint-action` (plus `checkpoint-resume`, `checkpoint-fork`) |
 
 > **Hiding `::part(header)` hides the controls inside it.** The history, checkpoints, new-chat,
 > theme and collapse buttons are all children of the header, so a host that renders its own title
