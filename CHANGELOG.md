@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two runs that opened on the same sentence read alike in the checkpoint
+  panel.** A row leads with the run's first user message and hides the short id
+  once it has one, on the argument that the words are the identity. A real run
+  index then answered with five runs all opening on "what is on the board?", and
+  those rows were as indistinguishable as five timestamps used to be. A preview
+  identifies a run only while it is that run's own, so the id comes back for the
+  rows whose preview another row repeats and stays hidden for the rows whose words
+  are their own — one panel now shows some rows with an id and some without, each
+  carrying the best identity it has. Previews are compared as the row renders
+  them: whitespace collapsed, case kept, since two spellings a person can tell
+  apart are two labels. No new part and no new fallback — `checkpoint-id` is the
+  one the time-only row has always used.
+
 ## [0.25.0] — 2026-08-14
 
 ### Added

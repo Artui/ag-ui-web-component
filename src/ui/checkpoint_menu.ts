@@ -5,6 +5,25 @@ import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 /** How the host continues a picked run. */
 export type CheckpointVerb = "resume" | "fork";
 
+/** The run's first message, or `null` where the row has no words to show. */
+function previewOf(run: RunRow): string | null {
+  return run.preview !== undefined && run.preview !== null && run.preview !== ""
+    ? run.preview
+    : null;
+}
+
+/**
+ * A preview reduced to what the row puts on screen, for comparing two rows.
+ *
+ * Whitespace is collapsed because the rendered row collapses it anyway, so two
+ * previews that differ only there are one label to the eye. Case is kept: two
+ * spellings a person can tell apart are two labels, and an id beside them would
+ * answer a question nobody asked.
+ */
+function asShown(preview: string): string {
+  return preview.replace(/\s+/g, " ").trim();
+}
+
 /**
  * The checkpoint panel: continuable runs, each offering **resume** or **fork**.
  *
@@ -151,18 +170,43 @@ export class CheckpointMenu {
       this.#list.append(empty);
       return;
     }
+    const repeated = this.#repeatedPreviews();
     for (const run of this.#runs) {
-      this.#list.append(this.#row(run));
+      this.#list.append(this.#row(run, repeated));
     }
   }
 
-  #row(run: RunRow): HTMLDivElement {
+  /**
+   * The previews more than one row shows.
+   *
+   * A preview identifies a run only while it is that run's alone. A real index
+   * answered with five runs opening on the same sentence, and those rows read
+   * alike exactly as bare timestamps used to — so where the words repeat the
+   * short id comes back, and where they do not the row is left as it is.
+   */
+  #repeatedPreviews(): ReadonlySet<string> {
+    const seen = new Set<string>();
+    const repeated = new Set<string>();
+    for (const run of this.#runs) {
+      const preview = previewOf(run);
+      if (preview === null) {
+        continue;
+      }
+      const shown = asShown(preview);
+      if (seen.has(shown)) {
+        repeated.add(shown);
+      }
+      seen.add(shown);
+    }
+    return repeated;
+  }
+
+  #row(run: RunRow, repeated: ReadonlySet<string>): HTMLDivElement {
     const row = document.createElement("div");
     row.className = "checkpoint-row";
     row.setAttribute("part", "checkpoint-row");
 
-    const preview =
-      run.preview !== undefined && run.preview !== null && run.preview !== "" ? run.preview : null;
+    const preview = previewOf(run);
     const time =
       run.started_at === null
         ? null
@@ -185,11 +229,17 @@ export class CheckpointMenu {
       when.setAttribute("part", "checkpoint-time");
       when.textContent = time;
       row.append(when);
-    } else if (run.started_at !== null) {
-      // No words to show, so the id has to do the identifying: two runs a few
-      // seconds apart both read "just now", and picking between them is picking
-      // blind. Shown rather than left in a tooltip, since a hover is not an
-      // identity either — and eight characters beats a full id on the row.
+    }
+
+    // The id, for a row whose label does not identify the run on its own: two
+    // runs a few seconds apart both read "just now", and words another row also
+    // opens with name neither of them. Picking between either pair is picking
+    // blind. Shown rather than left in a tooltip, since a hover is not an
+    // identity either — and eight characters beats a full id on the row. A
+    // label that already is the id needs no second copy, and a run that arrived
+    // without one has nothing better to offer than the words it shares.
+    const ambiguous = preview === null ? time !== null : repeated.has(asShown(preview));
+    if (ambiguous && run.run_id !== "") {
       const short = document.createElement("span");
       short.className = "checkpoint-id";
       short.setAttribute("part", "checkpoint-id");

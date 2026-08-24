@@ -18,6 +18,11 @@ function rows(menu: CheckpointMenu): HTMLElement[] {
   return [...menu.element.querySelectorAll(".checkpoint-row")] as HTMLElement[];
 }
 
+/** The short id each row shows, in order, or `null` where a row shows none. */
+function ids(menu: CheckpointMenu): (string | null)[] {
+  return rows(menu).map((row) => row.querySelector(".checkpoint-id")?.textContent ?? null);
+}
+
 describe("rendering", () => {
   it("starts hidden", () => {
     expect(new CheckpointMenu(() => {}).element.hidden).toBe(true);
@@ -115,6 +120,61 @@ describe("rendering", () => {
     );
     expect(menu.element.querySelector(".checkpoint-time")).toBeNull();
     expect(menu.element.querySelector(".checkpoint-id")).toBeNull();
+  });
+
+  it("brings the id back on the rows whose preview another row repeats", () => {
+    // The words identify a run only while they are that run's own. A real index
+    // answers with several runs opening on the same sentence, and those rows read
+    // alike exactly as bare timestamps used to — so those get the id, and the
+    // row whose words are its own does not.
+    const menu = new CheckpointMenu(() => {});
+    menu.setRuns([
+      row({ run_id: "aaaaaaaa-1", preview: "What is on the board?" }),
+      row({ run_id: "bbbbbbbb-2", preview: "What is on the board?" }),
+      row({ run_id: "cccccccc-3", preview: "What is on the board?" }),
+      row({ run_id: "dddddddd-4", preview: "Import these three events" }),
+    ]);
+
+    expect(ids(menu)).toEqual(["aaaaaaaa", "bbbbbbbb", "cccccccc", null]);
+    // The id joins the time rather than replacing it: the words say what the run
+    // was about, the id says which one it is, and the time still orders the list.
+    expect(menu.element.querySelectorAll(".checkpoint-time")).toHaveLength(4);
+  });
+
+  it("compares previews as the row shows them", () => {
+    // Whitespace is collapsed because the rendered row collapses it anyway, so
+    // the first two read as one label. Case is not folded: the third is a
+    // spelling a person can tell from the others, so it keeps the plain row.
+    const menu = new CheckpointMenu(() => {});
+    menu.setRuns([
+      row({ run_id: "aaaaaaaa-1", preview: "What is on the board?" }),
+      row({ run_id: "bbbbbbbb-2", preview: "  What is on   the board? " }),
+      row({ run_id: "cccccccc-3", preview: "what is on the board?" }),
+    ]);
+
+    expect(ids(menu)).toEqual(["aaaaaaaa", "bbbbbbbb", null]);
+  });
+
+  it("leaves a lone row plain, there being nothing to confuse it with", () => {
+    const menu = new CheckpointMenu(() => {});
+    menu.setRuns([row({ preview: "What is on the board?" })]);
+
+    expect(ids(menu)).toEqual([null]);
+  });
+
+  it("shows no id for a repeated preview on a run that arrived without one", () => {
+    // Nothing better to offer than the words the two rows share, and an empty
+    // chip is not an identity.
+    const menu = new CheckpointMenu(() => {});
+    menu.setRuns([
+      row({ run_id: "", preview: "What is on the board?" }),
+      row({ run_id: "", preview: "What is on the board?" }),
+    ]);
+
+    expect(ids(menu)).toEqual([null, null]);
+    expect(
+      [...menu.element.querySelectorAll(".checkpoint-label")].map((el) => el.textContent),
+    ).toEqual(["What is on the board?", "What is on the board?"]);
   });
 
   it("marks a forked run so it doesn't read as a duplicate", () => {

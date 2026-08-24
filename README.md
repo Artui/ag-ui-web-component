@@ -1250,9 +1250,10 @@ conversations: a time is not an identity, since two runs a minute apart both rea
 "just now", and a run id is not something a person recognises. Where the server
 sends no preview — an older index, or a run that opened on an image with no
 caption — the row falls back to the time plus the first eight characters of the
-id (full id on hover, for correlating with server logs). Either way a run that
-branched from another is marked, so a fork doesn't read as a duplicate of its
-parent.
+id (full id on hover, for correlating with server logs), and so does a row whose
+preview another row repeats: words shared with a second row identify neither, and
+one board tends to be asked about more than once. Either way a run that branched
+from another is marked, so a fork doesn't read as a duplicate of its parent.
 
 Type the next turn in the composer, then pick a row:
 
