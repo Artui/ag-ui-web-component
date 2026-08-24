@@ -234,6 +234,35 @@ const RUNS = [
     started_at: new Date(BOOTED - 4_000).toISOString(),
     continuable: true,
   },
+  // Two runs that opened on the same sentence, which is what a real index
+  // produces once a board has been asked about twice. The words no longer tell
+  // these two apart, so they carry the short id and the rows above still do not.
+  {
+    run_id: "a7c31d90-58b4-42ee-9f0c-6d2a1b3e77c5",
+    preview: "What is on the board?",
+    thread_id: "t-demo",
+    parent_run_id: null,
+    started_at: new Date(BOOTED - 13 * 60 * 60_000).toISOString(),
+    continuable: true,
+  },
+  {
+    run_id: "e02f4a17-9c65-4b38-8ad1-70f9c5e2b4aa",
+    preview: "What is on the board?",
+    thread_id: "t-demo",
+    parent_run_id: null,
+    started_at: new Date(BOOTED - 14 * 60 * 60_000).toISOString(),
+    continuable: true,
+  },
+  // No preview at all: an index older than the field, or a run opened with an
+  // image and no caption. Falls back to the time plus the id, as every row was.
+  {
+    run_id: "b46d8e52-0f19-4c77-83b2-1d5ae9f30c68",
+    preview: null,
+    thread_id: "t-demo",
+    parent_run_id: null,
+    started_at: new Date(BOOTED - 3 * 60 * 60_000).toISOString(),
+    continuable: true,
+  },
   {
     run_id: "c14b8a02-7d1e-4f77-9a30-2b6e5f0c8d41",
     preview: "Move standup to Friday at 11:00",
@@ -323,10 +352,11 @@ const server = createServer((req, res) => {
     // the button is not built at all — the element only offers it when a host
     // sets `data-runs-url` — so the panel had no way to be looked at.
     //
-    // Three rows on purpose: a root run, a branch off it, and one the server
-    // reports as having no snapshot. The two branches are seconds apart, which is
-    // the case worth seeing — the time alone does not tell them apart, which is
-    // why the row shows part of the run id too.
+    // Every row shape on purpose: a root run, a branch off it seconds later, a
+    // pair that opened on the same sentence, a run the server sent no preview
+    // for, and one it reports as having no snapshot. Between them they cover
+    // each identity the row can lead with, and each case where it needs a
+    // second one.
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ runs: RUNS }));
     return;
