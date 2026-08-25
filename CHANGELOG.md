@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.1] — 2026-08-25
+
+### Fixed
+
+- **A chart the server retracted stayed on screen.** When an update replaced a
+  chart with a payload that could not be drawn, the superseded chart was left in
+  place — showing numbers the server had already withdrawn, reading as current —
+  and then vanished on the next reload, because the *stored* content was the
+  version that could not be drawn. Live and reload now agree, and both say gone.
+
+- **`enableCharts()` after the element connected silently dropped every chart in
+  restored history.** History replays on connect, and charts were off at that
+  moment, so they were skipped. That is the ordinary way to call it — you have
+  to query the element to call anything on it — so the first call now redraws
+  rather than the docs asking for an ordering nobody can satisfy. The README
+  example was that order.
+
+- **A stacked chart wrote `NaN` into the DOM** for a series carrying more points
+  than there are labels. `renderChart` is exported, so it can be handed a spec
+  the validator would have refused; a cast there claimed that could not happen.
+
+- **A sparse `labels` array was accepted**, drawing a chart with blank axis
+  labels — `Array.prototype.some` skips holes.
+
+- **A spec inside the point budget could still block the main thread.** The
+  point limit bounds the data; the DOM is bounded by labels, since each emits an
+  axis node whatever the series count. Now capped at 2,000 labels, and the
+  ceiling applies again on every reload of a stored conversation.
+
+### Documentation
+
+- **Whether a pushed chart survives a reload depends on where the conversation
+  is stored**, and the README now says which is which. A client-side store keeps
+  activities; a server storing the thread as the model's message history does
+  not, because a pushed chart is deliberately not in that history. An
+  agent-requested chart survives either way — its spec travels as the tool
+  call's arguments.
+
+### Changed
+
+- **The handler/render split is now enforced by a signature rather than a
+  comment.** The replay path is handed the `render` function alone, never the
+  tool that owns it, so the code that runs on restore cannot reach `handler`.
+  The documentation claimed this guarantee was structural while the code passed
+  the whole tool around and relied on two call sites happening not to use it.
+
+- The built-in chart tool no longer builds the chart twice per call, once only
+  to choose its reply string.
+
 ## [0.26.0] — 2026-08-25
 
 ### Added
@@ -1613,7 +1662,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.26.1...HEAD
+[0.26.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.0...v0.25.1

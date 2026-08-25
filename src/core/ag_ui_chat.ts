@@ -24,6 +24,7 @@ import {
 import { fillTemplate } from "../skills/fill_template.js";
 import { parseSkills } from "../skills/parse_skills.js";
 import type { Skill } from "../skills/skill.js";
+import type { ChartRenderer } from "../tools/client_tool_registry.js";
 import { type ClientTool, ClientToolRegistry } from "../tools/client_tool_registry.js";
 import { isDestructive } from "../tools/is_destructive.js";
 import { isNavigates } from "../tools/is_navigates.js";
@@ -42,7 +43,7 @@ import { renderAttachmentChips } from "../ui/attachment_chips.js";
 import { AttachmentTray } from "../ui/attachment_tray.js";
 import { renderChart } from "../ui/chart_block.js";
 import { chartSpecFrom } from "../ui/chart_spec_from.js";
-import { createChartTool } from "../ui/chart_tool.js";
+import { CHART_TOOL_NAME, createChartTool } from "../ui/chart_tool.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/checkpoint_menu.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
@@ -1840,9 +1841,15 @@ export class AgUiChat extends HTMLElement {
         this.#cardElements.set(restored.id, this.#cardFor(restored).element);
         // Only `render` is replayed, never `handler`. A restored transcript
         // redraws what the call drew; it must not re-run what the call *did*.
-        const tool = this.#resolveTool(restored.name);
-        if (tool !== null) {
-          this.#renderToolOutput(tool, restored);
+        // Only the renderer is handed over, never the tool. The guarantee that
+        // a reload cannot re-run a tool's *effect* is worth more than a comment
+        // saying so: this signature cannot reach `handler`, so a later
+        // maintainer adding a "no render? fall back to the handler" convenience
+        // here has to change the type first, which is exactly the moment the
+        // question should be asked.
+        const render = this.#resolveTool(restored.name)?.render;
+        if (render !== undefined) {
+          this.#renderToolOutput(render, restored);
         }
       }
       return;
@@ -2653,7 +2660,9 @@ export class AgUiChat extends HTMLElement {
       const result = await tool.handler(call.args, call.id);
       // Drawn from the arguments rather than the result, so the live path and
       // the replay path render the same thing from the same input.
-      this.#renderToolOutput(tool, call);
+      if (tool.render !== undefined) {
+        this.#renderToolOutput(tool.render, call);
+      }
       if (navigates) {
         card.settle(TOOL_CALL_STATUS.DONE, this.#strings.navigating);
         return { content: "", halt: true };
@@ -3053,11 +3062,20 @@ export class AgUiChat extends HTMLElement {
    * arrives is not something to switch on for everybody.
    */
   enableCharts(routes: readonly ("tool" | "activity")[] = ["tool", "activity"]): void {
+    const first = !this.#chartActivity && !this.#toolRegistry.has(CHART_TOOL_NAME);
     if (routes.includes("activity")) {
       this.#chartActivity = true;
     }
     if (routes.includes("tool")) {
       this.registerTool(createChartTool());
+    }
+    // Called after the element is connected, the history has already replayed
+    // and every chart in it was skipped -- charts were off at the time. That is
+    // the ordinary way to call this (you have to query the element to call
+    // anything on it), so redrawing rather than documenting an ordering rule is
+    // the only answer that does not make the obvious usage wrong.
+    if (first && this.isConnected) {
+      this.reload();
     }
   }
 
@@ -3071,13 +3089,10 @@ export class AgUiChat extends HTMLElement {
    * created inline, in the right place, so anchoring makes *when* the handler
    * runs stop mattering.
    */
-  #renderToolOutput(tool: ClientTool, call: AgUiToolCall): void {
-    if (tool.render === undefined) {
-      return;
-    }
+  #renderToolOutput(render: ChartRenderer, call: AgUiToolCall): void {
     let node: Node | null;
     try {
-      node = tool.render(call.args);
+      node = render(call.args);
     } catch (error) {
       // `render` is consumer code and this runs inside the history replay, where
       // a throw abandons the loop and takes every later turn of the transcript
@@ -3100,11 +3115,16 @@ export class AgUiChat extends HTMLElement {
   /** Draw, or redraw in place, the chart for one activity message. */
   #drawActivityChart(messageId: string, content: unknown): void {
     const spec = chartSpecFrom(content);
-    if (spec === null) {
-      return;
-    }
-    const block = renderChart(spec);
+    const block = spec === null ? null : renderChart(spec);
     if (block === null) {
+      // The server superseded this chart with something undrawable. Leaving the
+      // old one up is the worst available answer: it shows numbers that have
+      // been retracted, reading as current, and a reload then drops the chart
+      // entirely because the *stored* content is the version we could not draw.
+      // Live and reload should agree, and both should say "gone" rather than
+      // one of them lying.
+      this.#activityBlocks.get(messageId)?.remove();
+      this.#activityBlocks.delete(messageId);
       return;
     }
     const existing = this.#activityBlocks.get(messageId);

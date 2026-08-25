@@ -7,6 +7,16 @@ import type { Tool } from "@ag-ui/core";
  * `handler` receives the parsed arguments and returns a result that is
  * JSON-serialised into the AG-UI tool-result message sent back to the agent.
  */
+/**
+ * Draws one call from its arguments alone.
+ *
+ * Named separately so the replay path can take *this* and never the tool that
+ * owns it: a function of this type cannot reach a `handler`, which is what
+ * makes "a reload never re-runs a tool's effect" a property of the code rather
+ * than a note asking maintainers to be careful.
+ */
+export type ChartRenderer = (args: Record<string, unknown>) => Node | null;
+
 export interface ClientTool {
   name: string;
   description: string;
@@ -34,7 +44,7 @@ export interface ClientTool {
    *
    * Return `null` for arguments that say nothing worth drawing.
    */
-  render?: (args: Record<string, unknown>) => Node | null;
+  render?: ChartRenderer;
 }
 
 /**

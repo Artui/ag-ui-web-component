@@ -94,3 +94,23 @@ describe("bounds that exist to protect the transcript", () => {
     expect(chartSpecFrom({ kind: "bar", labels, series: [{ label: "s", points }] })).toBeNull();
   });
 });
+
+describe("bounds on what is cheap enough to draw", () => {
+  it("refuses more labels than the axis can carry, inside the point budget", () => {
+    // MAX_POINTS bounds the data; this bounds the DOM. Every label emits an
+    // axis text node whatever the series count, so a spec well inside the point
+    // budget can still block the main thread -- again on every reload.
+    const labels = Array.from({ length: 5_000 }, (_v, i) => String(i));
+    const spec = { kind: "bar", labels, series: [{ label: "s", points: labels.map(() => 1) }] };
+    expect(chartSpecFrom(spec)).toBeNull();
+  });
+
+  it("refuses a sparse labels array rather than drawing blank axis labels", () => {
+    // `Array.prototype.some` skips holes, so this used to pass validation and
+    // render a chart with no labels, reading as a rendering bug.
+    const sparse = ["a", "b"];
+    // biome-ignore lint/performance/noDelete: creating a hole is the point
+    delete (sparse as unknown as Record<number, string>)[1];
+    expect(chartSpecFrom({ ...ok, labels: sparse })).toBeNull();
+  });
+});
