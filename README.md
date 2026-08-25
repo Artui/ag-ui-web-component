@@ -890,6 +890,13 @@ reaches the model, there is no extra round, and this is the only route that can
 **update a chart in place** — the server repeats the same `messageId` to redraw
 it, or sends an `ACTIVITY_DELTA` to move one series as a computation advances.
 
+**Whether a pushed chart survives a reload depends on where the conversation is
+stored.** A client-side store keeps activities, so it comes back. A server that
+stores the thread as the model's message history does not — a pushed chart is
+deliberately not in that history, which is the reason to push it. A chart the
+agent asked for survives either way, because its spec travels as the tool call's
+arguments and the component redraws from those without re-running anything.
+
 Either way the payload is the same shape:
 
 ```json

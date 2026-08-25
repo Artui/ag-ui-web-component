@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   axis node whatever the series count. Now capped at 2,000 labels, and the
   ceiling applies again on every reload of a stored conversation.
 
+### Documentation
+
+- **Whether a pushed chart survives a reload depends on where the conversation
+  is stored**, and the README now says which is which. A client-side store keeps
+  activities; a server storing the thread as the model's message history does
+  not, because a pushed chart is deliberately not in that history. An
+  agent-requested chart survives either way — its spec travels as the tool
+  call's arguments.
+
 ### Changed
 
 - **The handler/render split is now enforced by a signature rather than a
