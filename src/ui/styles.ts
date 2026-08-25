@@ -1528,6 +1528,50 @@ export const STYLES = `
   margin-top: 6px;
 }
 
+/* Charts.
+ *
+ * The SVG scales to the column and carries no colours of its own beyond the
+ * series palette, so a host restyles it the same way it restyles everything
+ * else. Series colours are custom properties with fallbacks rather than fixed
+ * values, and the axis furniture inherits currentColor at low opacity so it
+ * reads correctly in either theme without a second palette.
+ */
+.chart-block {
+  align-self: stretch;
+  max-width: 100%;
+  margin: 6px 0;
+  color: var(--_fg);
+}
+
+.chart-title {
+  margin-bottom: 2px;
+  font-size: 0.85em;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: 0.78em;
+  opacity: 0.75;
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chart-legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
 .run-notice {
   display: inline-flex;
   align-items: center;

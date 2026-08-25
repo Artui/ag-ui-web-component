@@ -83,7 +83,18 @@ export interface AgUiClientHandlers {
    * as opposed to work the agent asked for. `django-ag-ui` emits one with
    * `activityType: "compaction"` when it condensed the history.
    */
-  onActivity(activityType: string, content: unknown): void;
+  onActivity(activityType: string, content: unknown, messageId: string): void;
+  /**
+   * An activity's content changed in place — a snapshot re-sent under the same
+   * `messageId` with `replace`, or an `ACTIVITY_DELTA` whose JSON patch
+   * `@ag-ui/client` has already applied.
+   *
+   * Reported after the client has updated its own message, so `content` is the
+   * result rather than the instruction. That is the whole reason this is a
+   * separate callback: the raw delta event fires *before* the patch lands, and
+   * a subscriber acting on it would redraw from stale content.
+   */
+  onActivityChanged(messageId: string, activityType: string, content: unknown): void;
   /** Fired when a reasoning model starts emitting its chain-of-thought. */
   onReasoningStart(): void;
   /** Fired on every reasoning token; ``buffer`` is the full reasoning text so far. */
@@ -434,8 +445,29 @@ export class AgUiClient {
       onToolCallResultEvent({ event }) {
         h.onToolResult(event.toolCallId, event.content);
       },
-      onActivitySnapshotEvent({ event }) {
-        h.onActivity(event.activityType, event.content);
+      onActivitySnapshotEvent({ event, messages }) {
+        // A snapshot for an id already in the list is a replacement, not a new
+        // activity: the client has swapped its content in place, and a second
+        // append would leave the superseded one on screen.
+        const known = messages.some(
+          (message) => message.id === event.messageId && message.role === "activity",
+        );
+        if (known) {
+          h.onActivityChanged(event.messageId, event.activityType, event.content);
+          return;
+        }
+        h.onActivity(event.activityType, event.content, event.messageId);
+      },
+      // Fires *after* `@ag-ui/client` applies the patch, so the message carries
+      // the result. Reading `event.patch` here instead would mean applying JSON
+      // Patch a second time, in this component, to reach a value the client has
+      // already computed correctly.
+      onActivityDeltaEvent({ event, messages }) {
+        const message = messages.find((entry) => entry.id === event.messageId);
+        if (message === undefined || message.role !== "activity") {
+          return;
+        }
+        h.onActivityChanged(event.messageId, event.activityType, message.content);
       },
       // `@ag-ui/client` maps the deprecated THINKING_* events onto these
       // REASONING_* callbacks, so the reasoning family alone covers both

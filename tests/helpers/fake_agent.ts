@@ -11,7 +11,13 @@ export interface Emit {
   toolCall(id: string, name: string, args: Record<string, unknown>): void;
   toolResult(toolCallId: string, content: string): void;
   /** Emit an AG-UI `ACTIVITY_SNAPSHOT` (the run-notice channel). */
-  activity(activityType: string, content: unknown): void;
+  activity(activityType: string, content: unknown, messageId?: string): void;
+  /** Re-send an activity under an id already seen, as `replace` does. */
+  activityReplace(activityType: string, content: unknown, messageId: string): void;
+  /** An `ACTIVITY_DELTA`, already applied by the real client before it reports. */
+  activityDelta(activityType: string, content: unknown, messageId: string): void;
+  /** A delta naming an id the message list does not hold as an activity. */
+  activityDeltaOrphan(activityType: string, messageId: string): void;
   reasoningStart(): void;
   reasoning(buffer: string): void;
   reasoningEnd(): void;
@@ -53,8 +59,33 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
       } as never),
     toolResult: (toolCallId, content) =>
       void s.onToolCallResultEvent?.({ event: { toolCallId, content } } as never),
-    activity: (activityType, content) =>
-      void s.onActivitySnapshotEvent?.({ event: { activityType, content } } as never),
+    // `messages` is passed because the real client always passes it, and the
+    // component reads it to tell a new activity from one being replaced. A fake
+    // that omitted it would let a null-check rot in the source unnoticed.
+    activity: (activityType, content, messageId = "act-1") =>
+      void s.onActivitySnapshotEvent?.({
+        event: { activityType, content, messageId },
+        messages: [],
+      } as never),
+    activityReplace: (activityType, content, messageId) =>
+      void s.onActivitySnapshotEvent?.({
+        event: { activityType, content, messageId },
+        messages: [{ id: messageId, role: "activity", activityType, content }],
+      } as never),
+    activityDeltaOrphan: (activityType, messageId) =>
+      void s.onActivityDeltaEvent?.({
+        event: { activityType, messageId, patch: [] },
+        // Present but not an activity, which is the case the client warns about
+        // and this component must simply not draw.
+        messages: [{ id: messageId, role: "assistant", content: "text" }],
+      } as never),
+    activityDelta: (activityType, content, messageId) =>
+      void s.onActivityDeltaEvent?.({
+        event: { activityType, messageId, patch: [] },
+        // The client applies the patch before reporting, so the message already
+        // carries the result.
+        messages: [{ id: messageId, role: "activity", activityType, content }],
+      } as never),
     reasoningStart: () => void s.onReasoningStartEvent?.({ event: {} } as never),
     reasoning: (reasoningMessageBuffer) =>
       void s.onReasoningMessageContentEvent?.({ reasoningMessageBuffer } as never),

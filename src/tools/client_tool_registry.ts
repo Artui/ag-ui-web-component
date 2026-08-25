@@ -11,7 +11,30 @@ export interface ClientTool {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
-  handler: (args: Record<string, unknown>) => unknown | Promise<unknown>;
+  /**
+   * Run the tool. `callId` identifies the call being executed, for a handler
+   * that renders into the transcript and needs to place itself against its own
+   * card; handlers that only act on the page ignore it.
+   */
+  handler: (args: Record<string, unknown>, callId?: string) => unknown | Promise<unknown>;
+  /**
+   * Draw this call, from its arguments alone.
+   *
+   * Optional, and **the only half that is replayed**. A restored transcript
+   * redraws by calling `render`; it never calls {@link handler}. That is what
+   * keeps a replayable tool apart from an effectful one *structurally* rather
+   * than by promise: the restore path holds no reference to the half that acts,
+   * so re-running `fill_field` on every reload is not a mistake anyone can make.
+   *
+   * The contract this must keep, because it runs again on every restore:
+   *
+   * - a pure function of `args` — no host state, no network, no clock;
+   * - deterministic, so a reload reproduces what was there before;
+   * - free of effects outside the node it returns, which the component places.
+   *
+   * Return `null` for arguments that say nothing worth drawing.
+   */
+  render?: (args: Record<string, unknown>) => Node | null;
 }
 
 /**

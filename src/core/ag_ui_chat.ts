@@ -1,6 +1,7 @@
 import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
 import {
   ATTACHMENT_EVENT,
+  CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   DEFAULT_ATTACHMENT_MAX_BYTES,
   ICON_ATTACH,
@@ -39,6 +40,9 @@ import {
 import { attachCopyButtons } from "../ui/attach_copy_buttons.js";
 import { renderAttachmentChips } from "../ui/attachment_chips.js";
 import { AttachmentTray } from "../ui/attachment_tray.js";
+import { renderChart } from "../ui/chart_block.js";
+import { chartSpecFrom } from "../ui/chart_spec_from.js";
+import { createChartTool } from "../ui/chart_tool.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/checkpoint_menu.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
@@ -392,6 +396,15 @@ export class AgUiChat extends HTMLElement {
    * (`TOOL_CALL_RESULT`), so the post-run executeTool sweep doesn't overwrite
    * the real output with the generic "executed on the server" fallback.
    */
+  /** Whether a server-pushed chart activity is drawn. Off unless asked for. */
+  #chartActivity = false;
+
+  /** Card elements by call id, so a rendering handler can find its own card. */
+  readonly #cardElements = new Map<string, HTMLElement>();
+
+  /** Chart blocks by activity message id, so an update redraws in place. */
+  readonly #activityBlocks = new Map<string, HTMLElement>();
+
   readonly #serverSettled = new Set<string>();
   /**
    * Tool calls made during the current interaction, in the order they started,
@@ -1662,6 +1675,8 @@ export class AgUiChat extends HTMLElement {
     this.#hidePending();
     this.#toolCards.clear();
     this.#serverSettled.clear();
+    this.#cardElements.clear();
+    this.#activityBlocks.clear();
     this.#initialMessages = [];
     this.#attachTray?.clear();
     // Keep the empty-state region; everything else clears.
@@ -1822,7 +1837,23 @@ export class AgUiChat extends HTMLElement {
         if (this.#noticeIfSkillLoad(restored)) {
           continue;
         }
-        this.#cardFor(restored);
+        this.#cardElements.set(restored.id, this.#cardFor(restored).element);
+        // Only `render` is replayed, never `handler`. A restored transcript
+        // redraws what the call drew; it must not re-run what the call *did*.
+        const tool = this.#resolveTool(restored.name);
+        if (tool !== null) {
+          this.#renderToolOutput(tool, restored);
+        }
+      }
+      return;
+    }
+    if (message.role === "activity") {
+      // The client materialises a pushed activity as a message of its own, so a
+      // chart's data is in the transcript already and survives a reload. Only
+      // the drawing had to be put back.
+      const activity = message as unknown as { activityType?: unknown; content?: unknown };
+      if (activity.activityType === CHART_ACTIVITY_TYPE && this.#chartActivity) {
+        this.#drawActivityChart(message.id, activity.content);
       }
       return;
     }
@@ -2539,6 +2570,10 @@ export class AgUiChat extends HTMLElement {
     }
     const card = this.#cardFor(call);
     this.#toolCards.delete(call.id);
+    // Kept after the card leaves `#toolCards`: a tool that renders into the
+    // transcript places itself against its own card, and by the time it runs the
+    // card is no longer reachable by id.
+    this.#cardElements.set(call.id, card.element);
     const tool = this.#resolveTool(call.name);
     if (tool === null) {
       // Not a client tool. A server-side tool's real output arrives via
@@ -2613,7 +2648,12 @@ export class AgUiChat extends HTMLElement {
       this.conversationStore.saveCheckpoint(this.#threadId, { toolCallId: call.id });
     }
     try {
-      const result = await tool.handler(call.args);
+      // The call id lets a handler that renders into the transcript find its
+      // own card; handlers that only act on the page ignore it.
+      const result = await tool.handler(call.args, call.id);
+      // Drawn from the arguments rather than the result, so the live path and
+      // the replay path render the same thing from the same input.
+      this.#renderToolOutput(tool, call);
       if (navigates) {
         card.settle(TOOL_CALL_STATUS.DONE, this.#strings.navigating);
         return { content: "", halt: true };
@@ -2775,7 +2815,13 @@ export class AgUiChat extends HTMLElement {
         this.#runTools.push({ id: call.id, name: call.name });
         this.#cardFor(call);
       },
-      onActivity: (activityType, content) => {
+      onActivity: (activityType, content, messageId) => {
+        if (activityType === CHART_ACTIVITY_TYPE) {
+          if (this.#chartActivity) {
+            this.#drawActivityChart(messageId, content);
+          }
+          return;
+        }
         if (activityType !== COMPACTION_ACTIVITY_TYPE) {
           return;
         }
@@ -2810,6 +2856,11 @@ export class AgUiChat extends HTMLElement {
         // and is why they were removed from here too. The terminal guarantee
         // that shipped in the same release is what makes showing them safe now.
         this.#showPending();
+      },
+      onActivityChanged: (messageId, activityType, content) => {
+        if (activityType === CHART_ACTIVITY_TYPE && this.#chartActivity) {
+          this.#drawActivityChart(messageId, content);
+        }
       },
       onRunEnd: () => {
         // Per-round end; the button stays on Stop until the whole interaction
@@ -2979,6 +3030,86 @@ export class AgUiChat extends HTMLElement {
 
   #appendNotice(icon: string, text: string, kind: string): void {
     this.#ensureGroup().appendChild(renderRunNotice(icon, text, kind));
+    this.#updateEmptyState();
+    this.#messages.scrollTop = this.#messages.scrollHeight;
+  }
+
+  /**
+   * Turn on chart rendering, by whichever route this consumer wants.
+   *
+   * Both routes converge on one renderer deliberately. Built apart they become
+   * two chart implementations with two sets of bugs, and the choice between them
+   * is about *where the data lives* rather than how a bar should look:
+   *
+   * - `"tool"` registers the built-in `render_chart`. The agent decides a chart
+   *   helps and calls it, so the numbers are in its context and it can discuss
+   *   them afterwards. Costs one model round, and works over any transport.
+   * - `"activity"` draws a server-pushed `ACTIVITY_SNAPSHOT` of type `chart`.
+   *   No round trip, and the data never enters the model's context at all —
+   *   which is what makes it the one for a large or sensitive dataset. Only this
+   *   route can update a chart in place as the server computes.
+   *
+   * Off unless asked for, both of them: a component that renders whatever
+   * arrives is not something to switch on for everybody.
+   */
+  enableCharts(routes: readonly ("tool" | "activity")[] = ["tool", "activity"]): void {
+    if (routes.includes("activity")) {
+      this.#chartActivity = true;
+    }
+    if (routes.includes("tool")) {
+      this.registerTool(createChartTool());
+    }
+  }
+
+  /**
+   * Place a tool's rendered node against its own card.
+   *
+   * Anchored rather than appended because a client tool's handler does not run
+   * until the round is over: appending would put the node after everything the
+   * model said next, visibly detached from the call that produced it, and in a
+   * different order than the same transcript takes on reload. The card was
+   * created inline, in the right place, so anchoring makes *when* the handler
+   * runs stop mattering.
+   */
+  #renderToolOutput(tool: ClientTool, call: AgUiToolCall): void {
+    if (tool.render === undefined) {
+      return;
+    }
+    const node = tool.render(call.args);
+    if (node === null) {
+      return;
+    }
+    // `after` rather than an insert-or-append branch: both callers set the card
+    // element immediately before calling, and a parentless anchor makes `after`
+    // a no-op, so the alternative would be a branch nothing can reach.
+    this.#cardElements.get(call.id)?.after(node);
+    this.#afterTranscriptGrew();
+  }
+
+  /** Draw, or redraw in place, the chart for one activity message. */
+  #drawActivityChart(messageId: string, content: unknown): void {
+    const spec = chartSpecFrom(content);
+    if (spec === null) {
+      return;
+    }
+    const block = renderChart(spec);
+    if (block === null) {
+      return;
+    }
+    const existing = this.#activityBlocks.get(messageId);
+    if (existing === undefined) {
+      this.#ensureGroup().appendChild(block);
+    } else {
+      // Replaced rather than appended: a server redrawing a chart under the same
+      // id means *this chart changed*, and a second copy below the first would
+      // read as two measurements instead of one that moved.
+      existing.replaceWith(block);
+    }
+    this.#activityBlocks.set(messageId, block);
+    this.#afterTranscriptGrew();
+  }
+
+  #afterTranscriptGrew(): void {
     this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
   }

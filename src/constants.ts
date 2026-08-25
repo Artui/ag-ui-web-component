@@ -210,3 +210,14 @@ export const ICON_FILE_PDF = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden
 
 /** A text document: the generic page, ruled. */
 export const ICON_FILE_TEXT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M8.5 13.5h7M8.5 17h4.5"/></svg>`;
+
+/**
+ * ``activityType`` of the ``ACTIVITY_SNAPSHOT`` / ``ACTIVITY_DELTA`` events a
+ * server sends to draw a chart.
+ *
+ * A convention inside an extension point the protocol already provides, not a
+ * protocol extension: AG-UI defines the envelope and leaves ``activityType`` an
+ * open string. Another vendor's client does not know this name and ignores the
+ * event, which is the graceful outcome.
+ */
+export const CHART_ACTIVITY_TYPE = "chart";
