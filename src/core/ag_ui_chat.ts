@@ -2796,6 +2796,20 @@ export class AgUiChat extends HTMLElement {
         }
         card.settle(TOOL_CALL_STATUS.DONE, content);
         this.#serverSettled.add(toolCallId);
+        // The card stops being the live thing the moment it settles, and the
+        // server goes straight back to the model with the result -- a wait with
+        // nothing on screen to own it, and the longest one in a run when the
+        // result is a large inlined attachment being re-sent with every request.
+        // The dots go back where ``onToolCall`` took them from, after the card,
+        // and whatever comes next clears them: reasoning, the first text delta,
+        // the round ending, or ``onSettled``'s terminal guarantee.
+        //
+        // Not the same case as the one ``#executeTool`` refuses to show them
+        // for. That runs after the run has ended, so there is nothing left to
+        // clear them and they would hang -- which is what happened before 0.2.1
+        // and is why they were removed from here too. The terminal guarantee
+        // that shipped in the same release is what makes showing them safe now.
+        this.#showPending();
       },
       onRunEnd: () => {
         // Per-round end; the button stays on Stop until the whole interaction

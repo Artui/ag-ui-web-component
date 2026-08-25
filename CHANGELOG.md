@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.2] — 2026-08-25
+
+### Fixed
+
+- **A server-side tool round went silent between the tool card and the answer.**
+  The pending indicator is hidden when a tool call arrives, so the card can be
+  the live thing on screen. Client-side tools put it back before returning their
+  result; the server-side path never did — so once a streamed result settled the
+  card, the wait while the server called the model again had nothing to own it.
+  With a large attachment inlined into the tool result, and re-sent with every
+  subsequent request, that is the longest pause in a run.
+
+  The indicator now returns when a streamed result settles a card, and is
+  cleared by whatever comes next: reasoning, the first text delta, the round
+  ending, or the terminal settle guarantee. This is not the case 0.2.1 removed
+  it for — that one runs after the run has ended, where nothing would clear it.
+  The terminal guarantee that shipped in the same release is what makes showing
+  it here safe.
+
 ## [0.25.1] — 2026-08-24
 
 ### Fixed
@@ -1554,7 +1573,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.2...HEAD
+[0.25.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.23.1...v0.24.0

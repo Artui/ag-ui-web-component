@@ -946,6 +946,59 @@ describe("AgUiChat", () => {
     expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
   });
 
+  it("shows the indicator again while the server works after a tool result", async () => {
+    // The card settles and stops being the live thing, and the server goes
+    // straight back to the model with the result. That wait is real -- the
+    // longest in a run when a large attachment rides in the result and is
+    // re-sent with every request -- and it used to have nothing on screen.
+    let pendingAfterResult = -1;
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.toolCall("tc1", "read_attachment", {});
+      emit.toolResult("tc1", "the file contents");
+      pendingAfterResult = shadow(el).querySelectorAll(".pending").length;
+      emit.text("here is what it says");
+      emit.textEnd("here is what it says");
+      emit.runEnd();
+    });
+    await send(el, "read it");
+    expect(pendingAfterResult).toBe(1);
+    // Cleared by the first text delta, like any other thinking pause.
+    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
+  });
+
+  it("does not strand the indicator when a run ends on a server tool result", async () => {
+    // The failure the indicator was removed from this path to avoid: a
+    // server-only round that produces no text, so nothing after the result
+    // clears the dots. They must not outlive the run.
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.toolCall("tc1", "server_only", {});
+      emit.toolResult("tc1", "done");
+      emit.runEnd();
+    });
+    await send(el, "go");
+    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
+  });
+
+  it("clears the indicator when the model reasons after a tool result", async () => {
+    // Reasoning swaps the dots for the thoughts region rather than sitting
+    // beside them.
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.toolCall("tc1", "read_attachment", {});
+      emit.toolResult("tc1", "contents");
+      emit.reasoningStart();
+      emit.reasoning("thinking about it");
+      emit.reasoningEnd();
+      emit.text("answer");
+      emit.textEnd("answer");
+      emit.runEnd();
+    });
+    await send(el, "read it");
+    expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
+  });
+
   it("ignores a tool result for an unknown call id", async () => {
     const { el } = mountWithAgent((emit) => {
       emit.runStart();
