@@ -20,6 +20,12 @@ function draw(args: Record<string, unknown>): HTMLDivElement | null {
   return spec === null ? null : renderChart(spec);
 }
 
+/** Whether these arguments would produce a chart, without producing one. */
+function drawable(args: Record<string, unknown>): boolean {
+  const spec = chartSpecFrom(args);
+  return spec !== null && spec.labels.length > 0 && spec.series.length > 0;
+}
+
 const REJECTED =
   "chart not rendered: expected labels (strings) and series, each with one finite number per label";
 
@@ -54,11 +60,13 @@ export function createChartTool(): ClientTool {
     // Says what happened and nothing else; the drawing is `render`'s job. Told
     // plainly when the arguments are unusable, because the model can fix that
     // and retry — a silent no-op would leave it believing the chart is on screen.
-    // Answers on what was actually drawn, not on what validated. A spec can
-    // pass validation and still have nothing to show -- zero labels matches zero
-    // points -- and reporting success then would leave the model believing a
-    // chart is on screen.
-    handler: (args: Record<string, unknown>) => (draw(args) === null ? REJECTED : "chart rendered"),
+    // Answers on what will actually be drawn, not on what validated: a spec can
+    // pass validation and still have nothing to show, and reporting success
+    // then would leave the model believing a chart is on screen. Asks the
+    // question without building the chart, because `render` is about to build
+    // the same one a moment later and drawing it twice is pure waste on a spec
+    // large enough to matter.
+    handler: (args: Record<string, unknown>) => (drawable(args) ? "chart rendered" : REJECTED),
     render: draw,
   };
 }

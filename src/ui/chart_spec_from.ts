@@ -23,6 +23,17 @@ const KINDS: readonly ChartKind[] = ["bar", "line", "pie", "scatter", "stacked"]
 const MAX_POINTS = 20_000;
 
 /**
+ * Whether a spec's *labels* are cheap enough to draw.
+ *
+ * `MAX_POINTS` bounds the data; this bounds the DOM. Every label produces an
+ * axis text node whatever the series count, so a spec well inside the point
+ * budget can still emit tens of thousands of nodes and block the main thread —
+ * again on every reload, since it is in the transcript. Kept separate because
+ * the two limits answer different questions and a single number cannot.
+ */
+const MAX_LABELS = 2_000;
+
+/**
  * Largest magnitude a point may carry.
  *
  * `Number.isFinite` is not enough on its own: two finite extremes still give an
@@ -59,8 +70,16 @@ function asNumbers(value: unknown): number[] | null {
 }
 
 function asStrings(value: unknown): string[] | null {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+  if (!Array.isArray(value)) {
     return null;
+  }
+  // `every` over an index range rather than `Array.prototype.some`, which skips
+  // holes: a sparse array passed the old check and drew a chart with blank axis
+  // labels, which reads as a rendering bug rather than bad input.
+  for (let i = 0; i < value.length; i += 1) {
+    if (typeof value[i] !== "string") {
+      return null;
+    }
   }
   return value as string[];
 }
@@ -94,7 +113,7 @@ export function chartSpecFrom(value: unknown): ChartSpec | null {
   if (series.length === 0) {
     return null;
   }
-  if (series.length * labels.length > MAX_POINTS) {
+  if (series.length * labels.length > MAX_POINTS || labels.length > MAX_LABELS) {
     return null;
   }
 

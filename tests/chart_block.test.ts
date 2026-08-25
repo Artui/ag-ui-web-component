@@ -226,3 +226,18 @@ describe("geometry that cannot be trusted to the caller", () => {
     }
   });
 });
+
+describe("renderChart is exported, so it must survive input the validator would refuse", () => {
+  it("puts no NaN in a stacked chart carrying more points than labels", () => {
+    const block = renderChart({
+      kind: "stacked",
+      labels: ["a"],
+      series: [{ label: "long", points: [1, 2, 3] }],
+    });
+    for (const node of block?.querySelectorAll("*") ?? []) {
+      for (const attr of node.attributes) {
+        expect(attr.value).not.toContain("NaN");
+      }
+    }
+  });
+});

@@ -871,6 +871,16 @@ const chat = document.querySelector("ag-ui-chat");
 chat.enableCharts(["tool", "activity"]);
 ```
 
+Order does not matter. Calling it after the element is on the page redraws any
+charts already in the restored history, so you do not have to reach the element
+before it connects — which you generally cannot.
+
+Specs are bounded, and anything outside is dropped rather than half-drawn: at
+most **20,000 points** and **2,000 labels**, and every point a finite number no
+larger than **1e15**. The first two keep a stored transcript from blocking the
+main thread on every reload; the last one keeps the value range finite, since
+scaling divides by it.
+
 **`"tool"`** registers a `render_chart` tool the agent may call. The numbers are
 in its context, so it can talk about them; it costs one model round.
 
@@ -917,10 +927,13 @@ chat.registerTool({
 
 **`render` is the only half a restored transcript replays.** Replaying a tool's
 *effect* is out of the question — re-running a form-filling tool on every reload
-is a bug — so the restore path holds no reference to `handler` and cannot run
-it. That makes the guarantee structural rather than a promise, and it is why
-`render` has to be a pure, deterministic function of its arguments: it runs
-again every time the conversation is restored.
+is a bug. The replay path is handed the `render` function alone, never the tool
+that owns it, so the code that runs on restore cannot reach `handler` even by
+mistake: adding a "no render? fall back to the handler" convenience there means
+changing a type signature first, which is the moment the question gets asked.
+
+That is why `render` has to be a pure, deterministic function of its arguments —
+it runs again every time the conversation is restored.
 
 ---
 

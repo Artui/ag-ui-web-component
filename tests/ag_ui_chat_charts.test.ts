@@ -54,6 +54,16 @@ async function send(el: AgUiChat, text: string): Promise<void> {
   }
 }
 
+describe("the wire name both halves match on", () => {
+  it("is the literal the server sets", () => {
+    // Pinned rather than referenced. Every other assertion here compares
+    // against the constant, which is a tautology: renaming it kept all 884
+    // tests green while the seam stopped working, because the producer
+    // hardcodes this string in a different repo.
+    expect(CHART_ACTIVITY_TYPE).toBe("chart");
+  });
+});
+
 describe("charts are off unless asked for", () => {
   it("ignores a pushed chart activity when no route is enabled", async () => {
     const el = mount((emit) => {
@@ -463,5 +473,63 @@ describe("a spec that validates but cannot be drawn", () => {
     );
     await send(el, "go");
     expect(charts(el)).toHaveLength(0);
+  });
+});
+
+describe("fixes from the second review pass", () => {
+  it("removes a chart the server supersedes with something undrawable", async () => {
+    // Leaving the old one up shows numbers that have been retracted, reading as
+    // current -- and a reload then drops it anyway, because the *stored*
+    // content is the version that could not be drawn. Live and reload have to
+    // agree, and both should say gone.
+    const el = mount(
+      (emit) => {
+        emit.runStart();
+        emit.activity(CHART_ACTIVITY_TYPE, CHART, "a1");
+        emit.activityReplace(CHART_ACTIVITY_TYPE, { labels: ["a"], series: [] }, "a1");
+        emit.runEnd();
+      },
+      ["activity"],
+    );
+    await send(el, "go");
+    expect(charts(el)).toHaveLength(0);
+  });
+
+  it("redraws restored charts when enableCharts is called after connecting", async () => {
+    // The ordinary way to call this: you have to query the element to call
+    // anything on it, by which point history has already replayed with charts
+    // off. Documenting an ordering rule would make the obvious usage wrong.
+    const store = new SessionStorageStore();
+    store.saveMessages(store.threadId(), [
+      { id: "m1", role: "user", content: "chart" },
+      { id: "a1", role: "activity", activityType: CHART_ACTIVITY_TYPE, content: CHART },
+    ] as never);
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.conversationStore = store;
+    el.agentFactory = () => makeFakeAgent({ script: (emit: Emit) => emit.runEnd() }).agent;
+    document.body.appendChild(el);
+    for (let i = 0; i < 8; i += 1) {
+      await Promise.resolve();
+    }
+    expect(charts(el)).toHaveLength(0);
+
+    el.enableCharts(["activity"]);
+    for (let i = 0; i < 8; i += 1) {
+      await Promise.resolve();
+    }
+    expect(charts(el)).toHaveLength(1);
+  });
+
+  it("does not reload when charts were already on", async () => {
+    // The redraw is for the first call only; a second one must not throw the
+    // transcript away and rebuild it.
+    const el = mount(() => {}, ["tool"]);
+    const before = shadow(el).innerHTML;
+    el.enableCharts(["tool"]);
+    for (let i = 0; i < 4; i += 1) {
+      await Promise.resolve();
+    }
+    expect(shadow(el).innerHTML).toBe(before);
   });
 });

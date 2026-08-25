@@ -174,7 +174,12 @@ function drawStacked(svg: SVGSVGElement, spec: ChartSpec, min: number, max: numb
   const running = spec.labels.map(() => 0);
   spec.series.forEach((series, s) => {
     series.points.forEach((value, i) => {
-      const from = running[i] as number;
+      // `?? 0` rather than a cast: `renderChart` is exported, so a caller can
+      // hand it a series carrying more points than there are labels, which
+      // `chartSpecFrom` would have refused. The cast that used to be here
+      // claimed that could not happen and wrote `y="NaN"` into the DOM when it
+      // did.
+      const from = running[i] ?? 0;
       const to = from + value;
       running[i] = to;
       const y = scaleY(to, min, max);
