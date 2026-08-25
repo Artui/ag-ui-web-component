@@ -856,6 +856,74 @@ ag-ui-chat {
 
 ---
 
+## Charts
+
+Markdown here goes through a narrow sanitiser and images are off by default — a
+model-controlled image URL is fetched with no user interaction, which turns
+prompt-injected page data into a zero-click exfiltration channel. So a chart
+does not arrive as markup. It arrives as **data**, and the component builds the
+SVG itself: the model chooses the numbers, the component chooses the DOM.
+
+Off unless you ask for it, by either route or both:
+
+```js
+const chat = document.querySelector("ag-ui-chat");
+chat.enableCharts(["tool", "activity"]);
+```
+
+**`"tool"`** registers a `render_chart` tool the agent may call. The numbers are
+in its context, so it can talk about them; it costs one model round.
+
+**`"activity"`** draws a chart the server pushes as an `ACTIVITY_SNAPSHOT` with
+`activityType: "chart"` (exported as `CHART_ACTIVITY_TYPE`). The data never
+reaches the model, there is no extra round, and this is the only route that can
+**update a chart in place** — the server repeats the same `messageId` to redraw
+it, or sends an `ACTIVITY_DELTA` to move one series as a computation advances.
+
+Either way the payload is the same shape:
+
+```json
+{
+  "kind": "bar",
+  "title": "Signups this week",
+  "labels": ["Mon", "Tue", "Wed"],
+  "series": [{ "label": "new", "points": [12, 19, 9] }]
+}
+```
+
+`kind` is one of `bar`, `line`, `pie`, `scatter`, `stacked`; anything else is
+drawn as a bar rather than refused. Every series needs exactly one point per
+label — a shorter one misaligns every value after the gap, and a chart that is
+subtly wrong still reads as authoritative, so the whole spec is dropped instead.
+A pie's slices are its labels, so it draws the first series only.
+
+Theme the series with `--ag-ui-chart-1` … `--ag-ui-chart-6`, and style the block
+through the `chart-block`, `chart-title` and `chart-legend` parts.
+
+### Drawing something other than a chart
+
+`render_chart` is built on a seam any tool can use. A `ClientTool` may declare a
+pure `render` beside its `handler`:
+
+```js
+chat.registerTool({
+  name: "show_route",
+  description: "Draw the route on a map.",
+  parameters: { type: "object", properties: { stops: { type: "array" } } },
+  handler: () => "route shown",
+  render: (args) => buildMapElement(args.stops),   // pure; no side effects
+});
+```
+
+**`render` is the only half a restored transcript replays.** Replaying a tool's
+*effect* is out of the question — re-running a form-filling tool on every reload
+is a bug — so the restore path holds no reference to `handler` and cannot run
+it. That makes the guarantee structural rather than a promise, and it is why
+`render` has to be a pure, deterministic function of its arguments: it runs
+again every time the conversation is restored.
+
+---
+
 ## Tool-call display modes
 
 How much a tool-call card shows is set via the `data-tool-display` attribute (or `toolDisplay`
@@ -1598,6 +1666,7 @@ component sets, so a new one cannot ship undocumented.
 | Attachments | `attachment-tray`, `attachment-chips` (the read-only chips on sent bubbles), and the shared chip parts `attachment-chip`, `attachment-chip-icon`, `attachment-chip-name`, `attachment-chip-size`, `attachment-chip-bar`, `attachment-chip-bar-fill`, `attachment-chip-retry`, `attachment-chip-remove` |
 | Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the missing-placeholder hint) |
 | Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
+| Charts | `chart-block`, `chart-title`, `chart-legend` |
 | Checkpoints panel | `checkpoints`, `checkpoints-header`, `checkpoints-title`, `checkpoints-list`, `checkpoints-empty`, `checkpoint-row`, `checkpoint-label`, `checkpoint-time`, `checkpoint-id`, `checkpoint-branch`, `checkpoint-action` (plus `checkpoint-resume`, `checkpoint-fork`) |
 
 > **Hiding `::part(header)` hides the controls inside it.** The history, checkpoints, new-chat,

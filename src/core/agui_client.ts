@@ -83,7 +83,18 @@ export interface AgUiClientHandlers {
    * as opposed to work the agent asked for. `django-ag-ui` emits one with
    * `activityType: "compaction"` when it condensed the history.
    */
-  onActivity(activityType: string, content: unknown): void;
+  onActivity(activityType: string, content: unknown, messageId: string): void;
+  /**
+   * An activity's content changed in place — a snapshot re-sent under the same
+   * `messageId` with `replace`, or an `ACTIVITY_DELTA` whose JSON patch
+   * `@ag-ui/client` has already applied.
+   *
+   * Reported after the client has updated its own message, so `content` is the
+   * result rather than the instruction. That is the whole reason this is a
+   * separate callback: the raw delta event fires *before* the patch lands, and
+   * a subscriber acting on it would redraw from stale content.
+   */
+  onActivityChanged(messageId: string, activityType: string, content: unknown): void;
   /** Fired when a reasoning model starts emitting its chain-of-thought. */
   onReasoningStart(): void;
   /** Fired on every reasoning token; ``buffer`` is the full reasoning text so far. */
@@ -397,6 +408,9 @@ export class AgUiClient {
   #buildSubscriber(pending: AgUiToolCall[], runState: RunState): AgentSubscriber {
     const h = this.#handlers;
     const closed = this.#closedMessageIds;
+    // Charts whose patch has been dispatched but not yet applied. Scoped to the
+    // subscriber, so it cannot outlive the run that created it.
+    const pendingDeltas = new Set<string>();
     return {
       onRunInitialized() {
         h.onRunStart();
@@ -434,8 +448,42 @@ export class AgUiClient {
       onToolCallResultEvent({ event }) {
         h.onToolResult(event.toolCallId, event.content);
       },
-      onActivitySnapshotEvent({ event }) {
-        h.onActivity(event.activityType, event.content);
+      onActivitySnapshotEvent({ event, messages }) {
+        // A snapshot for an id already in the list is a replacement, not a new
+        // activity: the client has swapped its content in place, and a second
+        // append would leave the superseded one on screen.
+        const known = messages.some(
+          (message) => message.id === event.messageId && message.role === "activity",
+        );
+        if (known) {
+          h.onActivityChanged(event.messageId, event.activityType, event.content);
+          return;
+        }
+        h.onActivity(event.activityType, event.content, event.messageId);
+      },
+      // Deliberately does *not* read the message here. `@ag-ui/client`
+      // dispatches this subscriber **before** applying the patch, so the
+      // message still holds its previous content: redrawing from it would leave
+      // the chart one revision behind for the life of the run, and disagreeing
+      // with what a reload shows. Note which chart moved and read the result on
+      // the change that follows.
+      onActivityDeltaEvent({ event }) {
+        pendingDeltas.add(event.messageId);
+      },
+      // Emitted after the client has written the patched messages, which is the
+      // first moment the result exists. Only the ids marked above are looked at,
+      // so an ordinary text delta does not walk the transcript.
+      onMessagesChanged({ messages }) {
+        if (pendingDeltas.size === 0) {
+          return;
+        }
+        for (const id of pendingDeltas) {
+          const message = messages.find((entry) => entry.id === id);
+          if (message !== undefined && message.role === "activity") {
+            h.onActivityChanged(id, message.activityType, message.content);
+          }
+        }
+        pendingDeltas.clear();
       },
       // `@ag-ui/client` maps the deprecated THINKING_* events onto these
       // REASONING_* callbacks, so the reasoning family alone covers both

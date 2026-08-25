@@ -151,6 +151,54 @@ async function handleAgent(res, body) {
     });
     res.end();
     return;
+  } else if (/\bchart\b/i.test(prompt) && !isFollowUp) {
+    // Both routes and every kind, driven from one prompt so they can be
+    // compared on the page rather than in the abstract.
+    const parent = id("msg");
+    const labels = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+    const series = [
+      { label: "new", points: [12, 19, 9, 24, 17] },
+      { label: "returning", points: [5, 7, 11, 6, 14] },
+    ];
+
+    await streamText(res, parent, ["The agent asks the page to draw it:"]);
+    const callId = id("call");
+    emitToolCall(res, callId, "render_chart", { kind: "bar", title: "Weekly signups", labels, series }, parent);
+    await sleep(500);
+    emitToolResult(res, callId, "chart rendered");
+
+    await streamText(res, id("msg"), ["And the server pushes one, then revises it live:"]);
+    // A stable message id, so the second and third sends *replace* the chart
+    // rather than stacking three copies -- the capability the tool route has no
+    // way to express, since a tool call returns once.
+    const live = id("m");
+    emit(res, {
+      type: "ACTIVITY_SNAPSHOT",
+      messageId: live,
+      activityType: "chart",
+      content: { kind: "line", title: "Signups (live)", labels, series },
+    });
+    for (const kind of ["scatter", "stacked"]) {
+      await sleep(900);
+      emit(res, {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: live,
+        activityType: "chart",
+        replace: true,
+        content: { kind, title: `Signups (live, ${kind})`, labels, series },
+      });
+    }
+    await sleep(700);
+    emit(res, {
+      type: "ACTIVITY_SNAPSHOT",
+      messageId: id("m"),
+      activityType: "chart",
+      content: { kind: "pie", title: "Share by day", labels, series: [series[0]] },
+    });
+    await streamText(res, id("msg"), [
+      "The line, scatter and stacked views are one chart redrawn in place. ",
+      "I can only discuss the first — the pushed ones never reached me.",
+    ]);
   } else if (isFollowUp) {
     await streamText(res, id("msg"), ["Done — ", "the article ", "is filled in ", "and saved. ✅"]);
   } else if (prompt.startsWith("/")) {

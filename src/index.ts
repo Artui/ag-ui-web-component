@@ -2,6 +2,7 @@
 
 export {
   ATTACHMENT_EVENT,
+  CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   ELEMENT_TAG,
   LOAD_CAPABILITY_TOOL,
@@ -129,6 +130,13 @@ export {
   type ApprovalRequest,
   requestApproval,
 } from "./ui/approval_card.js";
+// Charts. `CHART_ACTIVITY_TYPE` above is the wire name a server sets on an
+// ACTIVITY_SNAPSHOT; these are the shape it carries and the renderer itself,
+// for a host building its own visual on the same seam.
+export type { ChartKind, ChartSeries, ChartSpec } from "./ui/chart_block.js";
+export { renderChart } from "./ui/chart_block.js";
+export { chartSpecFrom } from "./ui/chart_spec_from.js";
+export { CHART_TOOL_NAME } from "./ui/chart_tool.js";
 export { CheckpointMenu, type CheckpointVerb } from "./ui/checkpoint_menu.js";
 export {
   type ConfirmationOptions,

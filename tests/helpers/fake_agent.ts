@@ -11,7 +11,18 @@ export interface Emit {
   toolCall(id: string, name: string, args: Record<string, unknown>): void;
   toolResult(toolCallId: string, content: string): void;
   /** Emit an AG-UI `ACTIVITY_SNAPSHOT` (the run-notice channel). */
-  activity(activityType: string, content: unknown): void;
+  activity(activityType: string, content: unknown, messageId?: string): void;
+  /** Re-send an activity under an id already seen, as `replace` does. */
+  activityReplace(activityType: string, content: unknown, messageId: string): void;
+  /**
+   * An `ACTIVITY_DELTA`: the subscriber sees `before`, then the patched
+   * `content` arrives via `onMessagesChanged`, as the real client orders it.
+   */
+  activityDelta(activityType: string, content: unknown, messageId: string, before?: unknown): void;
+  /** A delta naming an id the message list does not hold as an activity. */
+  activityDeltaOrphan(activityType: string, messageId: string): void;
+  /** An ordinary message change, with no chart waiting on it. */
+  messagesChanged(): void;
   reasoningStart(): void;
   reasoning(buffer: string): void;
   reasoningEnd(): void;
@@ -53,8 +64,46 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
       } as never),
     toolResult: (toolCallId, content) =>
       void s.onToolCallResultEvent?.({ event: { toolCallId, content } } as never),
-    activity: (activityType, content) =>
-      void s.onActivitySnapshotEvent?.({ event: { activityType, content } } as never),
+    // `messages` is passed because the real client always passes it, and the
+    // component reads it to tell a new activity from one being replaced. A fake
+    // that omitted it would let a null-check rot in the source unnoticed.
+    activity: (activityType, content, messageId = "act-1") =>
+      void s.onActivitySnapshotEvent?.({
+        event: { activityType, content, messageId },
+        messages: [],
+      } as never),
+    activityReplace: (activityType, content, messageId) =>
+      void s.onActivitySnapshotEvent?.({
+        event: { activityType, content, messageId },
+        messages: [{ id: messageId, role: "activity", activityType, content }],
+      } as never),
+    activityDeltaOrphan: (activityType, messageId) => {
+      void s.onActivityDeltaEvent?.({
+        event: { activityType, messageId, patch: [] },
+        messages: [],
+      } as never);
+      // Present but not an activity, which the client warns about and this
+      // component must simply not draw.
+      void s.onMessagesChanged?.({
+        messages: [{ id: messageId, role: "assistant", content: "text" }],
+      } as never);
+    },
+    messagesChanged: () => void s.onMessagesChanged?.({ messages: [] } as never),
+    // Models the real order, which is the opposite of what it looks like:
+    // `@ag-ui/client` dispatches `onActivityDeltaEvent` **first**, with the
+    // message still holding its *pre*-patch content, and only then applies the
+    // patch and emits `onMessagesChanged`. A fake that handed the subscriber
+    // the patched content would let a component redraw from stale data and
+    // still go green -- which is exactly what happened.
+    activityDelta: (activityType, content, messageId, before = {}) => {
+      void s.onActivityDeltaEvent?.({
+        event: { activityType, messageId, patch: [] },
+        messages: [{ id: messageId, role: "activity", activityType, content: before }],
+      } as never);
+      void s.onMessagesChanged?.({
+        messages: [{ id: messageId, role: "activity", activityType, content }],
+      } as never);
+    },
     reasoningStart: () => void s.onReasoningStartEvent?.({ event: {} } as never),
     reasoning: (reasoningMessageBuffer) =>
       void s.onReasoningMessageContentEvent?.({ reasoningMessageBuffer } as never),

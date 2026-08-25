@@ -19,6 +19,8 @@ function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {
     onToolResult: (id, content) => calls.push(`result:${id}:${content}`),
     onActivity: (activityType, content) =>
       calls.push(`activity:${activityType}:${JSON.stringify(content)}`),
+    onActivityChanged: (messageId, activityType, content) =>
+      calls.push(`activity-changed:${messageId}:${activityType}:${JSON.stringify(content)}`),
     onReasoningStart: () => calls.push("reasoning-start"),
     onReasoningDelta: (b) => calls.push(`reasoning:${b}`),
     onReasoningEnd: () => calls.push("reasoning-end"),

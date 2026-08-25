@@ -44,6 +44,10 @@ if (german) {
 
 defineAgUiChat();
 
+// Charts, both routes. Opt-in by construction: nothing draws one unless a host
+// asks, which is the point of the call rather than an accident of the demo.
+chat.enableCharts(["tool", "activity"]);
+
 // ── Frontend tools (driven by the mock agent) ──────────────────────────────
 chat.registerTool({
   name: "fill_field",
