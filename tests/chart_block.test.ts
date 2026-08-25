@@ -188,3 +188,41 @@ describe("pie arc geometry", () => {
     expect(flags).toContain("0");
   });
 });
+
+describe("geometry that cannot be trusted to the caller", () => {
+  it("keeps a stacked chart on the canvas when a series goes negative", () => {
+    // The extent has to cover every running subtotal, not just the column
+    // totals: with mixed signs the running value swings wider than the total it
+    // ends on, and scaling to the total alone puts segments off the canvas.
+    const block = renderChart({
+      kind: "stacked",
+      labels: ["a"],
+      series: [
+        { label: "up", points: [10] },
+        { label: "down", points: [-8] },
+      ],
+    });
+    for (const rect of block?.querySelectorAll("rect") ?? []) {
+      const y = Number(rect.getAttribute("y"));
+      const height = Number(rect.getAttribute("height"));
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(y + height).toBeLessThanOrEqual(220);
+    }
+  });
+
+  it("puts no NaN into an attribute for a wide but finite range", () => {
+    // Two finite extremes still give an infinite range, and value/Infinity is
+    // NaN -- which reaches the DOM as y="NaN" rather than failing loudly.
+    const block = renderChart({
+      kind: "line",
+      labels: ["a", "b"],
+      series: [{ label: "s", points: [1e15, -1e15] }],
+    });
+    const svg = block?.querySelector("svg");
+    for (const node of svg?.querySelectorAll("*") ?? []) {
+      for (const attr of node.attributes) {
+        expect(attr.value).not.toContain("NaN");
+      }
+    }
+  });
+});

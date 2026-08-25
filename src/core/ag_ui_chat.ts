@@ -3075,7 +3075,18 @@ export class AgUiChat extends HTMLElement {
     if (tool.render === undefined) {
       return;
     }
-    const node = tool.render(call.args);
+    let node: Node | null;
+    try {
+      node = tool.render(call.args);
+    } catch (error) {
+      // `render` is consumer code and this runs inside the history replay, where
+      // a throw abandons the loop and takes every later turn of the transcript
+      // with it -- silently, and again on every reload. A chart that fails to
+      // draw is worth losing; the rest of the conversation is not. Reported so
+      // the failure is findable rather than merely survived.
+      console.warn(`ag-ui-chat: render failed for tool ${call.name}`, error);
+      return;
+    }
     if (node === null) {
       return;
     }

@@ -80,17 +80,26 @@ function text(value: string, attrs: Record<string, string | number>): SVGTextEle
   return node;
 }
 
-/** Column totals, for the stacked kind. */
-function stackTotals(spec: ChartSpec): number[] {
-  return spec.labels.map((_label, i) =>
-    spec.series.reduce((sum, series) => sum + (series.points[i] ?? 0), 0),
-  );
+/** Every running subtotal a stack passes through, column by column. */
+function stackRunning(spec: ChartSpec): number[] {
+  const seen: number[] = [];
+  spec.labels.forEach((_label, i) => {
+    let running = 0;
+    for (const series of spec.series) {
+      running += series.points[i] ?? 0;
+      seen.push(running);
+    }
+  });
+  return seen;
 }
 
 function extent(spec: ChartSpec): { min: number; max: number } {
+  // A stack's extent has to cover every *running subtotal*, not just the column
+  // totals: with mixed signs the running value swings wider than the total it
+  // ends on, and scaling to the total alone puts segments far off the canvas.
   const values =
     spec.kind === "stacked"
-      ? stackTotals(spec)
+      ? stackRunning(spec)
       : spec.series.flatMap((series) => [...series.points]);
   const max = Math.max(0, ...values);
   const min = Math.min(0, ...values);

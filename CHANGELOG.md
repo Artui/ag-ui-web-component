@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Charts in the transcript**, by two routes that share one renderer, both
+  opt-in via a new `enableCharts(routes)` method. Nothing draws a chart unless a
+  host asks for it.
+
+  - `enableCharts(["tool"])` registers a `render_chart` frontend tool the agent
+    can call. The numbers are in its context, so it can discuss them.
+  - `enableCharts(["activity"])` draws a server-pushed `ACTIVITY_SNAPSHOT` of
+    type `chart`. The data never enters the model's context, there is no extra
+    model round, and only this route can update a chart in place — repeat a
+    `messageId` to redraw, or send an `ACTIVITY_DELTA` to move one series.
+
+  Bar, line, pie, scatter and stacked, drawn as SVG built with `createElement`
+  and never parsed from a string. That is the reason a chart is safe on a
+  surface that keeps `img` off by default: the model chooses the numbers, the
+  component chooses the DOM, so nothing chart-shaped reaches the sanitiser at
+  all. Six theme tokens, `--ag-ui-chart-1` through `--ag-ui-chart-6`, and three
+  parts: `chart-block`, `chart-title`, `chart-legend`.
+
+- **`ClientTool.render`** — an optional, pure `(args) => Node | null` beside
+  `handler`, and **the only half a restored transcript replays**. Replaying a
+  tool's *effect* is out of the question — re-running a form-filling tool on
+  every reload is a bug — so the two halves are separated structurally rather
+  than by a flag: the restore path holds no reference to `handler`, so it cannot
+  run it whatever a tool author intended. `render` must be a pure, deterministic
+  function of its arguments; it runs again on every restore.
+
+### Changed
+
+- **`AgUiClientHandlers` gained a required `onActivityChanged` member**, and
+  `onActivity` now receives the activity's `messageId` as a third argument. Both
+  types are exported, so a consumer implementing the handler interface directly
+  must add the member; anyone using `<ag-ui-chat>` is unaffected.
+- `ClientTool.handler` now receives an optional `callId` as a second argument,
+  for a handler that renders into the transcript and needs to place itself
+  against its own card. Existing one-parameter handlers are unaffected.
+
 ## [0.25.2] — 2026-08-25
 
 ### Fixed

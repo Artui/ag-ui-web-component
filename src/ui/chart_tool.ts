@@ -15,6 +15,11 @@ import { chartSpecFrom } from "./chart_spec_from.js";
 /** The name the built-in chart tool registers under. */
 export const CHART_TOOL_NAME = "render_chart";
 
+function draw(args: Record<string, unknown>): HTMLDivElement | null {
+  const spec = chartSpecFrom(args);
+  return spec === null ? null : renderChart(spec);
+}
+
 const REJECTED =
   "chart not rendered: expected labels (strings) and series, each with one finite number per label";
 
@@ -49,11 +54,11 @@ export function createChartTool(): ClientTool {
     // Says what happened and nothing else; the drawing is `render`'s job. Told
     // plainly when the arguments are unusable, because the model can fix that
     // and retry — a silent no-op would leave it believing the chart is on screen.
-    handler: (args: Record<string, unknown>) =>
-      chartSpecFrom(args) === null ? REJECTED : "chart rendered",
-    render: (args: Record<string, unknown>) => {
-      const spec = chartSpecFrom(args);
-      return spec === null ? null : renderChart(spec);
-    },
+    // Answers on what was actually drawn, not on what validated. A spec can
+    // pass validation and still have nothing to show -- zero labels matches zero
+    // points -- and reporting success then would leave the model believing a
+    // chart is on screen.
+    handler: (args: Record<string, unknown>) => (draw(args) === null ? REJECTED : "chart rendered"),
+    render: draw,
   };
 }

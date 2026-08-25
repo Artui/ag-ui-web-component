@@ -178,7 +178,7 @@ async function handleAgent(res, body) {
       activityType: "chart",
       content: { kind: "line", title: "Signups (live)", labels, series },
     });
-    for (const [i, kind] of ["scatter", "stacked"].entries()) {
+    for (const kind of ["scatter", "stacked"]) {
       await sleep(900);
       emit(res, {
         type: "ACTIVITY_SNAPSHOT",
@@ -187,7 +187,6 @@ async function handleAgent(res, body) {
         replace: true,
         content: { kind, title: `Signups (live, ${kind})`, labels, series },
       });
-      void i;
     }
     await sleep(700);
     emit(res, {

@@ -74,3 +74,23 @@ describe("chartSpecFrom", () => {
     expect(chartSpecFrom({ ...ok, title: "t" })?.title).toBe("t");
   });
 });
+
+describe("bounds that exist to protect the transcript", () => {
+  it("refuses a magnitude that would make the range infinite", () => {
+    // Finite per point is not enough: 1e308 minus -1e308 is Infinity, and
+    // dividing by it yields NaN in every coordinate.
+    expect(chartSpecFrom({ ...ok, series: [{ label: "s", points: [1e308, -1e308] }] })).toBeNull();
+    expect(
+      chartSpecFrom({ ...ok, series: [{ label: "s", points: [1e15, -1e15] }] }),
+    ).not.toBeNull();
+  });
+
+  it("refuses a spec large enough to throw while rendering", () => {
+    // `Math.max(0, ...values)` blows the call stack on a big enough spread, and
+    // the renderer runs inside the history replay -- where a throw abandons the
+    // replay and takes every later turn with it, on every reload.
+    const labels = Array.from({ length: 30_000 }, (_v, i) => String(i));
+    const points = labels.map(() => 1);
+    expect(chartSpecFrom({ kind: "bar", labels, series: [{ label: "s", points }] })).toBeNull();
+  });
+});

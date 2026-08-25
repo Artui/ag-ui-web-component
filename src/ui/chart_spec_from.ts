@@ -11,6 +11,26 @@ import type { ChartKind, ChartSpec } from "./chart_block.js";
 
 const KINDS: readonly ChartKind[] = ["bar", "line", "pie", "scatter", "stacked"];
 
+/**
+ * Most points a spec may carry, across every series.
+ *
+ * Not a taste limit. `Math.max(0, ...values)` throws `RangeError` on a large
+ * enough spread, and the renderer runs inside the history replay, where a throw
+ * abandons the replay and takes every later turn of the transcript with it —
+ * permanently, on every reload. A chart nobody can read is a far smaller
+ * problem than a conversation that silently loses its tail.
+ */
+const MAX_POINTS = 20_000;
+
+/**
+ * Largest magnitude a point may carry.
+ *
+ * `Number.isFinite` is not enough on its own: two finite extremes still give an
+ * infinite *range*, and `(value - min) / Infinity` is `NaN`, which reaches the
+ * DOM as `y="NaN"`. Bounding the values bounds the range.
+ */
+const MAX_MAGNITUDE = 1e15;
+
 function asKind(value: unknown): ChartKind {
   // Anything unrecognised falls back to `bar` rather than refusing the spec: an
   // unknown kind is a caller reaching for a chart type we do not draw, and the
@@ -28,6 +48,9 @@ function asNumbers(value: unknown): number[] | null {
     // NaN and Infinity as nulls or strings depending on the encoder, and either
     // would scale into a chart with no visible extent.
     if (typeof item !== "number" || !Number.isFinite(item)) {
+      return null;
+    }
+    if (Math.abs(item) > MAX_MAGNITUDE) {
       return null;
     }
     out.push(item);
@@ -69,6 +92,9 @@ export function chartSpecFrom(value: unknown): ChartSpec | null {
     series.push({ label: typeof item["label"] === "string" ? item["label"] : "", points });
   }
   if (series.length === 0) {
+    return null;
+  }
+  if (series.length * labels.length > MAX_POINTS) {
     return null;
   }
 

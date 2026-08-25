@@ -408,6 +408,9 @@ export class AgUiClient {
   #buildSubscriber(pending: AgUiToolCall[], runState: RunState): AgentSubscriber {
     const h = this.#handlers;
     const closed = this.#closedMessageIds;
+    // Charts whose patch has been dispatched but not yet applied. Scoped to the
+    // subscriber, so it cannot outlive the run that created it.
+    const pendingDeltas = new Set<string>();
     return {
       onRunInitialized() {
         h.onRunStart();
@@ -458,16 +461,29 @@ export class AgUiClient {
         }
         h.onActivity(event.activityType, event.content, event.messageId);
       },
-      // Fires *after* `@ag-ui/client` applies the patch, so the message carries
-      // the result. Reading `event.patch` here instead would mean applying JSON
-      // Patch a second time, in this component, to reach a value the client has
-      // already computed correctly.
-      onActivityDeltaEvent({ event, messages }) {
-        const message = messages.find((entry) => entry.id === event.messageId);
-        if (message === undefined || message.role !== "activity") {
+      // Deliberately does *not* read the message here. `@ag-ui/client`
+      // dispatches this subscriber **before** applying the patch, so the
+      // message still holds its previous content: redrawing from it would leave
+      // the chart one revision behind for the life of the run, and disagreeing
+      // with what a reload shows. Note which chart moved and read the result on
+      // the change that follows.
+      onActivityDeltaEvent({ event }) {
+        pendingDeltas.add(event.messageId);
+      },
+      // Emitted after the client has written the patched messages, which is the
+      // first moment the result exists. Only the ids marked above are looked at,
+      // so an ordinary text delta does not walk the transcript.
+      onMessagesChanged({ messages }) {
+        if (pendingDeltas.size === 0) {
           return;
         }
-        h.onActivityChanged(event.messageId, event.activityType, message.content);
+        for (const id of pendingDeltas) {
+          const message = messages.find((entry) => entry.id === id);
+          if (message !== undefined && message.role === "activity") {
+            h.onActivityChanged(id, message.activityType, message.content);
+          }
+        }
+        pendingDeltas.clear();
       },
       // `@ag-ui/client` maps the deprecated THINKING_* events onto these
       // REASONING_* callbacks, so the reasoning family alone covers both

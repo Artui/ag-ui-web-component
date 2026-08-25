@@ -132,19 +132,25 @@ describe("the server-pushed route", () => {
     expect(shadow(el).querySelector(".chart-title")?.textContent).toBe("Signups (revised)");
   });
 
-  it("redraws in place on a delta, from the content the client already patched", async () => {
+  it("redraws a delta from the patched content, not the content it superseded", async () => {
+    // The client dispatches the delta subscriber *before* applying the patch, so
+    // reading the message there leaves the chart one revision behind for the
+    // life of the run -- and disagreeing with what a reload shows.
     const el = mount(
       (emit) => {
         emit.runStart();
         emit.activity(CHART_ACTIVITY_TYPE, CHART, "a1");
-        emit.activityDelta(CHART_ACTIVITY_TYPE, { ...CHART, title: "Live" }, "a1");
+        emit.activityDelta(CHART_ACTIVITY_TYPE, { ...CHART, title: "AFTER" }, "a1", {
+          ...CHART,
+          title: "BEFORE",
+        });
         emit.runEnd();
       },
       ["activity"],
     );
     await send(el, "go");
     expect(charts(el)).toHaveLength(1);
-    expect(shadow(el).querySelector(".chart-title")?.textContent).toBe("Live");
+    expect(shadow(el).querySelector(".chart-title")?.textContent).toBe("AFTER");
   });
 
   it("ignores a delta whose id is not an activity message", async () => {
@@ -152,6 +158,23 @@ describe("the server-pushed route", () => {
       (emit) => {
         emit.runStart();
         emit.activityDeltaOrphan(CHART_ACTIVITY_TYPE, "ghost");
+        emit.runEnd();
+      },
+      ["activity"],
+    );
+    await send(el, "go");
+    expect(charts(el)).toHaveLength(0);
+  });
+
+  it("does not walk the transcript when no chart is waiting on a change", async () => {
+    // Message changes are constant during ordinary streaming; only the ids a
+    // delta marked are looked at.
+    const el = mount(
+      (emit) => {
+        emit.runStart();
+        emit.messagesChanged();
+        emit.text("hi");
+        emit.textEnd("hi");
         emit.runEnd();
       },
       ["activity"],
@@ -206,6 +229,64 @@ describe("the agent-called route", () => {
     const block = shadow(el).querySelector(".chart-block");
     expect(block).not.toBeNull();
     expect(block?.previousElementSibling?.classList.contains("tool-call")).toBe(true);
+  });
+
+  it("does not claim a chart rendered when nothing was drawn", async () => {
+    // A spec can validate and still show nothing -- zero labels matches zero
+    // points -- and reporting success would leave the model believing it is on
+    // screen.
+    const el = mount(
+      (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "render_chart", {
+          kind: "bar",
+          labels: [],
+          series: [{ label: "s", points: [] }],
+        });
+        emit.runEnd();
+      },
+      ["tool"],
+    );
+    await send(el, "chart it");
+    expect(charts(el)).toHaveLength(0);
+    expect(shadow(el).querySelector(".tool-call")?.textContent).toContain("chart not rendered");
+  });
+
+  it("survives a render that throws, and keeps the rest of the transcript", async () => {
+    // `render` is consumer code running inside the history replay, where a throw
+    // abandons the loop and takes every later turn with it -- silently, and
+    // again on every reload.
+    const store = new SessionStorageStore();
+    store.saveMessages(store.threadId(), [
+      { id: "m1", role: "user", content: "first" },
+      {
+        id: "m2",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "tc9", type: "function", function: { name: "boom", arguments: "{}" } }],
+      },
+      { id: "m3", role: "assistant", content: "the turn after the failure" },
+    ] as never);
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.conversationStore = store;
+    el.agentFactory = () => makeFakeAgent({ script: (emit: Emit) => emit.runEnd() }).agent;
+    el.registerTool({
+      name: "boom",
+      description: "throws while drawing",
+      parameters: { type: "object", properties: {} },
+      handler: () => "never runs on restore",
+      render: () => {
+        throw new Error("render exploded");
+      },
+    });
+    el.enableCharts(["tool"]);
+    document.body.appendChild(el);
+    for (let i = 0; i < 8; i += 1) {
+      await Promise.resolve();
+    }
+
+    expect(shadow(el).textContent).toContain("the turn after the failure");
   });
 
   it("tells the model plainly when the arguments cannot be drawn", async () => {

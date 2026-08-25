@@ -14,10 +14,15 @@ export interface Emit {
   activity(activityType: string, content: unknown, messageId?: string): void;
   /** Re-send an activity under an id already seen, as `replace` does. */
   activityReplace(activityType: string, content: unknown, messageId: string): void;
-  /** An `ACTIVITY_DELTA`, already applied by the real client before it reports. */
-  activityDelta(activityType: string, content: unknown, messageId: string): void;
+  /**
+   * An `ACTIVITY_DELTA`: the subscriber sees `before`, then the patched
+   * `content` arrives via `onMessagesChanged`, as the real client orders it.
+   */
+  activityDelta(activityType: string, content: unknown, messageId: string, before?: unknown): void;
   /** A delta naming an id the message list does not hold as an activity. */
   activityDeltaOrphan(activityType: string, messageId: string): void;
+  /** An ordinary message change, with no chart waiting on it. */
+  messagesChanged(): void;
   reasoningStart(): void;
   reasoning(buffer: string): void;
   reasoningEnd(): void;
@@ -72,20 +77,33 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
         event: { activityType, content, messageId },
         messages: [{ id: messageId, role: "activity", activityType, content }],
       } as never),
-    activityDeltaOrphan: (activityType, messageId) =>
+    activityDeltaOrphan: (activityType, messageId) => {
       void s.onActivityDeltaEvent?.({
         event: { activityType, messageId, patch: [] },
-        // Present but not an activity, which is the case the client warns about
-        // and this component must simply not draw.
+        messages: [],
+      } as never);
+      // Present but not an activity, which the client warns about and this
+      // component must simply not draw.
+      void s.onMessagesChanged?.({
         messages: [{ id: messageId, role: "assistant", content: "text" }],
-      } as never),
-    activityDelta: (activityType, content, messageId) =>
+      } as never);
+    },
+    messagesChanged: () => void s.onMessagesChanged?.({ messages: [] } as never),
+    // Models the real order, which is the opposite of what it looks like:
+    // `@ag-ui/client` dispatches `onActivityDeltaEvent` **first**, with the
+    // message still holding its *pre*-patch content, and only then applies the
+    // patch and emits `onMessagesChanged`. A fake that handed the subscriber
+    // the patched content would let a component redraw from stale data and
+    // still go green -- which is exactly what happened.
+    activityDelta: (activityType, content, messageId, before = {}) => {
       void s.onActivityDeltaEvent?.({
         event: { activityType, messageId, patch: [] },
-        // The client applies the patch before reporting, so the message already
-        // carries the result.
+        messages: [{ id: messageId, role: "activity", activityType, content: before }],
+      } as never);
+      void s.onMessagesChanged?.({
         messages: [{ id: messageId, role: "activity", activityType, content }],
-      } as never),
+      } as never);
+    },
     reasoningStart: () => void s.onReasoningStartEvent?.({ event: {} } as never),
     reasoning: (reasoningMessageBuffer) =>
       void s.onReasoningMessageContentEvent?.({ reasoningMessageBuffer } as never),
