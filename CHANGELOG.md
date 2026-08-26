@@ -39,7 +39,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it costs is the offline fallback, since there is no longer a local copy to
   fall back to.
 
+- **`UiStrings.recordingLimit`** — what the mic button says after a recording
+  stopped itself at the length cap. Token: `{n}`, the cap in minutes. Like every
+  other key it has an English default, so an existing `strings` override keeps
+  working untouched.
+
+- **`trustedOrigins` on the agent factory options** — the origins, besides the
+  document's own, the agent may carry host credentials to. Naming one confirms
+  the destination was chosen deliberately and silences the notice above for it.
+  Compared as serialized origins (`https://agent.example.com`), scheme and port
+  included. Reachable through a custom `agentFactory`, which is how a host wraps
+  `createHttpAgent` today.
+
+- **`trustedOrigins` on the element** — the origins, besides the page's own, that
+  every one of its seven configurable URLs may carry host credentials to without
+  a console notice. Forwarded to the agent factory as well, so a host that does
+  not override `agentFactory` configures all seven in one place.
+
+### Changed
+
+- **`parseToolCatalog` returns whole catalog entries, not bare summaries.** Its
+  return type was `Record<string, string>`, so the `description` field that
+  `ToolCatalogEntry` declares and documents was dropped at parse time for every
+  entry — a documented wire field no consumer could reach, and none could be
+  added without changing this signature first. It now returns
+  `Record<string, ToolCatalogEntry>`. Tool-call cards still label themselves from
+  `summary`; callers of the exported parser get the entry the server actually
+  sent. A malformed `description` costs that field, not the entry, matching the
+  tolerance the rest of the parse already had.
+
 ### Fixed
+
+- **A reasoning block lost its last sentence, and a short one never appeared at
+  all.** The protocol client hands a delta subscriber the text accumulated
+  *before* the delta it is announcing, so following that callback alone trails
+  the stream by one and renders nothing whatsoever for reasoning that arrives as
+  a single delta. The answer text was spared because its own end event carries
+  the whole message; reasoning subscribed to an end event that carries no buffer.
+  It now also listens to the one that does. The test helper was the reason this
+  went unseen: it handed the subscriber the full buffer on every delta, a wire no
+  server writes, so every existing test agreed with the bug.
 
 - **Two chats on one page shared one conversation.** The storage namespace falls
   back from the element's `id` to its `endpoint`, so two `<ag-ui-chat>` elements
@@ -61,7 +100,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   but the browser's storage had; on the cancel path it escaped as an unhandled
   rejection instead. A write that cannot be made now costs the reload and not
   the conversation, and says so in the console once rather than once per turn.
-### Fixed
 
 - **A tool a page deliberately withheld from a run still ran when the agent
   called it.** `getTools` is a per-run catalog provider, so a host is invited to
@@ -95,40 +133,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a run that ends without closing its text message — a cancel, an error, a round
   boundary — draws the queued delta before letting the bubble go, so a stopped
   answer keeps its last words.
-
-### Changed
-
-- **`parseToolCatalog` returns whole catalog entries, not bare summaries.** Its
-  return type was `Record<string, string>`, so the `description` field that
-  `ToolCatalogEntry` declares and documents was dropped at parse time for every
-  entry — a documented wire field no consumer could reach, and none could be
-  added without changing this signature first. It now returns
-  `Record<string, ToolCatalogEntry>`. Tool-call cards still label themselves from
-  `summary`; callers of the exported parser get the entry the server actually
-  sent. A malformed `description` costs that field, not the entry, matching the
-  tolerance the rest of the parse already had.
-
-### Documentation
-
-- **`x-destructive` gates frontend tools only, and the docs claimed otherwise.**
-  `isDestructive` described the flag as one the server stamps, which cannot
-  reach it: tool schemas travel client-to-server on `RunAgentInput.tools`, and
-  the only channel coming back is the label catalog, which carries names and
-  summaries and no flags. Marking a server-side tool destructive therefore
-  produces no confirmation card in the browser — it has to be gated server-side,
-  which surfaces as an approval card instead. The helper's doc comment and the
-  README's confirmation section now say so.
-
-- **A tool handler's thrown message reaches the model.** When a handler rejects,
-  its `Error.message` is posted back as that call's tool result: into the
-  conversation, on to the AG-UI endpoint, persisted there, and replayed to the
-  model provider on every later round. That is deliberate — a real reason is
-  what lets the agent recover — but the same string is only ever shown to the
-  user as a short card label, so a host rethrowing an internal error had no way
-  to see that an internal hostname, a signed URL or a stack-derived path had
-  left the browser. `registerTool` and the README now say it plainly, so hosts
-  can throw the message they would be content for the model to read.
-### Fixed
 
 - **Model output could draw a pixel-accurate copy of the approval card.** The
   markdown sanitiser kept `class` on every element it allowed, and the shadow
@@ -197,12 +201,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `checkpoints`, and the copy-button and checkpoint fields now have sections of
   their own rather than splitting the relative-time group in half.
 
-### Added
-
-- **`UiStrings.recordingLimit`** — what the mic button says after a recording
-  stopped itself at the length cap. Token: `{n}`, the cap in minutes. Like every
-  other key it has an English default, so an existing `strings` override keeps
-  working untouched.
 ### Security
 
 - **Host credentials no longer leave the page's origin silently.** `endpoint` and
@@ -219,14 +217,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It reports rather than refuses: an agent on another subdomain is a documented
   deployment and keeps working unchanged. What is removed is the silence.
 
-### Added
+  All seven configurable URLs are covered, not the agent endpoint alone. The tool
+  catalog, the skills list, the thread index, the attachment upload and the
+  transcription endpoint are named by the same kind of host attribute and carry
+  the same headers, so reporting only the agent would have reported the least
+  interesting of the seven.
 
-- **`trustedOrigins` on the agent factory options** — the origins, besides the
-  document's own, the agent may carry host credentials to. Naming one confirms
-  the destination was chosen deliberately and silences the notice above for it.
-  Compared as serialized origins (`https://agent.example.com`), scheme and port
-  included. Reachable through a custom `agentFactory`, which is how a host wraps
-  `createHttpAgent` today.
+### Documentation
+
+- **Registering a duplicate tool name does not throw.** The README said it did.
+  `ClientToolRegistry.register` is a plain map write, deliberately, so a re-fired
+  host ref or React StrictMode's double-invoke replaces rather than raises. The
+  harm in the claim is not the defensive guard nobody needs; it is a host
+  believing two tools cannot quietly share a name, where the second wins.
+
+- **`x-destructive` gates frontend tools only, and the docs claimed otherwise.**
+  `isDestructive` described the flag as one the server stamps, which cannot
+  reach it: tool schemas travel client-to-server on `RunAgentInput.tools`, and
+  the only channel coming back is the label catalog, which carries names and
+  summaries and no flags. Marking a server-side tool destructive therefore
+  produces no confirmation card in the browser — it has to be gated server-side,
+  which surfaces as an approval card instead. The helper's doc comment and the
+  README's confirmation section now say so.
+
+- **A tool handler's thrown message reaches the model.** When a handler rejects,
+  its `Error.message` is posted back as that call's tool result: into the
+  conversation, on to the AG-UI endpoint, persisted there, and replayed to the
+  model provider on every later round. That is deliberate — a real reason is
+  what lets the agent recover — but the same string is only ever shown to the
+  user as a short card label, so a host rethrowing an internal error had no way
+  to see that an internal hostname, a signed URL or a stack-derived path had
+  left the browser. `registerTool` and the README now say it plainly, so hosts
+  can throw the message they would be content for the model to read.
 
 ## [0.27.0] — 2026-08-26
 

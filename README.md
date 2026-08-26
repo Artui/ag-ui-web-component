@@ -345,16 +345,31 @@ choose itself. Whoever supplies the value chooses where the token goes: the brow
 custom header, any server willing to answer receives it, and it leaves on the element's first
 request, before the user has typed anything.
 
-Treat all seven as trusted configuration. When the agent endpoint is on another origin, the agent
-says so on the console once, naming the destination and the header names it is about to send. To
-confirm a destination you chose on purpose and silence the notice, name its origin:
+Treat all seven as trusted configuration. When any of them resolves to another origin, the element
+says so on the console once per origin, naming the destination and the header names it is about to
+send. That covers all seven, not the agent endpoint alone: the tool catalog, the skills list, the
+thread index, the attachment upload and the transcription endpoint carry the same headers, and
+reporting only the agent would report the least interesting of them.
+
+To confirm destinations you chose on purpose and silence the notice, name their origins:
+
+```js
+chat.trustedOrigins = ["https://api.example.com"];
+```
+
+That covers every endpoint the element requests itself, and is forwarded to `createHttpAgent`, so a
+host that does not override `agentFactory` needs nothing else. A custom factory can also be given
+the option directly:
 
 ```js
 chat.agentFactory = (options) =>
   createHttpAgent({ ...options, trustedOrigins: ["https://api.example.com"] });
 ```
 
-Origins are compared as `URL.origin` produces them — scheme, host and port.
+Origins are compared as `URL.origin` produces them — scheme, host and port. A notice is a notice,
+not a refusal: nothing is blocked, because a cross-origin agent is a supported deployment and
+refusing would break working installations to defend against a page that is already interpolating
+untrusted data into its own markup.
 
 ### Framework hosts: configure before you insert
 
@@ -522,7 +537,9 @@ chat.registerTool({
 });
 ```
 
-Names must be unique (registering a duplicate throws). Each `<ag-ui-chat>` element owns its own
+Registering a name twice replaces the earlier handler rather than throwing, so a re-fired
+host ref or React StrictMode's double-invoke is harmless -- but two different tools sharing
+a name means the second silently wins. Each `<ag-ui-chat>` element owns its own
 registry, AG-UI client, and Shadow DOM, so **multiple instances on one page never interfere** —
 there is no module-level shared state anywhere in the package.
 

@@ -89,7 +89,7 @@ describe("AgUiClient", () => {
         emit.runStart();
         emit.reasoningStart();
         emit.reasoning("weigh");
-        emit.reasoning("weighing the options");
+        emit.reasoning("ing the options");
         emit.reasoningEnd();
         emit.text("the answer");
         emit.textEnd("the answer");
@@ -102,6 +102,9 @@ describe("AgUiClient", () => {
     expect(handlers.calls).toEqual([
       "start",
       "reasoning-start",
+      // The wire reports the buffer before each delta lands, so the first call
+      // is empty and the block is only complete on the last one.
+      "reasoning:",
       "reasoning:weigh",
       "reasoning:weighing the options",
       "reasoning-end",

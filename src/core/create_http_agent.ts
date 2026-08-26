@@ -1,6 +1,6 @@
 import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
-import { withCredentials } from "./utils.js";
+import { warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
 
 /** Config for {@link createHttpAgent}. */
 export interface HttpAgentOptions {
@@ -45,58 +45,6 @@ export interface HttpAgentOptions {
    * scheme and port included), which is what `URL.origin` produces.
    */
   trustedOrigins?: readonly string[];
-}
-
-/**
- * Announce host credentials about to leave the document's origin.
- *
- * `endpoint` and its six sibling URL attributes are plain HTML, and a page that
- * interpolates one from a query parameter or from tenant-authored
- * configuration has handed an attacker the destination. The browser preflights
- * the custom header, any server willing to answer `Access-Control-Allow-Headers`
- * receives it, and the token leaves on the element's very first request —
- * before the user has done anything. Nothing else in this package compares a
- * configured URL against an expected origin, so without this the delivery is
- * silent, which is the only part of that sequence worth changing.
- *
- * A warning rather than a refusal because a cross-origin agent is a documented
- * deployment: refusing would break working installations to defend against a
- * page that is already interpolating untrusted data into its own markup. What
- * it removes is the silence.
- *
- * `warned` is per-agent rather than module-level, per this package's rule
- * against shared mutable state: two elements on one page must each get their
- * own notice, and the set lives exactly as long as the agent it belongs to.
- */
-function warnOnCrossOriginCredentials(
-  url: string | URL,
-  credentialNames: readonly string[],
-  trustedOrigins: readonly string[],
-  warned: Set<string>,
-): void {
-  if (credentialNames.length === 0) {
-    return;
-  }
-  // Resolved against the document, so a relative endpoint — the ordinary case —
-  // lands on this origin and says nothing.
-  const destination = new URL(String(url), location.href).origin;
-  if (
-    destination === location.origin ||
-    trustedOrigins.includes(destination) ||
-    warned.has(destination)
-  ) {
-    return;
-  }
-  warned.add(destination);
-  console.warn(
-    `<ag-ui-chat>: sending host credentials (${credentialNames.join(", ")}) to ` +
-      `${destination}, which is not this page's origin (${location.origin}). Those headers ` +
-      "are the page's own authentication, and whichever server answers the browser's " +
-      "preflight receives them — so a URL attribute built from a query parameter or from " +
-      "tenant-authored configuration is a channel for the token to leave on. If this " +
-      "destination is deliberate, name it in the agent's `trustedOrigins` to confirm it and " +
-      "silence this notice. Reported once per origin.",
-  );
 }
 
 /**

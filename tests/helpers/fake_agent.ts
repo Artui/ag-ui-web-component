@@ -39,7 +39,14 @@ export interface Emit {
   /** An ordinary message change, with no chart waiting on it. */
   messagesChanged(): void;
   reasoningStart(): void;
-  reasoning(buffer: string): void;
+  /**
+   * One reasoning *delta*, not the buffer so far. `@ag-ui/client` hands the
+   * subscriber the content it holds *before* appending the announced delta, so
+   * a helper that passes the accumulated text is describing a wire no server
+   * writes -- and it hides the last delta going missing.
+   */
+  reasoning(delta: string): void;
+  /** End the block, delivering the complete text the way REASONING_MESSAGE_END does. */
   reasoningEnd(): void;
   error(message: string): void;
   /**
@@ -59,6 +66,8 @@ export interface Emit {
 /** Tracks whether the script emitted a terminal AG-UI event (finish / error). */
 interface EmitState {
   terminal: boolean;
+  /** Reasoning text accumulated so far, so a delta can report the pre-append buffer. */
+  reasoning: string;
 }
 
 /** The full parameter object one subscriber callback declares. */
@@ -198,12 +207,21 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
       dispatch(s, "onReasoningStartEvent", {
         event: { type: EventType.REASONING_START, messageId: "reasoning" },
       }),
-    reasoning: (reasoningMessageBuffer) =>
-      dispatch(s, "onReasoningMessageContentEvent", { reasoningMessageBuffer }),
-    reasoningEnd: () =>
+    reasoning: (delta) => {
+      // The buffer as it stands *before* this delta is appended, which is what
+      // the real client passes.
+      dispatch(s, "onReasoningMessageContentEvent", { reasoningMessageBuffer: state.reasoning });
+      state.reasoning += delta;
+    },
+    reasoningEnd: () => {
+      // REASONING_MESSAGE_END carries the complete block; REASONING_END does not.
+      // Both are emitted because the real stream sends both, in this order.
+      dispatch(s, "onReasoningMessageEndEvent", { reasoningMessageBuffer: state.reasoning });
       dispatch(s, "onReasoningEndEvent", {
         event: { type: EventType.REASONING_END, messageId: "reasoning" },
-      }),
+      });
+      state.reasoning = "";
+    },
     error: (message) => {
       state.terminal = true;
       dispatch(s, "onRunErrorEvent", { event: { type: EventType.RUN_ERROR, message } });
@@ -311,7 +329,7 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
       if (opts.throwOnRun !== undefined) {
         throw opts.throwOnRun;
       }
-      const state: EmitState = { terminal: false };
+      const state: EmitState = { terminal: false, reasoning: "" };
       await opts.script?.(emitter(subscriber, state, { applyState }), params);
       // A real run that streamed cleanly emits RUN_FINISHED with an ordinary
       // outcome and *then* finalizes — both, in that order. Emitting only the

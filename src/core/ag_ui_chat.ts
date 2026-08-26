@@ -88,7 +88,7 @@ import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunIndex } from "./run_index.js";
 import { type TranscribeHandler, transcribeAudio } from "./transcribe_audio.js";
 import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
-import { mintThread, withCredentials } from "./utils.js";
+import { mintThread, warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
 
 /** The role a rendered chat message takes. */
 export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
@@ -237,6 +237,23 @@ export class AgUiChat extends HTMLElement {
    * `Authorization` are configured independently and neither drops the other.
    */
   getHeaders: (() => Record<string, string>) | null = null;
+
+  /**
+   * Origins, besides the page's own, that this element may send {@link headers}
+   * and {@link getHeaders} credentials to without saying so on the console.
+   *
+   * Seven attributes name a URL, and every one of them carries these headers.
+   * They are plain HTML, so a page that builds one from a query parameter or
+   * from tenant-authored configuration has handed an attacker the destination,
+   * and the token leaves on the element's first request. Naming the origins you
+   * expect turns that from silent into either confirmed or reported.
+   *
+   * A notice rather than a refusal: a cross-origin agent is a documented
+   * deployment, so refusing would break working installations to defend against
+   * a page that is already interpolating untrusted data into its own markup.
+   * Leaving this empty costs nothing but one console line per foreign origin.
+   */
+  trustedOrigins: readonly string[] = [];
 
   /**
    * Permit `<img>` in rendered assistant markdown. **Off by default**: a
@@ -402,6 +419,13 @@ export class AgUiChat extends HTMLElement {
    * field the server sent is not lost on the way in. Populated once on connect.
    */
   #toolCatalog: Record<string, ToolCatalogEntry> = {};
+
+  /**
+   * Foreign origins already reported, so the notice is once per origin per
+   * element rather than once per request. Per-element rather than module-level,
+   * because two elements on one page are two separate configurations.
+   */
+  #warnedOrigins = new Set<string>();
   /** The resolved string table (defaults ← `data-strings` ← `strings`). */
   #strings: UiStrings = DEFAULT_UI_STRINGS;
 
@@ -597,7 +621,7 @@ export class AgUiChat extends HTMLElement {
     if (this.#runIndex === null) {
       this.#runIndex = new RunIndex(
         url,
-        () => this.#requestHeaders(),
+        () => this.#headersFor(url),
         () => this.#requestCredentials(),
       );
     }
@@ -632,6 +656,7 @@ export class AgUiChat extends HTMLElement {
       endpoint,
       headers: this.#requestHeaders(),
       getHeaders: () => this.#requestHeaders(),
+      trustedOrigins: this.trustedOrigins,
       ...this.#credentialsOption(),
       threadId: this.#threadId,
       // The seed the endpoints assume: nothing. The snapshot is the history.
@@ -1027,6 +1052,25 @@ export class AgUiChat extends HTMLElement {
     return { ...this.headers, ...this.getHeaders?.() };
   }
 
+  /**
+   * The request headers, having first reported the destination if it is foreign.
+   *
+   * Every caller that sends these headers knows its URL, and `#requestHeaders`
+   * does not -- so the check lives here, on the path that has both, rather than
+   * being repeated at each call site with a chance to be forgotten at the next
+   * one added.
+   */
+  #headersFor(url: string): Record<string, string> {
+    const headers = this.#requestHeaders();
+    warnOnCrossOriginCredentials(
+      url,
+      Object.keys(headers),
+      this.trustedOrigins,
+      this.#warnedOrigins,
+    );
+    return headers;
+  }
+
   /** The configured cookie policy as `fetch` spells it; `undefined` when unset. */
   #requestCredentials(): RequestCredentials | undefined {
     return this.credentials ?? undefined;
@@ -1047,8 +1091,8 @@ export class AgUiChat extends HTMLElement {
   }
 
   /** The `fetch` init for the element's own plain GETs (catalogs). */
-  #fetchInit(): RequestInit | undefined {
-    return withCredentials({ headers: this.#requestHeaders() }, this.#requestCredentials());
+  #fetchInit(url: string): RequestInit | undefined {
+    return withCredentials({ headers: this.#headersFor(url) }, this.#requestCredentials());
   }
 
   /**
@@ -1276,7 +1320,7 @@ export class AgUiChat extends HTMLElement {
     return (file, onProgress, signal) =>
       uploadAttachment(file, {
         url,
-        headers: this.#requestHeaders(),
+        headers: this.#headersFor(url),
         ...this.#credentialsOption(),
         onProgress,
         signal,
@@ -1312,7 +1356,7 @@ export class AgUiChat extends HTMLElement {
     return (audio) =>
       transcribeAudio(audio, {
         url,
-        headers: this.#requestHeaders(),
+        headers: this.#headersFor(url),
         ...this.#credentialsOption(),
       });
   }
@@ -1384,7 +1428,7 @@ export class AgUiChat extends HTMLElement {
     if (url !== null) {
       this.conversationStore = new RemoteConversationStore(
         url,
-        () => this.#requestHeaders(),
+        () => this.#headersFor(url),
         this.conversationStore,
         () => this.#requestCredentials(),
         this.getAttribute("data-threads-cache") !== "false",
@@ -1399,7 +1443,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     try {
-      const response = await fetch(url, this.#fetchInit());
+      const response = await fetch(url, this.#fetchInit(url));
       this.#toolCatalog = parseToolCatalog(await response.json());
     } catch {
       // Network/parse failure: cards fall back to toolSummaries / raw names.
@@ -1447,7 +1491,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     try {
-      const response = await fetch(url, this.#fetchInit());
+      const response = await fetch(url, this.#fetchInit(url));
       this.#backendSkills = parseSkills(await response.json());
       this.#recomputeSkills();
     } catch {
@@ -2800,6 +2844,7 @@ export class AgUiChat extends HTMLElement {
         // token must still reach every request — the factory's fetch wrapper
         // re-reads this on each call.
         getHeaders: () => this.#requestHeaders(),
+        trustedOrigins: this.trustedOrigins,
         ...this.#credentialsOption(),
         threadId: this.#threadId,
         initialMessages: this.#initialMessages,
