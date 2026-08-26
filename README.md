@@ -332,6 +332,26 @@ One asymmetry: uploads use `XMLHttpRequest` for real progress events, and its co
 two-state. `include` turns it on; every other value leaves it off. `omit` therefore cannot suppress
 cookies on a *same-origin* upload — supply your own `uploadHandler` if that matters.
 
+### Where those credentials are allowed to go
+
+Every URL in the table above is a plain HTML attribute, and `headers` / `getHeaders` are attached to
+whatever they name. That is what makes a cross-origin agent work — and it is also why a page must
+never build one of those attributes out of a URL parameter, a CMS field, or anything else it did not
+choose itself. Whoever supplies the value chooses where the token goes: the browser preflights the
+custom header, any server willing to answer receives it, and it leaves on the element's first
+request, before the user has typed anything.
+
+Treat all seven as trusted configuration. When the agent endpoint is on another origin, the agent
+says so on the console once, naming the destination and the header names it is about to send. To
+confirm a destination you chose on purpose and silence the notice, name its origin:
+
+```js
+chat.agentFactory = (options) =>
+  createHttpAgent({ ...options, trustedOrigins: ["https://api.example.com"] });
+```
+
+Origins are compared as `URL.origin` produces them — scheme, host and port.
+
 ### Framework hosts: configure before you insert
 
 `headers`, `getHeaders` and `credentials` are read when a request is made, so they can be set at any
