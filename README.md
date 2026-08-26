@@ -53,6 +53,8 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
 - [Run notices: compaction and agent skills](#run-notices-compaction-and-agent-skills)
 - [Skills: prompt chips and slash palette](#skills-prompt-chips-and-slash-palette)
 - [MPA durability: surviving full page reloads](#mpa-durability-surviving-full-page-reloads)
+  - [Who the stored conversation belongs to (`user-key`)](#who-the-stored-conversation-belongs-to-user-key)
+  - [Mounting more than one chat on a page](#mounting-more-than-one-chat-on-a-page)
 - [Host seams: the SPA story](#host-seams-the-spa-story)
 - [Public API surface](#public-api-surface)
 - [Theming, density, and placement](#theming-density-and-placement)
@@ -162,7 +164,9 @@ another origin, add `credentials="include"` too; see
 | `data-skills` | — | Inline JSON skill catalog. |
 | `data-skills-url` | — | URL of a JSON skill catalog (fetched with the element's headers and cookie policy). |
 | `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with the element's headers and cookie policy; labels tool-call cards for server-side tools. |
+| `user-key` | `userKey` | Who the stored conversation belongs to — any string identifying the signed-in principal. Joins the storage namespace, and **changing it purges what the previous principal left behind**. Live (not connect-time): a logout is the host's to announce. See [Who the stored conversation belongs to](#who-the-stored-conversation-belongs-to-user-key). |
 | `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
+| `data-threads-cache` | — | **On by default.** `="false"` stops mirroring message bodies into `sessionStorage` when `data-threads-url` is set, for a deployment that put history on the server so transcripts stay off the client. Only meaningful alongside `data-threads-url`. |
 | `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's ⭯ *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
 | `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's paperclip picker + drag-and-drop. |
 | `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
@@ -196,7 +200,7 @@ same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 `confirmPredicate`, `askUser`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
 `getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`,
 `navigationResult`, `skillContext`, `toolSummaries`, `strings`, `resolvePageTarget`, plus the
-mirrors `endpoint` / `toolDisplay` / `collapsed` / `credentials`.
+mirrors `endpoint` / `userKey` / `toolDisplay` / `collapsed` / `credentials`.
 
 `headers` and `getHeaders` authenticate **every** request the element makes, not only the agent
 run; `getHeaders` is the one to use for a credential that rotates. See
@@ -1176,6 +1180,87 @@ triggers a full reload. Before the handler navigates, the element writes a check
 3. and resumes the run loop from there.
 
 The MPA round-trip becomes a clean observation point instead of a dropped conversation.
+
+### Who the stored conversation belongs to (`user-key`)
+
+`sessionStorage` is scoped to a tab, not to a session. It survives every same-tab navigation,
+and a logout is a navigation — so on a shared workstation, one user's transcript is still sitting
+there when the next user signs in and the chat mounts again. Transcripts routinely quote record
+data, so treat that as the default and turn it off:
+
+```html
+<ag-ui-chat endpoint="/agent/" user-key="{{ request.user.pk }}"></ag-ui-chat>
+```
+
+The value is any string that identifies the principal — a user id, an account id, a hash of one.
+It joins the storage namespace, so two principals in the same tab cannot reach each other's
+conversation, and **changing it purges everything the previous principal stored**: transcript,
+history drawer index and navigation checkpoints, for this element's namespace only.
+
+Set it live, from script, as part of signing out or in:
+
+```js
+chat.userKey = String(session.userId); // or "" on sign-out
+```
+
+That is why it is a live attribute rather than a connect-time one. A single-page app signs a user
+out through its own router without remounting anything, so the host naming the new principal — or
+dropping the attribute — is the only signal the element will ever get. Removing the attribute
+purges too, so a sign-out that simply clears it is safe.
+
+The **first** value to arrive is treated as a host naming the user who was already there, not as a
+handover: the conversation in progress moves into the principal's namespace instead of being
+destroyed. So an element configured by an async auth handshake — the shape described in
+[Framework hosts](#framework-hosts-configure-before-you-insert) — keeps what is on screen.
+
+Two things it deliberately does not do. It does not scope the panel's own collapsed / dragged-size
+/ theme preferences, which are this element's UI state and carry no conversation content. And it
+does not encrypt or hide anything from the page: any script on the origin can still read
+`sessionStorage`. It scopes and it purges.
+
+**Without it, nothing changes** — including the carry-over above. A conversation is scoped to the
+element and to nobody in particular, and on a shared workstation it will be there for whoever signs
+in next in the same tab.
+
+For a deployment that keeps history server-side, `data-threads-cache="false"` stops the local
+mirror of the message bodies as well, so choosing `data-threads-url` actually keeps transcripts off
+the client:
+
+```html
+<ag-ui-chat endpoint="/agent/" data-threads-url="/agent/threads/" data-threads-cache="false">
+</ag-ui-chat>
+```
+
+The client-only concerns (the active thread id, the navigation checkpoint) keep their local store
+either way, so reloads and navigating tools still work. What is lost is the offline fallback: when
+the thread endpoint is unreachable the transcript comes back empty rather than stale, and the
+drawer's offline list loses its previews — a preview being an excerpt of a message, which is the
+thing being kept off the client. Constructing the store yourself takes the same option:
+
+```js
+chat.conversationStore = new RemoteConversationStore(
+  "/agent/threads/",
+  () => ({ "X-CSRFToken": token }),
+  new SessionStorageStore(),
+  () => "same-origin",
+  false, // cacheMessages
+);
+```
+
+`SessionStorageStore.purge(namespace)` is the same primitive the element uses, for a host driving
+its own store from its own sign-out path.
+
+### Mounting more than one chat on a page
+
+Give each `<ag-ui-chat>` its own `id`. The storage namespace is the element's `id`, falling back to
+its `endpoint` — so two elements with no `id` against the same agent mount (a docked support panel
+and an inline page assistant, say) would resolve to the same namespace and share a thread pointer,
+a history drawer and every message key.
+
+They no longer do: the first element to mount keeps the namespace, and a second is given a
+throwaway one of its own plus a console warning. That keeps the two conversations apart, but the
+throwaway namespace is minted per mount, so the second element will not restore its conversation
+across a reload until it has an `id`.
 
 ---
 

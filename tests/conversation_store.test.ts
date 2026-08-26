@@ -228,4 +228,89 @@ describe("SessionStorageStore", () => {
       expect(reopened.threadId()).toBe("kept");
     });
   });
+  describe("purge and adopt", () => {
+    it("purge forgets everything the namespace holds", async () => {
+      const store = new SessionStorageStore("app-a");
+      const id = store.threadId();
+      store.saveMessages(id, [{ role: "user", content: "secret" }] as never);
+      store.saveCheckpoint(id, { toolCallId: "tc1" });
+
+      SessionStorageStore.purge("app-a");
+
+      expect(await store.loadMessages(id)).toBeNull();
+      expect(store.loadCheckpoint(id)).toBeNull();
+      expect(await store.listThreads()).toEqual([]);
+      expect(sessionStorage.getItem("ag-ui-chat@app-a:thread")).toBeNull();
+    });
+
+    it("purge cannot reach another namespace, or keys it does not own", () => {
+      const other = new SessionStorageStore("app-b");
+      other.setActiveThread("kept");
+      // The element's own chrome keys share the global root, and the host's keys
+      // share the origin. Neither is the store's to delete.
+      sessionStorage.setItem("ag-ui-chat:theme", "dark");
+      sessionStorage.setItem("ag-ui-chat@app-a:something-else", "not mine");
+      sessionStorage.setItem("shop:cart", "keep me");
+
+      SessionStorageStore.purge("app-a");
+
+      expect(other.threadId()).toBe("kept");
+      expect(sessionStorage.getItem("ag-ui-chat:theme")).toBe("dark");
+      expect(sessionStorage.getItem("ag-ui-chat@app-a:something-else")).toBe("not mine");
+      expect(sessionStorage.getItem("shop:cart")).toBe("keep me");
+    });
+
+    it("adopt moves a conversation between namespaces, marker and all", async () => {
+      const source = new SessionStorageStore("app-a");
+      const unsent = source.threadId();
+      source.saveMessages("t1", [{ role: "user", content: "hello" }] as never);
+
+      SessionStorageStore.adopt("app-a", "app-b");
+
+      const destination = new SessionStorageStore("app-b");
+      expect(destination.threadId()).toBe(unsent);
+      expect(await destination.loadMessages("t1")).toEqual([{ role: "user", content: "hello" }]);
+      // The "nothing sent here yet" marker travels too: left behind, it would
+      // make a server-backed store ask for history it has already been told
+      // cannot exist.
+      expect(destination.isUnsent(unsent)).toBe(true);
+      expect(await source.loadMessages("t1")).toBeNull();
+    });
+  });
+
+  describe("a browser that refuses to write", () => {
+    it("keeps going, and says so once", () => {
+      const store = new SessionStorageStore();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const real = sessionStorage;
+      // happy-dom hands out `Storage`'s methods through a proxy, so neither an
+      // instance nor a prototype spy is ever consulted; replace the global.
+      vi.stubGlobal(
+        "sessionStorage",
+        new Proxy(real, {
+          get(target, property) {
+            if (property === "setItem") {
+              return () => {
+                throw new DOMException("exceeded the quota", "QuotaExceededError");
+              };
+            }
+            const value = Reflect.get(target, property, target) as unknown;
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        }),
+      );
+
+      expect(() =>
+        store.saveMessages("t1", [{ role: "user", content: "x" }] as never),
+      ).not.toThrow();
+      expect(() =>
+        store.saveMessages("t1", [{ role: "user", content: "y" }] as never),
+      ).not.toThrow();
+
+      // A full quota stays full: one warning, not one per persisted turn.
+      expect(warn).toHaveBeenCalledTimes(1);
+      vi.unstubAllGlobals();
+      warn.mockRestore();
+    });
+  });
 });
