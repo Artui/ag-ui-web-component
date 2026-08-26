@@ -31,7 +31,7 @@ import { isNavigates } from "../tools/is_navigates.js";
 import { createPageActionTools, type ResolvePageTarget } from "../tools/page_action_tools.js";
 import { createPageMapContext, type PageMap } from "../tools/page_map.js";
 import { createPageStateTools, type PageState } from "../tools/page_state.js";
-import { parseToolCatalog } from "../tools/parse_tool_catalog.js";
+import { parseToolCatalog, type ToolCatalogEntry } from "../tools/parse_tool_catalog.js";
 import { createRouteTools, type RouteMap } from "../tools/route_map.js";
 import {
   type ApprovalRenderer,
@@ -381,13 +381,32 @@ export class AgUiChat extends HTMLElement {
   resolvePageTarget: ResolvePageTarget = (target) => document.querySelector<HTMLElement>(target);
 
   /**
-   * Card labels fetched from a server tool catalog (`data-tools-url`), keyed by
-   * tool name. The base layer behind {@link toolSummaries}: an explicit entry in
-   * `toolSummaries` wins, this fills the rest. Populated once on connect.
+   * The server tool catalog fetched from `data-tools-url`, keyed by tool
+   * name. Cards label themselves from each entry's `summary`, the base
+   * layer behind {@link toolSummaries}: an explicit entry in `toolSummaries`
+   * wins, this fills the rest. Held as whole entries rather than labels so a
+   * field the server sent is not lost on the way in. Populated once on connect.
    */
-  #toolCatalog: Record<string, string> = {};
+  #toolCatalog: Record<string, ToolCatalogEntry> = {};
   /** The resolved string table (defaults ← `data-strings` ← `strings`). */
   #strings: UiStrings = DEFAULT_UI_STRINGS;
+
+  /**
+   * The tool names the current round handed the agent, captured as the catalog
+   * went out.
+   *
+   * The registry is mount-wide but {@link getTools} is per-run, so a host is
+   * free to scope what a given page offers — and a call naming a tool this run
+   * withheld must not reach the handler that is merely still registered.
+   * Snapshotted rather than re-asked at dispatch: a provider is a function, and
+   * calling it again asks a question the run already answered, which is exactly
+   * the window a scoped catalog exists to close.
+   *
+   * Empty until the first round advertises, which cannot precede a call: the
+   * client builds `RunAgentInput.tools` at the top of every round, before the
+   * calls that round produces are executed.
+   */
+  #advertisedTools: ReadonlySet<string> = new Set();
 
   readonly #toolRegistry = new ClientToolRegistry();
   /** Tool-call cards awaiting execution, keyed by call id. */
@@ -470,6 +489,12 @@ export class AgUiChat extends HTMLElement {
   // revealed progressively as it streamed, so the word reveal must not re-animate
   // it; ≤1 ⇒ it arrived at once and the word reveal is appropriate.
   #streamDeltas = 0;
+  // The accumulated answer the next render will draw. Deltas overwrite it
+  // (each one carries the whole answer), so a frame always draws the latest.
+  #streamBuffer = "";
+  // The frame that render is queued on, or `null` when nothing is queued —
+  // also the flag saying a delta is still undrawn.
+  #streamFrame: number | null = null;
   #pending: HTMLDivElement | null = null;
   // The current assistant turn's grouping container. One `.answer`
   // wraps everything a single answer produces — streamed text, tool cards, the
@@ -587,7 +612,7 @@ export class AgUiChat extends HTMLElement {
     const client = new AgUiClient({
       agent,
       handlers: this.#handlers(),
-      getTools: () => this.getTools(),
+      getTools: () => this.#advertiseTools(),
       getContext: () => this.#buildContext(),
       executeTool: (call) => this.#executeTool(call),
       resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
@@ -657,7 +682,18 @@ export class AgUiChat extends HTMLElement {
     );
   }
 
-  /** Declare a frontend tool the agent may call. */
+  /**
+   * Declare a frontend tool the agent may call.
+   *
+   * **A handler's thrown message leaves the browser.** When a handler rejects,
+   * its `Error.message` is posted back as that call's tool result — into the
+   * conversation, on to the AG-UI endpoint, persisted server-side, and
+   * forwarded to the model provider on every later round. That is deliberate,
+   * since it is what lets the agent recover from a failure it caused; but it
+   * means an internal hostname, a signed URL or a stack-derived path in a
+   * rethrown error is disclosed to parties the host never chose. Throw the
+   * message you would be content for the model to read, and log the detail.
+   */
   registerTool(tool: ClientTool): void {
     this.#toolRegistry.register(tool);
   }
@@ -833,6 +869,19 @@ export class AgUiChat extends HTMLElement {
     this.#updateEmptyState();
     this.#messages.scrollTop = this.#messages.scrollHeight;
     return answer;
+  }
+
+  /**
+   * The catalog for the round about to start, remembering what it offered.
+   *
+   * Every path to a frontend tool goes through here first — the client asks
+   * for `RunAgentInput.tools` at the top of each round — so this is the one
+   * place that can know what the agent was actually told about.
+   */
+  #advertiseTools(): Tool[] {
+    const tools = this.getTools();
+    this.#advertisedTools = new Set(tools.map((tool) => tool.name));
+    return tools;
   }
 
   /** Resolve a tool by name: built-in tools first, then the registry. */
@@ -1679,7 +1728,10 @@ export class AgUiChat extends HTMLElement {
   /** Drop the in-memory run + transcript, leaving the thread id untouched. */
   #resetState(): void {
     this.#client = null;
-    this.#streamingBubble = null;
+    // Before the transcript goes: a render still queued would otherwise fire
+    // against the wiped list and open a fresh bubble holding the discarded
+    // conversation's last tokens.
+    this.#endStream();
     this.#currentGroup = null;
     this.#thoughts = null;
     this.#hidePending();
@@ -2542,7 +2594,7 @@ export class AgUiChat extends HTMLElement {
       this.#client = new AgUiClient({
         agent,
         handlers: this.#handlers(),
-        getTools: () => this.getTools(),
+        getTools: () => this.#advertiseTools(),
         getContext: () => this.#buildContext(),
         executeTool: (call) => this.#executeTool(call),
         resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
@@ -2590,7 +2642,15 @@ export class AgUiChat extends HTMLElement {
     // transcript places itself against its own card, and by the time it runs the
     // card is no longer reachable by id.
     this.#cardElements.set(call.id, card.element);
-    const tool = this.#resolveTool(call.name);
+    // Scoped out of this round's catalog ⇒ not a frontend tool of ours, for
+    // this round. A host that offers `delete_record` only on the page where
+    // deleting makes sense has said something about *this* run, and a call
+    // arriving anyway (a hallucinated name, or one steered by text the model
+    // just read) must not find the handler that happens to be registered
+    // mount-wide. Treated exactly as an unknown name rather than as a refusal:
+    // withholding a tool and never registering it are the same statement, and
+    // the branch below already says the honest thing for both.
+    const tool = this.#advertisedTools.has(call.name) ? this.#resolveTool(call.name) : null;
     if (tool === null) {
       // Not a client tool. A server-side tool's real output arrives via
       // `onToolResult` (TOOL_CALL_RESULT) and already settled the card — only
@@ -2685,6 +2745,12 @@ export class AgUiChat extends HTMLElement {
         // The navigation never happened; drop the dangling checkpoint.
         this.conversationStore.saveCheckpoint(this.#threadId, null);
       }
+      // The handler's own message, verbatim, in two places at once: the card,
+      // which the user sees, and the tool result, which goes to the endpoint,
+      // is persisted there and is replayed to the model on every later round.
+      // Kept verbatim because a real reason is what lets the agent recover —
+      // and said out loud on `registerTool`, because the second destination is
+      // invisible from the host's side and is not one it can take back.
       const message = error instanceof Error ? error.message : String(error);
       card.settle(TOOL_CALL_STATUS.ERROR, message);
       this.#showPending();
@@ -2802,7 +2868,10 @@ export class AgUiChat extends HTMLElement {
         this.#hidePending();
         // The answer has begun — fold the thoughts away so they don't crowd it.
         this.#thoughts?.collapse();
-        this.#streamInto(buffer);
+        this.#queueStream(buffer);
+        // Counted per delta received, not per render: the word reveal asks
+        // whether the answer *arrived* progressively, which coalescing renders
+        // must not change the answer to.
         this.#streamDeltas += 1;
       },
       onTextEnd: (buffer) => {
@@ -2815,7 +2884,7 @@ export class AgUiChat extends HTMLElement {
           this.#revealWords(bubble);
         }
         attachCopyButtons(bubble, this.#strings);
-        this.#streamingBubble = null;
+        this.#endStream();
         this.#noteUnread();
       },
       onToolCall: (call) => {
@@ -2884,25 +2953,25 @@ export class AgUiChat extends HTMLElement {
         // Per-round end; the button stays on Stop until the whole interaction
         // settles — the user must be able to cancel between tool rounds.
         this.#hidePending();
-        this.#streamingBubble = null;
+        this.#endStream();
       },
       onError: (message) => {
         this.#hidePending();
         this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`));
-        this.#streamingBubble = null;
+        this.#endStream();
       },
       onCancelled: () => {
         // Deliberate stop, not a failure: keep whatever partial text already
         // streamed and add a muted note instead of an error bubble.
         this.#hidePending();
         this.#appendStoppedNote();
-        this.#streamingBubble = null;
+        this.#endStream();
       },
       onSettled: () => {
         // Terminal guarantee: whatever path ended the run, return to rest.
         this.#hidePending();
         this.#setRunning(false);
-        this.#streamingBubble = null;
+        this.#endStream();
         // Belt-and-suspenders: a tool card still pending at settle (e.g. a
         // server tool whose result never streamed because the connection
         // dropped) would hang forever — settle it to the no-result fallback.
@@ -3008,14 +3077,76 @@ export class AgUiChat extends HTMLElement {
     return this.#thoughts;
   }
 
-  #streamInto(buffer: string): HTMLDivElement {
+  /**
+   * The bubble the current answer streams into, opening it on first sight.
+   *
+   * Opened the moment a token arrives rather than on the frame that draws it,
+   * so the answer's container replaces the pending dots straight away and the
+   * turn never shows a gap while the first render waits for a frame.
+   */
+  #openStream(): HTMLDivElement {
     if (this.#streamingBubble === null) {
       this.#streamingBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, "");
       this.#streamDeltas = 0;
     }
-    this.#streamingBubble.innerHTML = renderMarkdown(buffer, { allowImages: this.allowImages });
-    this.#messages.scrollTop = this.#messages.scrollHeight;
     return this.#streamingBubble;
+  }
+
+  /**
+   * Queue a render of the answer so far, at most one per frame.
+   *
+   * Each `TEXT_MESSAGE_CONTENT` event carries the *whole* accumulated answer,
+   * and drawing it means marked + DOMPurify over the entire document and a
+   * wholesale replacement of the bubble's subtree. Once per token that is
+   * quadratic in the answer's length — a long answer is agent-controlled, so
+   * an ordinary run becomes a progressively stalling tab — and every rebuild
+   * takes any selection or focus inside the bubble with it.
+   *
+   * A frame is the right grain: it is the fastest anything on screen can
+   * change anyway, so a burst of tokens costs one parse and the text still
+   * appears to flow rather than in visible chunks.
+   */
+  #queueStream(buffer: string): void {
+    this.#streamBuffer = buffer;
+    this.#openStream();
+    if (this.#streamFrame !== null) {
+      return;
+    }
+    this.#streamFrame = requestAnimationFrame(() => {
+      this.#streamFrame = null;
+      this.#streamInto(this.#streamBuffer);
+    });
+  }
+
+  /** Render `buffer` into the streaming bubble now, dropping any queued frame. */
+  #streamInto(buffer: string): HTMLDivElement {
+    // A frame still queued would otherwise fire after this and repaint the
+    // bubble with whatever the last delta held — behind the buffer just drawn.
+    if (this.#streamFrame !== null) {
+      cancelAnimationFrame(this.#streamFrame);
+      this.#streamFrame = null;
+    }
+    this.#streamBuffer = buffer;
+    const bubble = this.#openStream();
+    bubble.innerHTML = renderMarkdown(buffer, { allowImages: this.allowImages });
+    this.#messages.scrollTop = this.#messages.scrollHeight;
+    return bubble;
+  }
+
+  /**
+   * Close the current answer's streaming bubble.
+   *
+   * Draws a queued render first. A run that ends without a text end — a
+   * cancel, an error, a round boundary — leaves the last delta sitting in the
+   * queue, and simply dropping the bubble here would strand it: the partial
+   * answer the user stopped mid-sentence would lose its final tokens, or be an
+   * empty bubble above the stopped note.
+   */
+  #endStream(): void {
+    if (this.#streamFrame !== null) {
+      this.#streamInto(this.#streamBuffer);
+    }
+    this.#streamingBubble = null;
   }
 
   /**
@@ -3167,7 +3298,7 @@ export class AgUiChat extends HTMLElement {
       typeof labelled === "string"
         ? labelled
         : (this.toolSummaries[call.name] ??
-          this.#toolCatalog[call.name] ??
+          this.#toolCatalog[call.name]?.summary ??
           prettifyToolName(call.name));
     const card = new ToolCallCard(call.name, call.args, summary, this.#strings);
     this.#toolCards.set(call.id, card);

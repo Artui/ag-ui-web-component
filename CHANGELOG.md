@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A tool a page deliberately withheld from a run still ran when the agent
+  called it.** `getTools` is a per-run catalog provider, so a host is invited to
+  scope what a given page offers while registering everything once at mount.
+  Dispatch never consulted it: it resolved the call name straight against the
+  mount-wide registry, so a call naming a scoped-out tool found its handler and
+  ran it — with the confirmation card the only remaining gate, and that card is
+  waived by `autoConfirm`, by a `confirmPredicate`, or by a schema without
+  `x-destructive`. The page's decision not to offer the tool carried no weight
+  where it mattered. The names a run advertises are now captured as the catalog
+  goes out, and a call outside that set is treated exactly as a call naming a
+  tool that was never registered. The set is the snapshot, not a fresh
+  `getTools()` at dispatch time — asking the provider again would re-open the
+  window it exists to close. Hosts that never override `getTools` advertise the
+  built-ins plus everything registered, which is exactly what dispatch could
+  reach before, so nothing changes for them.
+
+- **A long streamed answer slowed the tab down as it arrived, and destroyed any
+  text selected inside it on every token.** Each `TEXT_MESSAGE_CONTENT` event
+  carries the whole answer so far, and every one of them re-parsed the markdown,
+  re-sanitised it and replaced the bubble's entire subtree. Cost grew with the
+  square of the answer's length — a 40 KB answer streamed token by token meant
+  thousands of full parses over a document that kept getting longer — and
+  because the subtree was rebuilt each time, a selection or a focus inside the
+  bubble could not survive a single token. Since a long answer is entirely
+  agent-controlled, an agent induced to produce one turned an ordinary run into
+  a stalling tab. Deltas now coalesce into one render per animation frame: a
+  burst of tokens costs one parse, and a frame is the fastest anything on screen
+  can change anyway, so the text still flows rather than arriving in chunks. The
+  bubble opens on the first token as before, keeps its identity throughout, and
+  a run that ends without closing its text message — a cancel, an error, a round
+  boundary — draws the queued delta before letting the bubble go, so a stopped
+  answer keeps its last words.
+
+### Changed
+
+- **`parseToolCatalog` returns whole catalog entries, not bare summaries.** Its
+  return type was `Record<string, string>`, so the `description` field that
+  `ToolCatalogEntry` declares and documents was dropped at parse time for every
+  entry — a documented wire field no consumer could reach, and none could be
+  added without changing this signature first. It now returns
+  `Record<string, ToolCatalogEntry>`. Tool-call cards still label themselves from
+  `summary`; callers of the exported parser get the entry the server actually
+  sent. A malformed `description` costs that field, not the entry, matching the
+  tolerance the rest of the parse already had.
+
+### Documentation
+
+- **`x-destructive` gates frontend tools only, and the docs claimed otherwise.**
+  `isDestructive` described the flag as one the server stamps, which cannot
+  reach it: tool schemas travel client-to-server on `RunAgentInput.tools`, and
+  the only channel coming back is the label catalog, which carries names and
+  summaries and no flags. Marking a server-side tool destructive therefore
+  produces no confirmation card in the browser — it has to be gated server-side,
+  which surfaces as an approval card instead. The helper's doc comment and the
+  README's confirmation section now say so.
+
+- **A tool handler's thrown message reaches the model.** When a handler rejects,
+  its `Error.message` is posted back as that call's tool result: into the
+  conversation, on to the AG-UI endpoint, persisted there, and replayed to the
+  model provider on every later round. That is deliberate — a real reason is
+  what lets the agent recover — but the same string is only ever shown to the
+  user as a short card label, so a host rethrowing an internal error had no way
+  to see that an internal hostname, a signed URL or a stack-derived path had
+  left the browser. `registerTool` and the README now say it plainly, so hosts
+  can throw the message they would be content for the model to read.
+
 ## [0.27.0] — 2026-08-26
 
 ### Fixed

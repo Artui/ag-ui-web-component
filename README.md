@@ -449,6 +449,13 @@ card (honouring `data-tool-display`), so server-side output is visible too. The 
 and context are read **fresh on every run** (`getTools()` / `getContext()`), so they always reflect
 the current page state.
 
+The catalog a run advertises is also the set that run can execute. Override `getTools` to scope
+what a page offers — say, exposing `delete_record` only where deleting makes sense — and a call
+naming a tool you withheld is treated exactly as a call naming a tool you never registered: no
+handler runs, and the card settles with the no-result label. Withholding is per run, so the
+mount-wide registry can stay complete. Hosts that leave `getTools` alone advertise the built-ins
+plus everything registered, which is precisely what dispatch could reach anyway.
+
 ### Stopping a run
 
 While a run is in flight the **Send button becomes Stop** (same button, label/`aria-label` swap,
@@ -495,6 +502,13 @@ Names must be unique (registering a duplicate throws). Each `<ag-ui-chat>` eleme
 registry, AG-UI client, and Shadow DOM, so **multiple instances on one page never interfere** —
 there is no module-level shared state anywhere in the package.
 
+**A handler's thrown message leaves the browser.** If a handler rejects, its `Error.message` is
+posted back as that call's tool result: into the conversation, on to the AG-UI endpoint, persisted
+there, and replayed to the model provider on every later round. That is deliberate — a real reason
+is what lets the agent recover — but it means an internal hostname, a signed URL or a
+stack-derived path in a rethrown error is disclosed to parties you never chose. Throw the message
+you would be content for the model to read, and log the detail instead.
+
 ### Inline confirmation (`x-destructive` / `x-confirm` / `confirmPredicate`)
 
 When a tool call needs confirmation, the element appends an **inline confirmation card** (a
@@ -524,6 +538,13 @@ the `x-destructive` flag (or `confirmPredicate`). The registry forwards the flag
 
 If the schema carries an `x-confirm` string (use `X_CONFIRM_KEY`), the card shows it as the prompt;
 otherwise it falls back to a generic `Run "<tool>"?`.
+
+**This gate covers frontend tools only.** A server-side tool's schema never reaches the browser —
+tool definitions travel client-to-server on `RunAgentInput.tools`, and the only channel coming back
+is the label catalog (`data-tools-url`), which carries `{ name, summary, description? }` and no
+flags. So marking a server tool destructive does not produce a card here; gate it server-side
+instead (see [Server-side tool approval](#server-side-tool-approval-interrupts)), which surfaces as
+an approval card in the same transcript.
 
 ```js
 // Per-call: confirm a delete only when it would remove more than one row.
