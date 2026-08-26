@@ -1879,6 +1879,32 @@ describe("AgUiChat", () => {
       expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.title).toBe("Send");
     });
 
+    it("shows the stopped note alone when the abort arrives as a run error", async () => {
+      // The reported symptom: a warning bubble carrying Chrome's internal
+      // "BodyStreamBuffer was aborted" sat directly above the muted stopped
+      // note, telling the user their own Stop had failed.
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const { el } = mountWithAgent(async (emit) => {
+        emit.runStart();
+        emit.text("partial ans");
+        await gate;
+        emit.error("BodyStreamBuffer was aborted");
+      });
+      sendNoWait(el, "x");
+      await flush();
+
+      shadow(el).querySelector<HTMLButtonElement>(".send")?.click(); // reads "Stop"
+      release();
+      await flush();
+
+      expect(shadow(el).querySelector(".stopped-note")?.textContent).toBe("⏹ Stopped");
+      expect(shadow(el).textContent).not.toContain("⚠️");
+      expect(shadow(el).textContent).not.toContain("BodyStreamBuffer");
+    });
+
     it("Escape in the composer cancels a running run", async () => {
       const { el, handle, release } = mountGated();
       sendNoWait(el, "x");

@@ -408,6 +408,9 @@ export class AgUiClient {
   #buildSubscriber(pending: AgUiToolCall[], runState: RunState): AgentSubscriber {
     const h = this.#handlers;
     const closed = this.#closedMessageIds;
+    // Read at event time, not captured now: the flag flips mid-run, and the
+    // subscriber is built before the run that a later `cancel()` stops.
+    const cancelled = (): boolean => this.#cancelled;
     // Charts whose patch has been dispatched but not yet applied. Scoped to the
     // subscriber, so it cannot outlive the run that created it.
     const pendingDeltas = new Set<string>();
@@ -510,6 +513,15 @@ export class AgUiClient {
       onRunErrorEvent({ event }) {
         runState.terminal = true;
         runState.errored = true;
+        // Cancelling aborts the response mid-read, and the browser's own words
+        // for that can arrive here as a RUN_ERROR — Chrome's is
+        // "BodyStreamBuffer was aborted". The run is over either way, but a
+        // deliberate stop is not a failure, and reporting it would raise a
+        // warning bubble above the stopped note saying the same thing twice.
+        // The promise route in `#run` reports the cancellation.
+        if (cancelled()) {
+          return;
+        }
         h.onError(event.message);
       },
       onRunFinalized() {
@@ -532,7 +544,19 @@ interface RunState {
  * Whether a rejection came from aborting the run's fetch. Belt-and-suspenders
  * with the `#cancelled` flag: some `@ag-ui/client` versions re-throw the
  * `AbortError` instead of filtering it.
+ *
+ * Aborting a fetch whose body is mid-read does not always surface as an
+ * `AbortError`. Chrome raises `TypeError: BodyStreamBuffer was aborted`, which
+ * is the same event wearing a different name, so a message naming the abort is
+ * read as one too. Narrow on purpose: only a `TypeError`, and only when it says
+ * so — a genuine type error carries no such word, and misreading one as a
+ * cancellation would hide a real failure behind a stopped note.
  */
 function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return (
+    error.name === "AbortError" || (error instanceof TypeError && /abort/i.test(error.message))
+  );
 }
