@@ -32,6 +32,71 @@ export interface HttpAgentOptions {
    * server streams `STATE_SNAPSHOT` / `STATE_DELTA`.
    */
   initialState?: Readonly<Record<string, unknown>>;
+  /**
+   * Origins, besides the document's own, this agent may carry the host's
+   * credentials to.
+   *
+   * Running the agent on another subdomain is a normal deployment and stays
+   * supported, so a cross-origin endpoint is not refused — it is *announced*,
+   * once per origin, on the console. Listing an origin here says the
+   * destination was chosen deliberately and silences the notice for it.
+   *
+   * Entries are compared as serialized origins (`https://agent.example.com`,
+   * scheme and port included), which is what `URL.origin` produces.
+   */
+  trustedOrigins?: readonly string[];
+}
+
+/**
+ * Announce host credentials about to leave the document's origin.
+ *
+ * `endpoint` and its six sibling URL attributes are plain HTML, and a page that
+ * interpolates one from a query parameter or from tenant-authored
+ * configuration has handed an attacker the destination. The browser preflights
+ * the custom header, any server willing to answer `Access-Control-Allow-Headers`
+ * receives it, and the token leaves on the element's very first request —
+ * before the user has done anything. Nothing else in this package compares a
+ * configured URL against an expected origin, so without this the delivery is
+ * silent, which is the only part of that sequence worth changing.
+ *
+ * A warning rather than a refusal because a cross-origin agent is a documented
+ * deployment: refusing would break working installations to defend against a
+ * page that is already interpolating untrusted data into its own markup. What
+ * it removes is the silence.
+ *
+ * `warned` is per-agent rather than module-level, per this package's rule
+ * against shared mutable state: two elements on one page must each get their
+ * own notice, and the set lives exactly as long as the agent it belongs to.
+ */
+function warnOnCrossOriginCredentials(
+  url: string | URL,
+  credentialNames: readonly string[],
+  trustedOrigins: readonly string[],
+  warned: Set<string>,
+): void {
+  if (credentialNames.length === 0) {
+    return;
+  }
+  // Resolved against the document, so a relative endpoint — the ordinary case —
+  // lands on this origin and says nothing.
+  const destination = new URL(String(url), location.href).origin;
+  if (
+    destination === location.origin ||
+    trustedOrigins.includes(destination) ||
+    warned.has(destination)
+  ) {
+    return;
+  }
+  warned.add(destination);
+  console.warn(
+    `<ag-ui-chat>: sending host credentials (${credentialNames.join(", ")}) to ` +
+      `${destination}, which is not this page's origin (${location.origin}). Those headers ` +
+      "are the page's own authentication, and whichever server answers the browser's " +
+      "preflight receives them — so a URL attribute built from a query parameter or from " +
+      "tenant-authored configuration is a channel for the token to leave on. If this " +
+      "destination is deliberate, name it in the agent's `trustedOrigins` to confirm it and " +
+      "silence this notice. Reported once per origin.",
+  );
 }
 
 /**
@@ -42,9 +107,11 @@ export interface HttpAgentOptions {
  * {@link AbstractAgent}.
  */
 export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
+  const staticHeaders = options.headers ?? {};
+  const warned = new Set<string>();
   return new HttpAgent({
     url: options.endpoint,
-    headers: options.headers ?? {},
+    headers: staticHeaders,
     initialState: { ...(options.initialState ?? {}) },
     // HttpAgent invokes its configured fetch as a method (`this.fetch(...)`),
     // rebinding the global `fetch` to the agent instance — "Illegal invocation"
@@ -53,6 +120,13 @@ export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
     // own config having no seam for either.
     fetch: (url, init) => {
       const fresh = options.getHeaders?.();
+      // Only the names the *host* supplied. `HttpAgent` adds `Content-Type` and
+      // `Accept` to every request and neither is a credential, so reporting the
+      // outgoing header set wholesale would cry wolf on every plain request.
+      const credentialNames = [
+        ...new Set([...Object.keys(staticHeaders), ...Object.keys(fresh ?? {})]),
+      ].sort();
+      warnOnCrossOriginCredentials(url, credentialNames, options.trustedOrigins ?? [], warned);
       if (fresh === undefined) {
         return fetch(url, withCredentials(init, options.credentials));
       }

