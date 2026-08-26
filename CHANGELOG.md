@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The new-chat button deleted the conversation it left.** Pressing the header's
+  new-chat button (or the drawer's "New chat", or calling `newChat()`) cleared the
+  active thread from the store before minting the next id — the same call the
+  drawer's own delete action makes. The conversation vanished from the history
+  drawer, and with `data-threads-url` set it was deleted on the server too, since
+  the remote store answers `clear` with a `DELETE`. The line predates the history
+  drawer: it was written when "new chat" meant wiping the one conversation there
+  was, and multi-thread support was layered over it. Starting a conversation now
+  leaves the previous one where it was, to return to from the drawer. A thread
+  nothing was ever sent in is still dropped — it never appeared in the drawer, so
+  keeping it would only strand a record per press.
+
+### Added
+
+- **`ClientConversationStore.newThread()`** — start a conversation without
+  destroying one. Optional, so an existing custom store keeps working: the
+  element then mints the id itself and hands it to `setActiveThread`, which loses
+  only the store's own record that the thread is new. `SessionStorageStore` and
+  `RemoteConversationStore` both implement it.
+
 ## [0.26.1] — 2026-08-25
 
 ### Fixed

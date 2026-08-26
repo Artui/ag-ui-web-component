@@ -158,6 +158,22 @@ describe("RemoteConversationStore", () => {
     expect(store.isUnsent(local.threadId())).toBe(true);
   });
 
+  it("newThread mints locally and tells the server nothing", async () => {
+    const local = new SessionStorageStore();
+    const first = local.threadId();
+    const store = new RemoteConversationStore("https://x/threads/", () => ({}), local);
+
+    const second = store.newThread();
+    await flush();
+
+    expect(second).not.toBe(first);
+    expect(local.threadId()).toBe(second);
+    expect(store.isUnsent(second)).toBe(true);
+    // A thread reaches the server when its first message is persisted. Until
+    // then a new chat is a local fact, and the one it left is untouched.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("reports nothing unsent when the wrapped store cannot tell", () => {
     const store = new RemoteConversationStore("https://x/threads/");
     expect(store.isUnsent("anything")).toBe(false);

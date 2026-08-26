@@ -1998,7 +1998,7 @@ describe("AgUiChat", () => {
       expect(el.conversationStore.threadId()).toBe(active);
     });
 
-    it("the drawer's New chat starts a fresh thread", async () => {
+    it("the drawer's New chat starts a fresh thread and keeps the old one", async () => {
       const el = mount();
       const first = el.conversationStore.threadId();
       el.conversationStore.saveMessages(first, [{ id: "u1", role: "user", content: "x" }] as never);
@@ -2006,6 +2006,54 @@ describe("AgUiChat", () => {
       shadow(el).querySelector<HTMLButtonElement>(".drawer-new")?.click();
       await flush();
       expect(el.conversationStore.threadId()).not.toBe(first);
+      // Starting a conversation is not deleting one: the drawer still offers
+      // the previous thread, with its history intact behind the row.
+      expect(titles(el)).toEqual(["x"]);
+      expect(await el.conversationStore.loadMessages(first)).toHaveLength(1);
+    });
+
+    it("the header's new-chat button keeps the conversation it left", async () => {
+      const el = mount();
+      const first = el.conversationStore.threadId();
+      el.conversationStore.saveMessages(first, [
+        { id: "u1", role: "user", content: "keep me" },
+      ] as never);
+
+      shadow(el).querySelector<HTMLButtonElement>(".header-btn--new")?.click();
+      await openDrawer(el);
+
+      expect(el.conversationStore.threadId()).not.toBe(first);
+      expect(titles(el)).toEqual(["keep me"]);
+    });
+
+    it("switching back to the thread a new chat left replays it", async () => {
+      const el = mount();
+      const first = el.conversationStore.threadId();
+      el.conversationStore.saveMessages(first, [
+        { id: "u1", role: "user", content: "hello again" },
+      ] as never);
+
+      shadow(el).querySelector<HTMLButtonElement>(".header-btn--new")?.click();
+      expect(shadow(el).querySelectorAll(".message")).toHaveLength(0);
+      await openDrawer(el);
+      shadow(el).querySelector<HTMLButtonElement>(".drawer-row-select")?.click();
+      await flush();
+
+      expect(el.conversationStore.threadId()).toBe(first);
+      expect(shadow(el).querySelector(".message--user")?.textContent).toBe("hello again");
+    });
+
+    it("reaps the thread it leaves when nothing was ever sent in it", async () => {
+      const el = mount();
+      const first = el.conversationStore.threadId();
+
+      shadow(el).querySelector<HTMLButtonElement>(".header-btn--new")?.click();
+
+      // An empty thread was never listed, so keeping it would only leave a
+      // record per press of a button made to be pressed again.
+      expect(el.conversationStore.threadId()).not.toBe(first);
+      expect(sessionStorage.getItem(`ag-ui-chat:minted:${first}`)).toBeNull();
+      expect(await el.conversationStore.listThreads()).toEqual([]);
     });
 
     it("renaming a row persists the new title", async () => {
@@ -2060,6 +2108,33 @@ describe("AgUiChat", () => {
       await flush();
       expect(el.conversationStore.threadId()).toBe(active);
       expect(titles(el)).toEqual(["current"]);
+    });
+
+    it("does not delete server-side when a new chat starts", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ threads: [] }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      try {
+        const el = mount({ "data-threads-url": "/agent/threads/" });
+        await flush();
+        const first = el.conversationStore.threadId();
+        el.conversationStore.saveMessages(first, [
+          { id: "u1", role: "user", content: "x" },
+        ] as never);
+        fetchMock.mockClear();
+
+        shadow(el).querySelector<HTMLButtonElement>(".header-btn--new")?.click();
+        await flush();
+
+        // The thread lives on the server; a button that starts a new one has no
+        // business unmaking it there.
+        const methods = fetchMock.mock.calls.map(([, init]) => init?.method);
+        expect(methods).not.toContain("DELETE");
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
 
     it("routes the drawer through data-threads-url when set", async () => {

@@ -147,6 +147,29 @@ describe("SessionStorageStore", () => {
     expect(meta?.preview.endsWith("…")).toBe(true);
   });
 
+  it("newThread mints a fresh active id, leaving the thread it replaces alone", async () => {
+    const store = new SessionStorageStore();
+    const first = store.threadId();
+    store.saveMessages(first, [{ id: "m1", role: "user", content: "hi" }] as never);
+
+    const second = store.newThread();
+
+    expect(second).not.toBe(first);
+    expect(store.threadId()).toBe(second);
+    // The point of the method: the previous conversation is still readable and
+    // still listed, which is what makes the drawer able to offer it back.
+    expect(await store.loadMessages(first)).toHaveLength(1);
+    expect((await store.listThreads()).map((thread) => thread.threadId)).toEqual([first]);
+  });
+
+  it("marks a newThread id unsent, so a server is not asked about it", () => {
+    const store = new SessionStorageStore();
+    const id = store.newThread();
+    expect(store.isUnsent(id)).toBe(true);
+    store.saveMessages(id, [{ id: "m1", role: "user", content: "hi" }] as never);
+    expect(store.isUnsent(id)).toBe(false);
+  });
+
   describe("namespacing", () => {
     it("scopes keys per namespace so two stores don't collide", () => {
       const a = new SessionStorageStore("app-a");

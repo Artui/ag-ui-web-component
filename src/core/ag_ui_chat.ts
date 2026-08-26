@@ -86,7 +86,7 @@ import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunIndex } from "./run_index.js";
 import { type TranscribeHandler, transcribeAudio } from "./transcribe_audio.js";
 import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
-import { withCredentials } from "./utils.js";
+import { mintThread, withCredentials } from "./utils.js";
 
 /** The role a rendered chat message takes. */
 export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
@@ -1653,16 +1653,25 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Start a fresh conversation: forget the persisted history, drop the
-   * in-memory run state, clear the transcript, and mint a new thread id.
+   * Start a fresh conversation: drop the in-memory run state, clear the
+   * transcript, and mint a new thread id.
+   *
+   * The conversation being left is kept, and stays in the history drawer to
+   * return to. Deleting one is the drawer row's own action; a button that
+   * starts something new must not be the button that destroys what was there.
    */
   newChat(): void {
     // Stop any in-flight run first — discarding the client mid-run would
     // leave the old agent streaming into a cleared transcript.
     this.#cancelRun();
-    this.conversationStore.clear(this.#threadId);
+    // A thread nothing was ever sent in has nothing to come back to, and the
+    // drawer never listed it — so reap it here rather than strand one record
+    // per press of a button whose whole use is being pressed again.
+    if (this.conversationStore.isUnsent?.(this.#threadId) === true) {
+      this.conversationStore.clear(this.#threadId);
+    }
     this.#resetState();
-    this.#threadId = this.conversationStore.threadId();
+    this.#threadId = mintThread(this.conversationStore);
     this.#setRunning(false);
     this.#setUnread(0);
   }
