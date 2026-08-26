@@ -102,6 +102,49 @@ const TITLE_LIMIT = 60;
 const PREVIEW_LIMIT = 100;
 const DEFAULT_TITLE = "New conversation";
 
+// One warning per page, not one per write. The condition is origin-wide and
+// persistent — a full quota stays full — so a message per persisted turn (or,
+// on the resize path, per keystroke) would bury the one that matters.
+let writeFailureReported = false;
+
+/**
+ * `sessionStorage.setItem` that survives a store which refuses to write.
+ *
+ * `setItem` throws on an exhausted quota (a long conversation, or one turn
+ * carrying a large tool result) and in privacy modes that deny storage
+ * altogether. Every write here is a *durability* concern — surviving a reload —
+ * and none of them is worth an exception, because of where they are called
+ * from: the element persists the transcript from inside the run loop, so an
+ * unguarded throw escapes as a run error and tells the user the agent failed
+ * when nothing but the browser's storage did. On the cancel path it escapes as
+ * an unhandled rejection instead.
+ *
+ * So a failed write loses the reload, never the conversation on screen, and
+ * says so once. Recovery is in the user's hands already: deleting the oversized
+ * thread from the history drawer is a `removeItem`, which frees the quota.
+ */
+export function writeStoredItem(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    if (writeFailureReported) {
+      return;
+    }
+    writeFailureReported = true;
+    console.warn(
+      "<ag-ui-chat>: the browser refused a sessionStorage write — the quota is " +
+        "full, or storage is disabled for this context. The conversation " +
+        "continues, but it will not survive a page reload. Deleting a long " +
+        "conversation from the history drawer frees the quota.",
+    );
+  }
+}
+
+/** The storage-key root for a namespace; `""` is the pre-namespacing global root. */
+function rootFor(namespace: string): string {
+  return namespace === "" ? KEY_ROOT : `${KEY_ROOT}@${namespace}`;
+}
+
 /** The drawer-index entry; `titleCustom` (private) freezes a renamed title. */
 interface StoredThread {
   threadId: string;
@@ -122,15 +165,59 @@ interface StoredThread {
  * An optional `namespace` scopes every key to one element, so two
  * `<ag-ui-chat>` instances on the same origin keep separate active-thread
  * pointers and drawer indexes instead of clobbering each other. The default
- * empty namespace keeps the origin-global keys; see {@link #migrateLegacyKeys}.
+ * empty namespace keeps the origin-global keys, which a namespaced store adopts
+ * on construction; see {@link SessionStorageStore.adopt}.
  */
 export class SessionStorageStore implements ClientConversationStore {
   readonly #root: string;
 
   constructor(namespace = "") {
-    this.#root = namespace === "" ? KEY_ROOT : `${KEY_ROOT}@${namespace}`;
+    this.#root = rootFor(namespace);
     if (namespace !== "") {
-      this.#migrateLegacyKeys();
+      // One-time move of the pre-namespacing global keys, so an existing
+      // conversation isn't orphaned by the upgrade. See {@link adopt}.
+      SessionStorageStore.adopt("", namespace);
+    }
+  }
+
+  /**
+   * Move every key a store owns out of `from`'s namespace and into `to`'s.
+   *
+   * Two callers, one move. The constructor adopts the pre-namespacing global
+   * keys (`from` = `""`); `<ag-ui-chat>` adopts an element-scoped conversation
+   * into a principal-scoped one the first time a `user-key` arrives, which is a
+   * host naming the user who was already there rather than a handover.
+   *
+   * Only this store's own suffixes move — the element's `collapsed` / `size` /
+   * `theme` keys share the global root and are deliberately left where they
+   * are. A value already present at the destination wins: the destination is
+   * the durable record and the source is the stray this move exists to clear.
+   */
+  static adopt(from: string, to: string): void {
+    const fromRoot = `${rootFor(from)}:`;
+    const toRoot = `${rootFor(to)}:`;
+    for (const [key, suffix] of ownedKeys(fromRoot)) {
+      const value = sessionStorage.getItem(key);
+      const destination = toRoot + suffix;
+      if (value !== null && sessionStorage.getItem(destination) === null) {
+        writeStoredItem(destination, value);
+      }
+      sessionStorage.removeItem(key);
+    }
+  }
+
+  /**
+   * Forget everything a store holds for `namespace`.
+   *
+   * The logout primitive: `<ag-ui-chat>` calls it when its `user-key` changes,
+   * and a host driving its own store can call it from its own sign-out path.
+   * Deliberately narrow — it removes only keys under this exact namespace whose
+   * suffix parses as one this store writes, so it can never reach another
+   * element's conversation or the host's own `sessionStorage` entries.
+   */
+  static purge(namespace: string): void {
+    for (const [key] of ownedKeys(`${rootFor(namespace)}:`)) {
+      sessionStorage.removeItem(key);
     }
   }
 
@@ -140,8 +227,8 @@ export class SessionStorageStore implements ClientConversationStore {
 
   newThread(): string {
     const id = randomUUID();
-    sessionStorage.setItem(this.#key(THREAD_SUFFIX), id);
-    sessionStorage.setItem(this.#key(MINTED_SUFFIX + id), "1");
+    writeStoredItem(this.#key(THREAD_SUFFIX), id);
+    writeStoredItem(this.#key(MINTED_SUFFIX + id), "1");
     return id;
   }
 
@@ -157,7 +244,7 @@ export class SessionStorageStore implements ClientConversationStore {
   }
 
   saveMessages(threadId: string, messages: readonly Message[]): void {
-    sessionStorage.setItem(this.#key(MESSAGES_SUFFIX + threadId), JSON.stringify(messages));
+    writeStoredItem(this.#key(MESSAGES_SUFFIX + threadId), JSON.stringify(messages));
     sessionStorage.removeItem(this.#key(MINTED_SUFFIX + threadId));
     this.#touchThread(threadId, messages);
   }
@@ -172,7 +259,7 @@ export class SessionStorageStore implements ClientConversationStore {
       sessionStorage.removeItem(key);
       return;
     }
-    sessionStorage.setItem(key, JSON.stringify(checkpoint));
+    writeStoredItem(key, JSON.stringify(checkpoint));
   }
 
   clear(threadId: string): void {
@@ -196,7 +283,7 @@ export class SessionStorageStore implements ClientConversationStore {
   }
 
   setActiveThread(threadId: string): void {
-    sessionStorage.setItem(this.#key(THREAD_SUFFIX), threadId);
+    writeStoredItem(this.#key(THREAD_SUFFIX), threadId);
   }
 
   renameThread(threadId: string, title: string): void {
@@ -244,43 +331,12 @@ export class SessionStorageStore implements ClientConversationStore {
       sessionStorage.removeItem(key);
       return;
     }
-    sessionStorage.setItem(key, JSON.stringify(threads));
+    writeStoredItem(key, JSON.stringify(threads));
   }
 
   /** This store's fully-qualified key for a suffix (namespaced when set). */
   #key(suffix: string): string {
     return `${this.#root}:${suffix}`;
-  }
-
-  /**
-   * One-time move of un-namespaced `ag-ui-chat:*` keys into this instance's
-   * namespace, so an existing conversation isn't orphaned. Only this store's own
-   * keys move — the element's `collapsed` / `theme` keys are left alone. The
-   * first namespaced instance to mount adopts the data; a second namespace
-   * finds it gone and starts fresh.
-   */
-  #migrateLegacyKeys(): void {
-    const legacyRoot = `${KEY_ROOT}:`;
-    const moves: Array<readonly [string, string]> = [];
-    for (let i = 0; i < sessionStorage.length; i += 1) {
-      const key = sessionStorage.key(i);
-      if (key === null || !key.startsWith(legacyRoot)) {
-        continue;
-      }
-      const suffix = key.slice(legacyRoot.length);
-      if (isOwnedSuffix(suffix)) {
-        moves.push([key, this.#key(suffix)]);
-      }
-    }
-    // Collected first, mutated second — writing while iterating by index skips
-    // entries as the key list shifts.
-    for (const [from, to] of moves) {
-      const value = sessionStorage.getItem(from);
-      if (value !== null && sessionStorage.getItem(to) === null) {
-        sessionStorage.setItem(to, value);
-      }
-      sessionStorage.removeItem(from);
-    }
   }
 
   /** Parse a stored JSON value, returning `null` when absent or corrupt. */
@@ -297,13 +353,43 @@ export class SessionStorageStore implements ClientConversationStore {
   }
 }
 
-/** Whether a legacy key suffix belongs to the store (vs the element's own keys). */
+/**
+ * Every `sessionStorage` key under `root` that this store wrote, as
+ * `[key, suffix]`.
+ *
+ * Collected into an array before the caller mutates anything: `sessionStorage`
+ * is enumerated by index, and removing an entry mid-loop shifts the ones after
+ * it out from under the cursor.
+ *
+ * The suffix test is what makes {@link SessionStorageStore.purge} safe to point
+ * at a namespace. It matters most for the global root, which the element's own
+ * `collapsed` / `size` / `theme` keys share — but it also means a namespace
+ * whose name happens to be a prefix of another cannot reach into it, since the
+ * remainder would have to parse as one of these suffixes.
+ */
+function ownedKeys(root: string): Array<readonly [string, string]> {
+  const found: Array<readonly [string, string]> = [];
+  for (let index = 0; index < sessionStorage.length; index += 1) {
+    const key = sessionStorage.key(index);
+    if (key === null || !key.startsWith(root)) {
+      continue;
+    }
+    const suffix = key.slice(root.length);
+    if (isOwnedSuffix(suffix)) {
+      found.push([key, suffix]);
+    }
+  }
+  return found;
+}
+
+/** Whether a key suffix belongs to the store (vs the element's own keys). */
 function isOwnedSuffix(suffix: string): boolean {
   return (
     suffix === THREAD_SUFFIX ||
     suffix === THREADS_SUFFIX ||
     suffix.startsWith(MESSAGES_SUFFIX) ||
-    suffix.startsWith(CHECKPOINT_SUFFIX)
+    suffix.startsWith(CHECKPOINT_SUFFIX) ||
+    suffix.startsWith(MINTED_SUFFIX)
   );
 }
 

@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A conversation could carry from one signed-in user to the next in the same
+  tab.** New `user-key` attribute (and matching `userKey` property): set it to
+  whatever identifies the signed-in principal, and the stored conversation is
+  scoped to them, so two principals in one tab cannot reach each other's
+  transcript. Changing it — or clearing it — purges everything the previous
+  principal left behind under this element: the transcript, the history drawer
+  index and any navigation checkpoint. That purge is why it is a live attribute
+  rather than a connect-time one: `sessionStorage` is scoped to the tab and not
+  to the session, so it survives the navigation a logout is, and a single-page
+  app signs out through its own router without remounting anything — the host
+  naming the new principal is the only signal there is. The first value to
+  arrive is treated as a host naming the user who was already there rather than
+  as a handover, so an element configured by an async auth handshake keeps the
+  conversation on screen. Absent, behaviour is exactly what it was, including
+  that carry-over; the README says so where the attribute is documented.
+  `SessionStorageStore.purge(namespace)` exposes the same primitive for a host
+  driving its own sign-out.
+
+- **Pointing history at a server still left a full copy of every transcript in
+  the browser.** `RemoteConversationStore` mirrored each message body into
+  `sessionStorage` whatever the deployment had chosen, so an operator who
+  configured `data-threads-url` precisely to keep conversations in the database
+  got them in both places. The mirror is now a `cacheMessages` constructor
+  option, exposed on the element as `data-threads-cache="false"`, and it still
+  defaults to the caching behaviour so nobody's setup changes silently. Turning
+  it off keeps only the client-only state — the active thread id and the
+  navigation checkpoint — so reloads and navigating tools work as before; what
+  it costs is the offline fallback, since there is no longer a local copy to
+  fall back to.
+
+### Fixed
+
+- **Two chats on one page shared one conversation.** The storage namespace falls
+  back from the element's `id` to its `endpoint`, so two `<ag-ui-chat>` elements
+  with no `id` against the same agent mount — a docked support panel and an
+  inline page assistant, say, and nothing requires an `id` — resolved to the same
+  namespace and shared a thread pointer, a history drawer and every message key.
+  Whichever mounted second adopted the first's active thread and rehydrated its
+  transcript into its own panel. The first element to mount now keeps the
+  namespace, so the ordinary single-element case is untouched, and a second is
+  given a throwaway namespace of its own plus a console warning naming the fix.
+  The throwaway namespace is minted per mount, so give each element an `id` for
+  its conversation to survive a reload.
+
+- **A full storage quota was reported as an agent failure.** `sessionStorage`
+  writes throw once the quota is exhausted — a long conversation, or one turn
+  carrying a large tool result — and in privacy modes that deny storage
+  outright. The transcript is persisted from inside the run loop, so that throw
+  surfaced as a run error and told the user the agent had failed when nothing
+  but the browser's storage had; on the cancel path it escaped as an unhandled
+  rejection instead. A write that cannot be made now costs the reload and not
+  the conversation, and says so in the console once rather than once per turn.
+
 ## [0.27.0] — 2026-08-26
 
 ### Fixed
