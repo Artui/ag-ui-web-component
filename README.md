@@ -1042,9 +1042,12 @@ via the `resize-handle` part.
 Assistant bubbles render sanitized markdown/HTML via [`marked`](https://www.npmjs.com/package/marked)
 (GitHub-flavoured, single-newline line breaks) piped through
 [DOMPurify](https://www.npmjs.com/package/dompurify). User messages stay literal text. The
-allowlist permits emphasis, code, lists, quotes, headings, links, tables, and images (`img`); links
-are hardened with `target="_blank" rel="noopener noreferrer"`; `iframe`/`style`/scripting are
-excluded. The exported helper `renderMarkdown(text)` does this standalone. `marked` and `dompurify`
+allowlist permits emphasis, code, lists, quotes, headings, links, tables, and — when `allowImages`
+is set — images; links are hardened with `target="_blank" rel="noopener noreferrer"`;
+`iframe`/`style`/scripting are excluded, as are every `data-*` and `aria-*` attribute and every
+`class` but a code fence's `language-*` hint, so model output cannot dress itself up as the
+component's own approval or tool-call chrome. The exported helper `renderMarkdown(text)` does this
+standalone. `marked` and `dompurify`
 are runtime dependencies.
 
 An animated 3-dot "thinking" indicator (`role="status"`, with an aria-label) appears before the
@@ -1452,6 +1455,8 @@ re-export point. Internal modules import from leaf paths.
 | `SubmitDetail` | type | `detail` shape of the submit event. |
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
 | `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
+| `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
+| `StateDetail` | type | `detail` shape of the `ag-ui-state` event (`{ state }`). |
 
 ### AG-UI client & agent
 
@@ -1463,6 +1468,8 @@ re-export point. Internal modules import from leaf paths.
 | `ConnectionLostError` | class | Raised (→ `onError`) when a run's stream closes with no terminal AG-UI event. |
 | `createHttpAgent(options)` | function | Default agent factory (wraps `HttpAgent`). |
 | `AgentFactory` / `HttpAgentOptions` | type | Factory signature and its options. |
+| `ResolveInterrupts` | type | Resolver for server-side-tool approval interrupts (one decision per interrupt). |
+| `InterruptResponse` | type | One interrupt's answer: `resolved` (with an optional payload) or `cancelled`. |
 
 ### Tools & flags
 
@@ -1476,6 +1483,9 @@ re-export point. Internal modules import from leaf paths.
 | `PAGE_ACTIONS` | const | The page-action opt-in tokens (`scroll` / `drag`). |
 | `ResolvePageTarget` | type | `(target) => HTMLElement | null` — the page-target resolver. |
 | `X_DESTRUCTIVE_KEY` / `X_NAVIGATES_KEY` | const | The JSON-Schema extension keys. |
+| `parseToolCatalog(data)` | function | Parse a fetched `data-tools-url` catalog into a `name` → `summary` map. |
+| `ToolCatalogEntry` | type | One row of that catalog. |
+| `prettifyToolName(name)` | function | Last fallback of the tool-card label chain (`delete_record` reads as *Delete record*). |
 
 ### Host seams
 
@@ -1490,6 +1500,7 @@ re-export point. Internal modules import from leaf paths.
 | `PageState` | type | A page-state binding declaration. |
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
 | `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
+| `createStateHookTools(binding)` / `StateHook` | deprecated | The former names for `createPageStateTools` / `PageState`. |
 
 ### Durability
 
@@ -1515,6 +1526,14 @@ re-export point. Internal modules import from leaf paths.
 | `AttachmentRef` | type | The durable upload ref (`{ id, name, mime, size, url? }`). |
 | `messageAttachments(message)` | function | Read the refs a restored user message carries. |
 
+### Voice input
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `transcribeAudio(audio, options)` | function | The built-in transcription POST (multipart) → the transcript text. |
+| `TranscribeOptions` | type | `{ url, headers? }`. |
+| `TranscribeHandler` | type | `(audio) => Promise<string>` — the `transcribeHandler` swap seam (Web Speech, direct-to-provider). |
+
 ### UI & DOM primitives
 
 | Export | Kind | Summary |
@@ -1527,7 +1546,19 @@ re-export point. Internal modules import from leaf paths.
 | `UiStrings` | type | The flat table of every user-facing string. |
 | `DEFAULT_UI_STRINGS` | const | The English defaults (the override floor). |
 | `mergeUiStrings(overrides)` | function | Merge a partial override over the defaults. |
-| `renderMarkdown(text)` | function | Render sanitized markdown/HTML (marked + DOMPurify). |
+| `renderMarkdown(text, options?)` | function | Render sanitized markdown/HTML (marked + DOMPurify). |
+| `RenderMarkdownOptions` | type | `{ allowImages? }` — opt `<img>` back into the sanitized output. |
+| `requestApproval(host, request, options?)` | function | Append the inline approval card that gates a server-side tool. |
+| `ApprovalRequest` | type | What that card displays (`{ message?, toolName? }`). |
+| `ApprovalOptions` | type | `{ signal?, strings? }` — abort resolves the card as denied; `strings` localizes it. |
+| `ApprovalRenderer` | type | Replace the built-in approval card outright (`AgUiChat.approvalRenderer`). |
+| `requestQuestion(host, request, options?)` | function | Append the inline `ask_user` card (radios and/or free text). |
+| `QuestionRequest` | type | What that card asks. |
+| `QuestionOptions` | type | `{ signal?, strings? }` — abort resolves it with an empty answer. |
+| `QuestionRenderer` | type | Replace the built-in question card outright (`AgUiChat.questionRenderer`). |
+| `renderChart(spec)` | function | Draw one spec as a self-contained block, or `null` when it says nothing. |
+| `chartSpecFrom(value)` | function | Read an arbitrary payload into a `ChartSpec`, or `null` if it cannot be drawn honestly. |
+| `ChartSpec` / `ChartSeries` / `ChartKind` | type | A chart as data, one named series, and how it is drawn. |
 | `typeInto` / `highlightThenClick` / `pressThenClick` / `selectOption` / `toggleControl` / `scrollIntoCenterView` / `flash` / `focusWithFlash` / `prefersReducedMotion` | function | Animation primitives. |
 | `fillField` / `clickElement` / `pressButton` / `selectControl` / `setControlValue` / `toggleCheckbox` | function | DOM-driver primitives. |
 | `setNativeValue` / `setNativeChecked` | function | Set a control via its native prototype setter (React-controlled inputs). |
@@ -1542,6 +1573,12 @@ re-export point. Internal modules import from leaf paths.
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
+| `ATTACHMENT_EVENT` | The attachments-changed CustomEvent name (`ag-ui-attachments`). |
+| `STATE_EVENT` | The shared-state CustomEvent name (`ag-ui-state`). |
+| `CHART_ACTIVITY_TYPE` | The `ACTIVITY_SNAPSHOT` type a server sets to push a chart. |
+| `CHART_TOOL_NAME` | The name the built-in chart tool registers under (`render_chart`). |
+| `COMPACTION_ACTIVITY_TYPE` | The `ACTIVITY_SNAPSHOT` type reporting a trimmed history. |
+| `LOAD_CAPABILITY_TOOL` | The agent-side capability-loading tool's name. |
 | `MESSAGE_ROLE` | Message role constants. |
 | `TOOL_CALL_STATUS` | Tool-call card status constants. |
 | `TOOL_DISPLAY` | Tool-call display-mode constants (`minimal` / `compact` / `full`). |

@@ -129,19 +129,59 @@ describe("createResizeHandle", () => {
 
   it("resizes from the keyboard, which is the only route without a pointer", () => {
     const { handle, applied, committed } = harness("both", BOTTOM_RIGHT);
+    /** One deliberate press: down, then up. */
+    const press = (key: string, shiftKey = false): void => {
+      handle.dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey, cancelable: true }));
+      handle.dispatchEvent(new KeyboardEvent("keyup", { key, shiftKey }));
+    };
     // A left-side grip grows leftward.
-    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", cancelable: true }));
+    press("ArrowLeft");
     expect(applied.at(-1)).toEqual({ width: 416 });
-    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true }));
+    press("ArrowRight");
     expect(applied.at(-1)).toEqual({ width: 384 });
     // A top grip grows upward.
-    handle.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "ArrowUp", shiftKey: true, cancelable: true }),
-    );
+    press("ArrowUp", true);
     expect(applied.at(-1)).toEqual({ height: 564 });
-    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", cancelable: true }));
+    press("ArrowDown");
     expect(applied.at(-1)).toEqual({ height: 484 });
+    // Four deliberate presses are four gestures, the way four drags would be.
     expect(committed).toHaveLength(4);
+  });
+
+  it("commits once per keyboard gesture, not once per key event", () => {
+    // `commit` is declared "once per completed drag, for persistence", and a
+    // host that reads it that way puts a storage write or a PATCH behind it.
+    // Holding an arrow key means OS key repeat at 20-30 events a second, which
+    // is exactly the interaction keyboard support exists for.
+    const { handle, applied, committed } = harness("both", BOTTOM_RIGHT);
+    for (let i = 0; i < 3; i += 1) {
+      handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", cancelable: true }));
+    }
+    // Live feedback on every repeat, and nothing persisted mid-gesture.
+    expect(applied).toHaveLength(3);
+    expect(committed).toEqual([]);
+
+    handle.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowLeft" }));
+    expect(committed).toEqual([{ width: 416 }]);
+  });
+
+  it("commits a pending keyboard resize when focus leaves before the key comes up", () => {
+    const { handle, committed } = harness("both", BOTTOM_RIGHT);
+    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", cancelable: true }));
+    handle.dispatchEvent(new FocusEvent("blur"));
+    expect(committed).toEqual([{ width: 416 }]);
+
+    // ...and the gesture is over, so the key coming up later commits nothing.
+    handle.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowLeft" }));
+    expect(committed).toHaveLength(1);
+  });
+
+  it("commits nothing for a key that never resized anything", () => {
+    const { handle, committed } = harness("both", BOTTOM_RIGHT);
+    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", cancelable: true }));
+    handle.dispatchEvent(new KeyboardEvent("keyup", { key: "Home" }));
+    handle.dispatchEvent(new FocusEvent("blur"));
+    expect(committed).toEqual([]);
   });
 
   it("reverses the horizontal keys when the left edge is the fixed one", () => {

@@ -45,7 +45,11 @@ export interface ResizeOptions {
   readonly rect: () => PanelRect;
   /** Apply a size (the host writes the custom properties). */
   readonly apply: (size: ResizeSize) => void;
-  /** Called once per completed drag, for persistence. */
+  /**
+   * Called once per completed resize, for persistence: on `pointerup` for a
+   * drag, and when the key comes up (or focus leaves the handle) for a key
+   * press. Never per pointer move, and never per key repeat.
+   */
   readonly commit: (size: ResizeSize) => void;
   /** Accessible label. */
   readonly label: string;
@@ -127,6 +131,21 @@ export function createResizeHandle(options: ResizeOptions): HTMLDivElement {
     event.preventDefault();
   });
 
+  // The size the current key gesture has applied but not yet persisted. The
+  // pointer path can commit inline because a drag has one unambiguous end;
+  // a key press does not, so the gesture's result is held here until it does.
+  let pending: ResizeSize | null = null;
+
+  /** End a key gesture: persist what it applied, once. */
+  const settle = (): void => {
+    if (pending === null) {
+      return;
+    }
+    const size = pending;
+    pending = null;
+    options.commit(size);
+  };
+
   // Keyboard parity: a pointer-only resize is unreachable without a mouse, and
   // this control has no equivalent elsewhere in the UI.
   handle.addEventListener("keydown", (event: KeyboardEvent) => {
@@ -155,9 +174,20 @@ export function createResizeHandle(options: ResizeOptions): HTMLDivElement {
       return;
     }
     event.preventDefault();
+    // Live feedback per key event, persistence only when the gesture ends:
+    // `commit` promises one call per completed resize, and a held arrow key
+    // repeats at the OS rate (20-30 events a second), so committing here would
+    // put that many storage writes or PATCHes behind a single press — landing
+    // hardest on the keyboard users this path exists for.
     options.apply(next);
-    options.commit(next);
+    pending = next;
   });
+
+  // The key coming up ends the gesture, mirroring `pointerup`. `blur` closes one
+  // whose keyup never arrives here — focus moved on mid-press — because a size
+  // that was applied but never committed is a resize the host silently forgets.
+  handle.addEventListener("keyup", settle);
+  handle.addEventListener("blur", settle);
 
   return handle;
 }
