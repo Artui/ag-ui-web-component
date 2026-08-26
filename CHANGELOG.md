@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-08-26
+
+### Fixed
+
+- **A deliberate cancel was reported as an error as well as a cancellation.**
+  Pressing Stop (or Escape, or anything else that cancels a run) could put a
+  warning bubble carrying the browser's own abort text — Chrome's is
+  `BodyStreamBuffer was aborted` — directly above the muted stopped note: one
+  deliberate stop, described twice, once as a failure. Cancelling aborts the
+  response while its body is being read, and that abort can reach the AG-UI
+  subscriber as a `RUN_ERROR` event, which was forwarded to `onError` without
+  consulting the cancel flag. Only the promise route ever checked it. It looked
+  intermittent because whether the abort produces a run error depends on where
+  in the stream it lands. A cancelled run now reports the cancellation alone; a
+  run that failed on its own still reports its error.
+
+- **Chrome's mid-read abort was classified as a genuine error.**
+  `isAbortError` matched only `name === "AbortError"`, and Chrome raises
+  `TypeError: BodyStreamBuffer was aborted` when a fetch body is cancelled
+  mid-read. The cancel flag hid this in the common case; an abort arriving
+  without it — a caller aborting the request by another route — was reported as
+  a failure. A `TypeError` whose message names the abort is now read as one.
+
+- **The new-chat button deleted the conversation it left.** Pressing the header's
+  new-chat button (or the drawer's "New chat", or calling `newChat()`) cleared the
+  active thread from the store before minting the next id — the same call the
+  drawer's own delete action makes. The conversation vanished from the history
+  drawer, and with `data-threads-url` set it was deleted on the server too, since
+  the remote store answers `clear` with a `DELETE`. The line predates the history
+  drawer: it was written when "new chat" meant wiping the one conversation there
+  was, and multi-thread support was layered over it. Starting a conversation now
+  leaves the previous one where it was, to return to from the drawer. A thread
+  nothing was ever sent in is still dropped — it never appeared in the drawer, so
+  keeping it would only strand a record per press.
+
+### Added
+
+- **`ClientConversationStore.newThread()`** — start a conversation without
+  destroying one. Optional, so an existing custom store keeps working: the
+  element then mints the id itself and hands it to `setActiveThread`, which loses
+  only the store's own record that the thread is new. `SessionStorageStore` and
+  `RemoteConversationStore` both implement it.
+
 ## [0.26.1] — 2026-08-25
 
 ### Fixed
@@ -1662,7 +1705,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.26.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.26.1...v0.27.0
 [0.26.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.25.1...v0.25.2

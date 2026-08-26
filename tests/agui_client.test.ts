@@ -457,6 +457,61 @@ describe("AgUiClient", () => {
       expect(handlers.calls.filter((c) => c === "settled")).toEqual(["settled"]);
     });
 
+    it("stays silent when the abort surfaces as a RUN_ERROR", async () => {
+      // Aborting a response mid-read can reach the subscriber as a RUN_ERROR
+      // carrying the browser's own abort text. Reporting it put a warning
+      // bubble saying "BodyStreamBuffer was aborted" directly above the muted
+      // stopped note — the same deliberate stop, described twice, once as a
+      // failure.
+      let client: AgUiClient | null = null;
+      const fake = makeFakeAgent({
+        script: (emit) => {
+          emit.text("par");
+          client?.cancel(); // the user hits Stop mid-stream
+          emit.error("BodyStreamBuffer was aborted");
+        },
+      });
+      const handlers = recordingHandlers();
+      client = new AgUiClient({ agent: fake.agent, handlers });
+      await client.send("x");
+
+      expect(handlers.calls.filter((c) => c.startsWith("err"))).toEqual([]);
+      expect(handlers.calls).toContain("cancelled");
+      expect(handlers.calls.filter((c) => c === "settled")).toEqual(["settled"]);
+    });
+
+    it("still reports a RUN_ERROR from a run nobody cancelled", async () => {
+      // The other side of the guard: suppressing the report is what a cancel
+      // buys, and a run that failed on its own must still say so.
+      const fake = makeFakeAgent({
+        script: (emit) => {
+          emit.error("the model is overloaded");
+        },
+      });
+      const handlers = recordingHandlers();
+      await new AgUiClient({ agent: fake.agent, handlers }).send("x");
+
+      expect(handlers.calls).toContain("err:the model is overloaded");
+      expect(handlers.calls).not.toContain("cancelled");
+    });
+
+    it("routes Chrome's mid-read abort TypeError to onCancelled", async () => {
+      // `TypeError: BodyStreamBuffer was aborted` is Chrome's name for a fetch
+      // body cancelled mid-read. Without the flag set — a caller aborting the
+      // request by another route — the name alone would call it a failure.
+      const fake = makeFakeAgent({ throwOnRun: new TypeError("BodyStreamBuffer was aborted") });
+      const handlers = recordingHandlers();
+      await new AgUiClient({ agent: fake.agent, handlers }).send("x");
+      expect(handlers.calls).toEqual(["cancelled", "settled"]);
+    });
+
+    it("leaves an ordinary TypeError an error", async () => {
+      const fake = makeFakeAgent({ throwOnRun: new TypeError("x is not a function") });
+      const handlers = recordingHandlers();
+      await new AgUiClient({ agent: fake.agent, handlers }).send("x");
+      expect(handlers.calls).toEqual(["err:x is not a function", "settled"]);
+    });
+
     it("persists the partial history when cancelled", async () => {
       let client: AgUiClient | null = null;
       const lengths: number[] = [];

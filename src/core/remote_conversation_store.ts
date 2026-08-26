@@ -5,7 +5,7 @@ import {
   SessionStorageStore,
   type ThreadMeta,
 } from "./conversation_store.js";
-import { withCredentials } from "./utils.js";
+import { mintThread, withCredentials } from "./utils.js";
 
 /** One row of the server thread index (django-ag-ui's `ThreadsView` wire shape). */
 interface ServerThreadRow {
@@ -67,6 +67,15 @@ export class RemoteConversationStore implements ClientConversationStore {
 
   setActiveThread(threadId: string): void {
     this.#local.setActiveThread(threadId);
+  }
+
+  /**
+   * Delegated to the local store, which owns the active id — and deliberately
+   * silent on the wire: the server learns of a thread when its first message is
+   * persisted, so an abandoned new chat costs no round-trip and leaves no row.
+   */
+  newThread(): string {
+    return mintThread(this.#local);
   }
 
   /** Delegated, so wrapping a store does not lose what it knows about its own ids. */

@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { withCredentials } from "../src/core/utils.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ClientConversationStore } from "../src/core/conversation_store.js";
+import { SessionStorageStore } from "../src/core/conversation_store.js";
+import { mintThread, withCredentials } from "../src/core/utils.js";
 
 describe("withCredentials", () => {
   it("hands back the very same init when no mode is configured", () => {
@@ -22,5 +24,46 @@ describe("withCredentials", () => {
 
   it("builds an init from nothing when only a mode is given", () => {
     expect(withCredentials(undefined, "omit")).toEqual({ credentials: "omit" });
+  });
+});
+
+describe("mintThread", () => {
+  beforeEach(() => sessionStorage.clear());
+
+  it("uses the store's own newThread when it has one", () => {
+    const store = new SessionStorageStore();
+    const first = store.threadId();
+    const second = mintThread(store);
+    expect(second).not.toBe(first);
+    expect(store.threadId()).toBe(second);
+    expect(store.isUnsent(second)).toBe(true);
+  });
+
+  it("mints and activates an id for a store that predates newThread", () => {
+    let active = "seeded";
+    const store = {
+      threadId: () => active,
+      setActiveThread: (threadId: string) => {
+        active = threadId;
+      },
+    } as unknown as ClientConversationStore;
+
+    const minted = mintThread(store);
+
+    expect(minted).not.toBe("seeded");
+    expect(active).toBe(minted);
+  });
+
+  it("never clears the thread it moves off", () => {
+    const clear = vi.fn();
+    const store = {
+      threadId: () => "t1",
+      setActiveThread: () => {},
+      clear,
+    } as unknown as ClientConversationStore;
+
+    mintThread(store);
+
+    expect(clear).not.toHaveBeenCalled();
   });
 });

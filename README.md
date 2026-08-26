@@ -773,8 +773,11 @@ handler), gate `drag_and_drop` with [`confirmPredicate`](#inline-confirmation-x-
 The header carries two built-in buttons: a new-chat (✚) button and a collapse (—) toggle. The
 matching JS API:
 
-- `newChat()` — clears the transcript and the persisted history, drops the in-memory run state,
-  and mints a new thread id.
+- `newChat()` — clears the transcript, drops the in-memory run state, and mints a new thread id.
+  The conversation it leaves is **kept**: it stays in the history drawer to return to, and on a
+  server-backed store it stays on the server. Deleting one is the drawer row's own action. A chat
+  nothing was ever sent in is the exception — it was never listed, so it is dropped rather than
+  left behind.
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
   reflected as the boolean `collapsed` attribute/property and persisted per-tab in
   `sessionStorage`, so it survives a reload.

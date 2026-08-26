@@ -36,12 +36,24 @@ export interface ThreadMeta {
  * is a small local hint a server store can derive from history and no-op.
  *
  * Thread enumeration backs the chat-history drawer; deleting a thread reuses
- * {@link clear} and "new chat" reuses {@link threadId} after clearing the
- * active thread.
+ * {@link clear}, and "new chat" is {@link newThread} — which leaves the
+ * conversation it moves off of intact, for the drawer to offer back.
  */
 export interface ClientConversationStore {
   /** The active conversation id, generated and persisted on first read. */
   threadId(): string;
+  /**
+   * Start a fresh conversation, make it active, and return its id.
+   *
+   * Existing threads are left where they are: "new chat" adds one, and
+   * {@link clear} is the only method that takes one away.
+   *
+   * Optional, so a store written before this method existed still works. The
+   * caller then mints the id itself and hands it to {@link setActiveThread},
+   * which loses only the store's own record that the thread is new (see
+   * {@link isUnsent}).
+   */
+  newThread?(): string;
   /** Load the persisted message history, or `null` when none exists. */
   loadMessages(threadId: string): Promise<readonly Message[] | null>;
   /** Persist the message history (and refresh the thread's drawer metadata). */
@@ -123,13 +135,12 @@ export class SessionStorageStore implements ClientConversationStore {
   }
 
   threadId(): string {
-    const key = this.#key(THREAD_SUFFIX);
-    const existing = sessionStorage.getItem(key);
-    if (existing !== null) {
-      return existing;
-    }
+    return sessionStorage.getItem(this.#key(THREAD_SUFFIX)) ?? this.newThread();
+  }
+
+  newThread(): string {
     const id = randomUUID();
-    sessionStorage.setItem(key, id);
+    sessionStorage.setItem(this.#key(THREAD_SUFFIX), id);
     sessionStorage.setItem(this.#key(MINTED_SUFFIX + id), "1");
     return id;
   }
