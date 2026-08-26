@@ -5,6 +5,21 @@ import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 /** Lifecycle of the mic button, reflected on its `data-state` for CSS. */
 type VoiceState = "idle" | "recording" | "transcribing";
 
+/**
+ * How long one recording may run before it stops itself.
+ *
+ * Two minutes is a ceiling, not a target: dictating into a chat composer is a
+ * sentence or two, and two minutes of speech is roughly 350 words — longer than
+ * any message this control is for. What it bounds is the case that has no end
+ * at all, a mic left live in a forgotten tab: about a megabyte of accumulated
+ * Opus, a recording indicator the user is no longer watching, and eventually a
+ * multipart upload no client-side check sizes.
+ *
+ * Hitting it stops and transcribes; the audio is never discarded, because a cap
+ * the user was not told about must not cost them the words they already spoke.
+ */
+const MAX_RECORDING_MS = 120_000;
+
 /** Construction options for {@link VoiceInput}. */
 export interface VoiceInputOptions {
   /** Turns a recorded clip into text (the built-in or a custom transport). */
@@ -39,6 +54,8 @@ export class VoiceInput {
   #recorder: MediaRecorder | null = null;
   #stream: MediaStream | null = null;
   #chunks: Blob[] = [];
+  #capTimer: ReturnType<typeof setTimeout> | null = null;
+  #hitCap = false;
   #disposed = false;
 
   constructor(options: VoiceInputOptions) {
@@ -84,6 +101,7 @@ export class VoiceInput {
     }
     this.#stream = stream;
     this.#chunks = [];
+    this.#hitCap = false;
     const recorder = new MediaRecorder(stream);
     recorder.addEventListener("dataavailable", (event) => {
       this.#chunks.push(event.data);
@@ -93,12 +111,27 @@ export class VoiceInput {
     });
     this.#recorder = recorder;
     recorder.start();
+    // Nothing else ends a recording: `MediaRecorder` runs until it is told to
+    // stop, so without this the only exits are a second click and `dispose()`.
+    this.#capTimer = setTimeout(() => {
+      this.#hitCap = true;
+      this.#stop();
+    }, MAX_RECORDING_MS);
     this.#setState("recording");
   }
 
   #stop(): void {
+    this.#clearCap();
     // ``stop`` flushes a final ``dataavailable`` then fires ``stop`` → #finish.
     this.#recorder?.stop();
+  }
+
+  /** Drop the cap timer; recording is over, by whichever route. */
+  #clearCap(): void {
+    if (this.#capTimer !== null) {
+      clearTimeout(this.#capTimer);
+      this.#capTimer = null;
+    }
   }
 
   /**
@@ -109,6 +142,7 @@ export class VoiceInput {
    */
   dispose(): void {
     this.#disposed = true;
+    this.#clearCap();
     if (this.#recorder !== null && this.#recorder.state !== "inactive") {
       this.#recorder.stop();
     }
@@ -126,6 +160,15 @@ export class VoiceInput {
     try {
       const text = await this.#transcribe(audio);
       this.#setState("idle");
+      if (this.#hitCap) {
+        // #setState has just reset the tooltip to the idle label, so this goes
+        // after it. It says why the mic went quiet on its own — the transcript
+        // below is the proof nothing was thrown away.
+        this.element.title = this.#strings.recordingLimit.replace(
+          "{n}",
+          String(MAX_RECORDING_MS / 60_000),
+        );
+      }
       if (text !== "") {
         this.#onText(text);
       }

@@ -128,6 +128,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to see that an internal hostname, a signed URL or a stack-derived path had
   left the browser. `registerTool` and the README now say it plainly, so hosts
   can throw the message they would be content for the model to read.
+### Fixed
+
+- **Model output could draw a pixel-accurate copy of the approval card.** The
+  markdown sanitiser kept `class` on every element it allowed, and the shadow
+  stylesheet's component classes are unscoped selectors, so a
+  `<span class="approval-btn approval-btn--approve">` in an assistant message
+  resolved to the same background, border and radius as the genuine
+  human-in-the-loop approve button — rendered as ordinary prose, inside the one
+  surface where the user decides whether to approve something. The same trick
+  reproduced the question card, the tool-call card and a turn the user never
+  took. `class` was on the allowlist for exactly one thing, `marked`'s
+  `language-*` code-fence hint, and is now narrowed to it: a `language-*` token
+  on a `code` or `pre` element survives, and every other class is dropped.
+  Highlighting a fenced code block is unaffected.
+
+- **The sanitiser allowed far more attributes than the three it declared.**
+  DOMPurify's `ALLOW_DATA_ATTR` and `ALLOW_ARIA_ATTR` default to `true`, so every
+  `data-*` and `aria-*` attribute passed through alongside `href`/`title`/`class`
+  while the configuration read as though only those three could survive. That
+  handed model output the attributes the cards drive their resolved, status and
+  expanded appearance from, and let an `aria-label` make a screen reader announce
+  something other than what a sighted user reads. Both are now off, so the
+  declared allowlist is the effective one.
+
+- **Rendered markdown was edited after the sanitiser had finished with it.** The
+  sanitised string was parsed into a `<template>`, given its `target`/`rel` link
+  hardening there, and re-serialised — so the markup actually inserted into a
+  bubble was never markup DOMPurify inspected, and it carried two attributes the
+  allowlist did not name. Nothing exploitable came of it, because no allowed
+  element serialises asymmetrically, but that held by accident rather than by
+  design: adding `svg`, `style` or `noscript` to the allowlist would have turned
+  the round trip into a bypass, and the suite asserted on the sanitiser's output
+  instead of on what was inserted. Link hardening now runs inside the sanitiser,
+  so what a caller inserts is exactly what DOMPurify approved, and a test holds
+  it there.
+
+- **Resizing the panel from the keyboard called `commit` on every key repeat.**
+  It is documented as one call per completed resize and the pointer path honours
+  that, but the keyboard path called it straight from each `keydown`. Holding an
+  arrow key means OS key repeat at twenty to thirty events a second, so a host
+  that put a `sessionStorage` write or a `PATCH` behind `commit` got that many
+  for a single press — landing hardest on the keyboard users the path exists for.
+  Live feedback still happens per key event; the commit now waits for the key to
+  come up, or for focus to leave the grip mid-press.
+
+- **A voice recording ran until somebody stopped it.** Tapping the mic and then
+  being interrupted left `MediaRecorder` running with no upper bound: audio
+  accumulated in memory, the browser's recording indicator stayed lit in a tab
+  nobody was looking at, and whenever the user came back the whole accumulated
+  clip was posted to the transcription endpoint in one body no client-side check
+  sized. A recording now stops itself after two minutes — far longer than a
+  dictated chat message, short enough to bound a forgotten one. The audio is kept
+  and transcribed rather than discarded, and the mic button says why it stopped.
+
+- **The README's "Public API surface" tables were missing a third of the surface
+  they enumerate.** The section presents itself as complete, so a consumer who
+  went looking for the chart-drawing seam, the approval and question card
+  helpers, the transcription defaults, `prettifyToolName`, `parseToolCatalog` or
+  two of the event-name constants found no mention and concluded the package had
+  none. Thirty-two absent exports are now listed, and a test compares the tables
+  against the package root's export list so the next new export cannot go missing
+  quietly.
+
+- **`UiStrings.checkpoints` had no documentation to hover.** An insertion of the
+  copy-button strings landed between the checkpoint panel's doc comment and the
+  field it described, stranding the comment above `copyCode`. It is back on
+  `checkpoints`, and the copy-button and checkpoint fields now have sections of
+  their own rather than splitting the relative-time group in half.
+
+### Added
+
+- **`UiStrings.recordingLimit`** — what the mic button says after a recording
+  stopped itself at the length cap. Token: `{n}`, the cap in minutes. Like every
+  other key it has an English default, so an existing `strings` override keeps
+  working untouched.
 
 ## [0.27.0] — 2026-08-26
 
