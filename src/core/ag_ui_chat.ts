@@ -1,3 +1,4 @@
+import { randomUUID } from "@ag-ui/client";
 import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
 import {
   ATTACHMENT_EVENT,
@@ -31,7 +32,7 @@ import { isNavigates } from "../tools/is_navigates.js";
 import { createPageActionTools, type ResolvePageTarget } from "../tools/page_action_tools.js";
 import { createPageMapContext, type PageMap } from "../tools/page_map.js";
 import { createPageStateTools, type PageState } from "../tools/page_state.js";
-import { parseToolCatalog } from "../tools/parse_tool_catalog.js";
+import { parseToolCatalog, type ToolCatalogEntry } from "../tools/parse_tool_catalog.js";
 import { createRouteTools, type RouteMap } from "../tools/route_map.js";
 import {
   type ApprovalRenderer,
@@ -80,13 +81,14 @@ import {
   type ClientConversationStore,
   type NavigationCheckpoint,
   SessionStorageStore,
+  writeStoredItem,
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunIndex } from "./run_index.js";
 import { type TranscribeHandler, transcribeAudio } from "./transcribe_audio.js";
 import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
-import { mintThread, withCredentials } from "./utils.js";
+import { mintThread, warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
 
 /** The role a rendered chat message takes. */
 export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
@@ -156,6 +158,7 @@ const CONNECT_TIME_ATTRIBUTES = [
   "data-attachment-max-bytes",
   "data-transcribe-url",
   "data-threads-url",
+  "data-threads-cache",
   "data-tools-url",
   "data-skills-url",
   "data-skills",
@@ -186,6 +189,17 @@ const SIZE_KEY = "ag-ui-chat:size";
 
 /** Per-tab persistence key for the built-in theme toggle. */
 const THEME_KEY = "ag-ui-chat:theme";
+
+/**
+ * Storage namespaces already spoken for in this document.
+ *
+ * Per document rather than per origin, and released on disconnect, because the
+ * question it answers is "is another element on this page using these keys right
+ * now" — not "has anything ever used them". A registry that never released would
+ * turn every remount, and every framework re-render that moves the node, into a
+ * false collision that costs the element its own conversation.
+ */
+const CLAIMED_NAMESPACES = new Set<string>();
 
 /**
  * `<ag-ui-chat>` — a framework-free chat sidebar Web Component over AG-UI.
@@ -223,6 +237,23 @@ export class AgUiChat extends HTMLElement {
    * `Authorization` are configured independently and neither drops the other.
    */
   getHeaders: (() => Record<string, string>) | null = null;
+
+  /**
+   * Origins, besides the page's own, that this element may send {@link headers}
+   * and {@link getHeaders} credentials to without saying so on the console.
+   *
+   * Seven attributes name a URL, and every one of them carries these headers.
+   * They are plain HTML, so a page that builds one from a query parameter or
+   * from tenant-authored configuration has handed an attacker the destination,
+   * and the token leaves on the element's first request. Naming the origins you
+   * expect turns that from silent into either confirmed or reported.
+   *
+   * A notice rather than a refusal: a cross-origin agent is a documented
+   * deployment, so refusing would break working installations to defend against
+   * a page that is already interpolating untrusted data into its own markup.
+   * Leaving this empty costs nothing but one console line per foreign origin.
+   */
+  trustedOrigins: readonly string[] = [];
 
   /**
    * Permit `<img>` in rendered assistant markdown. **Off by default**: a
@@ -381,13 +412,39 @@ export class AgUiChat extends HTMLElement {
   resolvePageTarget: ResolvePageTarget = (target) => document.querySelector<HTMLElement>(target);
 
   /**
-   * Card labels fetched from a server tool catalog (`data-tools-url`), keyed by
-   * tool name. The base layer behind {@link toolSummaries}: an explicit entry in
-   * `toolSummaries` wins, this fills the rest. Populated once on connect.
+   * The server tool catalog fetched from `data-tools-url`, keyed by tool
+   * name. Cards label themselves from each entry's `summary`, the base
+   * layer behind {@link toolSummaries}: an explicit entry in `toolSummaries`
+   * wins, this fills the rest. Held as whole entries rather than labels so a
+   * field the server sent is not lost on the way in. Populated once on connect.
    */
-  #toolCatalog: Record<string, string> = {};
+  #toolCatalog: Record<string, ToolCatalogEntry> = {};
+
+  /**
+   * Foreign origins already reported, so the notice is once per origin per
+   * element rather than once per request. Per-element rather than module-level,
+   * because two elements on one page are two separate configurations.
+   */
+  #warnedOrigins = new Set<string>();
   /** The resolved string table (defaults ← `data-strings` ← `strings`). */
   #strings: UiStrings = DEFAULT_UI_STRINGS;
+
+  /**
+   * The tool names the current round handed the agent, captured as the catalog
+   * went out.
+   *
+   * The registry is mount-wide but {@link getTools} is per-run, so a host is
+   * free to scope what a given page offers — and a call naming a tool this run
+   * withheld must not reach the handler that is merely still registered.
+   * Snapshotted rather than re-asked at dispatch: a provider is a function, and
+   * calling it again asks a question the run already answered, which is exactly
+   * the window a scoped catalog exists to close.
+   *
+   * Empty until the first round advertises, which cannot precede a call: the
+   * client builds `RunAgentInput.tools` at the top of every round, before the
+   * calls that round produces are executed.
+   */
+  #advertisedTools: ReadonlySet<string> = new Set();
 
   readonly #toolRegistry = new ClientToolRegistry();
   /** Tool-call cards awaiting execution, keyed by call id. */
@@ -470,6 +527,12 @@ export class AgUiChat extends HTMLElement {
   // revealed progressively as it streamed, so the word reveal must not re-animate
   // it; ≤1 ⇒ it arrived at once and the word reveal is appropriate.
   #streamDeltas = 0;
+  // The accumulated answer the next render will draw. Deltas overwrite it
+  // (each one carries the whole answer), so a frame always draws the latest.
+  #streamBuffer = "";
+  // The frame that render is queued on, or `null` when nothing is queued —
+  // also the flag saying a delta is still undrawn.
+  #streamFrame: number | null = null;
   #pending: HTMLDivElement | null = null;
   // The current assistant turn's grouping container. One `.answer`
   // wraps everything a single answer produces — streamed text, tool cards, the
@@ -484,9 +547,23 @@ export class AgUiChat extends HTMLElement {
   #thoughts: ThoughtsBlock | null = null;
   #threadId = "";
   // Per-instance suffix for the origin-scoped storage keys (collapsed / theme /
-  // active thread), so two instances on one origin don't clobber each other.
-  // Empty ⇒ the pre-namespacing global keys (back-compat). Resolved on connect.
+  // size), so two instances on one origin don't clobber each other. Empty ⇒ the
+  // pre-namespacing global keys (back-compat). Resolved on connect; the
+  // conversation adds `user-key` on top of it, see #conversationNs.
   #storageNs = "";
+  // The entry this element put in CLAIMED_NAMESPACES, to take back out on
+  // disconnect. `null` when it claimed nothing (no id, no endpoint, or it lost
+  // the claim to an element that mounted first).
+  #claimedNs: string | null = null;
+  // The fallback namespace minted when the preferred one was already claimed,
+  // with the preferred value it was minted for — so the element keeps it across
+  // remounts, but re-resolves if the host answers the warning with an `id`.
+  #generatedNs = "";
+  #generatedFor = "";
+  // The `sessionStorage`-backed store, which the element may therefore re-scope
+  // on a principal change. `null` when the host injected a store of its own
+  // kind, whose keying the element does not know and must not guess at.
+  #builtinStore: SessionStorageStore | null = null;
   // Bumped on every #rehydrate; a replay whose generation is stale (a newer
   // thread switch started while it awaited a slow store) drops its result.
   #rehydrateGeneration = 0;
@@ -544,7 +621,7 @@ export class AgUiChat extends HTMLElement {
     if (this.#runIndex === null) {
       this.#runIndex = new RunIndex(
         url,
-        () => this.#requestHeaders(),
+        () => this.#headersFor(url),
         () => this.#requestCredentials(),
       );
     }
@@ -579,6 +656,7 @@ export class AgUiChat extends HTMLElement {
       endpoint,
       headers: this.#requestHeaders(),
       getHeaders: () => this.#requestHeaders(),
+      trustedOrigins: this.trustedOrigins,
       ...this.#credentialsOption(),
       threadId: this.#threadId,
       // The seed the endpoints assume: nothing. The snapshot is the history.
@@ -587,7 +665,7 @@ export class AgUiChat extends HTMLElement {
     const client = new AgUiClient({
       agent,
       handlers: this.#handlers(),
-      getTools: () => this.getTools(),
+      getTools: () => this.#advertiseTools(),
       getContext: () => this.#buildContext(),
       executeTool: (call) => this.#executeTool(call),
       resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
@@ -604,7 +682,7 @@ export class AgUiChat extends HTMLElement {
 
   /** Attributes the element reacts to after it has been connected. */
   static get observedAttributes(): string[] {
-    return ["title-text", "placement", "credentials", ...CONNECT_TIME_ATTRIBUTES];
+    return ["title-text", "placement", "credentials", "user-key", ...CONNECT_TIME_ATTRIBUTES];
   }
 
   attributeChangedCallback(name: string, previous: string | null, value: string | null): void {
@@ -638,6 +716,16 @@ export class AgUiChat extends HTMLElement {
       this.#title.textContent = value ?? this.#strings.title;
       return;
     }
+    if (name === "user-key") {
+      // Before connect there is nothing to move: connectedCallback resolves the
+      // namespace from the attribute as it stands by then. An absent attribute
+      // and an empty one name the same (unnamed) principal, so neither is a
+      // change worth acting on.
+      if (this.#connected && (previous ?? "") !== (value ?? "")) {
+        this.#changePrincipal(previous ?? "", value ?? "");
+      }
+      return;
+    }
     // Everything else here is read once, in connectedCallback, to build chrome
     // that then exists or does not. A later change is silently ignored and the
     // symptom is an affordance that never appears, which reads as a broken
@@ -657,7 +745,18 @@ export class AgUiChat extends HTMLElement {
     );
   }
 
-  /** Declare a frontend tool the agent may call. */
+  /**
+   * Declare a frontend tool the agent may call.
+   *
+   * **A handler's thrown message leaves the browser.** When a handler rejects,
+   * its `Error.message` is posted back as that call's tool result — into the
+   * conversation, on to the AG-UI endpoint, persisted server-side, and
+   * forwarded to the model provider on every later round. That is deliberate,
+   * since it is what lets the agent recover from a failure it caused; but it
+   * means an internal hostname, a signed URL or a stack-derived path in a
+   * rethrown error is disclosed to parties the host never chose. Throw the
+   * message you would be content for the model to read, and log the detail.
+   */
   registerTool(tool: ClientTool): void {
     this.#toolRegistry.register(tool);
   }
@@ -835,6 +934,19 @@ export class AgUiChat extends HTMLElement {
     return answer;
   }
 
+  /**
+   * The catalog for the round about to start, remembering what it offered.
+   *
+   * Every path to a frontend tool goes through here first — the client asks
+   * for `RunAgentInput.tools` at the top of each round — so this is the one
+   * place that can know what the agent was actually told about.
+   */
+  #advertiseTools(): Tool[] {
+    const tools = this.getTools();
+    this.#advertisedTools = new Set(tools.map((tool) => tool.name));
+    return tools;
+  }
+
   /** Resolve a tool by name: built-in tools first, then the registry. */
   #resolveTool(name: string): ClientTool | null {
     const builtin = this.#builtinTools().find((t) => t.name === name);
@@ -854,6 +966,39 @@ export class AgUiChat extends HTMLElement {
   // use-time, so a runtime change applies to the next run.
   set endpoint(value: string) {
     this.setAttribute("endpoint", value);
+  }
+
+  /**
+   * Who the stored conversation belongs to, from the `user-key` attribute.
+   *
+   * Set it to whatever identifies the signed-in principal — a user id, an
+   * account id, a hash of one. The value joins the storage namespace, so two
+   * principals in the same tab cannot read each other's transcript, and
+   * **changing it purges what the previous one left behind**.
+   *
+   * That purge is the reason this is a live attribute rather than a
+   * connect-time one. `sessionStorage` survives same-tab navigation, so it
+   * survives a logout; and a single-page app signs out through its own router
+   * without remounting anything, so there is no other moment at which the
+   * element could find out. The host naming the new principal — or dropping the
+   * attribute — is the signal.
+   *
+   * Absent means exactly today's behaviour, which is why nothing breaks by
+   * leaving it off: the conversation is scoped to the element and to nobody in
+   * particular, and on a shared workstation it carries into whoever signs in
+   * next in the same tab.
+   *
+   * The first value to arrive is treated as a host naming the user who was
+   * already there, not as a handover: the conversation in progress moves into
+   * the principal's namespace rather than being destroyed, so an element
+   * configured by an async auth handshake keeps what is on screen.
+   */
+  get userKey(): string {
+    return this.getAttribute("user-key") ?? "";
+  }
+
+  set userKey(value: string) {
+    this.setAttribute("user-key", value);
   }
 
   /**
@@ -907,6 +1052,25 @@ export class AgUiChat extends HTMLElement {
     return { ...this.headers, ...this.getHeaders?.() };
   }
 
+  /**
+   * The request headers, having first reported the destination if it is foreign.
+   *
+   * Every caller that sends these headers knows its URL, and `#requestHeaders`
+   * does not -- so the check lives here, on the path that has both, rather than
+   * being repeated at each call site with a chance to be forgotten at the next
+   * one added.
+   */
+  #headersFor(url: string): Record<string, string> {
+    const headers = this.#requestHeaders();
+    warnOnCrossOriginCredentials(
+      url,
+      Object.keys(headers),
+      this.trustedOrigins,
+      this.#warnedOrigins,
+    );
+    return headers;
+  }
+
   /** The configured cookie policy as `fetch` spells it; `undefined` when unset. */
   #requestCredentials(): RequestCredentials | undefined {
     return this.credentials ?? undefined;
@@ -927,8 +1091,8 @@ export class AgUiChat extends HTMLElement {
   }
 
   /** The `fetch` init for the element's own plain GETs (catalogs). */
-  #fetchInit(): RequestInit | undefined {
-    return withCredentials({ headers: this.#requestHeaders() }, this.#requestCredentials());
+  #fetchInit(url: string): RequestInit | undefined {
+    return withCredentials({ headers: this.#headersFor(url) }, this.#requestCredentials());
   }
 
   /**
@@ -956,10 +1120,10 @@ export class AgUiChat extends HTMLElement {
   }
 
   connectedCallback(): void {
-    // Resolve the per-instance storage namespace (id, else endpoint) before any
-    // key read/write, so this instance doesn't share collapsed/theme/thread
-    // state with another on the same origin.
-    this.#storageNs = this.id !== "" ? this.id : this.endpoint;
+    // Resolve the per-instance storage namespace before any key read/write, so
+    // this instance doesn't share collapsed/theme/thread state with another on
+    // the same origin.
+    this.#storageNs = this.#claimNamespace();
     // Restore a dragged size before the panel paints, so it does not snap from
     // the placement default to the user's width on the first frame.
     this.#applySize(this.#readSize());
@@ -989,8 +1153,13 @@ export class AgUiChat extends HTMLElement {
     this.#initSkills();
     // Namespace the built-in default store too (a host-injected store is used
     // verbatim). Must precede #wireThreadStore, which wraps the current store.
-    if (this.#storageNs !== "" && this.conversationStore instanceof SessionStorageStore) {
-      this.conversationStore = new SessionStorageStore(this.#storageNs);
+    if (this.conversationStore instanceof SessionStorageStore) {
+      const namespace = this.#conversationNs();
+      // Remembered either way: this is the element's own store, so a later
+      // `user-key` change may move it to another namespace.
+      this.#builtinStore =
+        namespace === "" ? this.conversationStore : new SessionStorageStore(namespace);
+      this.conversationStore = this.#builtinStore;
     }
     this.#wireThreadStore();
     this.#wireAttachments();
@@ -1064,6 +1233,14 @@ export class AgUiChat extends HTMLElement {
    */
   disconnectedCallback(): void {
     this.#connected = false;
+    // Give the namespace back. A disconnect is not necessarily a farewell — a
+    // DOM move and a framework re-render both look like one — and an element
+    // that could not reclaim its own namespace on the way back in would lose
+    // its conversation to a false collision.
+    if (this.#claimedNs !== null) {
+      CLAIMED_NAMESPACES.delete(this.#claimedNs);
+      this.#claimedNs = null;
+    }
     this.#cancelRun();
     this.#attachTray?.dispose();
     this.#voice?.dispose();
@@ -1143,7 +1320,7 @@ export class AgUiChat extends HTMLElement {
     return (file, onProgress, signal) =>
       uploadAttachment(file, {
         url,
-        headers: this.#requestHeaders(),
+        headers: this.#headersFor(url),
         ...this.#credentialsOption(),
         onProgress,
         signal,
@@ -1179,7 +1356,7 @@ export class AgUiChat extends HTMLElement {
     return (audio) =>
       transcribeAudio(audio, {
         url,
-        headers: this.#requestHeaders(),
+        headers: this.#headersFor(url),
         ...this.#credentialsOption(),
       });
   }
@@ -1240,15 +1417,21 @@ export class AgUiChat extends HTMLElement {
    * delete through that server endpoint (wrapping the current store as the
    * client-only fallback), so the history drawer shows durable, cross-device
    * threads. Without it, the client store's per-tab threads are used.
+   *
+   * `data-threads-cache="false"` drops the local copy of the message bodies —
+   * for the deployment that pointed history at a server precisely so that
+   * transcripts do not sit in the browser. The client-only concerns (the active
+   * thread id, the navigation checkpoint) keep their local store either way.
    */
   #wireThreadStore(): void {
     const url = this.getAttribute("data-threads-url");
     if (url !== null) {
       this.conversationStore = new RemoteConversationStore(
         url,
-        () => this.#requestHeaders(),
+        () => this.#headersFor(url),
         this.conversationStore,
         () => this.#requestCredentials(),
+        this.getAttribute("data-threads-cache") !== "false",
       );
     }
   }
@@ -1260,7 +1443,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     try {
-      const response = await fetch(url, this.#fetchInit());
+      const response = await fetch(url, this.#fetchInit(url));
       this.#toolCatalog = parseToolCatalog(await response.json());
     } catch {
       // Network/parse failure: cards fall back to toolSummaries / raw names.
@@ -1308,7 +1491,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     try {
-      const response = await fetch(url, this.#fetchInit());
+      const response = await fetch(url, this.#fetchInit(url));
       this.#backendSkills = parseSkills(await response.json());
       this.#recomputeSkills();
     } catch {
@@ -1409,7 +1592,7 @@ export class AgUiChat extends HTMLElement {
     } else {
       this.removeAttribute("collapsed");
     }
-    sessionStorage.setItem(this.#storageKey(COLLAPSED_KEY), collapsed ? "1" : "0");
+    writeStoredItem(this.#storageKey(COLLAPSED_KEY), collapsed ? "1" : "0");
     // Expanding is what marks the waiting answers read; collapsing starts a
     // fresh count. Either way the badge is cleared and the host told.
     this.#setUnread(0);
@@ -1446,7 +1629,7 @@ export class AgUiChat extends HTMLElement {
   toggleTheme(): void {
     const next = this.getAttribute("theme") === "dark" ? "light" : "dark";
     this.setAttribute("theme", next);
-    sessionStorage.setItem(this.#storageKey(THEME_KEY), next);
+    writeStoredItem(this.#storageKey(THEME_KEY), next);
     this.#syncThemeGlyph();
   }
 
@@ -1557,7 +1740,7 @@ export class AgUiChat extends HTMLElement {
   /** Persist a dragged size per tab, alongside the collapsed/theme preferences. */
   #persistSize(size: ResizeSize): void {
     const stored = { ...this.#readSize(), ...size };
-    sessionStorage.setItem(this.#storageKey(SIZE_KEY), JSON.stringify(stored));
+    writeStoredItem(this.#storageKey(SIZE_KEY), JSON.stringify(stored));
   }
 
   /** The persisted size for this instance, or an empty record. */
@@ -1574,6 +1757,130 @@ export class AgUiChat extends HTMLElement {
       // placement's own size.
       return {};
     }
+  }
+
+  /**
+   * Claim this element's storage namespace: its `id`, else its `endpoint`.
+   *
+   * The endpoint fallback exists so a lone widget restores its conversation
+   * across reloads with nothing asked of the page author. It stops working the
+   * moment there are two of them — a docked support panel and an inline page
+   * assistant against one agent mount, neither carrying an `id`, which nothing
+   * requires — because both resolve to the same string and then share a thread
+   * pointer, a drawer index and every message key. Whichever mounts second
+   * adopts the first's active thread and rehydrates its transcript into its own
+   * panel: one conversation's content inside another, on the same page.
+   *
+   * So the namespace is claimed by the first element to mount under it, and a
+   * second is given one of its own plus a warning naming the fix. The first
+   * element keeps the endpoint namespace, which is what leaves the ordinary
+   * single-element case exactly as it was.
+   *
+   * The generated namespace is random rather than derived from mount order.
+   * That costs the second element its history across reloads — the warning says
+   * so, and an `id` fixes it — which is the honest trade against an order-based
+   * name that would silently hand a stored conversation to whichever element
+   * happened to mount second on the next load.
+   */
+  #claimNamespace(): string {
+    const preferred = this.id !== "" ? this.id : this.endpoint;
+    // Nothing to key on. The pre-namespacing global keys, as before: an element
+    // with neither an id nor an endpoint cannot send anything, so what it would
+    // be claiming is an empty conversation.
+    if (preferred === "") {
+      return "";
+    }
+    // Already lost this claim once. Keep the fallback rather than drifting back
+    // onto a namespace the other element may since have released, which would
+    // swap this panel's conversation for that one's.
+    if (this.#generatedFor === preferred) {
+      return this.#generatedNs;
+    }
+    if (!CLAIMED_NAMESPACES.has(preferred)) {
+      CLAIMED_NAMESPACES.add(preferred);
+      this.#claimedNs = preferred;
+      return preferred;
+    }
+    this.#generatedFor = preferred;
+    this.#generatedNs = `${preferred}~${randomUUID()}`;
+    console.warn(
+      `<ag-ui-chat>: another element on this page already stores its ` +
+        `conversation under "${preferred}", so this one has been given a ` +
+        "throwaway namespace of its own — the two would otherwise share a " +
+        "thread pointer, a history drawer and every message. Give each " +
+        "<ag-ui-chat> its own id to keep them apart and let this one restore " +
+        "its conversation across reloads.",
+    );
+    return this.#generatedNs;
+  }
+
+  /**
+   * The conversation store's namespace: this element's, scoped to the principal
+   * {@link userKey} names.
+   *
+   * Only the conversation is principal-scoped. The panel's own collapsed / size
+   * / theme preferences stay on `#storageNs`, because they are this element's
+   * UI state rather than anyone's data — they carry no word of what was said —
+   * and because they are read once while connecting, so re-scoping them under a
+   * live element would rearrange the panel around a user who had only just
+   * signed in.
+   */
+  #conversationNs(key: string = this.userKey): string {
+    return key === "" ? this.#storageNs : `${this.#storageNs}#${key}`;
+  }
+
+  /**
+   * Move the element's client state from one principal to another.
+   *
+   * The whole reason {@link userKey} is live: `sessionStorage` outlives a
+   * logout, because a logout is a navigation (or, in a single-page app, not
+   * even that) rather than a tab close. Nothing remounts, so the host naming
+   * the new principal is the only signal the element will ever get.
+   */
+  #changePrincipal(previousKey: string, nextKey: string): void {
+    const previous = this.#conversationNs(previousKey);
+    const next = this.#conversationNs(nextKey);
+    if (previousKey === "") {
+      // Absent to present is not a handover. It is the documented late
+      // configuration shape — the element mounts, an auth handshake resolves,
+      // and only then is the user known — so the conversation already on screen
+      // belongs to this principal and moves with them. Moving rather than
+      // copying also matters: a copy left behind under the unscoped namespace
+      // is a transcript the next key-less mount would happily adopt.
+      SessionStorageStore.adopt(previous, next);
+      this.#rescopeStore(next);
+      return;
+    }
+    SessionStorageStore.purge(previous);
+    this.#rescopeStore(next);
+    // The transcript on screen, the run in flight and the replayed history all
+    // belong to the principal who just left. Purging storage without clearing
+    // these would leave the previous user's conversation visible to the new one.
+    this.#cancelRun();
+    this.#resetState();
+    this.#setRunning(false);
+    this.#setUnread(0);
+    this.#threadId = this.conversationStore.threadId();
+    void this.#rehydrate();
+    void this.#refreshDrawer();
+  }
+
+  /**
+   * Rebuild the `sessionStorage` store under `namespace`, re-wrapping it for
+   * `data-threads-url` exactly as connecting did.
+   *
+   * A store of the host's own kind is left alone: a store that holds its data
+   * somewhere the element cannot see has to scope itself. The transcript on
+   * screen is still cleared either way — the host swapped principals, and that
+   * much is the element's to act on.
+   */
+  #rescopeStore(namespace: string): void {
+    if (this.#builtinStore === null) {
+      return;
+    }
+    this.#builtinStore = new SessionStorageStore(namespace);
+    this.conversationStore = this.#builtinStore;
+    this.#wireThreadStore();
   }
 
   /** This instance's namespaced form of an origin-scoped storage key. */
@@ -1679,7 +1986,10 @@ export class AgUiChat extends HTMLElement {
   /** Drop the in-memory run + transcript, leaving the thread id untouched. */
   #resetState(): void {
     this.#client = null;
-    this.#streamingBubble = null;
+    // Before the transcript goes: a render still queued would otherwise fire
+    // against the wiped list and open a fresh bubble holding the discarded
+    // conversation's last tokens.
+    this.#endStream();
     this.#currentGroup = null;
     this.#thoughts = null;
     this.#hidePending();
@@ -2534,6 +2844,7 @@ export class AgUiChat extends HTMLElement {
         // token must still reach every request — the factory's fetch wrapper
         // re-reads this on each call.
         getHeaders: () => this.#requestHeaders(),
+        trustedOrigins: this.trustedOrigins,
         ...this.#credentialsOption(),
         threadId: this.#threadId,
         initialMessages: this.#initialMessages,
@@ -2542,7 +2853,7 @@ export class AgUiChat extends HTMLElement {
       this.#client = new AgUiClient({
         agent,
         handlers: this.#handlers(),
-        getTools: () => this.getTools(),
+        getTools: () => this.#advertiseTools(),
         getContext: () => this.#buildContext(),
         executeTool: (call) => this.#executeTool(call),
         resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
@@ -2590,7 +2901,15 @@ export class AgUiChat extends HTMLElement {
     // transcript places itself against its own card, and by the time it runs the
     // card is no longer reachable by id.
     this.#cardElements.set(call.id, card.element);
-    const tool = this.#resolveTool(call.name);
+    // Scoped out of this round's catalog ⇒ not a frontend tool of ours, for
+    // this round. A host that offers `delete_record` only on the page where
+    // deleting makes sense has said something about *this* run, and a call
+    // arriving anyway (a hallucinated name, or one steered by text the model
+    // just read) must not find the handler that happens to be registered
+    // mount-wide. Treated exactly as an unknown name rather than as a refusal:
+    // withholding a tool and never registering it are the same statement, and
+    // the branch below already says the honest thing for both.
+    const tool = this.#advertisedTools.has(call.name) ? this.#resolveTool(call.name) : null;
     if (tool === null) {
       // Not a client tool. A server-side tool's real output arrives via
       // `onToolResult` (TOOL_CALL_RESULT) and already settled the card — only
@@ -2685,6 +3004,12 @@ export class AgUiChat extends HTMLElement {
         // The navigation never happened; drop the dangling checkpoint.
         this.conversationStore.saveCheckpoint(this.#threadId, null);
       }
+      // The handler's own message, verbatim, in two places at once: the card,
+      // which the user sees, and the tool result, which goes to the endpoint,
+      // is persisted there and is replayed to the model on every later round.
+      // Kept verbatim because a real reason is what lets the agent recover —
+      // and said out loud on `registerTool`, because the second destination is
+      // invisible from the host's side and is not one it can take back.
       const message = error instanceof Error ? error.message : String(error);
       card.settle(TOOL_CALL_STATUS.ERROR, message);
       this.#showPending();
@@ -2802,7 +3127,10 @@ export class AgUiChat extends HTMLElement {
         this.#hidePending();
         // The answer has begun — fold the thoughts away so they don't crowd it.
         this.#thoughts?.collapse();
-        this.#streamInto(buffer);
+        this.#queueStream(buffer);
+        // Counted per delta received, not per render: the word reveal asks
+        // whether the answer *arrived* progressively, which coalescing renders
+        // must not change the answer to.
         this.#streamDeltas += 1;
       },
       onTextEnd: (buffer) => {
@@ -2815,7 +3143,7 @@ export class AgUiChat extends HTMLElement {
           this.#revealWords(bubble);
         }
         attachCopyButtons(bubble, this.#strings);
-        this.#streamingBubble = null;
+        this.#endStream();
         this.#noteUnread();
       },
       onToolCall: (call) => {
@@ -2884,25 +3212,25 @@ export class AgUiChat extends HTMLElement {
         // Per-round end; the button stays on Stop until the whole interaction
         // settles — the user must be able to cancel between tool rounds.
         this.#hidePending();
-        this.#streamingBubble = null;
+        this.#endStream();
       },
       onError: (message) => {
         this.#hidePending();
         this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`));
-        this.#streamingBubble = null;
+        this.#endStream();
       },
       onCancelled: () => {
         // Deliberate stop, not a failure: keep whatever partial text already
         // streamed and add a muted note instead of an error bubble.
         this.#hidePending();
         this.#appendStoppedNote();
-        this.#streamingBubble = null;
+        this.#endStream();
       },
       onSettled: () => {
         // Terminal guarantee: whatever path ended the run, return to rest.
         this.#hidePending();
         this.#setRunning(false);
-        this.#streamingBubble = null;
+        this.#endStream();
         // Belt-and-suspenders: a tool card still pending at settle (e.g. a
         // server tool whose result never streamed because the connection
         // dropped) would hang forever — settle it to the no-result fallback.
@@ -3008,14 +3336,76 @@ export class AgUiChat extends HTMLElement {
     return this.#thoughts;
   }
 
-  #streamInto(buffer: string): HTMLDivElement {
+  /**
+   * The bubble the current answer streams into, opening it on first sight.
+   *
+   * Opened the moment a token arrives rather than on the frame that draws it,
+   * so the answer's container replaces the pending dots straight away and the
+   * turn never shows a gap while the first render waits for a frame.
+   */
+  #openStream(): HTMLDivElement {
     if (this.#streamingBubble === null) {
       this.#streamingBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, "");
       this.#streamDeltas = 0;
     }
-    this.#streamingBubble.innerHTML = renderMarkdown(buffer, { allowImages: this.allowImages });
-    this.#messages.scrollTop = this.#messages.scrollHeight;
     return this.#streamingBubble;
+  }
+
+  /**
+   * Queue a render of the answer so far, at most one per frame.
+   *
+   * Each `TEXT_MESSAGE_CONTENT` event carries the *whole* accumulated answer,
+   * and drawing it means marked + DOMPurify over the entire document and a
+   * wholesale replacement of the bubble's subtree. Once per token that is
+   * quadratic in the answer's length — a long answer is agent-controlled, so
+   * an ordinary run becomes a progressively stalling tab — and every rebuild
+   * takes any selection or focus inside the bubble with it.
+   *
+   * A frame is the right grain: it is the fastest anything on screen can
+   * change anyway, so a burst of tokens costs one parse and the text still
+   * appears to flow rather than in visible chunks.
+   */
+  #queueStream(buffer: string): void {
+    this.#streamBuffer = buffer;
+    this.#openStream();
+    if (this.#streamFrame !== null) {
+      return;
+    }
+    this.#streamFrame = requestAnimationFrame(() => {
+      this.#streamFrame = null;
+      this.#streamInto(this.#streamBuffer);
+    });
+  }
+
+  /** Render `buffer` into the streaming bubble now, dropping any queued frame. */
+  #streamInto(buffer: string): HTMLDivElement {
+    // A frame still queued would otherwise fire after this and repaint the
+    // bubble with whatever the last delta held — behind the buffer just drawn.
+    if (this.#streamFrame !== null) {
+      cancelAnimationFrame(this.#streamFrame);
+      this.#streamFrame = null;
+    }
+    this.#streamBuffer = buffer;
+    const bubble = this.#openStream();
+    bubble.innerHTML = renderMarkdown(buffer, { allowImages: this.allowImages });
+    this.#messages.scrollTop = this.#messages.scrollHeight;
+    return bubble;
+  }
+
+  /**
+   * Close the current answer's streaming bubble.
+   *
+   * Draws a queued render first. A run that ends without a text end — a
+   * cancel, an error, a round boundary — leaves the last delta sitting in the
+   * queue, and simply dropping the bubble here would strand it: the partial
+   * answer the user stopped mid-sentence would lose its final tokens, or be an
+   * empty bubble above the stopped note.
+   */
+  #endStream(): void {
+    if (this.#streamFrame !== null) {
+      this.#streamInto(this.#streamBuffer);
+    }
+    this.#streamingBubble = null;
   }
 
   /**
@@ -3167,7 +3557,7 @@ export class AgUiChat extends HTMLElement {
       typeof labelled === "string"
         ? labelled
         : (this.toolSummaries[call.name] ??
-          this.#toolCatalog[call.name] ??
+          this.#toolCatalog[call.name]?.summary ??
           prettifyToolName(call.name));
     const card = new ToolCallCard(call.name, call.args, summary, this.#strings);
     this.#toolCards.set(call.id, card);

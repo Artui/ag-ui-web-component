@@ -1,5 +1,15 @@
 import type { AbstractAgent, AgentSubscriber } from "@ag-ui/client";
-import type { Interrupt } from "@ag-ui/core";
+import { EventType, type Interrupt } from "@ag-ui/core";
+
+/**
+ * The payload an AG-UI activity event carries.
+ *
+ * Narrower than the `unknown` this used to be, because the protocol is: both
+ * `ACTIVITY_SNAPSHOT.content` and an activity message's content are keyed
+ * records on the wire. Stating that here is what lets the emitters below hand
+ * the subscriber a genuinely typed event.
+ */
+export type ActivityContent = Record<string, unknown>;
 
 /** A scripted emitter handed to a fake agent's run script. */
 export interface Emit {
@@ -11,20 +21,32 @@ export interface Emit {
   toolCall(id: string, name: string, args: Record<string, unknown>): void;
   toolResult(toolCallId: string, content: string): void;
   /** Emit an AG-UI `ACTIVITY_SNAPSHOT` (the run-notice channel). */
-  activity(activityType: string, content: unknown, messageId?: string): void;
+  activity(activityType: string, content: ActivityContent, messageId?: string): void;
   /** Re-send an activity under an id already seen, as `replace` does. */
-  activityReplace(activityType: string, content: unknown, messageId: string): void;
+  activityReplace(activityType: string, content: ActivityContent, messageId: string): void;
   /**
    * An `ACTIVITY_DELTA`: the subscriber sees `before`, then the patched
    * `content` arrives via `onMessagesChanged`, as the real client orders it.
    */
-  activityDelta(activityType: string, content: unknown, messageId: string, before?: unknown): void;
+  activityDelta(
+    activityType: string,
+    content: ActivityContent,
+    messageId: string,
+    before?: ActivityContent,
+  ): void;
   /** A delta naming an id the message list does not hold as an activity. */
   activityDeltaOrphan(activityType: string, messageId: string): void;
   /** An ordinary message change, with no chart waiting on it. */
   messagesChanged(): void;
   reasoningStart(): void;
-  reasoning(buffer: string): void;
+  /**
+   * One reasoning *delta*, not the buffer so far. `@ag-ui/client` hands the
+   * subscriber the content it holds *before* appending the announced delta, so
+   * a helper that passes the accumulated text is describing a wire no server
+   * writes -- and it hides the last delta going missing.
+   */
+  reasoning(delta: string): void;
+  /** End the block, delivering the complete text the way REASONING_MESSAGE_END does. */
   reasoningEnd(): void;
   error(message: string): void;
   /**
@@ -44,51 +66,128 @@ export interface Emit {
 /** Tracks whether the script emitted a terminal AG-UI event (finish / error). */
 interface EmitState {
   terminal: boolean;
+  /** Reasoning text accumulated so far, so a delta can report the pre-append buffer. */
+  reasoning: string;
+}
+
+/** The full parameter object one subscriber callback declares. */
+type SubscriberParams<K extends keyof AgentSubscriber> = Parameters<
+  NonNullable<AgentSubscriber[K]>
+>[0];
+
+/**
+ * Invoke one subscriber callback with a partial parameter object.
+ *
+ * Every callback takes the whole `AgentSubscriberParams` — the full message
+ * list, the live agent, the run input — and a fake that assembled all of that
+ * would be a second implementation of `@ag-ui/client` rather than a test
+ * helper. So the *completeness* of the object is waived, here, in the one place
+ * a reader has to check.
+ *
+ * What is no longer waived is the **fields**. These emitters used to cast each
+ * literal through `never`, which is assignable to every parameter type and so
+ * checked nothing whatsoever: a renamed field on the wire renamed here too, and
+ * the type-checker had no opinion. `Partial` keeps the omissions legal while
+ * measuring every key that *is* supplied against the real declaration — so a
+ * rename in `@ag-ui/core` now fails `tsc` in this file, before any test runs.
+ *
+ * Called through `.call` so a subscriber written with method shorthand keeps
+ * its receiver.
+ */
+function dispatch<K extends keyof AgentSubscriber>(
+  subscriber: AgentSubscriber,
+  key: K,
+  params: Partial<SubscriberParams<K>>,
+): void {
+  const callback = subscriber[key] as ((p: unknown) => unknown) | undefined;
+  void callback?.call(subscriber, params);
 }
 
 function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals): Emit {
-  // The subscriber callbacks require full AgentSubscriberParams; tests only
-  // exercise the fields the client reads, so minimal objects are cast through
-  // ``never`` (which is assignable to any parameter type).
+  /** An activity message as `@ag-ui/client` holds it in the transcript. */
+  const activityMessage = (
+    messageId: string,
+    activityType: string,
+    content: ActivityContent,
+  ): SubscriberParams<"onMessagesChanged">["messages"][number] => ({
+    id: messageId,
+    role: "activity",
+    activityType,
+    content,
+  });
+
   return {
-    runStart: () => void s.onRunInitialized?.({} as never),
-    text: (textMessageBuffer) => void s.onTextMessageContentEvent?.({ textMessageBuffer } as never),
-    textStart: (messageId) => void s.onTextMessageStartEvent?.({ event: { messageId } } as never),
+    runStart: () => dispatch(s, "onRunInitialized", {}),
+    // Only the buffer: the component reads that and not the event, and stating
+    // an event here would be inventing a delta the caller never supplied.
+    text: (textMessageBuffer) => dispatch(s, "onTextMessageContentEvent", { textMessageBuffer }),
+    textStart: (messageId) =>
+      dispatch(s, "onTextMessageStartEvent", {
+        event: { type: EventType.TEXT_MESSAGE_START, messageId, role: "assistant" },
+      }),
     textEnd: (textMessageBuffer, messageId = "msg") =>
-      void s.onTextMessageEndEvent?.({ event: { messageId }, textMessageBuffer } as never),
+      dispatch(s, "onTextMessageEndEvent", {
+        event: { type: EventType.TEXT_MESSAGE_END, messageId },
+        textMessageBuffer,
+      }),
     toolCall: (toolCallId, toolCallName, toolCallArgs) =>
-      void s.onToolCallEndEvent?.({
-        event: { toolCallId },
+      dispatch(s, "onToolCallEndEvent", {
+        event: { type: EventType.TOOL_CALL_END, toolCallId },
         toolCallName,
         toolCallArgs,
-      } as never),
+      }),
     toolResult: (toolCallId, content) =>
-      void s.onToolCallResultEvent?.({ event: { toolCallId, content } } as never),
+      dispatch(s, "onToolCallResultEvent", {
+        event: {
+          type: EventType.TOOL_CALL_RESULT,
+          messageId: `${toolCallId}-result`,
+          toolCallId,
+          content,
+        },
+      }),
     // `messages` is passed because the real client always passes it, and the
     // component reads it to tell a new activity from one being replaced. A fake
     // that omitted it would let a null-check rot in the source unnoticed.
+    //
+    // `replace` is true on both of these, including the one that is *not* a
+    // replacement, because that is what the wire carries: the field has a
+    // default on the server's model and every recorded snapshot has it set. The
+    // distinction the component draws is between an id it has already seen and
+    // one it has not, which is `messages`, not this flag.
     activity: (activityType, content, messageId = "act-1") =>
-      void s.onActivitySnapshotEvent?.({
-        event: { activityType, content, messageId },
+      dispatch(s, "onActivitySnapshotEvent", {
+        event: {
+          type: EventType.ACTIVITY_SNAPSHOT,
+          activityType,
+          content,
+          messageId,
+          replace: true,
+        },
         messages: [],
-      } as never),
+      }),
     activityReplace: (activityType, content, messageId) =>
-      void s.onActivitySnapshotEvent?.({
-        event: { activityType, content, messageId },
-        messages: [{ id: messageId, role: "activity", activityType, content }],
-      } as never),
+      dispatch(s, "onActivitySnapshotEvent", {
+        event: {
+          type: EventType.ACTIVITY_SNAPSHOT,
+          activityType,
+          content,
+          messageId,
+          replace: true,
+        },
+        messages: [activityMessage(messageId, activityType, content)],
+      }),
     activityDeltaOrphan: (activityType, messageId) => {
-      void s.onActivityDeltaEvent?.({
-        event: { activityType, messageId, patch: [] },
+      dispatch(s, "onActivityDeltaEvent", {
+        event: { type: EventType.ACTIVITY_DELTA, activityType, messageId, patch: [] },
         messages: [],
-      } as never);
+      });
       // Present but not an activity, which the client warns about and this
       // component must simply not draw.
-      void s.onMessagesChanged?.({
+      dispatch(s, "onMessagesChanged", {
         messages: [{ id: messageId, role: "assistant", content: "text" }],
-      } as never);
+      });
     },
-    messagesChanged: () => void s.onMessagesChanged?.({ messages: [] } as never),
+    messagesChanged: () => dispatch(s, "onMessagesChanged", { messages: [] }),
     // Models the real order, which is the opposite of what it looks like:
     // `@ag-ui/client` dispatches `onActivityDeltaEvent` **first**, with the
     // message still holding its *pre*-patch content, and only then applies the
@@ -96,32 +195,51 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
     // the patched content would let a component redraw from stale data and
     // still go green -- which is exactly what happened.
     activityDelta: (activityType, content, messageId, before = {}) => {
-      void s.onActivityDeltaEvent?.({
-        event: { activityType, messageId, patch: [] },
-        messages: [{ id: messageId, role: "activity", activityType, content: before }],
-      } as never);
-      void s.onMessagesChanged?.({
-        messages: [{ id: messageId, role: "activity", activityType, content }],
-      } as never);
+      dispatch(s, "onActivityDeltaEvent", {
+        event: { type: EventType.ACTIVITY_DELTA, activityType, messageId, patch: [] },
+        messages: [activityMessage(messageId, activityType, before)],
+      });
+      dispatch(s, "onMessagesChanged", {
+        messages: [activityMessage(messageId, activityType, content)],
+      });
     },
-    reasoningStart: () => void s.onReasoningStartEvent?.({ event: {} } as never),
-    reasoning: (reasoningMessageBuffer) =>
-      void s.onReasoningMessageContentEvent?.({ reasoningMessageBuffer } as never),
-    reasoningEnd: () => void s.onReasoningEndEvent?.({ event: {} } as never),
+    reasoningStart: () =>
+      dispatch(s, "onReasoningStartEvent", {
+        event: { type: EventType.REASONING_START, messageId: "reasoning" },
+      }),
+    reasoning: (delta) => {
+      // The buffer as it stands *before* this delta is appended, which is what
+      // the real client passes.
+      dispatch(s, "onReasoningMessageContentEvent", { reasoningMessageBuffer: state.reasoning });
+      state.reasoning += delta;
+    },
+    reasoningEnd: () => {
+      // REASONING_MESSAGE_END carries the complete block; REASONING_END does not.
+      // Both are emitted because the real stream sends both, in this order.
+      dispatch(s, "onReasoningMessageEndEvent", { reasoningMessageBuffer: state.reasoning });
+      dispatch(s, "onReasoningEndEvent", {
+        event: { type: EventType.REASONING_END, messageId: "reasoning" },
+      });
+      state.reasoning = "";
+    },
     error: (message) => {
       state.terminal = true;
-      void s.onRunErrorEvent?.({ event: { message } } as never);
+      dispatch(s, "onRunErrorEvent", { event: { type: EventType.RUN_ERROR, message } });
     },
     interrupt: (interrupts) => {
       state.terminal = true;
-      void s.onRunFinishedEvent?.({ event: {}, outcome: "interrupt", interrupts } as never);
+      dispatch(s, "onRunFinishedEvent", {
+        event: { type: EventType.RUN_FINISHED, threadId: "thread", runId: "run" },
+        outcome: "interrupt",
+        interrupts,
+      });
     },
     state: (snapshot) => {
       agent.applyState(snapshot);
     },
     runEnd: () => {
       state.terminal = true;
-      void s.onRunFinalized?.({} as never);
+      dispatch(s, "onRunFinalized", {});
     },
   };
 }
@@ -177,7 +295,7 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
   const applyState = (snapshot: Record<string, unknown>): void => {
     agent.state = { ...snapshot };
     for (const subscriber of subscribers) {
-      subscriber.onStateChanged?.({ state: agent.state } as never);
+      dispatch(subscriber, "onStateChanged", { state: agent.state });
     }
   };
   const agent = {
@@ -211,7 +329,7 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
       if (opts.throwOnRun !== undefined) {
         throw opts.throwOnRun;
       }
-      const state: EmitState = { terminal: false };
+      const state: EmitState = { terminal: false, reasoning: "" };
       await opts.script?.(emitter(subscriber, state, { applyState }), params);
       // A real run that streamed cleanly emits RUN_FINISHED with an ordinary
       // outcome and *then* finalizes — both, in that order. Emitting only the
@@ -219,8 +337,11 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
       // could produce that event solely via `emit.interrupt()`, so the one
       // outcome every successful run actually carries was never exercised.
       if (!state.terminal && opts.dropStream !== true) {
-        subscriber.onRunFinishedEvent?.({ event: {}, outcome: "success" } as never);
-        subscriber.onRunFinalized?.({} as never);
+        dispatch(subscriber, "onRunFinishedEvent", {
+          event: { type: EventType.RUN_FINISHED, threadId: "thread", runId: "run" },
+          outcome: "success",
+        });
+        dispatch(subscriber, "onRunFinalized", {});
       }
       return {};
     },

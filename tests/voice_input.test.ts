@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 import { VoiceInput } from "../src/ui/voice_input.js";
 import { installFakeMedia } from "./helpers/fake_media.js";
 
@@ -14,6 +15,7 @@ let media: ReturnType<typeof installFakeMedia> | null = null;
 afterEach(() => {
   media?.restore();
   media = null;
+  vi.useRealTimers();
 });
 
 describe("VoiceInput", () => {
@@ -150,6 +152,55 @@ describe("VoiceInput", () => {
     expect(media.recorder().stream.track.stopped).toBe(true);
     expect(transcribe).not.toHaveBeenCalled();
     expect(got).toEqual([]);
+  });
+
+  it("stops itself at the recording cap instead of holding the mic open", async () => {
+    // A user who taps the mic, is interrupted, and leaves the tab open: nothing
+    // else stops the recorder, so the chunks grow and the browser's recording
+    // indicator stays lit until they come back.
+    vi.useFakeTimers();
+    media = installFakeMedia();
+    const transcribe = vi.fn().mockResolvedValue("dictated words");
+    const got: string[] = [];
+    const voice = new VoiceInput({ transcribe, onText: (t) => got.push(t) });
+
+    voice.element.click();
+    await flush();
+    expect(voice.element.dataset["state"]).toBe("recording");
+
+    vi.advanceTimersByTime(120_000);
+    await flush();
+
+    // The mic is released and the clip is kept, not discarded: the user gets
+    // the words they already spoke.
+    expect(media.recorder().state).toBe("inactive");
+    expect(media.recorder().stream.track.stopped).toBe(true);
+    expect(transcribe).toHaveBeenCalledOnce();
+    expect(got).toEqual(["dictated words"]);
+    expect(voice.element.dataset["state"]).toBe("idle");
+    // ...and the button says why it stopped on its own, rather than leaving the
+    // user to guess whether the recording is still running.
+    expect(voice.element.title).toBe(DEFAULT_UI_STRINGS.recordingLimit.replace("{n}", "2"));
+  });
+
+  it("drops the cap when a recording ends on its own terms", async () => {
+    // A stale timer would stop the *next* recording early, or fire into a
+    // control that has already gone idle.
+    vi.useFakeTimers();
+    media = installFakeMedia();
+    const transcribe = vi.fn().mockResolvedValue("short answer");
+    const voice = new VoiceInput({ transcribe, onText: () => {} });
+
+    voice.element.click(); // start
+    await flush();
+    voice.element.click(); // stop, well inside the cap
+    await flush();
+    expect(transcribe).toHaveBeenCalledOnce();
+
+    vi.advanceTimersByTime(120_000);
+    await flush();
+    expect(transcribe).toHaveBeenCalledOnce();
+    expect(voice.element.title).toBe(DEFAULT_UI_STRINGS.recordVoice);
   });
 
   it("dispose when idle is a safe no-op", () => {

@@ -97,7 +97,14 @@ export interface AgUiClientHandlers {
   onActivityChanged(messageId: string, activityType: string, content: unknown): void;
   /** Fired when a reasoning model starts emitting its chain-of-thought. */
   onReasoningStart(): void;
-  /** Fired on every reasoning token; ``buffer`` is the full reasoning text so far. */
+  /**
+   * Fired on every reasoning token, and once more when the block ends.
+   *
+   * ``buffer`` is the text accumulated *before* the token that triggered the
+   * call, which is what the protocol client passes -- so the stream trails by
+   * one delta and the final call, at the end of the block, is what completes
+   * it. Render the buffer wholesale rather than appending it.
+   */
   onReasoningDelta(buffer: string): void;
   /** Fired when the reasoning block ends (before the answer text streams). */
   onReasoningEnd(): void;
@@ -495,6 +502,16 @@ export class AgUiClient {
         h.onReasoningStart();
       },
       onReasoningMessageContentEvent({ reasoningMessageBuffer }) {
+        h.onReasoningDelta(reasoningMessageBuffer);
+      },
+      // The delta callback reports the buffer as it stood *before* the announced
+      // delta was appended, so on its own it always trails the stream by one and
+      // renders nothing at all for a block that arrives as a single delta. The
+      // answer text is spared that because its own end event carries the whole
+      // message; this is the reasoning counterpart, and it has to be
+      // REASONING_MESSAGE_END rather than REASONING_END, because only the former
+      // carries a buffer.
+      onReasoningMessageEndEvent({ reasoningMessageBuffer }) {
         h.onReasoningDelta(reasoningMessageBuffer);
       },
       onReasoningEndEvent() {

@@ -2308,6 +2308,7 @@ describe("AgUiChat — answer group", () => {
       emit.runStart();
       emit.reasoningStart();
       emit.reasoning("hmm");
+      emit.reasoningEnd();
       emit.runEnd();
     });
     await send(el, "think");

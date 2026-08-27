@@ -1,6 +1,6 @@
 import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
-import { withCredentials } from "./utils.js";
+import { warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
 
 /** Config for {@link createHttpAgent}. */
 export interface HttpAgentOptions {
@@ -32,6 +32,19 @@ export interface HttpAgentOptions {
    * server streams `STATE_SNAPSHOT` / `STATE_DELTA`.
    */
   initialState?: Readonly<Record<string, unknown>>;
+  /**
+   * Origins, besides the document's own, this agent may carry the host's
+   * credentials to.
+   *
+   * Running the agent on another subdomain is a normal deployment and stays
+   * supported, so a cross-origin endpoint is not refused — it is *announced*,
+   * once per origin, on the console. Listing an origin here says the
+   * destination was chosen deliberately and silences the notice for it.
+   *
+   * Entries are compared as serialized origins (`https://agent.example.com`,
+   * scheme and port included), which is what `URL.origin` produces.
+   */
+  trustedOrigins?: readonly string[];
 }
 
 /**
@@ -42,9 +55,11 @@ export interface HttpAgentOptions {
  * {@link AbstractAgent}.
  */
 export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
+  const staticHeaders = options.headers ?? {};
+  const warned = new Set<string>();
   return new HttpAgent({
     url: options.endpoint,
-    headers: options.headers ?? {},
+    headers: staticHeaders,
     initialState: { ...(options.initialState ?? {}) },
     // HttpAgent invokes its configured fetch as a method (`this.fetch(...)`),
     // rebinding the global `fetch` to the agent instance — "Illegal invocation"
@@ -53,6 +68,13 @@ export function createHttpAgent(options: HttpAgentOptions): AbstractAgent {
     // own config having no seam for either.
     fetch: (url, init) => {
       const fresh = options.getHeaders?.();
+      // Only the names the *host* supplied. `HttpAgent` adds `Content-Type` and
+      // `Accept` to every request and neither is a credential, so reporting the
+      // outgoing header set wholesale would cry wolf on every plain request.
+      const credentialNames = [
+        ...new Set([...Object.keys(staticHeaders), ...Object.keys(fresh ?? {})]),
+      ].sort();
+      warnOnCrossOriginCredentials(url, credentialNames, options.trustedOrigins ?? [], warned);
       if (fresh === undefined) {
         return fetch(url, withCredentials(init, options.credentials));
       }

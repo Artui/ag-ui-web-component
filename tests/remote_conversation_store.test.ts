@@ -293,4 +293,56 @@ describe("RemoteConversationStore", () => {
     store.saveCheckpoint("t9", { toolCallId: "c1" });
     expect(store.loadCheckpoint("t9")).toEqual({ toolCallId: "c1" });
   });
+  describe("the local message cache", () => {
+    /** Every key and value in `sessionStorage`, as one string. */
+    function dumpStorage(): string {
+      const lines: string[] = [];
+      for (let index = 0; index < sessionStorage.length; index += 1) {
+        const key = sessionStorage.key(index);
+        lines.push(`${key}=${key === null ? "" : sessionStorage.getItem(key)}`);
+      }
+      return lines.join("\n");
+    }
+
+    it("mirrors message bodies locally by default", async () => {
+      const local = new SessionStorageStore();
+      const store = new RemoteConversationStore("https://x/threads/", () => ({}), local);
+      store.saveMessages("t9", [{ id: "m", role: "user", content: "regulated" }] as never);
+      expect(dumpStorage()).toContain("regulated");
+    });
+
+    it("writes no message body when the cache is turned off", () => {
+      const local = new SessionStorageStore();
+      const store = new RemoteConversationStore(
+        "https://x/threads/",
+        () => ({}),
+        local,
+        () => undefined,
+        false,
+      );
+      store.saveMessages("t9", [{ id: "m", role: "user", content: "regulated" }] as never);
+      expect(dumpStorage()).not.toContain("regulated");
+    });
+
+    it("still marks the thread sent, so its history restores after a reload", async () => {
+      const local = new SessionStorageStore();
+      const store = new RemoteConversationStore(
+        "https://x/threads/",
+        () => ({}),
+        local,
+        () => undefined,
+        false,
+      );
+      const id = store.threadId();
+      expect(store.isUnsent(id)).toBe(true);
+
+      store.saveMessages(id, [{ id: "m", role: "user", content: "regulated" }] as never);
+
+      // `isUnsent` short-circuits the restore fetch, so a thread that stayed
+      // "unsent" would never be reloaded from the server at all.
+      expect(store.isUnsent(id)).toBe(false);
+      fetchMock.mockResolvedValue(ok({ messages: [{ id: "m", role: "user", content: "back" }] }));
+      expect(await store.loadMessages(id)).toEqual([{ id: "m", role: "user", content: "back" }]);
+    });
+  });
 });

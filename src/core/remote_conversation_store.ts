@@ -40,25 +40,50 @@ type CredentialsProvider = () => RequestCredentials | undefined;
  * the fallback when a request fails. Rename and delete apply optimistically via
  * a local overlay, so the drawer reflects them before the fire-and-forget
  * round-trip lands.
+ *
+ * Pass `cacheMessages: false` to keep message bodies out of the browser
+ * entirely; see the constructor.
  */
 export class RemoteConversationStore implements ClientConversationStore {
   readonly #url: string;
   readonly #headers: HeadersProvider;
   readonly #local: ClientConversationStore;
   readonly #credentials: CredentialsProvider;
+  readonly #cacheMessages: boolean;
   readonly #dropped = new Set<string>();
   readonly #renamed = new Map<string, string>();
 
+  /**
+   * @param cacheMessages Whether to mirror message bodies into the local store.
+   *
+   * `true` (the default, and the behaviour this class has always had) keeps a
+   * local copy of every turn, so the transcript still replays when the thread
+   * endpoint is unreachable. `false` is for the deployment that chose a
+   * server-backed store precisely so transcripts do not sit in the browser:
+   * regulated content, a shared workstation, an operator who has to be able to
+   * say where the conversation lives. It is not the same as passing a local
+   * store that does nothing — the local store also owns the active thread id,
+   * the navigation checkpoint and the "nothing sent here yet" marker, all of
+   * which must keep working — so the opt-out is scoped to the bodies alone.
+   *
+   * The cost is deliberate and worth stating: with no local copy there is
+   * nothing to fall back to, so a failed request shows an empty transcript
+   * rather than a stale one, and the drawer's offline list loses its previews
+   * (a preview is an excerpt of a message, which is the very thing being kept
+   * off the client).
+   */
   constructor(
     url: string,
     headers: HeadersProvider = () => ({}),
     local: ClientConversationStore = new SessionStorageStore(),
     credentials: CredentialsProvider = () => undefined,
+    cacheMessages = true,
   ) {
     this.#url = url.endsWith("/") ? url : `${url}/`;
     this.#headers = headers;
     this.#local = local;
     this.#credentials = credentials;
+    this.#cacheMessages = cacheMessages;
   }
 
   threadId(): string {
@@ -84,8 +109,16 @@ export class RemoteConversationStore implements ClientConversationStore {
   }
 
   saveMessages(threadId: string, messages: readonly Message[]): void {
-    // The agent run persists server-side; keep a local cache for offline replay.
-    this.#local.saveMessages(threadId, messages);
+    // The agent run persists server-side; keep a local cache for offline replay
+    // unless the host asked for the bodies to stay off the client.
+    //
+    // The empty list is not a way of saying "nothing happened". A save is what
+    // retires the local store's minted marker, and `loadMessages` skips the
+    // server for a thread that store still calls unsent — so dropping the call
+    // entirely would leave every thread permanently unsent and its history
+    // unreachable after a reload. Saving an empty list records that the thread
+    // is real without recording a word of what was said in it.
+    this.#local.saveMessages(threadId, this.#cacheMessages ? messages : []);
   }
 
   loadCheckpoint(threadId: string): NavigationCheckpoint | null {

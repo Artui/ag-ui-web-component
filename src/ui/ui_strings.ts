@@ -80,6 +80,12 @@ export interface UiStrings {
   transcribing: string;
   /** Mic button fallback message when transcription fails. */
   transcriptionFailed: string;
+  /**
+   * Mic button message after a recording hit its length cap and stopped itself.
+   * The clip is kept and transcribed, so this explains the silence rather than
+   * reporting a loss. Token: `{n}` (the cap, in minutes).
+   */
+  recordingLimit: string;
 
   // ── Tool-call card ──────────────────────────────────────────────────────────
   /** Status pill while the call runs. */
@@ -171,20 +177,16 @@ export interface UiStrings {
   /** Remove-attachment button `aria-label`. */
   removeAttachment: string;
 
-  // ── Relative time (drawer rows) ─────────────────────────────────────────────
-  /** Under a minute ago. */
-  justNow: string;
-  /** Minutes ago. Token: `{n}`. */
-  minutesAgo: string;
-  /** Hours ago. Token: `{n}`. */
-  hoursAgo: string;
-  /** Title of the checkpoint panel. */
+  // ── Code blocks ─────────────────────────────────────────────────────────────
   /** Label on a code block's copy button. */
   copyCode: string;
   /** Shown on the copy button after the code reached the clipboard. */
   copied: string;
   /** Shown when the clipboard was unavailable or refused the write. */
   copyFailed: string;
+
+  // ── Checkpoint panel (continue a run) ───────────────────────────────────────
+  /** Title of the checkpoint panel. */
   checkpoints: string;
   /** Empty state when no run can be continued. */
   noCheckpoints: string;
@@ -194,6 +196,14 @@ export interface UiStrings {
   forkRun: string;
   /** Badge on a run that branched from another. */
   forkedRun: string;
+
+  // ── Relative time (drawer rows) ─────────────────────────────────────────────
+  /** Under a minute ago. */
+  justNow: string;
+  /** Minutes ago. Token: `{n}`. */
+  minutesAgo: string;
+  /** Hours ago. Token: `{n}`. */
+  hoursAgo: string;
   /** Days ago. Token: `{n}`. */
   daysAgo: string;
   /** Weeks ago. Token: `{n}`. */
@@ -244,6 +254,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   stopRecording: "Stop recording",
   transcribing: "Transcribing…",
   transcriptionFailed: "Transcription failed",
+  recordingLimit: "Stopped at the {n}-minute limit — transcribing what was recorded.",
 
   toolRunning: "running…",
   toolDeferred: "waiting for you",

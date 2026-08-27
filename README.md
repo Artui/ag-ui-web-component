@@ -53,6 +53,8 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
 - [Run notices: compaction and agent skills](#run-notices-compaction-and-agent-skills)
 - [Skills: prompt chips and slash palette](#skills-prompt-chips-and-slash-palette)
 - [MPA durability: surviving full page reloads](#mpa-durability-surviving-full-page-reloads)
+  - [Who the stored conversation belongs to (`user-key`)](#who-the-stored-conversation-belongs-to-user-key)
+  - [Mounting more than one chat on a page](#mounting-more-than-one-chat-on-a-page)
 - [Host seams: the SPA story](#host-seams-the-spa-story)
 - [Public API surface](#public-api-surface)
 - [Theming, density, and placement](#theming-density-and-placement)
@@ -162,7 +164,9 @@ another origin, add `credentials="include"` too; see
 | `data-skills` | — | Inline JSON skill catalog. |
 | `data-skills-url` | — | URL of a JSON skill catalog (fetched with the element's headers and cookie policy). |
 | `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with the element's headers and cookie policy; labels tool-call cards for server-side tools. |
+| `user-key` | `userKey` | Who the stored conversation belongs to — any string identifying the signed-in principal. Joins the storage namespace, and **changing it purges what the previous principal left behind**. Live (not connect-time): a logout is the host's to announce. See [Who the stored conversation belongs to](#who-the-stored-conversation-belongs-to-user-key). |
 | `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
+| `data-threads-cache` | — | **On by default.** `="false"` stops mirroring message bodies into `sessionStorage` when `data-threads-url` is set, for a deployment that put history on the server so transcripts stay off the client. Only meaningful alongside `data-threads-url`. |
 | `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's ⭯ *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
 | `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's paperclip picker + drag-and-drop. |
 | `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
@@ -196,7 +200,7 @@ same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 `confirmPredicate`, `askUser`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
 `getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`,
 `navigationResult`, `skillContext`, `toolSummaries`, `strings`, `resolvePageTarget`, plus the
-mirrors `endpoint` / `toolDisplay` / `collapsed` / `credentials`.
+mirrors `endpoint` / `userKey` / `toolDisplay` / `collapsed` / `credentials`.
 
 `headers` and `getHeaders` authenticate **every** request the element makes, not only the agent
 run; `getHeaders` is the one to use for a credential that rotates. See
@@ -332,6 +336,41 @@ One asymmetry: uploads use `XMLHttpRequest` for real progress events, and its co
 two-state. `include` turns it on; every other value leaves it off. `omit` therefore cannot suppress
 cookies on a *same-origin* upload — supply your own `uploadHandler` if that matters.
 
+### Where those credentials are allowed to go
+
+Every URL in the table above is a plain HTML attribute, and `headers` / `getHeaders` are attached to
+whatever they name. That is what makes a cross-origin agent work — and it is also why a page must
+never build one of those attributes out of a URL parameter, a CMS field, or anything else it did not
+choose itself. Whoever supplies the value chooses where the token goes: the browser preflights the
+custom header, any server willing to answer receives it, and it leaves on the element's first
+request, before the user has typed anything.
+
+Treat all seven as trusted configuration. When any of them resolves to another origin, the element
+says so on the console once per origin, naming the destination and the header names it is about to
+send. That covers all seven, not the agent endpoint alone: the tool catalog, the skills list, the
+thread index, the attachment upload and the transcription endpoint carry the same headers, and
+reporting only the agent would report the least interesting of them.
+
+To confirm destinations you chose on purpose and silence the notice, name their origins:
+
+```js
+chat.trustedOrigins = ["https://api.example.com"];
+```
+
+That covers every endpoint the element requests itself, and is forwarded to `createHttpAgent`, so a
+host that does not override `agentFactory` needs nothing else. A custom factory can also be given
+the option directly:
+
+```js
+chat.agentFactory = (options) =>
+  createHttpAgent({ ...options, trustedOrigins: ["https://api.example.com"] });
+```
+
+Origins are compared as `URL.origin` produces them — scheme, host and port. A notice is a notice,
+not a refusal: nothing is blocked, because a cross-origin agent is a supported deployment and
+refusing would break working installations to defend against a page that is already interpolating
+untrusted data into its own markup.
+
 ### Framework hosts: configure before you insert
 
 `headers`, `getHeaders` and `credentials` are read when a request is made, so they can be set at any
@@ -449,6 +488,13 @@ card (honouring `data-tool-display`), so server-side output is visible too. The 
 and context are read **fresh on every run** (`getTools()` / `getContext()`), so they always reflect
 the current page state.
 
+The catalog a run advertises is also the set that run can execute. Override `getTools` to scope
+what a page offers — say, exposing `delete_record` only where deleting makes sense — and a call
+naming a tool you withheld is treated exactly as a call naming a tool you never registered: no
+handler runs, and the card settles with the no-result label. Withholding is per run, so the
+mount-wide registry can stay complete. Hosts that leave `getTools` alone advertise the built-ins
+plus everything registered, which is precisely what dispatch could reach anyway.
+
 ### Stopping a run
 
 While a run is in flight the **Send button becomes Stop** (same button, label/`aria-label` swap,
@@ -491,9 +537,18 @@ chat.registerTool({
 });
 ```
 
-Names must be unique (registering a duplicate throws). Each `<ag-ui-chat>` element owns its own
+Registering a name twice replaces the earlier handler rather than throwing, so a re-fired
+host ref or React StrictMode's double-invoke is harmless -- but two different tools sharing
+a name means the second silently wins. Each `<ag-ui-chat>` element owns its own
 registry, AG-UI client, and Shadow DOM, so **multiple instances on one page never interfere** —
 there is no module-level shared state anywhere in the package.
+
+**A handler's thrown message leaves the browser.** If a handler rejects, its `Error.message` is
+posted back as that call's tool result: into the conversation, on to the AG-UI endpoint, persisted
+there, and replayed to the model provider on every later round. That is deliberate — a real reason
+is what lets the agent recover — but it means an internal hostname, a signed URL or a
+stack-derived path in a rethrown error is disclosed to parties you never chose. Throw the message
+you would be content for the model to read, and log the detail instead.
 
 ### Inline confirmation (`x-destructive` / `x-confirm` / `confirmPredicate`)
 
@@ -524,6 +579,13 @@ the `x-destructive` flag (or `confirmPredicate`). The registry forwards the flag
 
 If the schema carries an `x-confirm` string (use `X_CONFIRM_KEY`), the card shows it as the prompt;
 otherwise it falls back to a generic `Run "<tool>"?`.
+
+**This gate covers frontend tools only.** A server-side tool's schema never reaches the browser —
+tool definitions travel client-to-server on `RunAgentInput.tools`, and the only channel coming back
+is the label catalog (`data-tools-url`), which carries `{ name, summary, description? }` and no
+flags. So marking a server tool destructive does not produce a card here; gate it server-side
+instead (see [Server-side tool approval](#server-side-tool-approval-interrupts)), which surfaces as
+an approval card in the same transcript.
 
 ```js
 // Per-call: confirm a delete only when it would remove more than one row.
@@ -1042,9 +1104,12 @@ via the `resize-handle` part.
 Assistant bubbles render sanitized markdown/HTML via [`marked`](https://www.npmjs.com/package/marked)
 (GitHub-flavoured, single-newline line breaks) piped through
 [DOMPurify](https://www.npmjs.com/package/dompurify). User messages stay literal text. The
-allowlist permits emphasis, code, lists, quotes, headings, links, tables, and images (`img`); links
-are hardened with `target="_blank" rel="noopener noreferrer"`; `iframe`/`style`/scripting are
-excluded. The exported helper `renderMarkdown(text)` does this standalone. `marked` and `dompurify`
+allowlist permits emphasis, code, lists, quotes, headings, links, tables, and — when `allowImages`
+is set — images; links are hardened with `target="_blank" rel="noopener noreferrer"`;
+`iframe`/`style`/scripting are excluded, as are every `data-*` and `aria-*` attribute and every
+`class` but a code fence's `language-*` hint, so model output cannot dress itself up as the
+component's own approval or tool-call chrome. The exported helper `renderMarkdown(text)` does this
+standalone. `marked` and `dompurify`
 are runtime dependencies.
 
 An animated 3-dot "thinking" indicator (`role="status"`, with an aria-label) appears before the
@@ -1176,6 +1241,87 @@ triggers a full reload. Before the handler navigates, the element writes a check
 3. and resumes the run loop from there.
 
 The MPA round-trip becomes a clean observation point instead of a dropped conversation.
+
+### Who the stored conversation belongs to (`user-key`)
+
+`sessionStorage` is scoped to a tab, not to a session. It survives every same-tab navigation,
+and a logout is a navigation — so on a shared workstation, one user's transcript is still sitting
+there when the next user signs in and the chat mounts again. Transcripts routinely quote record
+data, so treat that as the default and turn it off:
+
+```html
+<ag-ui-chat endpoint="/agent/" user-key="{{ request.user.pk }}"></ag-ui-chat>
+```
+
+The value is any string that identifies the principal — a user id, an account id, a hash of one.
+It joins the storage namespace, so two principals in the same tab cannot reach each other's
+conversation, and **changing it purges everything the previous principal stored**: transcript,
+history drawer index and navigation checkpoints, for this element's namespace only.
+
+Set it live, from script, as part of signing out or in:
+
+```js
+chat.userKey = String(session.userId); // or "" on sign-out
+```
+
+That is why it is a live attribute rather than a connect-time one. A single-page app signs a user
+out through its own router without remounting anything, so the host naming the new principal — or
+dropping the attribute — is the only signal the element will ever get. Removing the attribute
+purges too, so a sign-out that simply clears it is safe.
+
+The **first** value to arrive is treated as a host naming the user who was already there, not as a
+handover: the conversation in progress moves into the principal's namespace instead of being
+destroyed. So an element configured by an async auth handshake — the shape described in
+[Framework hosts](#framework-hosts-configure-before-you-insert) — keeps what is on screen.
+
+Two things it deliberately does not do. It does not scope the panel's own collapsed / dragged-size
+/ theme preferences, which are this element's UI state and carry no conversation content. And it
+does not encrypt or hide anything from the page: any script on the origin can still read
+`sessionStorage`. It scopes and it purges.
+
+**Without it, nothing changes** — including the carry-over above. A conversation is scoped to the
+element and to nobody in particular, and on a shared workstation it will be there for whoever signs
+in next in the same tab.
+
+For a deployment that keeps history server-side, `data-threads-cache="false"` stops the local
+mirror of the message bodies as well, so choosing `data-threads-url` actually keeps transcripts off
+the client:
+
+```html
+<ag-ui-chat endpoint="/agent/" data-threads-url="/agent/threads/" data-threads-cache="false">
+</ag-ui-chat>
+```
+
+The client-only concerns (the active thread id, the navigation checkpoint) keep their local store
+either way, so reloads and navigating tools still work. What is lost is the offline fallback: when
+the thread endpoint is unreachable the transcript comes back empty rather than stale, and the
+drawer's offline list loses its previews — a preview being an excerpt of a message, which is the
+thing being kept off the client. Constructing the store yourself takes the same option:
+
+```js
+chat.conversationStore = new RemoteConversationStore(
+  "/agent/threads/",
+  () => ({ "X-CSRFToken": token }),
+  new SessionStorageStore(),
+  () => "same-origin",
+  false, // cacheMessages
+);
+```
+
+`SessionStorageStore.purge(namespace)` is the same primitive the element uses, for a host driving
+its own store from its own sign-out path.
+
+### Mounting more than one chat on a page
+
+Give each `<ag-ui-chat>` its own `id`. The storage namespace is the element's `id`, falling back to
+its `endpoint` — so two elements with no `id` against the same agent mount (a docked support panel
+and an inline page assistant, say) would resolve to the same namespace and share a thread pointer,
+a history drawer and every message key.
+
+They no longer do: the first element to mount keeps the namespace, and a second is given a
+throwaway one of its own plus a console warning. That keeps the two conversations apart, but the
+throwaway namespace is minted per mount, so the second element will not restore its conversation
+across a reload until it has an `id`.
 
 ---
 
@@ -1452,6 +1598,8 @@ re-export point. Internal modules import from leaf paths.
 | `SubmitDetail` | type | `detail` shape of the submit event. |
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
 | `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
+| `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
+| `StateDetail` | type | `detail` shape of the `ag-ui-state` event (`{ state }`). |
 
 ### AG-UI client & agent
 
@@ -1463,6 +1611,8 @@ re-export point. Internal modules import from leaf paths.
 | `ConnectionLostError` | class | Raised (→ `onError`) when a run's stream closes with no terminal AG-UI event. |
 | `createHttpAgent(options)` | function | Default agent factory (wraps `HttpAgent`). |
 | `AgentFactory` / `HttpAgentOptions` | type | Factory signature and its options. |
+| `ResolveInterrupts` | type | Resolver for server-side-tool approval interrupts (one decision per interrupt). |
+| `InterruptResponse` | type | One interrupt's answer: `resolved` (with an optional payload) or `cancelled`. |
 
 ### Tools & flags
 
@@ -1476,6 +1626,9 @@ re-export point. Internal modules import from leaf paths.
 | `PAGE_ACTIONS` | const | The page-action opt-in tokens (`scroll` / `drag`). |
 | `ResolvePageTarget` | type | `(target) => HTMLElement | null` — the page-target resolver. |
 | `X_DESTRUCTIVE_KEY` / `X_NAVIGATES_KEY` | const | The JSON-Schema extension keys. |
+| `parseToolCatalog(data)` | function | Parse a fetched `data-tools-url` catalog into a `name` → `summary` map. |
+| `ToolCatalogEntry` | type | One row of that catalog. |
+| `prettifyToolName(name)` | function | Last fallback of the tool-card label chain (`delete_record` reads as *Delete record*). |
 
 ### Host seams
 
@@ -1490,6 +1643,7 @@ re-export point. Internal modules import from leaf paths.
 | `PageState` | type | A page-state binding declaration. |
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
 | `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
+| `createStateHookTools(binding)` / `StateHook` | deprecated | The former names for `createPageStateTools` / `PageState`. |
 
 ### Durability
 
@@ -1515,6 +1669,14 @@ re-export point. Internal modules import from leaf paths.
 | `AttachmentRef` | type | The durable upload ref (`{ id, name, mime, size, url? }`). |
 | `messageAttachments(message)` | function | Read the refs a restored user message carries. |
 
+### Voice input
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `transcribeAudio(audio, options)` | function | The built-in transcription POST (multipart) → the transcript text. |
+| `TranscribeOptions` | type | `{ url, headers? }`. |
+| `TranscribeHandler` | type | `(audio) => Promise<string>` — the `transcribeHandler` swap seam (Web Speech, direct-to-provider). |
+
 ### UI & DOM primitives
 
 | Export | Kind | Summary |
@@ -1527,7 +1689,19 @@ re-export point. Internal modules import from leaf paths.
 | `UiStrings` | type | The flat table of every user-facing string. |
 | `DEFAULT_UI_STRINGS` | const | The English defaults (the override floor). |
 | `mergeUiStrings(overrides)` | function | Merge a partial override over the defaults. |
-| `renderMarkdown(text)` | function | Render sanitized markdown/HTML (marked + DOMPurify). |
+| `renderMarkdown(text, options?)` | function | Render sanitized markdown/HTML (marked + DOMPurify). |
+| `RenderMarkdownOptions` | type | `{ allowImages? }` — opt `<img>` back into the sanitized output. |
+| `requestApproval(host, request, options?)` | function | Append the inline approval card that gates a server-side tool. |
+| `ApprovalRequest` | type | What that card displays (`{ message?, toolName? }`). |
+| `ApprovalOptions` | type | `{ signal?, strings? }` — abort resolves the card as denied; `strings` localizes it. |
+| `ApprovalRenderer` | type | Replace the built-in approval card outright (`AgUiChat.approvalRenderer`). |
+| `requestQuestion(host, request, options?)` | function | Append the inline `ask_user` card (radios and/or free text). |
+| `QuestionRequest` | type | What that card asks. |
+| `QuestionOptions` | type | `{ signal?, strings? }` — abort resolves it with an empty answer. |
+| `QuestionRenderer` | type | Replace the built-in question card outright (`AgUiChat.questionRenderer`). |
+| `renderChart(spec)` | function | Draw one spec as a self-contained block, or `null` when it says nothing. |
+| `chartSpecFrom(value)` | function | Read an arbitrary payload into a `ChartSpec`, or `null` if it cannot be drawn honestly. |
+| `ChartSpec` / `ChartSeries` / `ChartKind` | type | A chart as data, one named series, and how it is drawn. |
 | `typeInto` / `highlightThenClick` / `pressThenClick` / `selectOption` / `toggleControl` / `scrollIntoCenterView` / `flash` / `focusWithFlash` / `prefersReducedMotion` | function | Animation primitives. |
 | `fillField` / `clickElement` / `pressButton` / `selectControl` / `setControlValue` / `toggleCheckbox` | function | DOM-driver primitives. |
 | `setNativeValue` / `setNativeChecked` | function | Set a control via its native prototype setter (React-controlled inputs). |
@@ -1542,6 +1716,12 @@ re-export point. Internal modules import from leaf paths.
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
+| `ATTACHMENT_EVENT` | The attachments-changed CustomEvent name (`ag-ui-attachments`). |
+| `STATE_EVENT` | The shared-state CustomEvent name (`ag-ui-state`). |
+| `CHART_ACTIVITY_TYPE` | The `ACTIVITY_SNAPSHOT` type a server sets to push a chart. |
+| `CHART_TOOL_NAME` | The name the built-in chart tool registers under (`render_chart`). |
+| `COMPACTION_ACTIVITY_TYPE` | The `ACTIVITY_SNAPSHOT` type reporting a trimmed history. |
+| `LOAD_CAPABILITY_TOOL` | The agent-side capability-loading tool's name. |
 | `MESSAGE_ROLE` | Message role constants. |
 | `TOOL_CALL_STATUS` | Tool-call card status constants. |
 | `TOOL_DISPLAY` | Tool-call display-mode constants (`minimal` / `compact` / `full`). |
