@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Server-pushed follow-up suggestions.** A `suggestions` activity draws its
+  prompts as chips; clicking one sends it as the user's message. Registered
+  skill chips are static and host-configured, so they can say "summarize this"
+  but never "want me to update the shipping address too?" after a tool has run.
+
+  Rides the activity envelope charts already use rather than a `CUSTOM` event,
+  which buys persistence for nothing: chips are content, so a reload puts them
+  back, and a set pushed under an id already on screen replaces that row.
+
+  Bounded at 4 prompts of 120 characters, mirroring django-ag-ui's
+  `suggestions_activity()`. The producer *raises* past those bounds while this
+  side silently drops — deliberate asymmetry, because the producer can report
+  the problem and the client cannot. Both numbers live on both sides for the
+  reason the chart bounds do: mirroring only some of them leaves exactly the
+  silent-drop hole they exist to close.
+
+  New `::part()`s `suggestions` / `suggestion-chip`, new
+  `SUGGESTIONS_ACTIVITY_TYPE`, and `renderSuggestionChips` / `suggestionPrompts`
+  exported for a host drawing its own.
+
 ### Fixed
 
 - **The message action row sat closer to the block below it than to the message
