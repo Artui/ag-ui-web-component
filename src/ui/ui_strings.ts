@@ -134,6 +134,8 @@ export interface UiStrings {
   // ── Confirmation card ───────────────────────────────────────────────────────
   /** `aria-label` of the inline confirmation card. */
   confirmAction: string;
+  /** Waive confirmation for this tool for the rest of the session. Token: `{tool}`. */
+  confirmAlways: string;
   /** Generic confirmation prompt when a tool has no `x-confirm`. Token: `{tool}`. */
   confirmRun: string;
   /** Confirm button. */
@@ -296,6 +298,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   details: "Details",
 
   confirmAction: "Confirm action",
+  confirmAlways: "Always allow",
   confirmRun: "Run “{tool}”?",
   confirm: "Confirm",
   cancel: "Cancel",

@@ -569,6 +569,15 @@ export class AgUiChat extends HTMLElement {
    * {@link AgUiChat.#dispatchRunFinished}, which is the one place that has read
    * it.
    */
+  /**
+   * Tool names the user waived confirmation for, for the life of this element.
+   *
+   * Per instance and never persisted: a session decision that outlived the tab
+   * would be a permanent grant made by one click, which is the thing
+   * `autoConfirm` already exists to say deliberately. Cleared with the element.
+   */
+  readonly #sessionApproved = new Set<string>();
+
   #runInvalidated = new Set<string>();
   readonly #root: ShadowRoot;
   /** Screen-reader-only status region -- see {@link AgUiChat.#announce}. */
@@ -3129,15 +3138,28 @@ export class AgUiChat extends HTMLElement {
     );
   }
 
-  /** Whether ``call`` should be gated behind the confirmation card. */
-  async #needsConfirmation(call: AgUiToolCall, tool: ClientTool): Promise<boolean> {
+  /**
+   * Which rule gates `call`, or `null` when it runs straight through.
+   *
+   * The rule, rather than a bare boolean, because it decides whether the user
+   * may *waive* the prompt for the rest of the session. Only the default
+   * `x-destructive` gate is waivable: `confirmPredicate` is documented as
+   * authoritative, so letting one click retire it would silently defeat a host
+   * policy — and the session allowlist is consulted on the same path it can
+   * be added from, so the button is never offered where honouring it would be
+   * refused.
+   */
+  async #confirmationRule(call: AgUiToolCall, tool: ClientTool): Promise<ConfirmationRule | null> {
     if (this.autoConfirm) {
-      return false;
+      return null;
     }
     if (this.confirmPredicate !== null) {
-      return (await this.confirmPredicate(call.name, call.args)) === true;
+      return (await this.confirmPredicate(call.name, call.args)) === true ? "predicate" : null;
     }
-    return isDestructive(tool.parameters);
+    if (this.#sessionApproved.has(call.name)) {
+      return null;
+    }
+    return isDestructive(tool.parameters) ? "destructive" : null;
   }
 
   async #executeTool(call: AgUiToolCall): Promise<ToolExecution | null> {
@@ -3196,7 +3218,8 @@ export class AgUiChat extends HTMLElement {
       this.#showPending();
       return { content: `Error: ${message}`, error: message };
     }
-    if (await this.#needsConfirmation(call, tool)) {
+    const rule = await this.#confirmationRule(call, tool);
+    if (rule !== null) {
       const request: ConfirmationRequest = { toolName: call.name, args: call.args };
       const confirmText = tool.parameters[X_CONFIRM_KEY];
       if (typeof confirmText === "string") {
@@ -3212,6 +3235,10 @@ export class AgUiChat extends HTMLElement {
       const decision = requestConfirmation(this.#ensureGroup(), request, {
         signal: this.#confirmAbort.signal,
         strings: this.#strings,
+        // Offered only where it can be honoured -- see `#confirmationRule`.
+        ...(rule === "destructive"
+          ? { onAlwaysAllow: () => this.#sessionApproved.add(call.name) }
+          : {}),
       });
       this.#updateEmptyState();
       this.#scroller.follow();
@@ -4033,6 +4060,15 @@ function confirmPhrase(interrupt: Interrupt): string | undefined {
 }
 
 /** One tool call as a restored assistant message carries it. */
+/**
+ * Why a client tool call is gated behind the confirmation card.
+ *
+ * Only `"destructive"` -- the default `x-destructive` gate -- may be waived for
+ * the session. `confirmPredicate` is documented as authoritative, so a call it
+ * gates keeps asking.
+ */
+type ConfirmationRule = "destructive" | "predicate";
+
 interface RestoredToolCall {
   readonly id: string;
   readonly function: { readonly name: string; readonly arguments?: unknown };

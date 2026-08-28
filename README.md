@@ -561,6 +561,8 @@ transcript as a resolved record after the decision:
 - **Confirm** → the handler runs and the result is posted back.
 - **Cancel** → a `"User declined the action."` result is posted; the agent acknowledges on its
   next turn.
+- **Always allow** → the handler runs *and* this tool stops prompting for the rest of the
+  session. See below for when this button appears.
 
 Whether a call is gated is decided in this order:
 
@@ -568,8 +570,26 @@ Whether a call is gated is decided in this order:
 2. Else if `chat.confirmPredicate` is set, its boolean return is authoritative — given the tool
    name + parsed args it decides per-call (so one tool can be instant for some args and confirmed
    for others, which a static flag can't express).
-3. Else the element falls back to [`isDestructive(parameters)`](src/tools/is_destructive.ts),
+3. Else if the user has waived this tool name for the session, the call runs.
+4. Else the element falls back to [`isDestructive(parameters)`](src/tools/is_destructive.ts),
    which reads the `x-destructive` JSON-Schema flag.
+
+#### "Always allow", and why only sometimes
+
+A prompt that is approved nearly every time is not a decision, it is a speed bump — and the
+reflex it trains is what makes the rare refusal easy to miss. Anthropic published that users
+approve **~93%** of Claude Code permission prompts manually and called interactive confirmation
+*"behaviorally unreliable as a sole safety mechanism"* on that basis. The waiver exists so the
+prompts that remain still mean something.
+
+**The button is offered only on cards raised by step 4** — the `x-destructive` default. Where
+`confirmPredicate` is what gated the call, there is no button, because that predicate is
+documented as authoritative and letting one click retire it would silently defeat a host policy.
+The offer and the allowlist sit on the same path, so there is no dead button either.
+
+The waiver is **per tool name and per element**, held in memory and never persisted. A session
+decision that outlived the tab would be a permanent grant made by one click — which is what
+`autoConfirm` already exists to say deliberately. It is cleared when the element goes away.
 
 AG-UI has no built-in risk flag, so destructiveness is carried as a JSON-Schema extension at the
 **schema root**: `parameters["x-destructive"] = true` (use the exported `X_DESTRUCTIVE_KEY`
@@ -2007,7 +2027,7 @@ component sets, so a new one cannot ship undocumented.
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
 | Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-icon`, `run-notice-text` |
 | Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval` |
-| Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`) |
+| Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`, `confirm-always`) |
 | Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`) |
 | Typed question | `question`, `question-body`, `question-options`, `question-choice`, `question-choice-text`, `question-radio`, `question-input`, `question-actions`, `question-button` |
 | Composer | `composer`, `composer-surface`, `composer-tools`, `input`, `send`, `attach-button`, `voice-button` |

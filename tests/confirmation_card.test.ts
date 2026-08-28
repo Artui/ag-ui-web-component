@@ -94,3 +94,56 @@ describe("requestConfirmation (inline card)", () => {
     expect(node.querySelector<HTMLElement>(".confirm-args")?.hidden).toBe(true);
   });
 });
+
+describe("the session waiver", () => {
+  it("offers no third button when nothing can honour one", () => {
+    const node = host();
+    void requestConfirmation(node, { toolName: "x", args: {} });
+    // Presence of the handler is what enables the button, so the affordance
+    // can never be rendered with nothing listening.
+    expect(node.querySelector(".confirm-btn--always")).toBeNull();
+  });
+
+  it("reports the waiver and still approves this call", async () => {
+    const node = host();
+    let waived = 0;
+    const decision = requestConfirmation(
+      node,
+      { toolName: "publish", args: {} },
+      { onAlwaysAllow: () => (waived += 1) },
+    );
+
+    node.querySelector<HTMLButtonElement>(".confirm-btn--always")?.click();
+
+    // The extra decision is *in addition to* approving this call, not instead
+    // of it: the tool the user was asked about still runs.
+    expect(await decision).toBe(true);
+    expect(waived).toBe(1);
+    expect(node.querySelector(".confirm")).toBeNull();
+  });
+
+  it("puts confirm last so the wider decision is not where the eye lands", () => {
+    const node = host();
+    void requestConfirmation(node, { toolName: "x", args: {} }, { onAlwaysAllow: () => {} });
+
+    const labels = [...node.querySelectorAll(".confirm-actions button")].map(
+      (b) => b.className.split("--")[1],
+    );
+    expect(labels).toEqual(["cancel", "always", "confirm"]);
+  });
+
+  it("does not report a waiver when the card is answered any other way", async () => {
+    const node = host();
+    let waived = 0;
+    const decision = requestConfirmation(
+      node,
+      { toolName: "x", args: {} },
+      { onAlwaysAllow: () => (waived += 1) },
+    );
+
+    node.querySelector<HTMLButtonElement>(".confirm-btn--confirm")?.click();
+
+    expect(await decision).toBe(true);
+    expect(waived).toBe(0);
+  });
+});
