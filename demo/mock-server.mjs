@@ -114,7 +114,15 @@ async function handleAgent(res, body) {
   if (resume.length > 0) {
     const approved = resume.filter((answer) => answer.status === "resolved");
     for (const answer of approved) {
-      emitToolResult(res, answer.interruptId.replace("int-", ""), '{"created": true}');
+      // Echo what was actually approved. A server that accepts `editedArgs`
+      // has to run the edited call rather than the one it proposed, and
+      // reflecting it here is what makes that visible in the demo.
+      const edited = answer.payload?.editedArgs;
+      emitToolResult(
+        res,
+        answer.interruptId.replace("int-", ""),
+        JSON.stringify(edited === undefined ? { created: true } : { created: true, as: edited }),
+      );
     }
     await streamText(res, id("msg"), [
       `Added ${approved.length} of ${resume.length}`,

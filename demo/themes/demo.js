@@ -165,6 +165,11 @@ bind("cfg-tools", "data-tool-display");
 // The question card needs the built-in ask_user tool offered to the agent.
 chat.askUser = true;
 
+// This mock server honours `editedArgs` in the resume payload, so the approval
+// cards offer the arguments for editing. Against a server that ignores them
+// this stays off: the component cannot see the capability.
+chat.approveWithEdits = true;
+
 // The well is a boolean attribute (presence = on), so toggle rather than set.
 $("cfg-well").addEventListener("change", (event) => {
   chat.toggleAttribute("data-answer-well", event.target.checked);

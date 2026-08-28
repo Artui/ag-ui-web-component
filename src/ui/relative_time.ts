@@ -36,3 +36,14 @@ export function relativeTime(
   }
   return strings.weeksAgo.replace("{n}", String(Math.round(days / 7)));
 }
+
+/**
+ * A host's replacement for {@link relativeTime}.
+ *
+ * Takes an epoch-milliseconds timestamp and returns the text a row shows.
+ * `Intl.RelativeTimeFormat` is the obvious implementation and is deliberately
+ * *not* the default: a component that guessed a locale would disagree with the
+ * host page's own formatting, and being wrong in a second language is worse
+ * than being neutral in one.
+ */
+export type RelativeTimeFormatter = (timestamp: number) => string;

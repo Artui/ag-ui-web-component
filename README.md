@@ -51,6 +51,8 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
 - [Tool-call display modes](#tool-call-display-modes)
 - [Markdown rendering](#markdown-rendering)
 - [Follow-up suggestions](#follow-up-suggestions)
+- [Editing a gated call before approving it](#editing-a-gated-call-before-approving-it)
+- [Localizing the timestamps](#localizing-the-timestamps)
 - [Message actions: copy, retry, feedback](#message-actions-copy-retry-feedback)
 - [Run notices: compaction and agent skills](#run-notices-compaction-and-agent-skills)
 - [Skills: prompt chips and slash palette](#skills-prompt-chips-and-slash-palette)
@@ -1239,6 +1241,49 @@ Nothing to enable. A `suggestions` activity from a server that pushes one is
 drawn; an `activity_type` this component does not know is ignored, which is what
 the open field is for.
 
+## Editing a gated call before approving it
+
+AG-UI's resume payload carries `editedArgs`, and the protocol gates it on the
+agent's own `approveWithEdits` capability. The approval card can offer it:
+
+```js
+chat.approveWithEdits = true; // your server accepts editedArgs
+```
+
+**Off by default, and an assertion about your server rather than a
+negotiation** — capabilities are not on the wire this component reads, so it
+cannot check. Turned on against a server that ignores `editedArgs`, a user would
+edit arguments it silently discards, which is worse than not offering.
+
+The card then shows the call's arguments as editable JSON. `editedArgs` rides
+the resume payload **only when something actually changed**, so a server can tell
+"approved as proposed" from "approved, but like this" without diffing what it
+already sent. Unparseable JSON, or JSON that is not an object, keeps the card
+open with the reason on it rather than approving the original behind the user's
+back.
+
+Only offered for an interrupt naming a tool call this component holds a card
+for — the card is where the arguments still are.
+
+## Localizing the timestamps
+
+There is **no `Intl` anywhere in this component**. The relative timestamps in the
+thread drawer and checkpoint panel (`"5m ago"`, `"2d ago"`) are deliberately
+locale-neutral: a component that guessed a locale would disagree with the page
+it is embedded in, and being wrong in a second language is worse than being
+neutral in one.
+
+That is a good default and a bad requirement, so it is replaceable:
+
+```js
+const rtf = new Intl.RelativeTimeFormat("de", { numeric: "auto" });
+chat.formatRelativeTime = (ts) =>
+  rtf.format(Math.round((ts - Date.now()) / 60000), "minute");
+```
+
+`relativeTime` is exported too, for a host that wants to build on the built-in
+rather than replace it.
+
 ## Message actions: copy, retry, feedback
 
 Every finished assistant message carries a small row of actions beneath it —
@@ -1875,6 +1920,8 @@ re-export point. Internal modules import from leaf paths.
 | `CustomAgentDetail` | type | `ag-ui-custom` detail: an AG-UI `CUSTOM` event's `name` and `value`, verbatim. |
 | `InvalidateDetail` | type | `ag-ui-invalidate` detail: the resource `keys` that moved, and the `reason`. |
 | `FeedbackDetail` | type | `ag-ui-feedback` detail: the rated message's `content` and the `rating`. |
+| `relativeTime` | function | The built-in locale-neutral timestamp formatter (`"5m ago"`), for a host building on it. |
+| `RelativeTimeFormatter` | type | What `formatRelativeTime` takes: an epoch-ms timestamp in, row text out. |
 | `renderSuggestionChips` | function | Draw a `suggestions` activity as chips that send themselves; `null` when nothing survives. |
 | `suggestionPrompts` | function | The usable prompts in a `suggestions` activity's content, bounded and trimmed. |
 | `attachMessageActions` | function | Give a finished bubble its action row (copy, and feedback when a handler is passed). |
@@ -2111,7 +2158,7 @@ component sets, so a new one cannot ship undocumented.
 | Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-icon`, `run-notice-text` |
 | Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval` |
 | Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`, `confirm-always`) |
-| Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`) |
+| Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`), `approval-edit`, `approval-args`, `approval-error` |
 | Typed question | `question`, `question-body`, `question-options`, `question-choice`, `question-choice-text`, `question-radio`, `question-input`, `question-actions`, `question-button` |
 | Composer | `composer`, `composer-surface`, `composer-tools`, `input`, `send`, `attach-button`, `voice-button` |
 | Attachments | `attachment-tray`, `attachment-chips` (the read-only chips on sent bubbles), and the shared chip parts `attachment-chip`, `attachment-chip-icon`, `attachment-chip-name`, `attachment-chip-size`, `attachment-chip-bar`, `attachment-chip-bar-fill`, `attachment-chip-retry`, `attachment-chip-remove` |

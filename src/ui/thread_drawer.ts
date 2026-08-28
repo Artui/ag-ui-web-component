@@ -1,5 +1,5 @@
 import type { ThreadMeta } from "../core/conversation_store.js";
-import { relativeTime } from "./relative_time.js";
+import { type RelativeTimeFormatter, relativeTime } from "./relative_time.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
 /** Actions the host ({@link AgUiChat}) wires to the drawer's rows. */
@@ -35,6 +35,7 @@ export class ThreadDrawer {
   readonly #heading: HTMLSpanElement;
   readonly #newButton: HTMLButtonElement;
   readonly #list: HTMLDivElement;
+  #formatRelativeTime: RelativeTimeFormatter | null = null;
   #strings: UiStrings;
   #threads: readonly ThreadMeta[] = [];
   #activeId = "";
@@ -91,6 +92,25 @@ export class ThreadDrawer {
   }
 
   /** Re-localize the drawer's chrome and rows (the host calls this on connect). */
+  /**
+   * Replace the timestamp formatter, or restore the built-in with `null`.
+   *
+   * The built-in is deliberately locale-neutral -- there is no `Intl` anywhere
+   * in this component, so it never disagrees with a host's own formatting by
+   * guessing a locale. That is a defensible default and a poor requirement, so
+   * this is the way out.
+   */
+  setRelativeTimeFormatter(format: RelativeTimeFormatter | null): void {
+    this.#formatRelativeTime = format;
+  }
+
+  /** This row's timestamp, through the host's formatter when it set one. */
+  #formatTime(timestamp: number): string {
+    return this.#formatRelativeTime !== null
+      ? this.#formatRelativeTime(timestamp)
+      : relativeTime(timestamp, undefined, this.#strings);
+  }
+
   setStrings(strings: UiStrings): void {
     this.#strings = strings;
     this.#panel.setAttribute("aria-label", strings.chatHistory);
@@ -202,7 +222,7 @@ export class ThreadDrawer {
     const time = document.createElement("span");
     time.className = "drawer-row-time";
     time.setAttribute("part", "drawer-row-time");
-    time.textContent = relativeTime(meta.updatedAt, undefined, this.#strings);
+    time.textContent = this.#formatTime(meta.updatedAt);
     const preview = document.createElement("span");
     preview.className = "drawer-row-preview";
     preview.setAttribute("part", "drawer-row-preview");
