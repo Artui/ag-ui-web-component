@@ -296,3 +296,28 @@ describe("opening twice", () => {
     menu.element.remove();
   });
 });
+
+describe("the relative-time seam", () => {
+  it("hands the panel's timestamps to the host's own formatter", () => {
+    // Same seam as the thread drawer, for the same reason: the built-in is
+    // locale-neutral because this component carries no `Intl` at all, which is
+    // a good default and a bad requirement.
+    const menu = new CheckpointMenu(() => {});
+    menu.setRelativeTimeFormatter(() => "il y a 5 minutes");
+    menu.setRuns([row()]);
+
+    const label = menu.element.querySelector(".checkpoint-label")?.textContent;
+    expect(label).toBe("il y a 5 minutes");
+  });
+
+  it("puts the built-in back when the host clears it", () => {
+    const menu = new CheckpointMenu(() => {});
+    menu.setRelativeTimeFormatter(() => "custom");
+    menu.setRelativeTimeFormatter(null);
+    menu.setRuns([row()]);
+
+    expect(menu.element.querySelector(".checkpoint-label")?.textContent).toBe(
+      DEFAULT_UI_STRINGS.justNow,
+    );
+  });
+});

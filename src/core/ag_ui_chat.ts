@@ -64,6 +64,7 @@ import {
   type QuestionRequest,
   requestQuestion,
 } from "../ui/question_card.js";
+import type { RelativeTimeFormatter } from "../ui/relative_time.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
 import {
   createResizeHandle,
@@ -360,6 +361,23 @@ export class AgUiChat extends HTMLElement {
    */
   allowImages = false;
 
+  /**
+   * Replace the relative timestamps in the thread drawer and the checkpoint
+   * panel -- `"5m ago"`, `"2d ago"` -- with the host's own formatting.
+   *
+   * The built-in is locale-neutral on purpose: there is no `Intl` anywhere in
+   * this component, so it never disagrees with the page it is embedded in by
+   * guessing a locale. That is a good default and a bad requirement, which is
+   * what this is for.
+   *
+   * ```js
+   * const rtf = new Intl.RelativeTimeFormat("de", { numeric: "auto" });
+   * chat.formatRelativeTime = (ts) =>
+   *   rtf.format(Math.round((ts - Date.now()) / 60000), "minute");
+   * ```
+   */
+  formatRelativeTime: RelativeTimeFormatter | null = null;
+
   /** When true, destructive tools execute without a confirmation modal. */
   autoConfirm = false;
 
@@ -386,6 +404,23 @@ export class AgUiChat extends HTMLElement {
    * is enabled server-side; this only changes how the decision is collected.
    */
   approvalRenderer: ApprovalRenderer | null = null;
+
+  /**
+   * Let the user edit a gated call's arguments before approving it.
+   *
+   * Off by default and **an assertion about your server**, not a negotiation:
+   * AG-UI carries `editedArgs` in the resume payload and gates it on the
+   * agent's own `approveWithEdits` capability, which this component never sees
+   * -- capabilities are not on the wire it reads. So the host says whether its
+   * agent honours them. Turned on against a server that does not, the user
+   * would edit arguments it silently discards, which is worse than not
+   * offering.
+   *
+   * Only affects calls whose arguments are known here: an interrupt names a
+   * `toolCallId`, and the tool card for that call is where the arguments still
+   * are. An interrupt naming no card gets the plain approve/deny.
+   */
+  approveWithEdits = false;
 
   /**
    * Optional per-call confirmation predicate. When set it is authoritative,
@@ -868,6 +903,9 @@ export class AgUiChat extends HTMLElement {
   /** Load the checkpoint panel with the runs that can actually be continued. */
   async #refreshCheckpoints(): Promise<void> {
     const index = this.#runs();
+    // Pushed at render rather than at connect: `formatRelativeTime` is a
+    // property, so a host may set it long after the element mounted.
+    this.#checkpoints.setRelativeTimeFormatter(this.formatRelativeTime);
     this.#checkpoints.setRuns(index === null ? [] : await index.continuable());
   }
 
@@ -2279,6 +2317,7 @@ export class AgUiChat extends HTMLElement {
 
   /** Reload the drawer's thread list, marking the active thread. */
   async #refreshDrawer(): Promise<void> {
+    this.#drawer.setRelativeTimeFormatter(this.formatRelativeTime);
     this.#drawer.setThreads(await this.conversationStore.listThreads(), this.#threadId);
   }
 
@@ -3481,6 +3520,14 @@ export class AgUiChat extends HTMLElement {
         if (toolName !== null && toolName !== undefined) {
           request.toolName = toolName;
         }
+        // Offered only where it can be honoured: the host has said its agent
+        // accepts `editedArgs`, and this interrupt named a call whose arguments
+        // we still hold.
+        let editedArgs: Record<string, unknown> | undefined;
+        const editable = this.approveWithEdits && card !== undefined;
+        if (editable) {
+          request.args = card.args;
+        }
         card?.mark(TOOL_CALL_STATUS.DEFERRED);
         // A host-supplied renderer takes full control of the approval UI. The
         // built-in card renders into the gated call's own card, falling back to
@@ -3491,6 +3538,13 @@ export class AgUiChat extends HTMLElement {
             : await requestApproval(card?.approvalSlot ?? this.#ensureGroup(), request, {
                 signal,
                 strings: this.#strings,
+                ...(editable
+                  ? {
+                      onEdit: (args: Record<string, unknown>) => {
+                        editedArgs = args;
+                      },
+                    }
+                  : {}),
               });
         // Same annotation as the client-side confirmation gate. Without it the
         // two gates read differently for the same act: a locally-confirmed call
@@ -3505,16 +3559,21 @@ export class AgUiChat extends HTMLElement {
           // now rather than leaving it hanging until the onSettled sweep.
           card?.settle(TOOL_CALL_STATUS.DECLINED, this.#strings.declinedAction);
         }
-        return { id: interrupt.id, approved };
+        return { id: interrupt.id, approved, editedArgs };
       }),
     );
     this.#updateEmptyState();
     this.#scroller.follow();
     this.#confirmAbort = null;
     const responses: Record<string, InterruptResponse> = {};
-    for (const { id, approved } of answered) {
+    for (const { id, approved, editedArgs } of answered) {
+      // `editedArgs` rides only when the user actually changed something, so a
+      // server can tell "approved as proposed" from "approved, but like this".
       responses[id] = approved
-        ? { status: "resolved", payload: { approved: true } }
+        ? {
+            status: "resolved",
+            payload: editedArgs === undefined ? { approved: true } : { approved: true, editedArgs },
+          }
         : { status: "cancelled" };
     }
     return responses;

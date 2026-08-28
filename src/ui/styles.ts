@@ -1859,6 +1859,38 @@ export const STYLES = `
   opacity: 1;
 }
 
+/* Editable arguments on an approval card. A plain field rather than a code
+   editor: it holds the JSON a card already displays, and the only interaction
+   is correcting a value before letting the call run. */
+.approval-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.approval-args {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--_border);
+  border-radius: 8px;
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  background: var(--_bg);
+  color: var(--_fg);
+}
+
+.approval-args:focus-visible {
+  border-color: var(--_accent);
+  outline: none;
+}
+
+.approval-error {
+  font-size: 0.85em;
+  color: var(--_danger);
+}
+
 /* Message action row. Sits under a finished assistant bubble.
 
    The wrap is insurance rather than a fix: these buttons are glyph-only, so at

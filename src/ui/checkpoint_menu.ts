@@ -1,5 +1,5 @@
 import type { RunRow } from "../core/run_index.js";
-import { relativeTime } from "./relative_time.js";
+import { type RelativeTimeFormatter, relativeTime } from "./relative_time.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
 /** How the host continues a picked run. */
@@ -46,6 +46,7 @@ export class CheckpointMenu {
   readonly #heading: HTMLSpanElement;
   /** What had focus before the panel opened, restored on close. */
   #lastFocused: HTMLElement | null = null;
+  #formatRelativeTime: RelativeTimeFormatter | null = null;
   #strings: UiStrings;
   #runs: readonly RunRow[] = [];
 
@@ -91,6 +92,25 @@ export class CheckpointMenu {
   }
 
   /** Re-localize a panel built before the host's strings resolved. */
+  /**
+   * Replace the timestamp formatter, or restore the built-in with `null`.
+   *
+   * The built-in is deliberately locale-neutral -- there is no `Intl` anywhere
+   * in this component, so it never disagrees with a host's own formatting by
+   * guessing a locale. That is a defensible default and a poor requirement, so
+   * this is the way out.
+   */
+  setRelativeTimeFormatter(format: RelativeTimeFormatter | null): void {
+    this.#formatRelativeTime = format;
+  }
+
+  /** This row's timestamp, through the host's formatter when it set one. */
+  #formatTime(timestamp: number): string {
+    return this.#formatRelativeTime !== null
+      ? this.#formatRelativeTime(timestamp)
+      : relativeTime(timestamp, Date.now(), this.#strings);
+  }
+
   setStrings(strings: UiStrings): void {
     this.#strings = strings;
     this.element.setAttribute("aria-label", strings.checkpoints);
@@ -207,10 +227,7 @@ export class CheckpointMenu {
     row.setAttribute("part", "checkpoint-row");
 
     const preview = previewOf(run);
-    const time =
-      run.started_at === null
-        ? null
-        : relativeTime(Date.parse(run.started_at), Date.now(), this.#strings);
+    const time = run.started_at === null ? null : this.#formatTime(Date.parse(run.started_at));
 
     const label = document.createElement("span");
     label.className = "checkpoint-label";

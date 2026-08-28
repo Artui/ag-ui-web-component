@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`approveWithEdits` — edit a gated call's arguments before approving it.**
+  AG-UI's resume payload carries `editedArgs` and the protocol gates it on the
+  agent's `approveWithEdits` capability; the approval card could not offer it.
+  It now shows the call's arguments as editable JSON.
+
+  **Off by default, and an assertion about the server rather than a
+  negotiation.** Capabilities are not on the wire this component reads, so it
+  cannot check — and turned on against a server that ignores `editedArgs`, a
+  user would edit arguments it silently discards, which is worse than not
+  offering.
+
+  `editedArgs` rides the payload **only when something actually changed**, so a
+  server can tell "approved as proposed" from "approved, but like this" without
+  diffing what it sent. Unparseable JSON, or JSON that is not an object, keeps
+  the card open with the reason on it rather than approving the original behind
+  the user's back. Offered only for an interrupt naming a call this component
+  holds a card for, since the card is where the arguments still are.
+
+  New `::part()`s `approval-edit`, `approval-args`, `approval-error`, and three
+  strings.
+
+- **`formatRelativeTime` — replace the drawer and checkpoint timestamps.** There
+  is no `Intl` anywhere in this component, and the locale-neutral `"5m ago"` is
+  deliberate: guessing a locale would disagree with the host page, and being
+  wrong in a second language is worse than being neutral in one. That is a good
+  default and a bad requirement, and a host previously could not even reach the
+  formatter to replace it.
+
+  `relativeTime` and the `RelativeTimeFormatter` type are now exported, and the
+  formatter is read at render rather than at connect, so setting it after mount
+  works.
+
+### Added
+
 - **Server-pushed follow-up suggestions.** A `suggestions` activity draws its
   prompts as chips; clicking one sends it as the user's message. Registered
   skill chips are static and host-configured, so they can say "summarize this"

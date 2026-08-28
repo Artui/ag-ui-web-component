@@ -132,6 +132,12 @@ export interface UiStrings {
   details: string;
 
   // ── Confirmation card ───────────────────────────────────────────────────────
+  /** `aria-label` of the editable arguments field on an approval card. */
+  approvalEditArgs: string;
+  /** Shown when the edited arguments are not valid JSON. */
+  approvalArgsInvalid: string;
+  /** Shown when the edited arguments parse but are not a JSON object. */
+  approvalArgsNotAnObject: string;
   /** `aria-label` of the follow-up suggestion chips row. */
   suggestions: string;
   /** `aria-label` of a message's action row. */
@@ -311,6 +317,9 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   declinedLabel: "Declined",
   details: "Details",
 
+  approvalEditArgs: "Edit the arguments before approving",
+  approvalArgsInvalid: "That is not valid JSON, so nothing was sent.",
+  approvalArgsNotAnObject: "Arguments have to be a JSON object.",
   suggestions: "Suggested follow-ups",
   messageActions: "Message actions",
   copyMessage: "Copy message",

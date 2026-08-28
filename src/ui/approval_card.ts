@@ -10,6 +10,11 @@ export interface ApprovalRequest {
   message?: string;
   /** Tool name, surfaced as a `data-tool-name` attribute for styling/tests. */
   toolName?: string;
+  /**
+   * The call's arguments, shown for editing when {@link ApprovalOptions.onEdit}
+   * is set. Omitted when the interrupt names no call whose arguments are known.
+   */
+  args?: Record<string, unknown>;
 }
 
 /** Build a labelled action button. */
@@ -31,6 +36,19 @@ export interface ApprovalOptions {
   signal?: AbortSignal;
   /** Localized strings; defaults to the English {@link DEFAULT_UI_STRINGS}. */
   strings?: UiStrings;
+  /**
+   * Offer the call's arguments for editing, and receive what the user approved.
+   *
+   * Called **only** on approval, and only when the text parses and differs from
+   * what was proposed -- an untouched call resolves as a plain approval, so a
+   * server sees `editedArgs` exactly when something was actually edited.
+   *
+   * Absent means no editor, which is deliberate: AG-UI gates this on the
+   * agent's own `approveWithEdits` capability, and a card that let a user
+   * rewrite arguments a server will discard is worse than one that does not
+   * offer to.
+   */
+  onEdit?: (args: Record<string, unknown>) => void;
 }
 
 /**
@@ -78,6 +96,8 @@ export function requestApproval(
     body.setAttribute("part", "approval-body");
     body.textContent = request.message ?? strings.approvalPrompt;
 
+    const editor = buildEditor(request, options, strings);
+
     const actions = document.createElement("div");
     actions.className = "approval-actions";
     actions.setAttribute("part", "approval-actions");
@@ -98,11 +118,19 @@ export function requestApproval(
     };
 
     deny.addEventListener("click", () => close(false));
-    approve.addEventListener("click", () => close(true));
+    approve.addEventListener("click", () => {
+      if (editor !== null && !editor.commit()) {
+        // Unparseable JSON: say so on the card and stay open. Approving what
+        // the user did not write -- the original arguments -- would be the one
+        // outcome they cannot see coming.
+        return;
+      }
+      close(true);
+    });
     options.signal?.addEventListener("abort", () => close(false), { once: true });
 
     actions.append(deny, approve);
-    card.append(body, actions);
+    card.append(body, ...(editor === null ? [] : [editor.root]), actions);
     host.appendChild(card);
     if (options.signal?.aborted === true) {
       // The run was cancelled before the card could ask; record the denial.
@@ -111,4 +139,64 @@ export function requestApproval(
     }
     approve.focus();
   });
+}
+
+/** The editable-arguments region, or `null` when this card does not offer one. */
+function buildEditor(
+  request: ApprovalRequest,
+  options: ApprovalOptions,
+  strings: UiStrings,
+): { root: HTMLElement; commit: () => boolean } | null {
+  const { onEdit } = options;
+  if (onEdit === undefined || request.args === undefined) {
+    return null;
+  }
+  const original = JSON.stringify(request.args, null, 2);
+  const root = document.createElement("div");
+  root.className = "approval-edit";
+  root.setAttribute("part", "approval-edit");
+
+  const field = document.createElement("textarea");
+  field.className = "approval-args";
+  field.setAttribute("part", "approval-args");
+  field.setAttribute("aria-label", strings.approvalEditArgs);
+  field.rows = Math.min(10, original.split("\n").length);
+  field.value = original;
+
+  const error = document.createElement("div");
+  error.className = "approval-error";
+  error.setAttribute("part", "approval-error");
+  // A live region: it appears in response to pressing Approve, and a message
+  // that only exists visually leaves a screen-reader user with a button that
+  // silently did nothing.
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  root.append(field, error);
+  return {
+    root,
+    commit: () => {
+      if (field.value === original) {
+        return true;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(field.value);
+      } catch {
+        error.textContent = strings.approvalArgsInvalid;
+        error.hidden = false;
+        field.focus();
+        return false;
+      }
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        error.textContent = strings.approvalArgsNotAnObject;
+        error.hidden = false;
+        field.focus();
+        return false;
+      }
+      error.hidden = true;
+      onEdit(parsed as Record<string, unknown>);
+      return true;
+    },
+  };
 }

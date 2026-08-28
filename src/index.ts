@@ -165,6 +165,10 @@ export {
   type QuestionRequest,
   requestQuestion,
 } from "./ui/question_card.js";
+export {
+  type RelativeTimeFormatter,
+  relativeTime,
+} from "./ui/relative_time.js";
 export { type RenderMarkdownOptions, renderMarkdown } from "./ui/render_markdown.js";
 export {
   MAX_SUGGESTION_CHARS,

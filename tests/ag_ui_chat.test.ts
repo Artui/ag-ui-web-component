@@ -643,6 +643,97 @@ describe("AgUiChat", () => {
     expect(card?.getAttribute("data-status")).toBe("declined");
   });
 
+  it("sends edited arguments in the resume payload when the host opted in", async () => {
+    const { el, handle } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.toolCall("call-1", "update_row", { id: 7, note: "before" });
+        emit.interrupt([{ id: "int-call-1", reason: "tool_call", toolCallId: "call-1" } as never]);
+      } else {
+        emit.textEnd("Done.");
+        emit.runEnd();
+      }
+    });
+    // An assertion about the server, not a negotiation: AG-UI gates this on the
+    // agent's `approveWithEdits` capability, which this component never sees.
+    el.approveWithEdits = true;
+
+    sendNoWait(el, "update it");
+    await flush();
+    const field = shadow(el).querySelector<HTMLTextAreaElement>(".approval-args");
+    expect(JSON.parse(field?.value ?? "{}")).toEqual({ id: 7, note: "before" });
+    (field as HTMLTextAreaElement).value = JSON.stringify({ id: 7, note: "after" });
+    shadow(el).querySelector<HTMLButtonElement>(".approval-btn--approve")?.click();
+    await flush();
+
+    expect(handle.runParams[1]?.resume).toEqual([
+      {
+        interruptId: "int-call-1",
+        status: "resolved",
+        payload: { approved: true, editedArgs: { id: 7, note: "after" } },
+      },
+    ]);
+  });
+
+  it("sends a plain approval when the arguments were left alone", async () => {
+    // So a server can tell "approved as proposed" from "approved, but like
+    // this" rather than having to diff what it already sent.
+    const { el, handle } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.toolCall("call-1", "update_row", { id: 7 });
+        emit.interrupt([{ id: "int-call-1", reason: "tool_call", toolCallId: "call-1" } as never]);
+      } else {
+        emit.textEnd("Done.");
+        emit.runEnd();
+      }
+    });
+    el.approveWithEdits = true;
+
+    sendNoWait(el, "update it");
+    await flush();
+    shadow(el).querySelector<HTMLButtonElement>(".approval-btn--approve")?.click();
+    await flush();
+
+    expect(handle.runParams[1]?.resume).toEqual([
+      { interruptId: "int-call-1", status: "resolved", payload: { approved: true } },
+    ]);
+  });
+
+  it("offers no editor while the host has not said its server accepts one", async () => {
+    const { el } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.toolCall("call-1", "update_row", { id: 7 });
+        emit.interrupt([{ id: "int-call-1", reason: "tool_call", toolCallId: "call-1" } as never]);
+      }
+    });
+
+    sendNoWait(el, "update it");
+    await flush();
+
+    expect(shadow(el).querySelector(".approval")).not.toBeNull();
+    expect(shadow(el).querySelector(".approval-args")).toBeNull();
+    shadow(el).querySelector<HTMLButtonElement>(".approval-btn--deny")?.click();
+    await flush();
+  });
+
+  it("offers no editor for an interrupt naming no call we hold", async () => {
+    // The arguments live on the tool card, so an interrupt without one has
+    // nothing to show and falls back to plain approve/deny.
+    const { el } = mountWithAgent((emit, params) => {
+      if (params.resume === undefined) {
+        emit.interrupt([{ id: "int-loose", reason: "ask" } as never]);
+      }
+    });
+    el.approveWithEdits = true;
+
+    sendNoWait(el, "go");
+    await flush();
+
+    expect(shadow(el).querySelector(".approval")).not.toBeNull();
+    expect(shadow(el).querySelector(".approval-args")).toBeNull();
+    shadow(el).querySelector<HTMLButtonElement>(".approval-btn--deny")?.click();
+    await flush();
+  });
+
   it("lets approvalRenderer fully replace the approval UI", async () => {
     let seen: ApprovalRequest | null = null;
     let sawSignal = false;

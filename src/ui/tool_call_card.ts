@@ -90,6 +90,14 @@ export class ToolCallCard {
   readonly #resultLabel: HTMLSpanElement;
   readonly #resultBody: HTMLPreElement;
   readonly #strings: UiStrings;
+  /**
+   * The arguments this call was made with.
+   *
+   * Retained rather than only rendered, because an approval interrupt names a
+   * `toolCallId` and nothing else -- so this card is the only place the args
+   * still exist when the user is asked to approve, edit or deny the call.
+   */
+  readonly args: Record<string, unknown>;
   #settled = false;
 
   constructor(
@@ -99,6 +107,7 @@ export class ToolCallCard {
     strings: UiStrings = DEFAULT_UI_STRINGS,
   ) {
     this.#strings = strings;
+    this.args = args;
 
     this.element = document.createElement("div");
     this.element.className = "tool-call";
