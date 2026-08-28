@@ -132,6 +132,18 @@ export interface UiStrings {
   details: string;
 
   // ── Confirmation card ───────────────────────────────────────────────────────
+  /** `aria-label` of a message's action row. */
+  messageActions: string;
+  /** Copy this message (button `title` / `aria-label`). Its confirmation and
+   * failure text are the code block's `copied` / `copyFailed`, which say the
+   * same thing about the same clipboard. */
+  copyMessage: string;
+  /** Ask for a different answer to the same question. */
+  retryMessage: string;
+  /** Rate this answer as good. */
+  feedbackUp: string;
+  /** Rate this answer as poor. */
+  feedbackDown: string;
   /** `aria-label` of the inline confirmation card. */
   confirmAction: string;
   /** Waive confirmation for this tool for the rest of the session. Token: `{tool}`. */
@@ -297,6 +309,11 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   declinedLabel: "Declined",
   details: "Details",
 
+  messageActions: "Message actions",
+  copyMessage: "Copy message",
+  retryMessage: "Try again",
+  feedbackUp: "Good answer",
+  feedbackDown: "Poor answer",
   confirmAction: "Confirm action",
   confirmAlways: "Always allow",
   confirmRun: "Run “{tool}”?",

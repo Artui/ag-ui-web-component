@@ -1859,6 +1859,49 @@ export const STYLES = `
   opacity: 1;
 }
 
+/* Message action row. Sits under a finished assistant bubble.
+
+   The wrap is insurance rather than a fix: these buttons are glyph-only, so at
+   every width tested they fit on one line and removing the wrap changes
+   nothing. It is here because the confirmation row one release earlier did
+   overflow when it gained a third button, off the left edge and outside its own
+   card, and the difference between the two rows is only that this one's labels
+   are icons today. */
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.message-action {
+  border: none;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  background: transparent;
+  color: var(--_muted);
+  opacity: 0.75;
+}
+
+.message-action:hover,
+.message-action:focus-visible {
+  opacity: 1;
+  background: var(--_border);
+}
+
+.message-action[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--_accent);
+}
+
+.message-action--confirmed {
+  opacity: 1;
+  color: var(--_accent);
+}
+
 /* Approval card — the server-side-tool gate (approve/deny an interrupt). */
 .approval {
   align-self: stretch;

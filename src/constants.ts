@@ -93,6 +93,16 @@ export const CUSTOM_AGENT_EVENT = "ag-ui-custom";
 export const INVALIDATE_EVENT = "ag-ui-invalidate";
 
 /**
+ * Fired when the user rates an assistant message from its action row.
+ *
+ * `detail` is a {@link FeedbackDetail}: the rated message's text and the
+ * rating. **Nothing is stored** -- a rating belongs to whatever the host
+ * already uses to hold product signals, and a write-only table inside a chat
+ * widget is a schema nobody reads.
+ */
+export const FEEDBACK_EVENT = "ag-ui-feedback";
+
+/**
  * The AG-UI `CUSTOM` event `name` that carries an invalidation.
  *
  * Matched exactly. Namespaced so it cannot collide with a host's own custom

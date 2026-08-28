@@ -712,3 +712,58 @@ describe("duplicate message ids", () => {
     warn.mockRestore();
   });
 });
+
+describe("truncateToLastUser", () => {
+  it("keeps the question and drops the answer to it", async () => {
+    const fake = makeFakeAgent();
+    const persisted: unknown[][] = [];
+    const client = new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      onPersist: (messages) => persisted.push([...messages]),
+    });
+    await client.send("what is it");
+    fake.agent.addMessage({ id: "a1", role: "assistant", content: "an answer" });
+
+    const kept = client.truncateToLastUser();
+
+    // Truncating *to* the user message, inclusive: the agent answers the
+    // question it was last asked rather than being told its answer was wrong.
+    expect(kept?.map((m) => m.role)).toEqual(["user"]);
+    expect(fake.messages.map((m) => m.content)).toEqual(["what is it"]);
+    // Persisted, so a reload does not resurrect the answer that was dropped.
+    expect(persisted.at(-1)).toHaveLength(1);
+  });
+
+  it("keeps every earlier turn, not just the last one", async () => {
+    const fake = makeFakeAgent();
+    const client = new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() });
+    await client.send("first");
+    fake.agent.addMessage({ id: "a1", role: "assistant", content: "first answer" });
+    await client.send("second");
+    fake.agent.addMessage({ id: "a2", role: "assistant", content: "second answer" });
+
+    const kept = client.truncateToLastUser();
+
+    expect(kept?.map((m) => m.content)).toEqual(["first", "first answer", "second"]);
+  });
+
+  it("reports nothing to retry when no question has been asked", () => {
+    const fake = makeFakeAgent();
+    const client = new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() });
+
+    expect(client.truncateToLastUser()).toBeNull();
+  });
+
+  it("does not run the agent, so the caller can re-render in between", async () => {
+    const fake = makeFakeAgent();
+    const client = new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() });
+    await client.send("go");
+    const runsBefore = fake.runParams.length;
+
+    client.truncateToLastUser();
+
+    // Running here would stream the new answer in underneath the old one.
+    expect(fake.runParams).toHaveLength(runsBefore);
+  });
+});

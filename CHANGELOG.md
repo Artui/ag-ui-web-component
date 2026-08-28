@@ -9,6 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A message action row — copy, retry, thumbs up/down — under every finished
+  assistant message.** There were **zero** message-level actions before this;
+  `attachCopyButtons` handled fenced code and nothing else.
+
+  **Retry is the item that earns it.** History truncates to the most recent user
+  message inclusive and the run repeats, so the agent answers the question it was
+  asked rather than being told its last answer was wrong. It sits on the **last**
+  answer only: re-running an older turn is branching, and for a page-driving
+  agent editing a past turn is not neutral, because those turns clicked buttons.
+  `retryLastTurn()` is public for a host driving its own message UI.
+
+  A retried turn **re-runs its tools**, which the previous attempt already ran.
+  Confirmation still applies, so a destructive tool asks again unless the user
+  waived it this session.
+
+  Ratings fire `ag-ui-feedback` and **store nothing**: a rating belongs to
+  whatever the host already uses for product signal, and a write-only table
+  inside a chat widget is a schema nobody reads.
+
+  New `::part()`s `message-actions` / `message-action` (plus
+  `message-action-retry`, `-copy`, `-up`, `-down`), new `FEEDBACK_EVENT` and
+  `FeedbackDetail`, and `attachMessageActions` / `messageActionBar` exported for
+  a host assembling its own transcript.
+
+- **A dropped run has a way back.** `ConnectionLostError` rendered a dead
+  "Connection lost" bubble; only *uploads* had retry. The failed bubble now
+  carries the same action row, with Retry and Copy and no rating — error text is
+  what people paste into a bug report, while "the connection dropped" is not a
+  statement about answer quality and mixing it into feedback makes that signal
+  say less.
+
+  **Kept as an error rather than demoted to a run notice**, which is what was
+  originally proposed. `renderRunNotice`'s contract is that a notice "never
+  settles, takes no action, and carries no controls" and is "distinct from an
+  error, which is a failure". This is a failure that now needs a control, so the
+  taxonomy already had the answer.
+
+### Fixed
+
+- **The action row is a sibling of the message bubble, not a child.** Inside, the
+  buttons join the bubble's `textContent` — which is what Copy reads, what
+  history persists, and what every existing assertion about a message's text
+  compares against. An answer would have been copied back carrying the glyphs of
+  the buttons that copied it. Caught by twelve existing tests failing at once,
+  which is the check working.
+
+### Added
+
 - **"Always allow" on the confirmation card — a session-scoped waiver, per tool
   name.** Confirmation was binary and permanent: `autoConfirm` is
   all-or-nothing and `confirmPredicate` has no memory, so a tool the user

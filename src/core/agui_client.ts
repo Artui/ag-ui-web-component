@@ -290,6 +290,45 @@ export class AgUiClient {
   }
 
   /**
+   * Drop everything after the most recent user message, so the same question
+   * can be asked again.
+   *
+   * Returns the retained history, or `null` when there is nothing to retry (no
+   * user message has been sent yet). **Truncates only** -- the caller re-renders
+   * from the returned list and then calls {@link resume}, because the transcript
+   * belongs to the element and a client that reached into it would own two
+   * things. Running here instead would stream the new answer in underneath the
+   * old one.
+   *
+   * Re-running answers the question the agent was last asked, rather than
+   * telling it its answer was wrong, which is what makes the result a
+   * *different* answer instead of a conversation about the previous one.
+   *
+   * **A retried turn re-runs its tools.** For a page-driving agent that is not
+   * neutral: the previous attempt already clicked what it clicked, and this
+   * does not undo it.
+   */
+  truncateToLastUser(): readonly Message[] | null {
+    const messages = [...this.#agent.messages];
+    // Forward, keeping the last match, rather than a reverse scan with an
+    // index lookup: `noUncheckedIndexedAccess` makes the latter reach for an
+    // optional chain whose null arm cannot happen and cannot be covered.
+    let lastUser = -1;
+    for (const [index, message] of messages.entries()) {
+      if (message.role === "user") {
+        lastUser = index;
+      }
+    }
+    if (lastUser === -1) {
+      return null;
+    }
+    const kept = messages.slice(0, lastUser + 1);
+    this.#agent.setMessages(kept);
+    this.#onPersist(this.#agent.messages);
+    return kept;
+  }
+
+  /**
    * Resume the run loop after a navigating tool's result was supplied
    * post-reload (via {@link addToolResult}). Unlike {@link send}, adds no user
    * message; it continues the conversation already in history.
