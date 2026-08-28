@@ -13,6 +13,7 @@ function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {
   return {
     calls,
     onRunStart: () => calls.push("start"),
+    onMessagesSnapshot: (messages) => calls.push(`snapshot:${messages.length}`),
     onTextDelta: (b) => calls.push(`delta:${b}`),
     onTextEnd: (b) => calls.push(`end:${b}`),
     onToolCall: (c) => calls.push(`tool:${c.name}:${c.id}:${JSON.stringify(c.args)}`),

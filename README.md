@@ -1860,7 +1860,7 @@ component sets, so a new one cannot ship undocumented.
 | Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
-| Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`), `run-notice-icon`, `run-notice-text` |
+| Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-icon`, `run-notice-text` |
 | Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval` |
 | Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`) |
 | Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`) |

@@ -60,6 +60,10 @@ export interface UiStrings {
   declinedAction: string;
   /** A navigating tool's card text while the page reloads. */
   navigating: string;
+  /** Notice shown when the server replaced the conversation wholesale. */
+  historyReplaced: string;
+  /** Notice shown when a pushed chart could not be drawn and was removed. */
+  chartUndrawable: string;
   /** Missing-placeholder skill hint. Tokens: `{title}`, `{fields}`. */
   skillNeeds: string;
   /** Notice shown when the agent condensed earlier turns. Token: `{count}`. */
@@ -254,6 +258,9 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   noResult: "No result returned.",
   declinedAction: "User declined the action.",
   navigating: "Navigating…",
+  historyReplaced:
+    "The server replaced this conversation's history. Reload to see the updated transcript.",
+  chartUndrawable: "A chart could not be drawn from the data sent, so it was removed.",
   historyCompacted: "Earlier turns condensed to fit the context window ({count} removed)",
   usingSkill: "Using skill {name}",
   runInterrupted: "The previous response didn’t finish — the page changed before it arrived.",
