@@ -33,6 +33,8 @@ export interface UiStrings {
   // ── Messages region ─────────────────────────────────────────────────────────
   /** `aria-label` of the scrolling message log. */
   conversation: string;
+  /** The button offering to return to the foot of the transcript. */
+  jumpToLatest: string;
   /** Announced when a turn starts. Screen-reader only; never rendered. */
   announceResponding: string;
   /** Announced when the answer has finished arriving. Screen-reader only. */
@@ -239,6 +241,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   forkedRun: "branched",
 
   conversation: "Conversation",
+  jumpToLatest: "Jump to latest",
   announceResponding: "Assistant is responding",
   announceAnswerReady: "Assistant answered",
   announceAwaitingDecision: "{count} action is waiting for your approval",

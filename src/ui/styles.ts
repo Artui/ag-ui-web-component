@@ -579,6 +579,37 @@ export const STYLES = `
   display: none;
 }
 
+/* Jump-to-latest: shown only once the reader has scrolled away *and* missed
+   something. Anchored to the panel rather than the list so it does not scroll
+   with the content it is offering to scroll to. */
+.jump-latest {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--_pad) * 2);
+  z-index: 2;
+  display: none;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.4em 0.9em;
+  border: 1px solid var(--_border);
+  border-radius: 999px;
+  background: var(--_bg);
+  color: var(--_text);
+  font: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.18);
+}
+
+.jump-latest[data-missed="true"] {
+  display: flex;
+}
+
+.jump-latest:hover {
+  border-color: var(--_accent);
+}
+
 /* Screen-reader-only status region. Off-screen rather than display:none or
    visibility:hidden, both of which take the element out of the accessibility
    tree entirely -- a hidden live region announces nothing at all, which is the
@@ -601,6 +632,11 @@ export const STYLES = `
 .messages {
   flex: 1;
   overflow-y: auto;
+  /* The browser's own scroll anchoring competes with the scroller for the same
+     job and wins unpredictably -- it can hold the view still exactly when we
+     want to follow. Turned off so following is decided in one place. Safari
+     does not implement it, which is itself a reason not to depend on it. */
+  overflow-anchor: none;
   padding: var(--_pad);
   display: flex;
   flex-direction: column;

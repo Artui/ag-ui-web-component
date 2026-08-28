@@ -64,6 +64,7 @@ import {
 import { wrapWords } from "../ui/reveal_words.js";
 import { renderRunNotice } from "../ui/run_notice.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
+import { createStickToBottom, type StickToBottom } from "../ui/stick_to_bottom.js";
 import { STYLES } from "../ui/styles.js";
 import { ThoughtsBlock } from "../ui/thoughts_block.js";
 import { ThreadDrawer } from "../ui/thread_drawer.js";
@@ -474,6 +475,10 @@ export class AgUiChat extends HTMLElement {
   readonly #root: ShadowRoot;
   /** Screen-reader-only status region -- see {@link AgUiChat.#announce}. */
   readonly #announcer = document.createElement("div");
+  /** Return-to-foot affordance, shown only once something has been missed. */
+  readonly #jumpButton = document.createElement("button");
+  /** Follows the foot of the transcript, and stops when the reader scrolls away. */
+  #scroller!: StickToBottom;
   /** Pending clear of {@link AgUiChat.#announcer}; see why it is cleared at all. */
   #announceTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -945,7 +950,7 @@ export class AgUiChat extends HTMLElement {
           });
     this.#confirmAbort = null;
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
     return answer;
   }
 
@@ -1259,6 +1264,7 @@ export class AgUiChat extends HTMLElement {
     this.#cancelRun();
     this.#attachTray?.dispose();
     this.#voice?.dispose();
+    this.#scroller.dispose();
     if (this.#announceTimer !== null) {
       clearTimeout(this.#announceTimer);
       this.#announceTimer = null;
@@ -2273,7 +2279,14 @@ export class AgUiChat extends HTMLElement {
       this.#messages.appendChild(bubble);
     }
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    // A user bubble means someone just pressed Send, which is as deliberate as
+    // pressing the jump button -- so it goes to the bottom even if they had
+    // scrolled away to re-read something before typing.
+    if (role === MESSAGE_ROLE.USER) {
+      this.#scroller.jump();
+    } else {
+      this.#scroller.follow();
+    }
     return bubble;
   }
 
@@ -2383,6 +2396,23 @@ export class AgUiChat extends HTMLElement {
     this.#messages.setAttribute("aria-live", "off");
     this.#messages.setAttribute("aria-label", this.#strings.conversation);
 
+    this.#jumpButton.className = "jump-latest";
+    this.#jumpButton.type = "button";
+    this.#jumpButton.setAttribute("part", "jump-latest");
+    this.#jumpButton.textContent = this.#strings.jumpToLatest;
+    this.#jumpButton.addEventListener("click", () => {
+      this.#scroller.jump();
+    });
+
+    // Built here rather than at field initialisation: the viewport has to exist
+    // and the observer has to have something to observe.
+    this.#scroller = createStickToBottom({
+      viewport: this.#messages,
+      onMissedContent: (missed) => {
+        this.#jumpButton.dataset["missed"] = String(missed);
+      },
+    });
+
     this.#announcer.className = "sr-only";
     this.#announcer.setAttribute("role", "status");
     this.#announcer.setAttribute("aria-live", "polite");
@@ -2483,6 +2513,9 @@ export class AgUiChat extends HTMLElement {
     this.#chat.append(
       header,
       this.#messages,
+      // Sibling of the list, not a child of it: the affordance offering to
+      // scroll must not scroll away with the content.
+      this.#jumpButton,
       this.#skillsMenu.palette,
       this.#skillsMenu.chips,
       this.#skillHint,
@@ -3053,7 +3086,7 @@ export class AgUiChat extends HTMLElement {
         strings: this.#strings,
       });
       this.#updateEmptyState();
-      this.#messages.scrollTop = this.#messages.scrollHeight;
+      this.#scroller.follow();
       const accepted = await decision;
       this.#confirmAbort = null;
       card.recordDecision(accepted ? "approved" : "declined");
@@ -3187,7 +3220,7 @@ export class AgUiChat extends HTMLElement {
       }),
     );
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
     this.#confirmAbort = null;
     const responses: Record<string, InterruptResponse> = {};
     for (const { id, approved } of answered) {
@@ -3397,7 +3430,7 @@ export class AgUiChat extends HTMLElement {
     note.textContent = this.#strings.stopped;
     this.#ensureGroup().appendChild(note);
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
   }
 
   /**
@@ -3422,7 +3455,7 @@ export class AgUiChat extends HTMLElement {
     this.#pending = pending;
     this.#ensureGroup().appendChild(pending);
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
   }
 
   /** Remove the pending indicator if shown. */
@@ -3442,7 +3475,7 @@ export class AgUiChat extends HTMLElement {
       const group = this.#ensureGroup();
       group.insertBefore(this.#thoughts.element, group.firstChild);
       this.#updateEmptyState();
-      this.#messages.scrollTop = this.#messages.scrollHeight;
+      this.#scroller.follow();
     }
     return this.#thoughts;
   }
@@ -3499,7 +3532,7 @@ export class AgUiChat extends HTMLElement {
     this.#streamBuffer = buffer;
     const bubble = this.#openStream();
     bubble.innerHTML = renderMarkdown(buffer, { allowImages: this.allowImages });
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
     return bubble;
   }
 
@@ -3550,7 +3583,7 @@ export class AgUiChat extends HTMLElement {
   #appendNotice(icon: string, text: string, kind: string): void {
     this.#ensureGroup().appendChild(renderRunNotice(icon, text, kind));
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
   }
 
   /**
@@ -3652,7 +3685,7 @@ export class AgUiChat extends HTMLElement {
 
   #afterTranscriptGrew(): void {
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
   }
 
   #cardFor(call: AgUiToolCall): ToolCallCard {
@@ -3674,7 +3707,7 @@ export class AgUiChat extends HTMLElement {
     this.#toolCards.set(call.id, card);
     this.#ensureGroup().appendChild(card.element);
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
     return card;
   }
 }
