@@ -9,6 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Quote a selection into the composer.** Selecting text in the transcript now
+  floats a **Quote** offer beside it; taking it drops the selection in as a
+  markdown blockquote and leaves the caret on a fresh line under it. Nothing is
+  sent -- a quotation is how a question narrows to one part of an answer, so the
+  question still has to be written. Quoting appends, so a second quotation is a
+  second thing being asked about. Long selections cap at 500 characters.
+  `data-quote-selection="false"` turns the offer off; the `quote-selection`
+  `::part()` styles it.
+
+  **The half worth having is the one the transcript cannot reach.** A chat
+  mounted beside a table, a diff or a report sits in the surface the user
+  actually works in, and a selection made *there* is one no hosted chat can see.
+  `offerQuoteInPage()` extends the same select-then-offer gesture to the host's
+  own page, or to one region of it, and `quote(text)` is the seam underneath for
+  a deliberate trigger like a per-row "ask about this" button.
+
+  **The page half is a method rather than a documented recipe, and that is the
+  correction, not the design.** It shipped first as four lines in the README --
+  quote every settled selection -- which appends to the composer on every drag
+  the user made to *read*, to copy, or to fix a typo. Worse, it cannot tell a
+  selection in the page's prose from one inside the user's own half-typed
+  `<input>`: Chrome reports a field's internal selection through
+  `document.getSelection()` as an ordinary range over the field's **wrapper**,
+  so the text reads back perfectly and nothing about the range says where it
+  came from. The only signal is `document.activeElement`. That guard, plus
+  skipping the widget's own transcript -- which needs the *event path*, since
+  `Node.contains` is false across a shadow boundary -- plus retiring a
+  fixed-position affordance on scroll, is three non-obvious guards, and three
+  guards is a feature rather than a snippet. `attachQuoteOffer` is exported for
+  a host that wants it without the element.
+
+  **A selection across several elements is not a paragraph, and was treated as
+  one twice over.** The offer was hung off the selection's *bounding box*, whose
+  centre belongs to no line -- a drag from a form's left column down to a
+  full-width line running under the chat panel put the offer on the panel,
+  pointing at a line the user had never looked at. It now hangs off the line the
+  gesture ended on, or the first line for a keyboard selection. And the text was
+  read with `Range.toString()`, which concatenates text nodes and asks nothing
+  about CSS: quoting a form returned the values of every `<option>` in a closed
+  `<select>`, the markup's own indentation on every line, and a blank `>` for
+  every gap between elements -- twenty-four lines of which twelve were empty.
+  The read is now what the engine says is rendered (`checkVisibility`), with the
+  whitespace a collapsing `white-space` collapses, and preformatted text passed
+  through so a quoted code block keeps its shape. Four leading spaces inside a
+  blockquote is a markdown code block, so this was a rendering defect and not
+  only an untidy one.
+
+  Reading a selection out of a shadow tree is the part that takes care, and the
+  component now does it properly: engines disagree about what
+  `document.getSelection()` reports for a selection made inside a shadow root,
+  and `getComposedRanges` is used where the engine has it, with the direct read
+  behind it. `quotableSelection`, `asQuote` and `MAX_QUOTE_CHARS` are exported
+  for a host with the same problem in its own component.
+
 - **`approveWithEdits` — edit a gated call's arguments before approving it.**
   AG-UI's resume payload carries `editedArgs` and the protocol gates it on the
   agent's `approveWithEdits` capability; the approval card could not offer it.

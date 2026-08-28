@@ -158,6 +158,11 @@ export {
   type MessageActionsOptions,
   messageActionBar,
 } from "./ui/message_actions.js";
+export {
+  attachQuoteOffer,
+  type PageQuoteOffer,
+  type PageQuoteOfferOptions,
+} from "./ui/page_quote_offer.js";
 export { prettifyToolName } from "./ui/prettify_tool_name.js";
 export {
   type QuestionOptions,
@@ -165,6 +170,15 @@ export {
   type QuestionRequest,
   requestQuestion,
 } from "./ui/question_card.js";
+// Quoting. The transcript wires these itself; they are exported for the half
+// the component cannot reach -- a selection made in the **host page**, which
+// a host reads its own way and hands to `AgUiChat.quote()`.
+export {
+  asQuote,
+  MAX_QUOTE_CHARS,
+  type QuotableSelection,
+  quotableSelection,
+} from "./ui/quote_selection.js";
 export {
   type RelativeTimeFormatter,
   relativeTime,

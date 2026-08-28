@@ -227,6 +227,13 @@ $("cfg-reset-size").addEventListener("click", () => {
   sessionStorage.removeItem("ag-ui-chat:size");
 });
 
+// Extend the transcript's select-then-quote gesture to the whole page, so the
+// article copy and the form labels can be asked about the same way an answer
+// can. One call: the guards that make it bearable -- no offer for a selection
+// inside a form field, none for the widget's own transcript, and it retires
+// itself on scroll -- are the component's, not the demo's.
+chat.offerQuoteInPage();
+
 $("save").addEventListener("click", () => {
   $("banner").classList.add("show");
 });

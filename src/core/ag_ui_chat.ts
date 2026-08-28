@@ -58,12 +58,14 @@ import {
   messageActionBar,
   messageActionButton,
 } from "../ui/message_actions.js";
+import { attachQuoteOffer, type PageQuoteOffer } from "../ui/page_quote_offer.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
 import {
   type QuestionRenderer,
   type QuestionRequest,
   requestQuestion,
 } from "../ui/question_card.js";
+import { asQuote, quotableSelection } from "../ui/quote_selection.js";
 import type { RelativeTimeFormatter } from "../ui/relative_time.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
 import {
@@ -287,6 +289,9 @@ const SIZE_KEY = "ag-ui-chat:size";
 
 /** Per-tab persistence key for the built-in theme toggle. */
 const THEME_KEY = "ag-ui-chat:theme";
+
+/** Pixels between a selection and the offer to quote it. */
+const QUOTE_GAP = 6;
 
 /**
  * Storage namespaces already spoken for in this document.
@@ -645,6 +650,18 @@ export class AgUiChat extends HTMLElement {
   readonly #announcer = document.createElement("div");
   /** Return-to-foot affordance, shown only once something has been missed. */
   readonly #jumpButton = document.createElement("button");
+  /**
+   * Offer to quote the current selection, floated beside it.
+   *
+   * Shares {@link AgUiChat.#messagesWrap} with the jump button for the same
+   * reason: it is positioned against the transcript, and must not scroll away
+   * with the words it is pointing at.
+   */
+  readonly #quoteButton = document.createElement("button");
+  /** What {@link AgUiChat.#quoteButton} would quote, while it is showing. */
+  #quoting = "";
+  /** The host-page offer, while one is attached; see {@link AgUiChat.offerQuoteInPage}. */
+  #pageQuote: PageQuoteOffer | null = null;
   /**
    * Positioning context for {@link AgUiChat.#jumpButton}.
    *
@@ -1471,6 +1488,10 @@ export class AgUiChat extends HTMLElement {
       this.#claimedNs = null;
     }
     this.#cancelRun();
+    // The page offer listens on the host's document, not on anything of ours,
+    // so nothing else would ever take it down.
+    this.#pageQuote?.detach();
+    this.#pageQuote = null;
     this.#attachTray?.dispose();
     this.#voice?.dispose();
     this.#scroller.dispose();
@@ -1601,6 +1622,126 @@ export class AgUiChat extends HTMLElement {
     this.#input.value = current === "" ? text : `${current} ${text}`;
     this.#onInput();
     this.#input.focus();
+  }
+
+  /**
+   * Put `text` into the composer as a markdown quotation, and focus it.
+   *
+   * Deliberately **not** a send. Quoting is how a question narrows to one part
+   * of an answer, so the quotation is the preamble and the question is what
+   * comes next -- the caret is left after it, on its own line.
+   *
+   * This is also the seam for the half of this feature the component cannot
+   * build: selection in the **host page**. A widget mounted beside a table can
+   * be asked about a row, and nothing in a chat's own transcript can offer
+   * that. A host reads its own selection, however it likes, and calls this.
+   *
+   * No-ops on text that is empty or only whitespace.
+   */
+  quote(text: string): void {
+    const quoted = asQuote(text);
+    if (quoted === "") {
+      return;
+    }
+    // Appended after whatever is already typed, on a fresh paragraph: a second
+    // quotation is a second thing being asked about, not a replacement for the
+    // first. Trailing blank lines are dropped so repeated quoting does not
+    // accumulate gaps.
+    const current = this.#input.value.replace(/\s+$/, "");
+    this.#input.value = current === "" ? quoted : `${current}\n\n${quoted}`;
+    this.#autoGrow();
+    this.#input.focus();
+    const end = this.#input.value.length;
+    this.#input.setSelectionRange(end, end);
+  }
+
+  /**
+   * Offer to quote what the user selects in the **host page**, not just in the
+   * transcript. Returns a function that stops offering.
+   *
+   * The same select-then-offer gesture, over a table, a diff, a report -- the
+   * surface the user actually works in, which is the half of quoting no hosted
+   * chat can reach. Opt-in, because it listens on the host's document and that
+   * is theirs to grant.
+   *
+   * Deliberately **not** a four-line recipe, which is how this shipped first
+   * and was wrong: a page listener that quotes every settled selection appends
+   * to the composer on every drag made to read, to copy or to fix a typo -- and
+   * it cannot tell a selection in the page's prose from one inside the user's
+   * own half-typed `<input>`, because Chrome reports a field's internal
+   * selection as an ordinary range over the field's *wrapper*. See
+   * {@link attachQuoteOffer} for the guards.
+   *
+   * Detached automatically when the element leaves the document; a host that
+   * re-mounts it calls this again.
+   */
+  offerQuoteInPage(within: HTMLElement = document.body): () => void {
+    this.#pageQuote?.detach();
+    const offer = attachQuoteOffer({
+      within,
+      label: this.#strings.quoteSelection,
+      exclude: this,
+      onQuote: (text) => this.quote(text),
+    });
+    this.#pageQuote = offer;
+    return () => {
+      offer.detach();
+      if (this.#pageQuote === offer) {
+        this.#pageQuote = null;
+      }
+    };
+  }
+
+  /** Whether the transcript offers to quote what the user selects. */
+  #quoteEnabled(): boolean {
+    return this.getAttribute("data-quote-selection") !== "false";
+  }
+
+  /**
+   * Offer to quote the settled selection, or retire the offer.
+   *
+   * `event` is passed for its coordinates and only those: they say which line
+   * of a selection spanning several messages the offer should hang from. A
+   * keyboard selection has none, and the first line is used instead.
+   */
+  #onSelectionSettled(event?: MouseEvent): void {
+    if (!this.#quoteEnabled()) {
+      return;
+    }
+    const near = event === undefined ? undefined : { x: event.clientX, y: event.clientY };
+    const selected = quotableSelection(this.#messages, [this.#root], near);
+    if (selected === null) {
+      this.#hideQuote();
+      return;
+    }
+    this.#quoting = selected.text;
+    this.#placeQuote(selected.rect);
+  }
+
+  /** Float the offer beside `rect`, kept inside the transcript's own box. */
+  #placeQuote(rect: DOMRect): void {
+    // Unhidden first: a hidden element measures zero, and its own size is what
+    // decides whether it fits above the selection and how far to pull it left.
+    this.#quoteButton.hidden = false;
+    const wrap = this.#messagesWrap.getBoundingClientRect();
+    const top = rect.top - wrap.top;
+    // Above the selection by default, below it when there is no room --
+    // selecting the first line of the transcript is the ordinary case, not an
+    // edge one, and an offer clipped by the header is an offer nobody takes.
+    const below = top < QUOTE_GAP + this.#quoteButton.offsetHeight;
+    this.#quoteButton.dataset["below"] = String(below);
+    this.#quoteButton.style.top = `${below ? rect.bottom - wrap.top + QUOTE_GAP : top - QUOTE_GAP}px`;
+    // Centred on the selection, then pulled back by its own half-width so a
+    // selection at either margin does not push the offer out of the panel.
+    const half = this.#quoteButton.offsetWidth / 2;
+    const centre = rect.left + rect.width / 2 - wrap.left;
+    this.#quoteButton.style.left = `${Math.min(Math.max(centre, half), wrap.width - half)}px`;
+  }
+
+  /** Retire the offer, and forget what it was pointing at. */
+  #hideQuote(): void {
+    this.#quoteButton.hidden = true;
+    this.#quoting = "";
   }
 
   /** The client-side upload size cap from `data-attachment-max-bytes`. */
@@ -2665,6 +2806,32 @@ export class AgUiChat extends HTMLElement {
       this.#scroller.jump();
     });
 
+    this.#quoteButton.className = "quote-selection";
+    this.#quoteButton.type = "button";
+    this.#quoteButton.setAttribute("part", "quote-selection");
+    this.#quoteButton.textContent = this.#strings.quoteSelection;
+    this.#quoteButton.hidden = true;
+    // `mousedown` rather than `click`: pressing anywhere else collapses the
+    // selection first, and by the time a click lands there is nothing left to
+    // quote. Preventing the default keeps the selection alive long enough to
+    // read it.
+    this.#quoteButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+    this.#quoteButton.addEventListener("click", () => {
+      this.quote(this.#quoting);
+      window.getSelection()?.removeAllRanges();
+      this.#hideQuote();
+    });
+
+    // A settled selection, by either input. `mouseup` rather than
+    // `selectionchange` so the offer does not chase the pointer mid-drag; the
+    // second half of the same gesture, `mousedown`, retires the previous offer
+    // before the new selection exists.
+    this.#messages.addEventListener("mouseup", (event) => this.#onSelectionSettled(event));
+    this.#messages.addEventListener("keyup", () => this.#onSelectionSettled());
+    this.#messages.addEventListener("mousedown", () => this.#hideQuote());
+
     // Built here rather than at field initialisation: the viewport has to exist
     // and the observer has to have something to observe.
     this.#scroller = createStickToBottom({
@@ -2774,7 +2941,7 @@ export class AgUiChat extends HTMLElement {
     this.#messagesWrap.className = "messages-wrap";
     // Sibling of the list inside a shared box, not a child of it: the
     // affordance offering to scroll must not scroll away with the content.
-    this.#messagesWrap.append(this.#messages, this.#jumpButton);
+    this.#messagesWrap.append(this.#messages, this.#jumpButton, this.#quoteButton);
 
     this.#chat.append(
       header,

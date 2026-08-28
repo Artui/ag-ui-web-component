@@ -627,6 +627,39 @@ export const STYLES = `
   border-color: var(--_accent);
 }
 
+/* The offer to quote a selection. Positioned in script against the transcript
+   box, which is the only ancestor whose top and foot are the transcript's --
+   the same reason .jump-latest lives here. The translate is the half the
+   script does not do: script sets the point the offer hangs from, CSS decides
+   which corner of the offer that point is. */
+.quote-selection {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, -100%);
+  padding: 0.25em 0.7em;
+  border: 1px solid var(--_border);
+  border-radius: 999px;
+  background: var(--_hover);
+  color: var(--_text);
+  font: inherit;
+  font-size: 0.8em;
+  line-height: 1.6;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.18);
+}
+
+/* Flipped under the selection when there was no room above it. Only the
+   vertical half of the translate changes: it still hangs from its own centre
+   horizontally. */
+.quote-selection[data-below="true"] {
+  transform: translate(-50%, 0);
+}
+
+.quote-selection:hover {
+  border-color: var(--_accent);
+}
+
 /* Screen-reader-only status region. Off-screen rather than display:none or
    visibility:hidden, both of which take the element out of the accessibility
    tree entirely -- a hidden live region announces nothing at all, which is the
