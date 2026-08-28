@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The message action row sat closer to the block below it than to the message
+  it acts on.** The answer group is a flex column with a 10px gap, so the row's
+  `margin-top: 6px` **added** to that gap instead of tightening it: 16px above,
+  10px below, and the buttons read as belonging to whatever card followed. A
+  negative margin pulls the row back inside the gap — 4px above, 10px below.
+
+  Found by driving the demo, not by any assertion: every existing check was
+  satisfied by the broken spacing. Ordered correctly, contained correctly,
+  visible — and grouped with the wrong thing. The new browser case fails against
+  the previous stylesheet with `expected 16 to be less than 10`.
+
 ### Added
 
 - **A message action row — copy, retry, thumbs up/down — under every finished

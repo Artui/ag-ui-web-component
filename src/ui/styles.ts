@@ -1871,7 +1871,12 @@ export const STYLES = `
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 6px;
+  /* Negative, and that is the point. The answer group is a flex column with its
+     own gap, so a positive margin here pushes the row further from the message
+     it acts on than the next card is below it -- the buttons then read as
+     belonging to whatever follows. Pulling back inside the gap is what makes
+     them the message's own. */
+  margin-top: -6px;
 }
 
 .message-action {
