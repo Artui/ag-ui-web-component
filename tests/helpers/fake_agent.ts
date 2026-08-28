@@ -39,6 +39,13 @@ export interface Emit {
   /** An ordinary message change, with no chart waiting on it. */
   messagesChanged(): void;
   /**
+   * Emit an AG-UI `CUSTOM` event -- the imperative carrier.
+   *
+   * `name` is an open string the protocol does not enumerate, so the cases that
+   * matter are the ones nobody wrote a branch for.
+   */
+  custom(name: string, value: unknown): void;
+  /**
    * Apply an AG-UI `MESSAGES_SNAPSHOT`.
    *
    * Mirrors what `@ag-ui/client` does with the real event: **replace** the
@@ -198,6 +205,11 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
       });
     },
     messagesChanged: () => dispatch(s, "onMessagesChanged", { messages: [] }),
+    custom: (name, value) => {
+      dispatch(s, "onCustomEvent", {
+        event: { type: EventType.CUSTOM, name, value },
+      });
+    },
     messagesSnapshot: (next) => {
       agent.applyMessagesSnapshot(next);
       const applied = next.map((m) => ({

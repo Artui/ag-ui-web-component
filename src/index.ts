@@ -4,6 +4,7 @@ export {
   ATTACHMENT_EVENT,
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
+  CUSTOM_AGENT_EVENT,
   ELEMENT_TAG,
   LOAD_CAPABILITY_TOOL,
   MAX_TOOL_ROUNDS,
@@ -21,8 +22,11 @@ export {
   X_SUMMARY_KEY,
 } from "./constants.js";
 export {
+  type ActivityRegistration,
+  type ActivityRenderer,
   AgUiChat,
   type AttachmentsDetail,
+  type CustomAgentDetail,
   type MessageRole,
   type RunFinishedDetail,
   type StateDetail,

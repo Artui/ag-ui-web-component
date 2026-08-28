@@ -54,6 +54,26 @@ export const ATTACHMENT_EVENT = "ag-ui-attachments";
  */
 export const RUN_FINISHED_EVENT = "ag-ui-run-finished";
 
+/**
+ * The agent sent an AG-UI `CUSTOM` event. `detail` is {@link CustomAgentDetail}.
+ *
+ * `CUSTOM` is one of exactly two carriers whose payload name the protocol leaves
+ * an open string, and it is the **imperative** one: something for the host page
+ * to *do*, with no place in the transcript. Its sibling `ACTIVITY_SNAPSHOT`
+ * carries transcript **content**, which is why that one is materialised into a
+ * message, persisted, and replayed on restore while this one is not.
+ *
+ * That asymmetry is the rule for choosing between them. Content has a place in
+ * the conversation and should replay; an imperative has no place and no meaning
+ * once acted on, so replaying it on a thread load would be a bug. Anything that
+ * must survive a reload belongs on the other carrier.
+ *
+ * The element takes no view of what a name means -- it forwards every one. A
+ * host that does not recognise a name ignores the event, which is the graceful
+ * outcome the open field exists for.
+ */
+export const CUSTOM_AGENT_EVENT = "ag-ui-custom";
+
 /** Roles a chat message can take. */
 export const MESSAGE_ROLE = {
   USER: "user",
