@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`registerActivityRenderer` — `activityType` is an open set now, not two
+  branches.** AG-UI leaves exactly two payload names an open string the protocol
+  does not enumerate, and the component treated neither as open: `chart` and
+  `compaction` were handled and everything else fell through a bare `return`,
+  with no host seam and no record that anything had arrived. The server could
+  only say things the client had been compiled to understand, in a protocol
+  designed so it can say more.
+
+  ```js
+  chat.registerActivityRenderer({
+    type: "build_status",
+    render: (content) => {
+      const el = document.createElement("div");
+      el.textContent = `Build ${content.status}`;
+      return el;
+    },
+  });
+  ```
+
+  `render` carries the same contract as a client tool's `render`, and for the
+  same reason rather than by analogy: activities are materialised into
+  `role: "activity"` messages, persisted with the transcript and re-fired on
+  restore, so a renderer that writes to the page instead of returning DOM fires
+  again on every thread load.
+
+  **Both built-ins go through the registry**, which is the test that the seam is
+  real — a built-in needing a privileged branch would mean the seam cannot
+  express what the component itself needs. Registering either name replaces it.
+
+  Compaction gains two things by going through the seam: a reload puts the
+  notice back (it is content, and content replays), and a server redrawing under
+  the same `messageId` replaces it instead of leaving two notices standing for
+  one event.
+
+- **`unhandledActivityTypes`** — the activity types that arrived with nobody
+  registered to draw them. Deliberately the only trace: ignoring an unknown name
+  is the protocol's own answer, and a warning would fire on every
+  forward-compatible server, but "nothing happened and nothing was said" is
+  impossible to debug. Note `chart` is listed until `enableCharts(["activity"])`
+  is called, which is the honest answer to "I pushed a chart and nothing
+  happened".
+
+- **`ag-ui-custom`** (`CUSTOM_AGENT_EVENT`, detail `CustomAgentDetail`) — the
+  other open carrier, which had no implementation at all. An AG-UI `CUSTOM`
+  event is forwarded to the host page whole and uninterpreted, `bubbles` and
+  `composed` like every other event the element dispatches.
+
+  **It is deliberately not rendered, persisted or replayed.** That asymmetry is
+  the rule for choosing between the two carriers: `ACTIVITY_SNAPSHOT` is content
+  and has a place in the conversation, `CUSTOM` is an imperative with no meaning
+  once acted on, and replaying "refetch the board" on every thread load would be
+  a bug rather than a feature.
+
+  **Note:** pydantic-ai emits its own compaction activity under
+  `pydantic_ai_compaction`, by a different route than the harness sink this
+  package renders as `compaction`. The registry deliberately does **not** answer
+  to both names — doing so would give a deployment running both two notices for
+  one event. It shows up in `unhandledActivityTypes` instead, so a host that
+  wants it can register it and decide about duplication itself.
+
 ### Fixed
 
 - **A server that replaced the conversation did it in silence.** AG-UI's

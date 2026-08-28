@@ -133,6 +133,44 @@ export interface RunFinishedDetail {
   readonly tools: readonly ToolRun[];
 }
 
+/**
+ * Draw one activity, from its content alone.
+ *
+ * The contract is {@link ClientTool.render}'s, and for the same reason rather
+ * than by analogy. An activity is materialised into a `role: "activity"`
+ * message, persisted with the transcript, and re-fired on every restore -- so a
+ * renderer that writes to the page instead of returning DOM fires again on
+ * every thread load, which is exactly the bug the tool registry's purity rule
+ * was written to make unmakeable.
+ *
+ * - a pure function of `content` -- no host state, no network, no clock;
+ * - deterministic, so a reload reproduces what was there before;
+ * - free of effects outside the node it returns, which the component places.
+ *
+ * Return `null` for content that says nothing worth drawing. Anything already
+ * drawn under that message id is then removed: live and reload should agree,
+ * and the stored content is the version that could not be drawn.
+ */
+export type ActivityRenderer = (content: unknown) => Node | null;
+
+/** One `activity_type` a host can draw. See {@link AgUiChat.registerActivityRenderer}. */
+export interface ActivityRegistration {
+  /**
+   * The AG-UI `activity_type` this draws, matched exactly.
+   *
+   * An open string the protocol does not enumerate -- which is the whole reason
+   * this is a registry rather than a branch.
+   */
+  readonly type: string;
+  readonly render: ActivityRenderer;
+  /**
+   * Shown in the transcript when something already drawn under this type stops
+   * being renderable. Omit for an activity whose disappearance needs no
+   * explanation.
+   */
+  readonly removedNotice?: string;
+}
+
 /** `detail` shape of the {@link CUSTOM_AGENT_EVENT} CustomEvent. */
 export interface CustomAgentDetail {
   /** The `CUSTOM` event's `name`, verbatim. An open string; never interpreted here. */
@@ -466,7 +504,16 @@ export class AgUiChat extends HTMLElement {
    * the real output with the generic "executed on the server" fallback.
    */
   /** Whether a server-pushed chart activity is drawn. Off unless asked for. */
-  #chartActivity = false;
+  /**
+   * Which `activity_type`s this element can draw, by name.
+   *
+   * A registry rather than a branch because `activity_type` is an open string
+   * the protocol does not enumerate. The two built-ins go through it like any
+   * host registration, which is the test that the seam is real.
+   */
+  readonly #activityRenderers = new Map<string, ActivityRegistration>();
+  /** Types that arrived with nobody registered to draw them. See {@link unhandledActivityTypes}. */
+  readonly #unhandledActivityTypes = new Set<string>();
 
   /** Card elements by call id, so a rendering handler can find its own card. */
   readonly #cardElements = new Map<string, HTMLElement>();
@@ -630,6 +677,23 @@ export class AgUiChat extends HTMLElement {
     this.#launcher = document.createElement("button");
     this.#badge = document.createElement("span");
     this.#emptyWrap = document.createElement("div");
+    // The compaction notice is a registration, not a branch -- and going through
+    // the seam earns it two things it did not have: a reload puts it back (it is
+    // content, and content replays), and a server redrawing under the same id
+    // replaces it rather than adding a second notice for one event.
+    this.registerActivityRenderer({
+      type: COMPACTION_ACTIVITY_TYPE,
+      render: (content) => {
+        const removed = compactionRemoved(content);
+        return removed === null
+          ? null
+          : renderRunNotice(
+              "\u{1F5DC}",
+              this.#strings.historyCompacted.replace("{count}", String(removed)),
+              "compaction",
+            );
+      },
+    });
     this.#skillsMenu = new SkillsMenu((skill) => this.#applySkill(skill));
     this.#drawer = new ThreadDrawer({
       onSelect: (threadId) => {
@@ -2223,8 +2287,8 @@ export class AgUiChat extends HTMLElement {
       // chart's data is in the transcript already and survives a reload. Only
       // the drawing had to be put back.
       const activity = message as unknown as { activityType?: unknown; content?: unknown };
-      if (activity.activityType === CHART_ACTIVITY_TYPE && this.#chartActivity) {
-        this.#drawActivityChart(message.id, activity.content);
+      if (typeof activity.activityType === "string") {
+        this.#drawActivity(message.id, activity.activityType, activity.content);
       }
       return;
     }
@@ -3321,24 +3385,7 @@ export class AgUiChat extends HTMLElement {
         this.#cardFor(call);
       },
       onActivity: (activityType, content, messageId) => {
-        if (activityType === CHART_ACTIVITY_TYPE) {
-          if (this.#chartActivity) {
-            this.#drawActivityChart(messageId, content);
-          }
-          return;
-        }
-        if (activityType !== COMPACTION_ACTIVITY_TYPE) {
-          return;
-        }
-        const removed = compactionRemoved(content);
-        if (removed === null) {
-          return;
-        }
-        this.#appendNotice(
-          "🗜",
-          this.#strings.historyCompacted.replace("{count}", String(removed)),
-          "compaction",
-        );
+        this.#drawActivity(messageId, activityType, content);
       },
       onCustomEvent: (name, value) => {
         // Straight out to the host page, uninterpreted. This is the imperative
@@ -3398,9 +3445,7 @@ export class AgUiChat extends HTMLElement {
         this.#showPending();
       },
       onActivityChanged: (messageId, activityType, content) => {
-        if (activityType === CHART_ACTIVITY_TYPE && this.#chartActivity) {
-          this.#drawActivityChart(messageId, content);
-        }
+        this.#drawActivity(messageId, activityType, content);
       },
       onRunEnd: () => {
         // Per-round end; the button stays on Stop until the whole interaction
@@ -3662,9 +3707,20 @@ export class AgUiChat extends HTMLElement {
    * arrives is not something to switch on for everybody.
    */
   enableCharts(routes: readonly ("tool" | "activity")[] = ["tool", "activity"]): void {
-    const first = !this.#chartActivity && !this.#toolRegistry.has(CHART_TOOL_NAME);
+    const first =
+      !this.#activityRenderers.has(CHART_ACTIVITY_TYPE) && !this.#toolRegistry.has(CHART_TOOL_NAME);
     if (routes.includes("activity")) {
-      this.#chartActivity = true;
+      // The chart is a registration like any host's, not a privileged branch.
+      // If the built-in cannot be expressed through the seam, the seam is not
+      // one -- so this is the test as much as the feature.
+      this.registerActivityRenderer({
+        type: CHART_ACTIVITY_TYPE,
+        render: (content) => {
+          const spec = chartSpecFrom(content);
+          return spec === null ? null : renderChart(spec);
+        },
+        removedNotice: this.#strings.chartUndrawable,
+      });
     }
     if (routes.includes("tool")) {
       this.registerTool(createChartTool());
@@ -3712,57 +3768,135 @@ export class AgUiChat extends HTMLElement {
     this.#afterTranscriptGrew();
   }
 
-  /** Draw, or redraw in place, the chart for one activity message. */
-  #drawActivityChart(messageId: string, content: unknown): void {
-    const spec = chartSpecFrom(content);
-    const block = spec === null ? null : renderChart(spec);
-    if (block === null) {
-      // The server superseded this chart with something undrawable. Leaving the
-      // old one up is the worst available answer: it shows numbers that have
-      // been retracted, reading as current, and a reload then drops the chart
-      // entirely because the *stored* content is the version we could not draw.
-      // Live and reload should agree, and both should say "gone" rather than
-      // one of them lying.
-      //
-      // Removing is right; doing it in silence was not. There was no `console`
-      // call anywhere on this path and nothing on screen, so a chart that had
-      // been drawn simply disappeared -- which nobody reports as a bug, they
-      // report it as "the charts are flaky". The tool path has always answered
-      // this properly by returning `REJECTED` to the model; the push path has no
-      // model to answer to, so it answers to the two audiences it does have.
-      const had = this.#activityBlocks.has(messageId);
-      this.#activityBlocks.get(messageId)?.remove();
-      this.#activityBlocks.delete(messageId);
-      // The commonest cause by far, named because the reader cannot see the
-      // payload: a numeric field that arrived as a JSON string. A Django `Sum`
-      // over a `DecimalField` serialises that way, and money is the most common
-      // chart input there is. The server refuses to coerce it on purpose, and so
-      // does this -- guessing whether "1234.50" already lost precision upstream
-      // is not a favour worth doing.
-      console.warn(
-        `ag-ui-chat: chart ${messageId} was not drawable and has been removed. ` +
-          "Every point must be a finite JSON number; a numeric column serialised " +
-          "as a string (a Decimal, typically) is rejected rather than coerced.",
-        content,
-      );
-      // Only when something was on screen: a spec that never drew has nothing
-      // to explain the disappearance of, and a notice would be noise.
-      if (had) {
-        this.#appendNotice("\u{1F4C9}", this.#strings.chartUndrawable, "chart-undrawable");
-      }
+  /**
+   * Teach this element to draw one kind of AG-UI activity.
+   *
+   * `activity_type` is one of exactly two fields the protocol leaves an open
+   * string, and it is the **content** one: an activity is materialised into a
+   * message, persisted with the thread, and replayed on every restore. Its
+   * sibling `CUSTOM` carries an imperative and is dispatched to the page
+   * instead ({@link CUSTOM_AGENT_EVENT}).
+   *
+   * That asymmetry decides which carrier a server should use. Content has a
+   * place in the conversation and should come back; an imperative has no place
+   * and no meaning once acted on.
+   *
+   * ```js
+   * chat.registerActivityRenderer({
+   *   type: "build_status",
+   *   render: (content) => {
+   *     const el = document.createElement("div");
+   *     el.textContent = `Build ${content.status}`;
+   *     return el;
+   *   },
+   * });
+   * ```
+   *
+   * Registering a type twice replaces the earlier renderer, so a host can
+   * override a built-in -- `chart` and `compaction` are registrations like any
+   * other, not privileged branches.
+   *
+   * ⚠ `render` runs again on every thread load. See {@link ActivityRenderer}
+   * for what that requires of it.
+   */
+  registerActivityRenderer(registration: ActivityRegistration): void {
+    this.#activityRenderers.set(registration.type, registration);
+    this.#unhandledActivityTypes.delete(registration.type);
+  }
+
+  /**
+   * Activity types that arrived with nobody registered to draw them.
+   *
+   * Deliberately the only trace an unhandled activity leaves. Ignoring an
+   * unknown name is the protocol's own answer and the whole point of an open
+   * field, so warning would fire on every forward-compatible server -- but
+   * "nothing happened and nothing was said" is impossible to debug, so the set
+   * is readable. Accumulates for the element's lifetime, across threads.
+   */
+  get unhandledActivityTypes(): readonly string[] {
+    return [...this.#unhandledActivityTypes];
+  }
+
+  /**
+   * Draw, replace or remove one activity, whatever kind it is.
+   *
+   * The single path for all three routes an activity arrives by -- pushed
+   * (`onActivity`), patched (`onActivityChanged`) and replayed from history --
+   * which is why the renderer contract has to be pure: the same content is
+   * drawn again on every thread load.
+   *
+   * An unregistered type draws nothing and says nothing. That is the protocol's
+   * own answer -- a client that does not know a name ignores the event -- and a
+   * warning here would fire on every well-behaved forward-compatible server,
+   * while a placeholder would put the protocol's growth in the user's face.
+   * {@link unhandledActivityTypes} is the way to find out what arrived.
+   */
+  #drawActivity(messageId: string, activityType: string, content: unknown): void {
+    const registration = this.#activityRenderers.get(activityType);
+    if (registration === undefined) {
+      this.#unhandledActivityTypes.add(activityType);
+      return;
+    }
+    let node: Node | null;
+    try {
+      node = registration.render(content);
+    } catch (error) {
+      // `render` is consumer code and this runs inside the history replay,
+      // where a throw abandons the loop and takes every later turn of the
+      // transcript with it -- silently, and again on every reload. One activity
+      // that fails to draw is worth losing; the rest of the conversation is not.
+      console.warn(`ag-ui-chat: render failed for activity ${activityType}`, error);
+      node = null;
+    }
+    if (node === null) {
+      this.#removeActivity(messageId, activityType, registration.removedNotice, content);
       return;
     }
     const existing = this.#activityBlocks.get(messageId);
     if (existing === undefined) {
-      this.#ensureGroup().appendChild(block);
+      this.#ensureGroup().appendChild(node as HTMLElement);
     } else {
-      // Replaced rather than appended: a server redrawing a chart under the same
-      // id means *this chart changed*, and a second copy below the first would
-      // read as two measurements instead of one that moved.
-      existing.replaceWith(block);
+      // Replaced rather than appended: a server redrawing under the same id
+      // means *this one changed*, and a second copy below the first would read
+      // as two measurements instead of one that moved.
+      existing.replaceWith(node);
     }
-    this.#activityBlocks.set(messageId, block);
+    this.#activityBlocks.set(messageId, node as HTMLElement);
     this.#afterTranscriptGrew();
+  }
+
+  /**
+   * Take away an activity whose content stopped being drawable.
+   *
+   * Leaving the old one up is the worst available answer: it shows values that
+   * have been retracted, reading as current, and a reload drops it anyway
+   * because the *stored* content is the version that could not be drawn. Live
+   * and reload should agree, and both should say "gone".
+   *
+   * Removing is right; doing it in silence was not. A chart that had been drawn
+   * simply disappeared, with no `console` call anywhere on the path -- which
+   * nobody reports as a bug, they report as "the charts are flaky".
+   */
+  #removeActivity(
+    messageId: string,
+    activityType: string,
+    notice: string | undefined,
+    content: unknown,
+  ): void {
+    const had = this.#activityBlocks.has(messageId);
+    this.#activityBlocks.get(messageId)?.remove();
+    this.#activityBlocks.delete(messageId);
+    console.warn(
+      `ag-ui-chat: activity ${messageId} (${activityType}) was not drawable and has been ` +
+        "removed. A chart's points must each be a finite JSON number; a numeric column " +
+        "serialised as a string (a Decimal, typically) is rejected rather than coerced.",
+      content,
+    );
+    // Only when something was on screen: content that never drew has no
+    // disappearance to explain, and a notice for every rejected push is noise.
+    if (had && notice !== undefined) {
+      this.#appendNotice("\u{1F4C9}", notice, "chart-undrawable");
+    }
   }
 
   #afterTranscriptGrew(): void {

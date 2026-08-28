@@ -22,6 +22,8 @@ export {
   X_SUMMARY_KEY,
 } from "./constants.js";
 export {
+  type ActivityRegistration,
+  type ActivityRenderer,
   AgUiChat,
   type AttachmentsDetail,
   type CustomAgentDetail,

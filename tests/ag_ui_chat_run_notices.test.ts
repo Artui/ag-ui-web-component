@@ -82,12 +82,30 @@ describe("compaction notices", () => {
   });
 
   it("renders one notice per firing", async () => {
+    // Distinct message ids, because that is what two compactions look like on
+    // the wire. The fake defaults every activity to one id, and an id reused is
+    // a *replace* -- so passing ids here is what makes this assert two firings
+    // rather than one activity redrawn.
     const el = mountWithAgent((emit) => {
-      emit.activity(COMPACTION_ACTIVITY_TYPE, { removed: 4 });
-      emit.activity(COMPACTION_ACTIVITY_TYPE, { removed: 6 });
+      emit.activity(COMPACTION_ACTIVITY_TYPE, { removed: 4 }, "c-1");
+      emit.activity(COMPACTION_ACTIVITY_TYPE, { removed: 6 }, "c-2");
     });
     await send(el, "hi");
     expect(shadow(el).querySelectorAll(".run-notice--compaction")).toHaveLength(2);
+  });
+
+  it("replaces rather than repeats when the server redraws one under its own id", async () => {
+    // One event that changed, not two events. Before the activity registry the
+    // compaction notice was appended without tracking its message id, so a
+    // redraw left two notices standing for a single compaction.
+    const el = mountWithAgent((emit) => {
+      emit.activity(COMPACTION_ACTIVITY_TYPE, { removed: 4 }, "c-1");
+      emit.activityReplace(COMPACTION_ACTIVITY_TYPE, { removed: 6 }, "c-1");
+    });
+    await send(el, "hi");
+    const notices = shadow(el).querySelectorAll(".run-notice--compaction");
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.textContent).toContain("6");
   });
 
   it("announces politely rather than interrupting", async () => {
