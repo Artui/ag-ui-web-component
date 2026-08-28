@@ -1,6 +1,12 @@
 import type { Context, Message, Tool } from "@ag-ui/core";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT, UNREAD_EVENT } from "../src/constants.js";
+import {
+  ELEMENT_TAG,
+  FEEDBACK_EVENT,
+  MESSAGE_ROLE,
+  SUBMIT_EVENT,
+  UNREAD_EVENT,
+} from "../src/constants.js";
 import type { AgUiChat, SubmitDetail, UnreadDetail } from "../src/core/ag_ui_chat.js";
 import type {
   ClientConversationStore,
@@ -1290,6 +1296,136 @@ describe("AgUiChat", () => {
     expect(shadow(el).querySelector(".confirm-btn--always")).toBeNull();
     shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
     await flush();
+  });
+
+  it("moves Retry to the newest answer rather than offering one per turn", async () => {
+    // Retry belongs to the last turn only. Re-running an older one is
+    // branching, and for a page-driving agent editing a past turn is not
+    // neutral -- those turns clicked buttons.
+    const { el } = mountWithAgent((emit) => {
+      emit.textEnd("an answer");
+    });
+
+    await send(el, "one");
+    expect(shadow(el).querySelectorAll(".message-action--retry")).toHaveLength(1);
+    await send(el, "two");
+
+    const retries = shadow(el).querySelectorAll(".message-action--retry");
+    expect(retries).toHaveLength(1);
+    const bars = [...shadow(el).querySelectorAll(".message-actions")];
+    expect(bars.at(-1)?.contains(retries[0] as Node)).toBe(true);
+  });
+
+  it("asks the same question again and replaces the answer", async () => {
+    let answer = "first";
+    const { el, handle } = mountWithAgent((emit) => {
+      emit.textEnd(answer);
+    });
+    await send(el, "what is it");
+    answer = "second";
+
+    expect(await el.retryLastTurn()).toBe(true);
+
+    // The question is asked again, not commented on: history ends at the user
+    // message, so the agent answers rather than being told it was wrong.
+    expect(handle.messages.filter((m) => m.role === "user")).toHaveLength(1);
+    const bubbles = [...shadow(el).querySelectorAll(".message--assistant")];
+    expect(bubbles.map((b) => b.textContent)).toEqual(["second"]);
+  });
+
+  it("retries from the button, and copies the answer from its neighbour", async () => {
+    // The wiring, not the plumbing: the closures behind these two buttons are
+    // what a user actually reaches, and calling the methods directly leaves
+    // them unexercised.
+    let answer = "first";
+    const written: string[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          written.push(text);
+          return Promise.resolve();
+        },
+      },
+    });
+    const { el } = mountWithAgent((emit) => {
+      emit.textEnd(answer);
+    });
+    await send(el, "go");
+
+    shadow(el).querySelector<HTMLButtonElement>(".message-action--copy")?.click();
+    await flush();
+    expect(written).toEqual(["first"]);
+
+    answer = "second";
+    shadow(el).querySelector<HTMLButtonElement>(".message-action--retry")?.click();
+    await flush();
+
+    expect(shadow(el).querySelector(".message--assistant")?.textContent).toBe("second");
+  });
+
+  it("refuses to retry a run that is still going", async () => {
+    // Retry truncates history; doing that under a live run would pull the
+    // conversation out from under the answer being streamed into it.
+    let release = (): void => {};
+    const inFlight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { el } = mountWithAgent(async (emit) => {
+      emit.runStart();
+      await inFlight;
+    });
+    sendNoWait(el, "go");
+    await flush();
+
+    // Started, not awaited: releasing first would let the run settle and the
+    // guard would never be the reason for the answer.
+    const retried = el.retryLastTurn();
+    release();
+    await flush();
+
+    expect(await retried).toBe(false);
+  });
+
+  it("refuses to retry when there is nothing to ask again", async () => {
+    const el = mount();
+
+    expect(await el.retryLastTurn()).toBe(false);
+  });
+
+  it("gives a failed run a way back, as an error rather than a notice", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.error("Connection lost");
+    });
+
+    await send(el, "go");
+
+    // `renderRunNotice`'s contract is that a notice "never settles, takes no
+    // action, and carries no controls", and is "distinct from an error, which
+    // is a failure". This is a failure, so it stays an error and gains the
+    // control instead of being demoted to a notice that may not carry one.
+    const failed = shadow(el).querySelector(".message--failed");
+    expect(failed).not.toBeNull();
+    expect(shadow(el).querySelectorAll(".run-notice")).toHaveLength(0);
+    expect(failed?.nextElementSibling?.querySelector(".message-action--retry")).not.toBeNull();
+    // Copyable -- error text is what people paste into a bug report -- but not
+    // rateable: a rating is a statement about an answer, and "the connection
+    // dropped" mixed into that signal makes the host's data say less.
+    const actions = [...(failed?.nextElementSibling?.querySelectorAll(".message-action") ?? [])];
+    expect(actions.map((b) => b.className.split("--")[1])).toEqual(["retry", "copy"]);
+  });
+
+  it("emits a feedback event and stores nothing", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.textEnd("an answer");
+    });
+    const seen: unknown[] = [];
+    el.addEventListener(FEEDBACK_EVENT, (e) => seen.push((e as CustomEvent).detail));
+
+    await send(el, "go");
+    shadow(el).querySelector<HTMLButtonElement>(".message-action--up")?.click();
+
+    expect(seen).toEqual([{ content: "an answer", rating: "up" }]);
   });
 
   it("renders a tool-call card with the frontend tool's x-summary label", async () => {

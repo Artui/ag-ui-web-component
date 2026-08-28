@@ -6,6 +6,7 @@ export {
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
   ELEMENT_TAG,
+  FEEDBACK_EVENT,
   INVALIDATE_CUSTOM_NAME,
   INVALIDATE_EVENT,
   LOAD_CAPABILITY_TOOL,
@@ -29,6 +30,7 @@ export {
   AgUiChat,
   type AttachmentsDetail,
   type CustomAgentDetail,
+  type FeedbackDetail,
   type InvalidateDetail,
   type MessageRole,
   type RunFinishedDetail,
@@ -150,6 +152,11 @@ export {
   type ConfirmationRequest,
   requestConfirmation,
 } from "./ui/confirmation_card.js";
+export {
+  attachMessageActions,
+  type MessageActionsOptions,
+  messageActionBar,
+} from "./ui/message_actions.js";
 export { prettifyToolName } from "./ui/prettify_tool_name.js";
 export {
   type QuestionOptions,

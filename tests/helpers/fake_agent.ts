@@ -367,6 +367,12 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
     addMessage(message: { id: string; role: string; content: string; toolCallId?: string }): void {
       messages.push(message);
     },
+    // The real `HttpAgent` has this (verified on its prototype, not inferred
+    // from the .d.ts); a retry truncates through it, so a fake without it would
+    // have made every retry test agree with a method that does not exist.
+    setMessages(next: ReadonlyArray<{ id: string; role: string; content: string }>): void {
+      applyMessagesSnapshot(next);
+    },
     abortRun(): void {
       handle.abortRuns += 1;
     },

@@ -7,6 +7,7 @@ import {
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
   DEFAULT_ATTACHMENT_MAX_BYTES,
+  FEEDBACK_EVENT,
   ICON_ATTACH,
   ICON_LAUNCHER,
   ICON_SEND,
@@ -51,6 +52,11 @@ import { chartSpecFrom } from "../ui/chart_spec_from.js";
 import { CHART_TOOL_NAME, createChartTool } from "../ui/chart_tool.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/checkpoint_menu.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
+import {
+  attachMessageActions,
+  messageActionBar,
+  messageActionButton,
+} from "../ui/message_actions.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
 import {
   type QuestionRenderer,
@@ -114,6 +120,13 @@ export interface AttachmentsDetail {
 }
 
 /** `detail` shape of the {@link STATE_EVENT} CustomEvent. */
+/** {@link FEEDBACK_EVENT} detail: what was rated, and how. */
+export interface FeedbackDetail {
+  /** The rated message's text, as rendered. */
+  readonly content: string;
+  readonly rating: "up" | "down";
+}
+
 export interface StateDetail {
   readonly state: Readonly<Record<string, unknown>>;
 }
@@ -577,6 +590,17 @@ export class AgUiChat extends HTMLElement {
    * `autoConfirm` already exists to say deliberately. Cleared with the element.
    */
   readonly #sessionApproved = new Set<string>();
+
+  /**
+   * The one action row currently carrying Retry, if any.
+   *
+   * Retry belongs to the **last** turn only: re-running an older one is
+   * branching, and for a page-driving agent editing a past turn is not neutral
+   * -- those turns clicked buttons, and re-running turn 3 does not un-save what
+   * turn 5 saved. Holding a single owner is what keeps exactly one offer on
+   * screen without per-bubble bookkeeping.
+   */
+  #retryOwner: HTMLElement | null = null;
 
   #runInvalidated = new Set<string>();
   readonly #root: ShadowRoot;
@@ -2146,6 +2170,18 @@ export class AgUiChat extends HTMLElement {
   /** Drop the in-memory run + transcript, leaving the thread id untouched. */
   #resetState(): void {
     this.#client = null;
+    this.#clearTranscript();
+    this.#initialMessages = [];
+  }
+
+  /**
+   * Wipe the rendered transcript and everything that indexes into it.
+   *
+   * Split from {@link #resetState} because a retry re-renders the transcript
+   * while keeping the *client*: dropping the client there would take the
+   * agent's message list with it, which is the thing being truncated.
+   */
+  #clearTranscript(): void {
     // Before the transcript goes: a render still queued would otherwise fire
     // against the wiped list and open a fresh bubble holding the discarded
     // conversation's last tokens.
@@ -2157,11 +2193,48 @@ export class AgUiChat extends HTMLElement {
     this.#serverSettled.clear();
     this.#cardElements.clear();
     this.#activityBlocks.clear();
-    this.#initialMessages = [];
+    this.#retryOwner = null;
     this.#attachTray?.clear();
     // Keep the empty-state region; everything else clears.
     this.#messages.replaceChildren(this.#emptyWrap);
     this.#updateEmptyState();
+  }
+
+  /**
+   * Ask the same question again and replace the answer.
+   *
+   * History is truncated to the most recent user message inclusive and the run
+   * repeats, so the agent answers what it was asked rather than being told its
+   * last answer was wrong. Returns `false` when there is nothing to retry or a
+   * run is already in flight.
+   *
+   * Public because a host with its own message UI wants the same button, and
+   * because the failed-run notice reaches it from outside the action row.
+   *
+   * **A retried turn re-runs its tools**, which for a page-driving agent is not
+   * neutral: the previous attempt already clicked what it clicked, and this
+   * does not undo it. Confirmation still applies, so a destructive tool asks
+   * again -- unless the user waived it for this session.
+   */
+  async retryLastTurn(): Promise<boolean> {
+    if (this.#running) {
+      return false;
+    }
+    const client = this.#ensureClient();
+    const kept = client.truncateToLastUser();
+    if (kept === null) {
+      return false;
+    }
+    // Re-render between the truncation and the run: the kept turns replay as
+    // restored history (static, no entrance animation), and only the new answer
+    // arrives live. Streaming into the old transcript would put the new answer
+    // underneath the one it replaces.
+    this.#clearTranscript();
+    for (const message of kept) {
+      this.#renderHistoricMessage(message);
+    }
+    await client.resume();
+    return true;
   }
 
   /** Switch the active conversation to an existing thread and replay it. */
@@ -2299,7 +2372,9 @@ export class AgUiChat extends HTMLElement {
         // transcript mounts at once, so animating every bubble's text in
         // parallel looks wrong. Mark it so the fade CSS skips it, and don't
         // wrap words.
-        this.appendMessage(MESSAGE_ROLE.ASSISTANT, text).classList.add("message--restored");
+        const restoredBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, text);
+        restoredBubble.classList.add("message--restored");
+        this.#attachActions(restoredBubble);
       }
       // Narrowed rather than trusted, for the same reason `messageAttachments`
       // narrows the neighbouring field: anything that throws in this loop aborts
@@ -3139,6 +3214,53 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * Give a finished assistant bubble its action row, and hand it Retry.
+   *
+   * Every finished bubble gets copy and feedback -- both are safe on a message
+   * of any age. Retry moves to the newest, because it is the only one where
+   * re-running answers the same question rather than rewriting history.
+   */
+  #attachActions(bubble: HTMLDivElement, options: { rateable?: boolean } = {}): void {
+    attachMessageActions(bubble, {
+      strings: this.#strings,
+      // Read at click time, not captured: a bubble rendered from markdown holds
+      // its text in the DOM, and that is what the user sees and means to copy.
+      text: () => bubble.textContent as string,
+      // A failed run is copyable -- error text is what people paste into a bug
+      // report -- but not rateable: a rating is a statement about an *answer*,
+      // and mixing "the connection dropped" into that signal makes the host's
+      // feedback data say less than it did before.
+      ...(options.rateable === false
+        ? {}
+        : {
+            onFeedback: (rating: "up" | "down") => {
+              this.dispatchEvent(
+                new CustomEvent<FeedbackDetail>(FEEDBACK_EVENT, {
+                  detail: { content: bubble.textContent as string, rating },
+                  bubbles: true,
+                  composed: true,
+                }),
+              );
+            },
+          }),
+    });
+    this.#moveRetryTo(messageActionBar(bubble, this.#strings));
+  }
+
+  /** Move the Retry button onto `bar`, taking it off whoever held it. */
+  #moveRetryTo(bar: HTMLElement): void {
+    this.#retryOwner?.querySelector(".message-action--retry")?.remove();
+    const retry = messageActionButton("retry", this.#strings.retryMessage, "\u21BB");
+    retry.addEventListener("click", () => {
+      void this.retryLastTurn();
+    });
+    // First in the row: it is the action a reader reaches for when the answer
+    // was wrong, which is when they are least inclined to hunt for a control.
+    bar.prepend(retry);
+    this.#retryOwner = bar;
+  }
+
+  /**
    * Which rule gates `call`, or `null` when it runs straight through.
    *
    * The rule, rather than a bare boolean, because it decides whether the user
@@ -3435,6 +3557,7 @@ export class AgUiChat extends HTMLElement {
           this.#revealWords(bubble);
         }
         attachCopyButtons(bubble, this.#strings);
+        this.#attachActions(bubble);
         this.#endStream();
         this.#noteUnread();
       },
@@ -3530,7 +3653,19 @@ export class AgUiChat extends HTMLElement {
         this.#announcedOutcome = true;
         this.#announce(this.#strings.announceFailed);
         this.#hidePending();
-        this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`));
+        const bubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`);
+        bubble.classList.add("message--failed");
+        // A failure is the one message whose action row is only worth having
+        // for Retry: there is nothing here worth copying and nothing to rate.
+        // A dropped connection with no way back was the whole of the gap --
+        // uploads had a retry and runs did not.
+        //
+        // Not a `run-notice`: that element's contract is that it "never
+        // settles, takes no action, and carries no controls", and is explicitly
+        // "distinct from an error, which is a failure". This is a failure, so
+        // it stays an error and gains the control instead.
+        this.#attachActions(bubble, { rateable: false });
+        this.#revealWords(bubble);
         this.#endStream();
       },
       onCancelled: () => {

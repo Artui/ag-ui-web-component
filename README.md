@@ -50,6 +50,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
   - [Collapsing to the launcher](#collapsing-to-the-launcher)
 - [Tool-call display modes](#tool-call-display-modes)
 - [Markdown rendering](#markdown-rendering)
+- [Message actions: copy, retry, feedback](#message-actions-copy-retry-feedback)
 - [Run notices: compaction and agent skills](#run-notices-compaction-and-agent-skills)
 - [Skills: prompt chips and slash palette](#skills-prompt-chips-and-slash-palette)
 - [MPA durability: surviving full page reloads](#mpa-durability-surviving-full-page-reloads)
@@ -1208,6 +1209,46 @@ reveal). It honours `prefers-reduced-motion` (collapsing to instant).
 
 ---
 
+## Message actions: copy, retry, feedback
+
+Every finished assistant message carries a small row of actions beneath it —
+a **sibling** of the bubble, never a child, so the buttons never join the
+message's own text.
+
+- **Retry** re-asks the question. History is truncated to the most recent user
+  message inclusive and the run repeats, so the agent answers what it was asked
+  rather than being told its last answer was wrong.
+- **Copy** puts the message's text on the clipboard, and says so on the button.
+  A refused clipboard permission is reported there too, rather than thrown.
+- **Thumbs up / down** fire [`ag-ui-feedback`](#events) and **store nothing**.
+
+Retry sits on the **last** answer only. Re-running an older turn is branching,
+and for a page-driving agent editing a past turn is not neutral — those turns
+clicked buttons, and re-running turn 3 does not un-save what turn 5 saved.
+
+!!! note
+    A retried turn **re-runs its tools.** The previous attempt already did what
+    it did, and this does not undo it. Confirmation still applies, so a
+    destructive tool asks again — unless the user waived it for this session
+    with *Always allow*.
+
+A failed run gets the same row, with Retry and Copy and no rating: error text is
+what people paste into a bug report, but "the connection dropped" is not a
+statement about answer quality and mixing it into feedback makes that signal say
+less. This is why a dropped connection is still rendered as an **error** rather
+than demoted to a run notice — a notice "never settles, takes no action, and
+carries no controls", and a failure with a way back needs one.
+
+`retryLastTurn()` is public, for a host driving its own message UI.
+
+```js
+chat.addEventListener("ag-ui-feedback", (e) => {
+  analytics.track("assistant_rating", e.detail); // { content, rating }
+});
+
+await chat.retryLastTurn(); // false when there is nothing to ask again
+```
+
 ## Run notices: compaction and agent skills
 
 Some things a run does are neither text nor a tool the user asked for — the server condensed
@@ -1803,6 +1844,10 @@ re-export point. Internal modules import from leaf paths.
 | `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
 | `CustomAgentDetail` | type | `ag-ui-custom` detail: an AG-UI `CUSTOM` event's `name` and `value`, verbatim. |
 | `InvalidateDetail` | type | `ag-ui-invalidate` detail: the resource `keys` that moved, and the `reason`. |
+| `FeedbackDetail` | type | `ag-ui-feedback` detail: the rated message's `content` and the `rating`. |
+| `attachMessageActions` | function | Give a finished bubble its action row (copy, and feedback when a handler is passed). |
+| `messageActionBar` | function | The empty action row for a bubble, created if it has none — the shared shell both callers use. |
+| `MessageActionsOptions` | type | What `attachMessageActions` takes: `strings`, a `text` source, an optional `onFeedback`. |
 | `ActivityRenderer` | type | Draws one activity from its `content`. Pure: it runs again on every restore. |
 | `ActivityRegistration` | type | What `registerActivityRenderer` takes: `type`, `render`, and an optional `removedNotice`. |
 | `createStateHookTools(binding)` / `StateHook` | deprecated | The former names for `createPageStateTools` / `PageState`. |
@@ -1880,6 +1925,7 @@ re-export point. Internal modules import from leaf paths.
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
 | `CUSTOM_AGENT_EVENT` | The agent-`CUSTOM` CustomEvent name (`ag-ui-custom`). |
 | `INVALIDATE_EVENT` | The resource-invalidation CustomEvent name (`ag-ui-invalidate`). |
+| `FEEDBACK_EVENT` | The message-rating CustomEvent name (`ag-ui-feedback`). |
 | `INVALIDATE_CUSTOM_NAME` | The AG-UI `CUSTOM` `name` that carries one (`ag_ui.invalidate`). |
 | `ATTACHMENT_EVENT` | The attachments-changed CustomEvent name (`ag-ui-attachments`). |
 | `STATE_EVENT` | The shared-state CustomEvent name (`ag-ui-state`). |
@@ -2025,6 +2071,7 @@ component sets, so a new one cannot ship undocumented.
 | Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
+| Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`) |
 | Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-icon`, `run-notice-text` |
 | Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval` |
 | Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`, `confirm-always`) |
