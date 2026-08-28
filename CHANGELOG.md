@@ -21,9 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **The half worth having is the one the transcript cannot reach.** A chat
   mounted beside a table, a diff or a report sits in the surface the user
   actually works in, and a selection made *there* is one no hosted chat can see.
-  The new public `quote(text)` is that seam: a host reads its own selection --
-  or a per-row "ask about this" button -- and hands over the text. The README
-  carries both recipes.
+  `offerQuoteInPage()` extends the same select-then-offer gesture to the host's
+  own page, or to one region of it, and `quote(text)` is the seam underneath for
+  a deliberate trigger like a per-row "ask about this" button.
+
+  **The page half is a method rather than a documented recipe, and that is the
+  correction, not the design.** It shipped first as four lines in the README --
+  quote every settled selection -- which appends to the composer on every drag
+  the user made to *read*, to copy, or to fix a typo. Worse, it cannot tell a
+  selection in the page's prose from one inside the user's own half-typed
+  `<input>`: Chrome reports a field's internal selection through
+  `document.getSelection()` as an ordinary range over the field's **wrapper**,
+  so the text reads back perfectly and nothing about the range says where it
+  came from. The only signal is `document.activeElement`. That guard, plus
+  skipping the widget's own transcript -- which needs the *event path*, since
+  `Node.contains` is false across a shadow boundary -- plus retiring a
+  fixed-position affordance on scroll, is three non-obvious guards, and three
+  guards is a feature rather than a snippet. `attachQuoteOffer` is exported for
+  a host that wants it without the element.
 
   Reading a selection out of a shadow tree is the part that takes care, and the
   component now does it properly: engines disagree about what

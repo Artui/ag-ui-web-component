@@ -1347,32 +1347,46 @@ Set `data-quote-selection="false"` to turn the offer off. The `quote-selection`
 
 The transcript is the easy half. A chat mounted beside a table, a diff or a
 report is sitting in the surface the user actually works in — and *that*
-selection is one no hosted chat can reach. `quote()` is the seam:
+selection is one no hosted chat can reach.
+
+`offerQuoteInPage()` extends the same select-then-offer gesture to the whole
+page. It is opt-in, because it listens on your document:
+
+```js
+const stop = chat.offerQuoteInPage();       // the whole page
+chat.offerQuoteInPage(document.querySelector("#report")); // or one region
+```
+
+For a deliberate trigger instead of a selection, `quote(text)` is the seam
+underneath:
 
 ```js
 // "Ask about this row" — a button on each row of your own table.
 row.querySelector(".ask").addEventListener("click", () => {
   chat.quote(row.innerText);
 });
-
-// Or the page's own selection, wherever the user made it.
-document.addEventListener("mouseup", () => {
-  const text = String(document.getSelection() ?? "");
-  if (text.trim() !== "") {
-    chat.quote(text);
-  }
-});
 ```
 
 `quote()` never sends — pair it with [`sendMessage()`](#sending-from-your-own-ui)
 if you want a one-click "explain this" that skips the composer entirely.
 
-> **Reading a selection out of a shadow tree takes care.**
+> **Do not write the four-line version of `offerQuoteInPage()`.**
+> A `mouseup` listener that quotes every settled selection appends to the
+> composer on every drag the user made to *read*, to copy, or to fix a typo —
+> and it cannot tell a selection in your prose from one inside the user's own
+> half-typed `<input>`, because Chrome reports a field's internal selection
+> through `document.getSelection()` as an ordinary range over the field's
+> **wrapper**. The text reads back perfectly and nothing about the range says
+> where it came from; the only signal is `document.activeElement`. That guard,
+> plus skipping the widget's own transcript, plus retiring a fixed-position
+> affordance on scroll, is what the method is for.
+
+> **Reading a selection out of a shadow tree takes care too.**
 > Engines disagree about what `document.getSelection()` reports for a selection
 > made *inside* a shadow root: WebKit rescopes the endpoints to the host element,
 > so you get the whole widget and none of the words, while Chromium hands back
 > the shadow nodes directly. `getComposedRanges` settles it, and this component
-> uses it where it exists. `quotableSelection(container, root)` is exported if
+> uses it where it exists. `quotableSelection(container, roots)` is exported if
 > you have the same problem in your own component.
 
 ## Run notices: compaction and agent skills
@@ -2039,7 +2053,9 @@ re-export point. Internal modules import from leaf paths.
 | `renderChart(spec)` | function | Draw one spec as a self-contained block, or `null` when it says nothing. |
 | `chartSpecFrom(value)` | function | Read an arbitrary payload into a `ChartSpec`, or `null` if it cannot be drawn honestly. |
 | `ChartSpec` / `ChartSeries` / `ChartKind` | type | A chart as data, one named series, and how it is drawn. |
-| `quotableSelection(container, root)` | function | The current selection when it lies inside `container`, read through the shadow-aware API where the engine has one. |
+| `attachQuoteOffer(options)` | function | The page-side select-then-quote offer, with its guards. `AgUiChat.offerQuoteInPage()` is the one-line form. |
+| `PageQuoteOffer` / `PageQuoteOfferOptions` | type | The live offer (`{ element, detach }`) and what it takes. |
+| `quotableSelection(container, roots)` | function | The current selection when it lies inside `container`, read through the shadow-aware API where the engine has one. |
 | `QuotableSelection` | type | `{ text, rect }` — what was selected, and where it sits. |
 | `asQuote(text)` | function | Shape text as a markdown blockquote with a blank line after it. |
 | `MAX_QUOTE_CHARS` | const | The cap a quotation is truncated to (500). |

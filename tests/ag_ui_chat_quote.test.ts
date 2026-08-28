@@ -48,7 +48,7 @@ function answer(el: AgUiChat, text = "the second paragraph of the answer"): Text
 }
 
 /** Select part of the transcript and settle the gesture, as a drag does. */
-function drag(el: AgUiChat, node: Node, start: number, end: number): void {
+function dragInTranscript(el: AgUiChat, node: Node, start: number, end: number): void {
   const messages = shadow(el).querySelector(".messages") as HTMLElement;
   messages.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
   const range = document.createRange();
@@ -74,7 +74,7 @@ describe("quoting a transcript selection", () => {
     const el = mount();
     const text = answer(el);
 
-    drag(el, text, 4, 10);
+    dragInTranscript(el, text, 4, 10);
 
     expect(offer(el).hidden).toBe(false);
     expect(offer(el).textContent).toBe(DEFAULT_UI_STRINGS.quoteSelection);
@@ -90,7 +90,7 @@ describe("quoting a transcript selection", () => {
   it("puts the selection into the composer as a quotation, and does not send", () => {
     const el = mount();
     const text = answer(el);
-    drag(el, text, 4, 10);
+    dragInTranscript(el, text, 4, 10);
 
     offer(el).click();
 
@@ -101,7 +101,7 @@ describe("quoting a transcript selection", () => {
   it("retires the offer once it is taken", () => {
     const el = mount();
     const text = answer(el);
-    drag(el, text, 4, 10);
+    dragInTranscript(el, text, 4, 10);
 
     offer(el).click();
 
@@ -112,7 +112,7 @@ describe("quoting a transcript selection", () => {
   it("retires the offer when the next gesture starts", () => {
     const el = mount();
     const text = answer(el);
-    drag(el, text, 4, 10);
+    dragInTranscript(el, text, 4, 10);
 
     (shadow(el).querySelector(".messages") as HTMLElement).dispatchEvent(
       new MouseEvent("mousedown", { bubbles: true }),
@@ -124,9 +124,9 @@ describe("quoting a transcript selection", () => {
   it("retires the offer when a gesture selects nothing", () => {
     const el = mount();
     const text = answer(el);
-    drag(el, text, 4, 10);
+    dragInTranscript(el, text, 4, 10);
 
-    drag(el, text, 4, 4);
+    dragInTranscript(el, text, 4, 4);
 
     expect(offer(el).hidden).toBe(true);
   });
@@ -148,7 +148,7 @@ describe("quoting a transcript selection", () => {
   it("keeps its selection to itself when the offer is pressed", () => {
     const el = mount();
     const text = answer(el);
-    drag(el, text, 4, 10);
+    dragInTranscript(el, text, 4, 10);
     const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
 
     offer(el).dispatchEvent(press);
@@ -161,9 +161,95 @@ describe("quoting a transcript selection", () => {
     const el = mount({ "data-quote-selection": "false" });
     const text = answer(el);
 
-    drag(el, text, 4, 10);
+    dragInTranscript(el, text, 4, 10);
 
     expect(offer(el).hidden).toBe(true);
+  });
+});
+
+describe("offerQuoteInPage()", () => {
+  /** Prose in the host page, outside the widget. */
+  function prose(text = "the quarterly report says revenue fell"): Text {
+    const p = document.createElement("p");
+    p.textContent = text;
+    document.body.append(p);
+    return p.firstChild as Text;
+  }
+
+  /** Select `[start, end)` and settle the gesture on the page. */
+  function drag(node: Node, start: number, end: number): void {
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, end);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    (node.parentElement as HTMLElement).dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, composed: true }),
+    );
+  }
+
+  function pageOffer(): HTMLButtonElement {
+    return document.querySelector(".ag-ui-quote-offer") as HTMLButtonElement;
+  }
+
+  it("quotes a selection made in the host page", () => {
+    const el = mount();
+    el.offerQuoteInPage();
+    const text = prose();
+
+    drag(text, 4, 13);
+    pageOffer().click();
+
+    expect(composer(el).value).toBe("> quarterly\n\n");
+  });
+
+  it("does not offer twice for the transcript, which has its own", () => {
+    const el = mount();
+    el.offerQuoteInPage();
+    const text = answer(el);
+
+    dragInTranscript(el, text, 4, 10);
+
+    expect(pageOffer().hidden).toBe(true);
+    expect(offer(el).hidden).toBe(false);
+  });
+
+  it("stops when the returned function is called", () => {
+    const el = mount();
+    const stop = el.offerQuoteInPage();
+    const text = prose();
+
+    stop();
+    drag(text, 4, 13);
+
+    expect(pageOffer()).toBeNull();
+  });
+
+  it("replaces a standing offer rather than stacking a second", () => {
+    const el = mount();
+    el.offerQuoteInPage();
+
+    el.offerQuoteInPage();
+
+    expect(document.querySelectorAll(".ag-ui-quote-offer")).toHaveLength(1);
+  });
+
+  it("takes itself down with the element, since it listens on the document", () => {
+    const el = mount();
+    el.offerQuoteInPage();
+
+    el.remove();
+
+    expect(pageOffer()).toBeNull();
+  });
+
+  it("stopping after the element left is not a second removal", () => {
+    const el = mount();
+    const stop = el.offerQuoteInPage();
+    el.remove();
+
+    expect(() => stop()).not.toThrow();
   });
 });
 

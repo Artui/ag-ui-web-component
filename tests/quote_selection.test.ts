@@ -93,13 +93,13 @@ describe("quotableSelection", () => {
 
     select(inner, 4, 10);
 
-    expect(quotableSelection(container, root)?.text).toBe("second");
+    expect(quotableSelection(container, [root])?.text).toBe("second");
   });
 
   it("returns null when nothing is selected", () => {
     const { container, root } = fixture();
 
-    expect(quotableSelection(container, root)).toBeNull();
+    expect(quotableSelection(container, [root])).toBeNull();
   });
 
   it("returns null for a collapsed selection", () => {
@@ -107,7 +107,7 @@ describe("quotableSelection", () => {
 
     select(inner, 4, 4);
 
-    expect(quotableSelection(container, root)).toBeNull();
+    expect(quotableSelection(container, [root])).toBeNull();
   });
 
   it("returns null when the selection is only whitespace", () => {
@@ -115,7 +115,7 @@ describe("quotableSelection", () => {
 
     select(inner, 4, 7);
 
-    expect(quotableSelection(container, root)).toBeNull();
+    expect(quotableSelection(container, [root])).toBeNull();
   });
 
   it("returns null for a selection outside the container", () => {
@@ -123,7 +123,7 @@ describe("quotableSelection", () => {
 
     select(outer, 0, 4);
 
-    expect(quotableSelection(container, root)).toBeNull();
+    expect(quotableSelection(container, [root])).toBeNull();
   });
 
   it("returns null for a selection that starts inside and ends outside", () => {
@@ -134,7 +134,7 @@ describe("quotableSelection", () => {
     // second one that disqualifies it.
     select(inner, 4, 8, sibling);
 
-    expect(quotableSelection(container, root)).toBeNull();
+    expect(quotableSelection(container, [root])).toBeNull();
   });
 
   it("returns null when the document has no selection at all", () => {
@@ -143,7 +143,7 @@ describe("quotableSelection", () => {
     window.getSelection = () => null;
 
     try {
-      expect(quotableSelection(container, root)).toBeNull();
+      expect(quotableSelection(container, [root])).toBeNull();
     } finally {
       window.getSelection = original;
     }
@@ -157,7 +157,7 @@ describe("quotableSelection", () => {
 
     select(inner, 4, 10);
 
-    expect(quotableSelection(container, root)?.text).toBe("second");
+    expect(quotableSelection(container, [root])?.text).toBe("second");
   });
 
   it("retries with the earlier signature when the options object is rejected", () => {
@@ -176,7 +176,7 @@ describe("quotableSelection", () => {
     // it came from rather than agreeing by coincidence.
     select(inner, 0, 3);
 
-    expect(quotableSelection(container, root)?.text).toBe("second");
+    expect(quotableSelection(container, [root])?.text).toBe("second");
     expect(shapes).toEqual(["dictionary", "variadic"]);
   });
 });

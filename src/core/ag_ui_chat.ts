@@ -58,6 +58,7 @@ import {
   messageActionBar,
   messageActionButton,
 } from "../ui/message_actions.js";
+import { attachQuoteOffer, type PageQuoteOffer } from "../ui/page_quote_offer.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
 import {
   type QuestionRenderer,
@@ -659,6 +660,8 @@ export class AgUiChat extends HTMLElement {
   readonly #quoteButton = document.createElement("button");
   /** What {@link AgUiChat.#quoteButton} would quote, while it is showing. */
   #quoting = "";
+  /** The host-page offer, while one is attached; see {@link AgUiChat.offerQuoteInPage}. */
+  #pageQuote: PageQuoteOffer | null = null;
   /**
    * Positioning context for {@link AgUiChat.#jumpButton}.
    *
@@ -1485,6 +1488,10 @@ export class AgUiChat extends HTMLElement {
       this.#claimedNs = null;
     }
     this.#cancelRun();
+    // The page offer listens on the host's document, not on anything of ours,
+    // so nothing else would ever take it down.
+    this.#pageQuote?.detach();
+    this.#pageQuote = null;
     this.#attachTray?.dispose();
     this.#voice?.dispose();
     this.#scroller.dispose();
@@ -1648,6 +1655,43 @@ export class AgUiChat extends HTMLElement {
     this.#input.setSelectionRange(end, end);
   }
 
+  /**
+   * Offer to quote what the user selects in the **host page**, not just in the
+   * transcript. Returns a function that stops offering.
+   *
+   * The same select-then-offer gesture, over a table, a diff, a report -- the
+   * surface the user actually works in, which is the half of quoting no hosted
+   * chat can reach. Opt-in, because it listens on the host's document and that
+   * is theirs to grant.
+   *
+   * Deliberately **not** a four-line recipe, which is how this shipped first
+   * and was wrong: a page listener that quotes every settled selection appends
+   * to the composer on every drag made to read, to copy or to fix a typo -- and
+   * it cannot tell a selection in the page's prose from one inside the user's
+   * own half-typed `<input>`, because Chrome reports a field's internal
+   * selection as an ordinary range over the field's *wrapper*. See
+   * {@link attachQuoteOffer} for the guards.
+   *
+   * Detached automatically when the element leaves the document; a host that
+   * re-mounts it calls this again.
+   */
+  offerQuoteInPage(within: HTMLElement = document.body): () => void {
+    this.#pageQuote?.detach();
+    const offer = attachQuoteOffer({
+      within,
+      label: this.#strings.quoteSelection,
+      exclude: this,
+      onQuote: (text) => this.quote(text),
+    });
+    this.#pageQuote = offer;
+    return () => {
+      offer.detach();
+      if (this.#pageQuote === offer) {
+        this.#pageQuote = null;
+      }
+    };
+  }
+
   /** Whether the transcript offers to quote what the user selects. */
   #quoteEnabled(): boolean {
     return this.getAttribute("data-quote-selection") !== "false";
@@ -1658,7 +1702,7 @@ export class AgUiChat extends HTMLElement {
     if (!this.#quoteEnabled()) {
       return;
     }
-    const selected = quotableSelection(this.#messages, this.#root);
+    const selected = quotableSelection(this.#messages, [this.#root]);
     if (selected === null) {
       this.#hideQuote();
       return;

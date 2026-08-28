@@ -38,15 +38,19 @@ type ComposedSelection = Selection & {
 /**
  * The current selection, when it lies wholly inside `container`.
  *
+ * `roots` are the shadow roots the read is allowed to look inside, in the shape
+ * `getComposedRanges` itself takes. Pass the one holding `container` for a
+ * selection made in a shadow tree, or nothing at all for one made in the page.
+ *
  * `null` for no selection, a collapsed one, whitespace only, or one that
  * starts or ends outside `container` -- a drag that ran off the transcript and
  * into the page is not a quotation from the transcript.
  */
 export function quotableSelection(
   container: HTMLElement,
-  root: ShadowRoot,
+  roots: readonly ShadowRoot[] = [],
 ): QuotableSelection | null {
-  for (const endpoints of endpointCandidates(root)) {
+  for (const endpoints of endpointCandidates(roots)) {
     if (!container.contains(endpoints.startContainer)) {
       continue;
     }
@@ -104,12 +108,12 @@ export function asQuote(text: string): string {
  * rejects those on the same test it uses for a selection that genuinely ran off
  * the transcript. One rule, no engine sniffing.
  */
-function endpointCandidates(root: ShadowRoot): readonly AbstractRange[] {
+function endpointCandidates(roots: readonly ShadowRoot[]): readonly AbstractRange[] {
   const selection = window.getSelection();
   if (selection === null) {
     return [];
   }
-  const candidates = [...composedRanges(selection, root)];
+  const candidates = [...composedRanges(selection, roots)];
   if (selection.rangeCount > 0) {
     candidates.push(selection.getRangeAt(0));
   }
@@ -117,18 +121,21 @@ function endpointCandidates(root: ShadowRoot): readonly AbstractRange[] {
 }
 
 /** The shadow-aware read, or nothing on an engine that does not have it. */
-function composedRanges(selection: Selection, root: ShadowRoot): readonly AbstractRange[] {
+function composedRanges(
+  selection: Selection,
+  roots: readonly ShadowRoot[],
+): readonly AbstractRange[] {
   const composed = (selection as ComposedSelection).getComposedRanges;
   if (composed === undefined) {
     return [];
   }
   try {
-    return composed.call(selection, { shadowRoots: [root] });
+    return composed.call(selection, { shadowRoots: roots });
   } catch {
     // The method shipped first with the shadow roots as rest parameters and
     // only later as a dictionary member, and the earlier form rejects the
     // options object outright rather than ignoring it. Lexical resolves the
     // same split the same way, by trying both shapes at runtime.
-    return composed.call(selection, root);
+    return composed.call(selection, ...roots);
   }
 }

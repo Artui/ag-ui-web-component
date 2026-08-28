@@ -158,6 +158,11 @@ export {
   type MessageActionsOptions,
   messageActionBar,
 } from "./ui/message_actions.js";
+export {
+  attachQuoteOffer,
+  type PageQuoteOffer,
+  type PageQuoteOfferOptions,
+} from "./ui/page_quote_offer.js";
 export { prettifyToolName } from "./ui/prettify_tool_name.js";
 export {
   type QuestionOptions,

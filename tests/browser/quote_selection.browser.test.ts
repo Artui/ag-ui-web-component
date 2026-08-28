@@ -99,7 +99,7 @@ describe("reading the selection through the engine's own shadow API", () => {
     selection?.addRange(range);
 
     const messages = shadow(el).querySelector(".messages") as HTMLElement;
-    expect(quotableSelection(messages, shadow(el))?.text).toBe("second");
+    expect(quotableSelection(messages, [shadow(el)])?.text).toBe("second");
   });
 
   it("gets nothing back from the same call without the shadow root", () => {
