@@ -20,6 +20,7 @@ import {
   RUN_FINISHED_EVENT,
   STATE_EVENT,
   SUBMIT_EVENT,
+  SUGGESTIONS_ACTIVITY_TYPE,
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
@@ -75,6 +76,7 @@ import { renderRunNotice } from "../ui/run_notice.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
 import { createStickToBottom, type StickToBottom } from "../ui/stick_to_bottom.js";
 import { STYLES } from "../ui/styles.js";
+import { renderSuggestionChips } from "../ui/suggestion_chips.js";
 import { ThoughtsBlock } from "../ui/thoughts_block.js";
 import { ThreadDrawer } from "../ui/thread_drawer.js";
 import { ToolCallCard, type ToolDisplayMode } from "../ui/tool_call_card.js";
@@ -768,6 +770,16 @@ export class AgUiChat extends HTMLElement {
               "compaction",
             );
       },
+    });
+    // Follow-up chips, registered through the same seam for the same reasons:
+    // a reload puts them back, and a server pushing a new set under a new id
+    // supersedes the old one rather than leaving two offers on screen.
+    this.registerActivityRenderer({
+      type: SUGGESTIONS_ACTIVITY_TYPE,
+      render: (content) =>
+        renderSuggestionChips(content, this.#strings, (prompt) => {
+          void this.sendMessage(prompt);
+        }),
     });
     this.#skillsMenu = new SkillsMenu((skill) => this.#applySkill(skill));
     this.#drawer = new ThreadDrawer({

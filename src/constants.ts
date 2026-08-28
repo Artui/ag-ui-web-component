@@ -103,6 +103,15 @@ export const INVALIDATE_EVENT = "ag-ui-invalidate";
 export const FEEDBACK_EVENT = "ag-ui-feedback";
 
 /**
+ * The `activity_type` carrying server-pushed follow-up prompts.
+ *
+ * Matches django-ag-ui's `SUGGESTIONS_ACTIVITY_TYPE`. A convention inside the
+ * protocol's open `activity_type` field, not an extension of it -- so a client
+ * that has never heard of it ignores the event, and this one is not privileged.
+ */
+export const SUGGESTIONS_ACTIVITY_TYPE = "suggestions";
+
+/**
  * The AG-UI `CUSTOM` event `name` that carries an invalidation.
  *
  * Matched exactly. Namespaced so it cannot collide with a host's own custom

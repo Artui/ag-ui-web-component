@@ -201,6 +201,22 @@ async function handleAgent(res, body) {
     ]);
   } else if (isFollowUp) {
     await streamText(res, id("msg"), ["Done — ", "the article ", "is filled in ", "and saved. ✅"]);
+    // Follow-up chips, pushed after the work rather than configured up front --
+    // which is the whole difference from the static skill chips above the
+    // composer. Clicking one sends it as the user's next message.
+    emit(res, {
+      type: "ACTIVITY_SNAPSHOT",
+      messageId: id("suggestions"),
+      activityType: "suggestions",
+      replace: true,
+      content: {
+        prompts: [
+          "Publish it now",
+          "Change the slug",
+          "Show me what changed",
+        ],
+      },
+    });
   } else if (prompt.startsWith("/")) {
     // A server-resolved skill: the client sent only the token, so this is the
     // first point at which the prompt behind it exists at all. Answering here

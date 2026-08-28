@@ -50,6 +50,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
   - [Collapsing to the launcher](#collapsing-to-the-launcher)
 - [Tool-call display modes](#tool-call-display-modes)
 - [Markdown rendering](#markdown-rendering)
+- [Follow-up suggestions](#follow-up-suggestions)
 - [Message actions: copy, retry, feedback](#message-actions-copy-retry-feedback)
 - [Run notices: compaction and agent skills](#run-notices-compaction-and-agent-skills)
 - [Skills: prompt chips and slash palette](#skills-prompt-chips-and-slash-palette)
@@ -1209,6 +1210,35 @@ reveal). It honours `prefers-reduced-motion` (collapsing to instant).
 
 ---
 
+## Follow-up suggestions
+
+The agent can offer the *next* question, not just answer this one. Registered
+skill chips are static and host-configured, so they can say "summarize this" but
+never "want me to update the shipping address too?" after a tool has run.
+
+The server pushes an `ACTIVITY_SNAPSHOT` under the `suggestions` type — with
+django-ag-ui, `suggestions_activity([...])`. The component draws each prompt as
+a chip; clicking one sends it as the user's message, exactly as if they had
+typed it.
+
+```json
+{ "activityType": "suggestions",
+  "content": { "prompts": ["Update the shipping address too"] } }
+```
+
+**Chips are content.** They ride the same activity envelope as charts, so they
+persist and a reload puts them back, and a set pushed under an id already on
+screen replaces that row rather than adding a second one.
+
+At most **4** prompts of **120** characters each — `MAX_SUGGESTIONS` and
+`MAX_SUGGESTION_CHARS`, both exported. The server-side helper *raises* past
+those bounds while this side silently drops: that asymmetry is deliberate, since
+the producer can report the problem and the client cannot.
+
+Nothing to enable. A `suggestions` activity from a server that pushes one is
+drawn; an `activity_type` this component does not know is ignored, which is what
+the open field is for.
+
 ## Message actions: copy, retry, feedback
 
 Every finished assistant message carries a small row of actions beneath it —
@@ -1845,6 +1875,8 @@ re-export point. Internal modules import from leaf paths.
 | `CustomAgentDetail` | type | `ag-ui-custom` detail: an AG-UI `CUSTOM` event's `name` and `value`, verbatim. |
 | `InvalidateDetail` | type | `ag-ui-invalidate` detail: the resource `keys` that moved, and the `reason`. |
 | `FeedbackDetail` | type | `ag-ui-feedback` detail: the rated message's `content` and the `rating`. |
+| `renderSuggestionChips` | function | Draw a `suggestions` activity as chips that send themselves; `null` when nothing survives. |
+| `suggestionPrompts` | function | The usable prompts in a `suggestions` activity's content, bounded and trimmed. |
 | `attachMessageActions` | function | Give a finished bubble its action row (copy, and feedback when a handler is passed). |
 | `messageActionBar` | function | The empty action row for a bubble, created if it has none — the shared shell both callers use. |
 | `MessageActionsOptions` | type | What `attachMessageActions` takes: `strings`, a `text` source, an optional `onFeedback`. |
@@ -1926,6 +1958,9 @@ re-export point. Internal modules import from leaf paths.
 | `CUSTOM_AGENT_EVENT` | The agent-`CUSTOM` CustomEvent name (`ag-ui-custom`). |
 | `INVALIDATE_EVENT` | The resource-invalidation CustomEvent name (`ag-ui-invalidate`). |
 | `FEEDBACK_EVENT` | The message-rating CustomEvent name (`ag-ui-feedback`). |
+| `SUGGESTIONS_ACTIVITY_TYPE` | The `activity_type` carrying follow-up prompts (`suggestions`). |
+| `MAX_SUGGESTIONS` | Most prompts one push draws (4). Mirrors the server's cap. |
+| `MAX_SUGGESTION_CHARS` | Longest one prompt may be (120). Mirrors the server's cap. |
 | `INVALIDATE_CUSTOM_NAME` | The AG-UI `CUSTOM` `name` that carries one (`ag_ui.invalidate`). |
 | `ATTACHMENT_EVENT` | The attachments-changed CustomEvent name (`ag-ui-attachments`). |
 | `STATE_EVENT` | The shared-state CustomEvent name (`ag-ui-state`). |
@@ -2071,6 +2106,7 @@ component sets, so a new one cannot ship undocumented.
 | Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
+| Follow-up suggestions | `suggestions`, `suggestion-chip` |
 | Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`) |
 | Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-icon`, `run-notice-text` |
 | Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval` |

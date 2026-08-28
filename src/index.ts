@@ -15,6 +15,7 @@ export {
   RUN_FINISHED_EVENT,
   STATE_EVENT,
   SUBMIT_EVENT,
+  SUGGESTIONS_ACTIVITY_TYPE,
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
@@ -165,6 +166,12 @@ export {
   requestQuestion,
 } from "./ui/question_card.js";
 export { type RenderMarkdownOptions, renderMarkdown } from "./ui/render_markdown.js";
+export {
+  MAX_SUGGESTION_CHARS,
+  MAX_SUGGESTIONS,
+  renderSuggestionChips,
+  suggestionPrompts,
+} from "./ui/suggestion_chips.js";
 export {
   type SettledStatus,
   ToolCallCard,

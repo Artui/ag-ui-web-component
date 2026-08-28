@@ -132,6 +132,8 @@ export interface UiStrings {
   details: string;
 
   // ── Confirmation card ───────────────────────────────────────────────────────
+  /** `aria-label` of the follow-up suggestion chips row. */
+  suggestions: string;
   /** `aria-label` of a message's action row. */
   messageActions: string;
   /** Copy this message (button `title` / `aria-label`). Its confirmation and
@@ -309,6 +311,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   declinedLabel: "Declined",
   details: "Details",
 
+  suggestions: "Suggested follow-ups",
   messageActions: "Message actions",
   copyMessage: "Copy message",
   retryMessage: "Try again",

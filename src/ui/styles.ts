@@ -2051,6 +2051,34 @@ export const STYLES = `
   border-color: var(--_accent);
 }
 
+/* Follow-up suggestion chips. Deliberately the skill chips' shape rather than a
+   second chip vocabulary -- both are "a question you could ask", and the only
+   difference is who chose it. Inside the transcript, so they scroll with the
+   answer they follow instead of hovering above the composer. */
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: stretch;
+}
+
+.suggestion-chip {
+  border: 1px solid var(--_border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 0.9em;
+  text-align: left;
+  cursor: pointer;
+  background: var(--_assistant-bg);
+  color: var(--_fg);
+}
+
+.suggestion-chip:hover,
+.suggestion-chip:focus-visible {
+  border-color: var(--_accent);
+}
+
 .skill-palette {
   margin: 8px 12px 0;
   display: flex;

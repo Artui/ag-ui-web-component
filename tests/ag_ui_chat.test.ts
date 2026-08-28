@@ -1428,6 +1428,78 @@ describe("AgUiChat", () => {
     expect(seen).toEqual([{ content: "an answer", rating: "up" }]);
   });
 
+  it("draws server-pushed follow-up chips and sends the one that is clicked", async () => {
+    // The content shape is django-ag-ui's `suggestions_activity()` output,
+    // copied from a run of the real producer rather than invented here: a
+    // helper describing a wire no server writes makes every test agree with it.
+    const sent: string[] = [];
+    const { el } = mountWithAgent((emit) => {
+      emit.activity(
+        "suggestions",
+        { prompts: ["Update the shipping address too", "Show me the order history"] },
+        "suggestions-1",
+      );
+      emit.textEnd("Done.");
+    });
+    el.addEventListener(SUBMIT_EVENT, (e) => {
+      sent.push((e as CustomEvent<SubmitDetail>).detail.content);
+    });
+
+    await send(el, "refund it");
+    const chips = [...shadow(el).querySelectorAll<HTMLButtonElement>(".suggestion-chip")];
+    expect(chips.map((c) => c.textContent)).toEqual([
+      "Update the shipping address too",
+      "Show me the order history",
+    ]);
+
+    chips[1]?.click();
+    await flush();
+
+    expect(sent).toEqual(["refund it", "Show me the order history"]);
+  });
+
+  it("puts the chips back on reload, because they are content", async () => {
+    // The reason for riding the activity envelope rather than a CUSTOM event:
+    // a restored thread gets its offers back with no persistence of our own.
+    //
+    // Driven from a *stored* activity message, the way the chart replay cases
+    // are, rather than by sending one and reloading: the fake agent does not
+    // add an activity message to its own list, so a send-then-reload test would
+    // be asserting against a wire the fake writes and no server does.
+    const store = new SessionStorageStore();
+    store.saveMessages(store.threadId(), [
+      { id: "m1", role: "user", content: "refund it" },
+      {
+        id: "s1",
+        role: "activity",
+        activityType: "suggestions",
+        content: { prompts: ["Update the shipping address too"] },
+      },
+    ] as never);
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.conversationStore = store;
+    el.agentFactory = () => makeFakeAgent({ script: (emit: Emit) => emit.runEnd() }).agent;
+    document.body.appendChild(el);
+    for (let i = 0; i < 8; i += 1) {
+      await Promise.resolve();
+    }
+
+    const chips = [...shadow(el).querySelectorAll<HTMLButtonElement>(".suggestion-chip")];
+    expect(chips.map((c) => c.textContent)).toEqual(["Update the shipping address too"]);
+  });
+
+  it("draws nothing for a suggestions activity with nothing usable in it", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.activity("suggestions", { prompts: [] }, "suggestions-1");
+      emit.textEnd("Done.");
+    });
+
+    await send(el, "go");
+
+    expect(shadow(el).querySelectorAll(".suggestions")).toHaveLength(0);
+  });
+
   it("renders a tool-call card with the frontend tool's x-summary label", async () => {
     let round = 0;
     const { el } = mountWithAgent((emit) => {
