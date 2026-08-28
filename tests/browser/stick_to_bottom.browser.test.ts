@@ -100,6 +100,26 @@ describe("the transcript under a real layout", () => {
     expect(getComputedStyle(jumpButton(el)).display).toBe("none");
   });
 
+  it("sits over the transcript, not over the composer", async () => {
+    // Found by driving the demo, not by testing: `display !== "none"` passes
+    // just as happily for a button floating on top of the composer, which is
+    // where it landed when it was positioned against the panel. The panel's
+    // foot is below the composer, the skill chips and the footer; only the
+    // transcript's own box has the transcript's foot.
+    const { el, messages } = mountTall();
+    await scrollTo(messages, 0);
+    el.appendMessage(MESSAGE_ROLE.ASSISTANT, "arriving mid-read");
+
+    const button = jumpButton(el).getBoundingClientRect();
+    const list = messages.getBoundingClientRect();
+    const composer = el.shadowRoot?.querySelector(".input-row")?.getBoundingClientRect();
+
+    expect(button.bottom).toBeLessThanOrEqual(list.bottom);
+    expect(button.top).toBeGreaterThanOrEqual(list.top);
+    expect(composer).toBeDefined();
+    expect(button.bottom).toBeLessThanOrEqual(composer?.top ?? 0);
+  });
+
   it("disables the browser's own scroll anchoring, which competes for the job", () => {
     const { messages } = mountTall();
 

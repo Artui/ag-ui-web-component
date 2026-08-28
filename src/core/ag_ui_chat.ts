@@ -477,6 +477,17 @@ export class AgUiChat extends HTMLElement {
   readonly #announcer = document.createElement("div");
   /** Return-to-foot affordance, shown only once something has been missed. */
   readonly #jumpButton = document.createElement("button");
+  /**
+   * Positioning context for {@link AgUiChat.#jumpButton}.
+   *
+   * The button cannot live in the scrolling list -- it would scroll away with
+   * the content it is offering to scroll to -- and it cannot be positioned
+   * against the panel either: the panel's foot is below the composer, the skill
+   * chips and the footer, so `bottom` measured from there lands the button on
+   * top of the composer rather than over the transcript. This wrapper is the
+   * only box whose foot *is* the transcript's foot.
+   */
+  readonly #messagesWrap = document.createElement("div");
   /** Follows the foot of the transcript, and stops when the reader scrolls away. */
   #scroller!: StickToBottom;
   /** Pending clear of {@link AgUiChat.#announcer}; see why it is cleared at all. */
@@ -2510,12 +2521,14 @@ export class AgUiChat extends HTMLElement {
     inputRow.append(composer, this.#fileInput);
     // Skill surfaces sit just above the input: palette (opens on `/`), chips,
     // the missing-placeholder hint, and the pending-attachments tray.
+    this.#messagesWrap.className = "messages-wrap";
+    // Sibling of the list inside a shared box, not a child of it: the
+    // affordance offering to scroll must not scroll away with the content.
+    this.#messagesWrap.append(this.#messages, this.#jumpButton);
+
     this.#chat.append(
       header,
-      this.#messages,
-      // Sibling of the list, not a child of it: the affordance offering to
-      // scroll must not scroll away with the content.
-      this.#jumpButton,
+      this.#messagesWrap,
       this.#skillsMenu.palette,
       this.#skillsMenu.chips,
       this.#skillHint,

@@ -571,6 +571,7 @@ export const STYLES = `
   opacity: 0;
 }
 
+:host([collapsed]:is([placement="embedded"], [placement="page"])) .messages-wrap,
 :host([collapsed]:is([placement="embedded"], [placement="page"])) .messages,
 :host([collapsed]:is([placement="embedded"], [placement="page"])) .input-row,
 :host([collapsed]:is([placement="embedded"], [placement="page"])) .skill-chips,
@@ -582,11 +583,21 @@ export const STYLES = `
 /* Jump-to-latest: shown only once the reader has scrolled away *and* missed
    something. Anchored to the panel rather than the list so it does not scroll
    with the content it is offering to scroll to. */
+/* The transcript's own box, and the only one whose foot is the transcript's
+   foot. The panel's foot is below the composer, the chips and the footer. */
+.messages-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .jump-latest {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(var(--_pad) * 2);
+  bottom: var(--_pad);
   z-index: 2;
   display: none;
   align-items: center;
@@ -594,7 +605,13 @@ export const STYLES = `
   padding: 0.4em 0.9em;
   border: 1px solid var(--_border);
   border-radius: 999px;
-  background: var(--_bg);
+  /* A raised surface, not the panel's own background. Reusing --_bg made the
+     pill the same colour as everything behind it, leaving a 1px border and a
+     shadow to carry the whole affordance -- and a dark-on-dark shadow carries
+     nothing. --_hover is the token that already means "lifted off the panel",
+     and it separates in both themes without competing with the accent the send
+     button owns. */
+  background: var(--_hover);
   color: var(--_text);
   font: inherit;
   font-size: 0.85em;
