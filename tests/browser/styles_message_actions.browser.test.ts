@@ -110,6 +110,25 @@ describe("the message action row", () => {
     );
   });
 
+  it("stays closer to its own message than to whatever follows", () => {
+    // Found by driving the demo, not by any assertion here -- which is the
+    // point of this case existing. Every check above was satisfied by a row
+    // 16px below its message and 10px above the next tool card: correctly
+    // ordered, correctly contained, and reading as though the buttons belonged
+    // to the card underneath. The answer group is a flex column with its own
+    // gap, so a positive margin adds to that gap instead of tightening it.
+    const { root, bubble } = withActions(PANEL);
+    const bar = root.querySelector(".message-actions") as HTMLElement;
+    const after = document.createElement("div");
+    after.style.height = "40px";
+    bar.after(after);
+
+    const above = bar.getBoundingClientRect().top - bubble.getBoundingClientRect().bottom;
+    const below = after.getBoundingClientRect().top - bar.getBoundingClientRect().bottom;
+
+    expect(above).toBeLessThan(below);
+  });
+
   it("keeps the actions quieter than the answer they belong to", () => {
     const { root, bubble } = withActions(PANEL);
     const [retry] = actions(root);
