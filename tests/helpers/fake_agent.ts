@@ -38,6 +38,16 @@ export interface Emit {
   activityDeltaOrphan(activityType: string, messageId: string): void;
   /** An ordinary message change, with no chart waiting on it. */
   messagesChanged(): void;
+  /**
+   * Apply an AG-UI `MESSAGES_SNAPSHOT`.
+   *
+   * Mirrors what `@ag-ui/client` does with the real event: **replace** the
+   * agent's message list wholesale, then notify subscribers. The replacement is
+   * the part that matters -- the client never hands the subscriber the event,
+   * only the applied result, and anything reading `agent.messages` afterwards
+   * sees the server's list rather than the one the run built.
+   */
+  messagesSnapshot(next: ReadonlyArray<{ id: string; role: string; content: string }>): void;
   reasoningStart(): void;
   /**
    * One reasoning *delta*, not the buffer so far. `@ag-ui/client` hands the
@@ -188,6 +198,20 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
       });
     },
     messagesChanged: () => dispatch(s, "onMessagesChanged", { messages: [] }),
+    messagesSnapshot: (next) => {
+      agent.applyMessagesSnapshot(next);
+      const applied = next.map((m) => ({
+        ...m,
+      })) as SubscriberParams<"onMessagesChanged">["messages"];
+      // Both, and in this order, because that is what the real client does:
+      // it applies the event, then emits the generic change. A fake that only
+      // dispatched the snapshot event would let a handler reading the changed
+      // list go green while the list it actually persists is a different one.
+      dispatch(s, "onMessagesSnapshotEvent", {
+        event: { type: EventType.MESSAGES_SNAPSHOT, messages: [...applied] },
+      });
+      dispatch(s, "onMessagesChanged", { messages: applied });
+    },
     // Models the real order, which is the opposite of what it looks like:
     // `@ag-ui/client` dispatches `onActivityDeltaEvent` **first**, with the
     // message still holding its *pre*-patch content, and only then applies the
@@ -272,6 +296,8 @@ export interface FakeAgentHandle {
 /** What the emitter needs from the agent to apply state the way the real one does. */
 interface FakeAgentInternals {
   applyState(snapshot: Record<string, unknown>): void;
+  /** Replace the agent's message list, as `MESSAGES_SNAPSHOT` does. */
+  applyMessagesSnapshot(next: ReadonlyArray<{ id: string; role: string; content: string }>): void;
 }
 
 /** The subset of `RunAgentParameters` the fake records / hands to the script. */
@@ -292,6 +318,15 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
     agent: undefined as unknown as AbstractAgent,
   };
   const subscribers: AgentSubscriber[] = [];
+  const applyMessagesSnapshot = (
+    next: ReadonlyArray<{ id: string; role: string; content: string }>,
+  ): void => {
+    // Wholesale replacement, in place, because `agent.messages` is the same
+    // array reference the handle exposes -- which is exactly how the real
+    // client's list behaves and why anything reading it later sees the
+    // server's version rather than the one the run built.
+    messages.splice(0, messages.length, ...next.map((m) => ({ ...m })));
+  };
   const applyState = (snapshot: Record<string, unknown>): void => {
     agent.state = { ...snapshot };
     for (const subscriber of subscribers) {
@@ -330,7 +365,10 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
         throw opts.throwOnRun;
       }
       const state: EmitState = { terminal: false, reasoning: "" };
-      await opts.script?.(emitter(subscriber, state, { applyState }), params);
+      await opts.script?.(
+        emitter(subscriber, state, { applyState, applyMessagesSnapshot }),
+        params,
+      );
       // A real run that streamed cleanly emits RUN_FINISHED with an ordinary
       // outcome and *then* finalizes — both, in that order. Emitting only the
       // finalize left the client's normal RUN_FINISHED path unreached: the fake

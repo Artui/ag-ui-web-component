@@ -109,6 +109,16 @@ export interface AgUiClientHandlers {
   /** Fired when the reasoning block ends (before the answer text streams). */
   onReasoningEnd(): void;
   onRunEnd(): void;
+  /**
+   * The server replaced the whole conversation with `MESSAGES_SNAPSHOT`.
+   *
+   * `@ag-ui/client` applies the event before any subscriber sees it, so by the
+   * time this fires `agent.messages` **is** the server's list -- and the run
+   * loop persists `agent.messages`. The replacement therefore reaches the
+   * conversation store whatever the host does; this hook exists so the host can
+   * stop that being invisible.
+   */
+  onMessagesSnapshot(messages: readonly Message[]): void;
   onError(message: string): void;
   /**
    * Fired when the user cancelled the run ({@link AgUiClient.cancel}) — the
@@ -483,6 +493,9 @@ export class AgUiClient {
       // Emitted after the client has written the patched messages, which is the
       // first moment the result exists. Only the ids marked above are looked at,
       // so an ordinary text delta does not walk the transcript.
+      onMessagesSnapshotEvent({ event }) {
+        h.onMessagesSnapshot(event.messages as readonly Message[]);
+      },
       onMessagesChanged({ messages }) {
         if (pendingDeltas.size === 0) {
           return;

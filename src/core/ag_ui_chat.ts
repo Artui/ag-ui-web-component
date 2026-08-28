@@ -3331,6 +3331,27 @@ export class AgUiChat extends HTMLElement {
           "compaction",
         );
       },
+      onMessagesSnapshot: () => {
+        // Honoured for persistence and announced, not re-rendered.
+        //
+        // The store follows the server, because the server is authoritative
+        // about what the conversation *is* -- and it would follow it anyway:
+        // `@ag-ui/client` replaces `agent.messages` before any subscriber runs,
+        // and the run loop persists `agent.messages`. What was wrong was that
+        // it happened in silence, so the screen and the store disagreed and
+        // nobody found out until a reload served a transcript they had never
+        // seen. That is not reportable as a bug; it is reportable as "the chat
+        // lost my messages".
+        //
+        // Re-rendering from the snapshot was the other candidate and is
+        // declined: a snapshot can land mid-run, and rebuilding the transcript
+        // then would destroy the in-flight run's own UI state -- the streaming
+        // bubble, the open answer group, and every tool card keyed by call id,
+        // some of which are still waiting on results. Telling the reader costs
+        // none of that, and this is the same answer the same question already
+        // got for compaction, one handler up.
+        this.#appendNotice("\u{1F504}", this.#strings.historyReplaced, "history-replaced");
+      },
       onToolResult: (toolCallId, content) => {
         const card = this.#toolCards.get(toolCallId);
         if (card === undefined) {
@@ -3679,8 +3700,33 @@ export class AgUiChat extends HTMLElement {
       // entirely because the *stored* content is the version we could not draw.
       // Live and reload should agree, and both should say "gone" rather than
       // one of them lying.
+      //
+      // Removing is right; doing it in silence was not. There was no `console`
+      // call anywhere on this path and nothing on screen, so a chart that had
+      // been drawn simply disappeared -- which nobody reports as a bug, they
+      // report it as "the charts are flaky". The tool path has always answered
+      // this properly by returning `REJECTED` to the model; the push path has no
+      // model to answer to, so it answers to the two audiences it does have.
+      const had = this.#activityBlocks.has(messageId);
       this.#activityBlocks.get(messageId)?.remove();
       this.#activityBlocks.delete(messageId);
+      // The commonest cause by far, named because the reader cannot see the
+      // payload: a numeric field that arrived as a JSON string. A Django `Sum`
+      // over a `DecimalField` serialises that way, and money is the most common
+      // chart input there is. The server refuses to coerce it on purpose, and so
+      // does this -- guessing whether "1234.50" already lost precision upstream
+      // is not a favour worth doing.
+      console.warn(
+        `ag-ui-chat: chart ${messageId} was not drawable and has been removed. ` +
+          "Every point must be a finite JSON number; a numeric column serialised " +
+          "as a string (a Decimal, typically) is rejected rather than coerced.",
+        content,
+      );
+      // Only when something was on screen: a spec that never drew has nothing
+      // to explain the disappearance of, and a notice would be noise.
+      if (had) {
+        this.#appendNotice("\u{1F4C9}", this.#strings.chartUndrawable, "chart-undrawable");
+      }
       return;
     }
     const existing = this.#activityBlocks.get(messageId);

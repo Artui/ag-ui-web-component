@@ -9,6 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A server that replaced the conversation did it in silence.** AG-UI's
+  `MESSAGES_SNAPSHOT` is applied by `@ag-ui/client` before any subscriber runs,
+  so `agent.messages` **is** the server's list by the time the host sees
+  anything — and the run loop persists `agent.messages`. The replacement
+  therefore reached the conversation store either way, while the DOM was
+  untouched. Nothing looked wrong until a reload, in a later session, served a
+  transcript the user had never seen, with no event that could be correlated to
+  it. That is not reported as a bug; it is reported as "the chat lost my
+  messages".
+
+  The store still follows the server, deliberately — the server is authoritative
+  about what the conversation *is*, and it would follow it regardless. What
+  changes is that the replacement is now announced in the transcript.
+
+  **Re-rendering from the snapshot was the other candidate and is declined.** A
+  snapshot can land mid-run, and rebuilding the transcript then destroys the
+  in-flight run's own state: the streaming bubble, the open answer group, and
+  every tool card keyed by call id, some still waiting on results. This is the
+  same answer the same question already got for compaction.
+
+- **One string-valued point silently dropped a whole chart that was on screen.**
+  `chartSpecFrom` returns `null` for the entire spec when any point is not a
+  finite number — not the offending series, the whole chart — and the pushed
+  activity path then removed any chart already rendered and returned, with no
+  `console` call anywhere on that path. The triggering shape is not exotic: a
+  Django `Sum` over a `DecimalField` serialises as a JSON string, and money is
+  the most common chart input there is.
+
+  **Removing it is still right** and is unchanged: leaving retracted numbers on
+  screen reading as current is worse, and a reload drops the chart anyway
+  because the *stored* content is the version that could not be drawn. Live and
+  reload should agree. What was wrong was doing it silently. The path now warns
+  on the console naming the likely cause, and posts a notice in the transcript
+  when a chart that had been drawn is taken away.
+
+  Nothing is coerced, client-side or server-side. `django-ag-ui` already raises
+  at construction and names `Decimal` on purpose, and guessing whether
+  `"1234.50"` lost precision upstream is not a favour worth doing.
+
+
 - **A screen reader re-announced the whole answer tens of times per turn.** The
   transcript carried both `role="log"` and an explicit `aria-live="polite"`,
   and the streaming bubble's `innerHTML` is replaced inside it on every
