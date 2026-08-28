@@ -1697,12 +1697,19 @@ export class AgUiChat extends HTMLElement {
     return this.getAttribute("data-quote-selection") !== "false";
   }
 
-  /** Offer to quote the settled selection, or retire the offer. */
-  #onSelectionSettled(): void {
+  /**
+   * Offer to quote the settled selection, or retire the offer.
+   *
+   * `event` is passed for its coordinates and only those: they say which line
+   * of a selection spanning several messages the offer should hang from. A
+   * keyboard selection has none, and the first line is used instead.
+   */
+  #onSelectionSettled(event?: MouseEvent): void {
     if (!this.#quoteEnabled()) {
       return;
     }
-    const selected = quotableSelection(this.#messages, [this.#root]);
+    const near = event === undefined ? undefined : { x: event.clientX, y: event.clientY };
+    const selected = quotableSelection(this.#messages, [this.#root], near);
     if (selected === null) {
       this.#hideQuote();
       return;
@@ -2821,7 +2828,7 @@ export class AgUiChat extends HTMLElement {
     // `selectionchange` so the offer does not chase the pointer mid-drag; the
     // second half of the same gesture, `mousedown`, retires the previous offer
     // before the new selection exists.
-    this.#messages.addEventListener("mouseup", () => this.#onSelectionSettled());
+    this.#messages.addEventListener("mouseup", (event) => this.#onSelectionSettled(event));
     this.#messages.addEventListener("keyup", () => this.#onSelectionSettled());
     this.#messages.addEventListener("mousedown", () => this.#hideQuote());
 

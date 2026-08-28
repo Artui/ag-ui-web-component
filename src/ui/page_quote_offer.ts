@@ -128,7 +128,10 @@ export function attachQuoteOffer(options: PageQuoteOfferOptions): PageQuoteOffer
       hide();
       return;
     }
-    const selected = quotableSelection(within);
+    // The pointer's own coordinates, where there was one: they decide which
+    // line of a multi-line selection the offer hangs from.
+    const near = event instanceof MouseEvent ? { x: event.clientX, y: event.clientY } : undefined;
+    const selected = quotableSelection(within, [], near);
     if (selected === null) {
       hide();
       return;

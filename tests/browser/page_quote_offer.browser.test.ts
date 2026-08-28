@@ -53,6 +53,68 @@ function drag(node: Text, start: number, end: number): DOMRect {
   return range.getBoundingClientRect();
 }
 
+/**
+ * The reported case: a drag across a stack of elements of very different
+ * widths, one of them running under a panel docked at the side.
+ *
+ * Returns the selectable lines and the panel the offer must not land on.
+ */
+function stackedPage(): { lines: readonly Text[] } {
+  const panel = document.createElement("div");
+  panel.style.cssText =
+    "position: fixed; top: 0; right: 0; width: 40%; height: 100%; background: #eee;";
+  document.body.append(panel);
+
+  const within = document.createElement("div");
+  within.style.cssText = "position: fixed; top: 120px; left: 0; width: 100%;";
+  const texts: Text[] = [];
+  for (const [width, words] of [
+    ["120px", "Status Draft"],
+    ["120px", "Featured on homepage"],
+    // Full width, so it runs under the panel -- which is what drags the union
+    // box's centre out from under the selection and onto the panel.
+    ["100%", "Try: create an article titled Hello and then save it"],
+  ] as const) {
+    const p = document.createElement("p");
+    p.style.cssText = `margin: 0 0 8px; width: ${width};`;
+    p.textContent = words;
+    within.append(p);
+    texts.push(p.firstChild as Text);
+  }
+  document.body.append(within);
+
+  live = attachQuoteOffer({
+    within,
+    label: "Quote",
+    exclude: panel,
+    onQuote: () => {},
+  });
+  return { lines: texts };
+}
+
+/** Select across `lines`, releasing the pointer over `release`. */
+function dragAcross(lines: readonly Text[], release: Text): void {
+  const range = document.createRange();
+  range.setStart(lines[0] as Text, 0);
+  const last = lines[lines.length - 1] as Text;
+  range.setEnd(last, last.length);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  const at = document.createRange();
+  at.setStart(release, 0);
+  at.setEnd(release, 1);
+  const point = at.getBoundingClientRect();
+  (lines[0] as Text).parentElement?.parentElement?.dispatchEvent(
+    new MouseEvent("mouseup", {
+      bubbles: true,
+      composed: true,
+      clientX: point.left,
+      clientY: point.top,
+    }),
+  );
+}
+
 afterEach(() => {
   live?.detach();
   live = null;
@@ -102,3 +164,73 @@ describe("where the page offer lands", () => {
     expect(offer().getBoundingClientRect().right).toBeLessThanOrEqual(width + SLACK);
   });
 });
+
+/**
+ * A selection is not a box; its *union* is.
+ *
+ * The reported failure: a drag from a narrow column down to a full-width line
+ * that ran under the chat panel docked beside it. The union then reached from
+ * the column's left edge to the far end of that wide line, and its centre
+ * landed most of the way across the page -- on a line the user had not been
+ * looking at, behind the panel, while the pointer had let go by the column.
+ *
+ * So the fix is not "keep the offer over selected text": the union's centre
+ * *was* over selected text, just not over any of it the user could see. It is
+ * that the offer hangs off **one line** -- the one the gesture ended on.
+ */
+describe("a selection spanning several elements", () => {
+  it("hangs the offer off the line under the pointer, not the middle of the union", () => {
+    const { lines } = stackedPage();
+    const first = lines[0] as Text;
+
+    dragAcross(lines, first);
+
+    const placed = offer().getBoundingClientRect();
+    // Within the horizontal span of the *element* the pointer was over. The
+    // union of this selection is the full page width, because its last line
+    // runs under the panel -- so its centre is nowhere near this 120px column.
+    const column = (first.parentElement as HTMLElement).getBoundingClientRect();
+    const centre = placed.left + placed.width / 2;
+    expect(centre).toBeGreaterThanOrEqual(column.left - SLACK);
+    expect(centre).toBeLessThanOrEqual(column.right + SLACK);
+  });
+
+  it("follows the pointer to the last line when the drag ended there", () => {
+    const { lines } = stackedPage();
+    const last = lines[lines.length - 1] as Text;
+
+    dragAcross(lines, last);
+
+    const placed = offer().getBoundingClientRect();
+    // Vertically adjacent to the line the pointer let go on, which is what
+    // "beside the selection" has to mean once the selection is several lines.
+    expect(Math.abs(firstRectOf(last).top - placed.bottom)).toBeLessThanOrEqual(GAP + SLACK);
+  });
+
+  it("uses the first line for a keyboard selection, which has no pointer", () => {
+    const { lines } = stackedPage();
+    const range = document.createRange();
+    range.setStart(lines[0] as Text, 0);
+    const last = lines[lines.length - 1] as Text;
+    range.setEnd(last, last.length);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+
+    (lines[0] as Text).parentElement?.parentElement?.dispatchEvent(
+      new KeyboardEvent("keyup", { bubbles: true, key: "ArrowDown" }),
+    );
+
+    const placed = offer().getBoundingClientRect();
+    expect(Math.abs(firstRectOf(lines[0] as Text).top - placed.bottom)).toBeLessThanOrEqual(
+      GAP + SLACK,
+    );
+  });
+});
+
+/** The line box of `node`'s first character. */
+function firstRectOf(node: Text): DOMRect {
+  const range = document.createRange();
+  range.setStart(node, 0);
+  range.setEnd(node, 1);
+  return range.getBoundingClientRect();
+}

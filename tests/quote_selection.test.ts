@@ -96,6 +96,34 @@ describe("quotableSelection", () => {
     expect(quotableSelection(container, [root])?.text).toBe("second");
   });
 
+  it("takes only the text the range touches, not the whole subtree", () => {
+    const { container, root } = fixture();
+    // Two more paragraphs around the first, so the walk over the common
+    // ancestor reaches text on both sides of the selection.
+    const before = document.createElement("p");
+    before.textContent = "text above the selection";
+    const after = document.createElement("p");
+    after.textContent = "text below the selection";
+    const middle = container.querySelector("p") as HTMLElement;
+    container.prepend(before);
+    container.append(after);
+
+    // Ends inside the *third* paragraph, so the common ancestor is the
+    // container and the walk reaches the first paragraph as well -- which is
+    // the node that has to be left out.
+    const range = document.createRange();
+    range.setStart(middle.firstChild as Text, 0);
+    range.setEnd(after.firstChild as Text, 4);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const quoted = quotableSelection(container, [root])?.text ?? "";
+
+    expect(quoted).toContain("the second paragraph");
+    expect(quoted).not.toContain("above");
+  });
+
   it("returns null when nothing is selected", () => {
     const { container, root } = fixture();
 
@@ -149,6 +177,22 @@ describe("quotableSelection", () => {
     }
   });
 
+  /**
+   * The engines that predate `checkVisibility` -- Safari shipped it in 17.4 and
+   * this package supports 17. There, every text node is quoted, which is the
+   * behaviour that came before: quoting a few invisible words is a smaller
+   * failure than dropping visible ones to a hand-rolled visibility test.
+   */
+  it("quotes everything on an engine that cannot say what is rendered", () => {
+    const { container, root, inner } = fixture();
+    const parent = inner.parentElement as HTMLElement;
+    Object.defineProperty(parent, "checkVisibility", { configurable: true, value: undefined });
+
+    select(inner, 4, 10);
+
+    expect(quotableSelection(container, [root])?.text).toBe("second");
+  });
+
   it("falls back to the direct read when the composed one rescopes to the host", () => {
     const { container, root, host, inner } = fixture();
     // What an engine hands back for a shadow root it was not given permission
@@ -196,6 +240,22 @@ describe("asQuote", () => {
 
   it("treats CRLF and CR as line breaks", () => {
     expect(asQuote("one\r\ntwo\rthree")).toBe("> one\n> two\n> three\n\n");
+  });
+
+  /**
+   * The shape a real cross-block selection arrives in: the source's own
+   * newlines and indentation between one element and the next. Quoting the
+   * demo's form as marked up produced twenty-four lines, twelve of them a bare
+   * ">", every content line indented by wherever it sat in the HTML.
+   */
+  it("takes the markup's own layout back out", () => {
+    const asSelected = "\n      Status\n\n\n\n      Featured on homepage\n\n\n      Save\n\n";
+
+    expect(asQuote(asSelected)).toBe("> Status\n>\n> Featured on homepage\n>\n> Save\n\n");
+  });
+
+  it("keeps the shape of an indented block, removing only what every line shares", () => {
+    expect(asQuote("    def run():\n        return 1\n")).toBe("> def run():\n>     return 1\n\n");
   });
 
   it("caps a long selection", () => {

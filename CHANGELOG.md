@@ -40,6 +40,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guards is a feature rather than a snippet. `attachQuoteOffer` is exported for
   a host that wants it without the element.
 
+  **A selection across several elements is not a paragraph, and was treated as
+  one twice over.** The offer was hung off the selection's *bounding box*, whose
+  centre belongs to no line -- a drag from a form's left column down to a
+  full-width line running under the chat panel put the offer on the panel,
+  pointing at a line the user had never looked at. It now hangs off the line the
+  gesture ended on, or the first line for a keyboard selection. And the text was
+  read with `Range.toString()`, which concatenates text nodes and asks nothing
+  about CSS: quoting a form returned the values of every `<option>` in a closed
+  `<select>`, the markup's own indentation on every line, and a blank `>` for
+  every gap between elements -- twenty-four lines of which twelve were empty.
+  The read is now what the engine says is rendered (`checkVisibility`), with the
+  whitespace a collapsing `white-space` collapses, and preformatted text passed
+  through so a quoted code block keeps its shape. Four leading spaces inside a
+  blockquote is a markdown code block, so this was a rendering defect and not
+  only an untidy one.
+
   Reading a selection out of a shadow tree is the part that takes care, and the
   component now does it properly: engines disagree about what
   `document.getSelection()` reports for a selection made inside a shadow root,
