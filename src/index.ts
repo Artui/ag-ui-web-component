@@ -4,6 +4,7 @@ export {
   ATTACHMENT_EVENT,
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
+  CUSTOM_AGENT_EVENT,
   ELEMENT_TAG,
   LOAD_CAPABILITY_TOOL,
   MAX_TOOL_ROUNDS,
@@ -23,6 +24,7 @@ export {
 export {
   AgUiChat,
   type AttachmentsDetail,
+  type CustomAgentDetail,
   type MessageRole,
   type RunFinishedDetail,
   type StateDetail,

@@ -1467,6 +1467,33 @@ substitute the other way round either, because shared state requires the *agent*
 `STATE_SNAPSHOT`, which is not the host's decision to make. Use state when the two ends edit one
 object; use this when your page owns the data and just needs to know it moved.
 
+**`ag-ui-custom`** *(event)* — the agent sent an AG-UI `CUSTOM` event.
+`detail: { name, value }` (typed `CustomAgentDetail`), both verbatim and uninterpreted.
+
+```js
+chat.addEventListener("ag-ui-custom", (e) => {
+  if (e.detail.name === "invalidate") {
+    void refetch(e.detail.value);
+  }
+  // Any other name: no listener, nothing happens. That is the intended outcome.
+});
+```
+
+`CUSTOM` is one of exactly two AG-UI carriers whose payload name is an open
+string the protocol does not enumerate, and it is the **imperative** one:
+something for your page to *do*. Its sibling `ACTIVITY_SNAPSHOT` carries
+transcript **content**, which is why an activity is materialised into a message,
+persisted with the thread and replayed on restore, and this is not.
+
+**That asymmetry is the rule for choosing between them.** Content has a place in
+the conversation and should replay. An imperative has no place and no meaning
+once acted on — replaying "refetch the board" on every thread load is a bug, not
+a feature. If it must survive a reload, it belongs on the other carrier.
+
+The element takes no view of what a name means and forwards every one, so a name
+it has never heard of reaches you unchanged. A host with no listener for a name
+simply ignores it, which is the graceful outcome an open field exists for.
+
 ## Resuming a run
 
 When the server persists run checkpoints (django-ag-ui's `step_store`), a run
@@ -1643,6 +1670,7 @@ re-export point. Internal modules import from leaf paths.
 | `PageState` | type | A page-state binding declaration. |
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
 | `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
+| `CustomAgentDetail` | type | `ag-ui-custom` detail: an AG-UI `CUSTOM` event's `name` and `value`, verbatim. |
 | `createStateHookTools(binding)` / `StateHook` | deprecated | The former names for `createPageStateTools` / `PageState`. |
 
 ### Durability
@@ -1716,6 +1744,7 @@ re-export point. Internal modules import from leaf paths.
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
+| `CUSTOM_AGENT_EVENT` | The agent-`CUSTOM` CustomEvent name (`ag-ui-custom`). |
 | `ATTACHMENT_EVENT` | The attachments-changed CustomEvent name (`ag-ui-attachments`). |
 | `STATE_EVENT` | The shared-state CustomEvent name (`ag-ui-state`). |
 | `CHART_ACTIVITY_TYPE` | The `ACTIVITY_SNAPSHOT` type a server sets to push a chart. |

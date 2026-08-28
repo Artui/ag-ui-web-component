@@ -119,6 +119,14 @@ export interface AgUiClientHandlers {
    * stop that being invisible.
    */
   onMessagesSnapshot(messages: readonly Message[]): void;
+  /**
+   * The agent sent a `CUSTOM` event.
+   *
+   * Forwarded whole and uninterpreted: `name` is an open string the protocol
+   * does not enumerate, so a client that decided which names were legal would
+   * be the thing the open field exists to avoid.
+   */
+  onCustomEvent(name: string, value: unknown): void;
   onError(message: string): void;
   /**
    * Fired when the user cancelled the run ({@link AgUiClient.cancel}) — the
@@ -493,6 +501,9 @@ export class AgUiClient {
       // Emitted after the client has written the patched messages, which is the
       // first moment the result exists. Only the ids marked above are looked at,
       // so an ordinary text delta does not walk the transcript.
+      onCustomEvent({ event }) {
+        h.onCustomEvent(event.name, event.value);
+      },
       onMessagesSnapshotEvent({ event }) {
         h.onMessagesSnapshot(event.messages as readonly Message[]);
       },

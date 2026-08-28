@@ -5,6 +5,7 @@ import {
   ATTACHMENT_EVENT,
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
+  CUSTOM_AGENT_EVENT,
   DEFAULT_ATTACHMENT_MAX_BYTES,
   ICON_ATTACH,
   ICON_LAUNCHER,
@@ -130,6 +131,14 @@ export interface ToolRun {
 export interface RunFinishedDetail {
   /** In settle order. Empty when the interaction called no tools. */
   readonly tools: readonly ToolRun[];
+}
+
+/** `detail` shape of the {@link CUSTOM_AGENT_EVENT} CustomEvent. */
+export interface CustomAgentDetail {
+  /** The `CUSTOM` event's `name`, verbatim. An open string; never interpreted here. */
+  readonly name: string;
+  /** Its `value`, verbatim and unparsed. `unknown` because the protocol says nothing about it. */
+  readonly value: unknown;
 }
 
 /** `detail` shape of the {@link TOGGLE_EVENT} CustomEvent. */
@@ -3329,6 +3338,20 @@ export class AgUiChat extends HTMLElement {
           "🗜",
           this.#strings.historyCompacted.replace("{count}", String(removed)),
           "compaction",
+        );
+      },
+      onCustomEvent: (name, value) => {
+        // Straight out to the host page, uninterpreted. This is the imperative
+        // carrier: whatever it means, it means it to the page, not to the
+        // transcript -- so it is dispatched and deliberately not rendered,
+        // persisted or replayed. A host that does not know the name simply has
+        // no listener, which is the graceful outcome the open field is for.
+        this.dispatchEvent(
+          new CustomEvent<CustomAgentDetail>(CUSTOM_AGENT_EVENT, {
+            detail: { name, value },
+            bubbles: true,
+            composed: true,
+          }),
         );
       },
       onMessagesSnapshot: () => {
