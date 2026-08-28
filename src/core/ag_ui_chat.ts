@@ -11,6 +11,8 @@ import {
   ICON_LAUNCHER,
   ICON_SEND,
   ICON_STOP,
+  INVALIDATE_CUSTOM_NAME,
+  INVALIDATE_EVENT,
   LOAD_CAPABILITY_TOOL,
   MESSAGE_ROLE,
   READ_PAGE_TOOL,
@@ -131,6 +133,21 @@ export interface ToolRun {
 export interface RunFinishedDetail {
   /** In settle order. Empty when the interaction called no tools. */
   readonly tools: readonly ToolRun[];
+  /**
+   * Every key announced during the interaction, de-duplicated, first-seen order.
+   *
+   * **This is the field that makes adoption one line** for a host already
+   * listening here, and the `else` is the whole compatibility story:
+   *
+   * ```js
+   * if (detail.invalidated.length > 0) refetchOnly(detail.invalidated);
+   * else if (detail.tools.some((t) => t.side === "server")) refetchEverything();
+   * ```
+   *
+   * Empty against a server that announces nothing, so an old server and a new
+   * client fall through to the coarse refetch that shipped before either.
+   */
+  readonly invalidated: readonly string[];
 }
 
 /**
@@ -177,6 +194,22 @@ export interface CustomAgentDetail {
   readonly name: string;
   /** Its `value`, verbatim and unparsed. `unknown` because the protocol says nothing about it. */
   readonly value: unknown;
+}
+
+/** `detail` shape of the {@link INVALIDATE_EVENT} CustomEvent. */
+export interface InvalidateDetail {
+  /**
+   * The resources that moved, as the server named them.
+   *
+   * **Opaque strings, and matching is exact.** `orders/42` does not imply
+   * `orders` -- a prefix rule would be this component guessing at a scheme it
+   * does not own, and `orders/1` would match `orders/11`. A server that wants
+   * the collection refreshed names it. Your own matching may be hierarchical,
+   * because in your vocabulary the scheme is known.
+   */
+  readonly keys: readonly string[];
+  /** What caused the write -- usually the tool's name. `null` when unstated. */
+  readonly reason: string | null;
 }
 
 /** `detail` shape of the {@link TOGGLE_EVENT} CustomEvent. */
@@ -528,6 +561,15 @@ export class AgUiChat extends HTMLElement {
    * Spans tool rounds and an approval interrupt; cleared when the event fires.
    */
   #runTools: { readonly id: string; readonly name: string }[] = [];
+  /**
+   * Keys announced during this interaction, de-duplicated in first-seen order.
+   *
+   * Per element, never module-level: a second mounted chat is a second run, and
+   * sharing this would tell one page to refetch on the other's writes. Reset by
+   * {@link AgUiChat.#dispatchRunFinished}, which is the one place that has read
+   * it.
+   */
+  #runInvalidated = new Set<string>();
   readonly #root: ShadowRoot;
   /** Screen-reader-only status region -- see {@link AgUiChat.#announce}. */
   readonly #announcer = document.createElement("div");
@@ -3388,6 +3430,10 @@ export class AgUiChat extends HTMLElement {
         this.#drawActivity(messageId, activityType, content);
       },
       onCustomEvent: (name, value) => {
+        if (name === INVALIDATE_CUSTOM_NAME) {
+          this.#dispatchInvalidation(value);
+          return;
+        }
         // Straight out to the host page, uninterpreted. This is the imperative
         // carrier: whatever it means, it means it to the page, not to the
         // transcript -- so it is dispatched and deliberately not rendered,
@@ -3514,9 +3560,48 @@ export class AgUiChat extends HTMLElement {
       side: this.#serverSettled.has(id) ? "server" : "client",
     }));
     this.#runTools = [];
+    const invalidated = [...this.#runInvalidated];
+    this.#runInvalidated = new Set<string>();
     this.dispatchEvent(
       new CustomEvent<RunFinishedDetail>(RUN_FINISHED_EVENT, {
-        detail: { tools },
+        detail: { tools, invalidated },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /**
+   * Route one invalidation to the host, and remember it for the run summary.
+   *
+   * Dispatched immediately rather than only at the end, because that is what
+   * makes a long multi-step run feel live -- the list refreshes as the third of
+   * eight writes lands. The accumulated set rides
+   * {@link RUN_FINISHED_EVENT} as well, so a host that would rather refetch once
+   * upgrades by reading one extra field instead of adding a listener.
+   *
+   * Nothing is rendered, persisted or replayed. An invalidation is an
+   * imperative: it has no place in the transcript and no meaning once acted on,
+   * and replaying one on every thread load would be a refetch storm. That is the
+   * whole reason the server sends it as `CUSTOM` rather than as an activity.
+   */
+  #dispatchInvalidation(value: unknown): void {
+    const payload = (value ?? {}) as { keys?: unknown; reason?: unknown };
+    // Defensive about the payload, not about the name: `value` is typed
+    // `unknown` by the protocol, so a server can put anything there, and a
+    // malformed announcement must not take the run down with it.
+    const keys = Array.isArray(payload.keys)
+      ? payload.keys.filter((key): key is string => typeof key === "string")
+      : [];
+    if (keys.length === 0) {
+      return;
+    }
+    for (const key of keys) {
+      this.#runInvalidated.add(key);
+    }
+    this.dispatchEvent(
+      new CustomEvent<InvalidateDetail>(INVALIDATE_EVENT, {
+        detail: { keys, reason: typeof payload.reason === "string" ? payload.reason : null },
         bubbles: true,
         composed: true,
       }),

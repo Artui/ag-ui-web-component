@@ -162,7 +162,9 @@ describe("run-finished event", () => {
     await el.sendMessage("hello");
     await flush();
 
-    expect(seen).toEqual([{ tools: [] }]);
+    // Exact equality on the whole detail, deliberately: the shape is public
+    // API, so a field appearing unannounced should fail here.
+    expect(seen).toEqual([{ tools: [], invalidated: [] }]);
   });
 
   it("fires after an error, because a partial write is still a write", async () => {
