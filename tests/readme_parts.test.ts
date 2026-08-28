@@ -44,7 +44,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   // ag_ui_chat message bubbles, by role.
   bubble: ["message", "message-user", "message-assistant"],
   approval_card: ["approval-button", "approval-approve", "approval-deny"],
-  confirmation_card: ["confirm-button", "confirm-confirm", "confirm-cancel"],
+  confirmation_card: ["confirm-button", "confirm-confirm", "confirm-cancel", "confirm-always"],
   checkpoint_menu: ["checkpoint-action", "checkpoint-resume", "checkpoint-fork"],
   // tool_call_card #section(kind, …) — the arguments and result regions.
   tool_call_card: [

@@ -1192,6 +1192,106 @@ describe("AgUiChat", () => {
     expect(shadow(el).querySelector(".confirm")).toBeNull();
   });
 
+  it("waives confirmation for the rest of the session once the user says so", async () => {
+    // A prompt approved nine times out of ten is not a decision, it is a speed
+    // bump -- and the reflex it trains is what makes the tenth one dangerous.
+    let round = 0;
+    const ran: string[] = [];
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "del", {});
+      }
+      round += 1;
+    });
+    el.registerTool({
+      name: "del",
+      description: "d",
+      parameters: { type: "object", "x-destructive": true },
+      handler: () => {
+        ran.push("del");
+        return "ok";
+      },
+    });
+
+    sendNoWait(el, "go");
+    await flush();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--always")?.click();
+    await flush();
+    expect(ran).toEqual(["del"]);
+
+    // The same destructive tool, a second turn later: no card this time.
+    round = 0;
+    await send(el, "again");
+
+    expect(ran).toEqual(["del", "del"]);
+    expect(shadow(el).querySelector(".confirm")).toBeNull();
+  });
+
+  it("waives only the tool that was waived", async () => {
+    let round = 0;
+    let next = "del";
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", next, {});
+      }
+      round += 1;
+    });
+    for (const name of ["del", "purge"]) {
+      el.registerTool({
+        name,
+        description: "d",
+        parameters: { type: "object", "x-destructive": true },
+        handler: () => "ok",
+      });
+    }
+
+    sendNoWait(el, "go");
+    await flush();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--always")?.click();
+    await flush();
+
+    round = 0;
+    next = "purge";
+    sendNoWait(el, "now purge");
+    await flush();
+
+    // A waiver is per tool name, not a blanket -- a blanket is what
+    // `autoConfirm` is for, and it is a deliberate configuration rather than
+    // one click on a card.
+    const card = shadow(el).querySelector(".confirm");
+    expect(card?.getAttribute("data-tool-name")).toBe("purge");
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
+    await flush();
+  });
+
+  it("offers no waiver where confirmPredicate is the one gating", async () => {
+    // The predicate is documented as authoritative, so letting one click retire
+    // it would silently defeat a host policy. No dead button either: the offer
+    // and the allowlist are on the same path.
+    let round = 0;
+    const { el } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("tc1", "noop", {});
+      }
+      round += 1;
+    });
+    el.confirmPredicate = () => true;
+    el.registerTool({
+      name: "noop",
+      description: "d",
+      parameters: { type: "object" },
+      handler: () => "ok",
+    });
+
+    sendNoWait(el, "go");
+    await flush();
+
+    expect(shadow(el).querySelector(".confirm")).not.toBeNull();
+    expect(shadow(el).querySelector(".confirm-btn--always")).toBeNull();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
+    await flush();
+  });
+
   it("renders a tool-call card with the frontend tool's x-summary label", async () => {
     let round = 0;
     const { el } = mountWithAgent((emit) => {

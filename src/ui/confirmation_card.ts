@@ -31,6 +31,16 @@ export interface ConfirmationOptions {
   signal?: AbortSignal;
   /** Localized strings; defaults to the English {@link DEFAULT_UI_STRINGS}. */
   strings?: UiStrings;
+  /**
+   * Offer a third button — "always allow, this session" — and call this when
+   * the user picks it. The card still resolves `true`: the extra decision is
+   * *in addition to* approving this call, not instead of it.
+   *
+   * Absent means no button, which is deliberate: presence of the handler is
+   * what enables it, so the affordance can never be rendered with nothing
+   * listening. A caller that cannot honour the waiver simply does not pass one.
+   */
+  onAlwaysAllow?: () => void;
 }
 
 /**
@@ -43,6 +53,12 @@ export interface ConfirmationOptions {
  * Answering it removes it: the record of the decision belongs to the tool card
  * this gates, which settles to `done` or `declined` and carries it. A spent
  * form left in place reads as still outstanding.
+ *
+ * With `onAlwaysAllow` set the card offers a third button. A prompt that is
+ * approved nearly every time is not a decision, it is a speed bump — and the
+ * reflex it trains is what makes the rare refusal easy to miss. Letting the
+ * user say "not this one again, this session" is the affordance that keeps the
+ * remaining prompts meaningful.
  */
 export function requestConfirmation(
   host: Node & ParentNode,
@@ -75,6 +91,10 @@ export function requestConfirmation(
     actions.setAttribute("part", "confirm-actions");
 
     const cancel = actionButton("cancel", strings.cancel);
+    const always =
+      options.onAlwaysAllow === undefined
+        ? null
+        : actionButton("always", strings.confirmAlways.replace("{tool}", request.toolName));
     const confirm = actionButton("confirm", strings.confirm);
 
     let settled = false;
@@ -93,9 +113,17 @@ export function requestConfirmation(
 
     cancel.addEventListener("click", () => close(false));
     confirm.addEventListener("click", () => close(true));
+    always?.addEventListener("click", () => {
+      // Recorded before resolving, so a caller that reads its own allowlist
+      // synchronously on the next call already sees this one.
+      options.onAlwaysAllow?.();
+      close(true);
+    });
     options.signal?.addEventListener("abort", () => close(false), { once: true });
 
-    actions.append(cancel, confirm);
+    // Confirm stays last, and rightmost: the waiver is the wider decision, and
+    // putting it where the eye lands for "yes" is how it gets taken by accident.
+    actions.append(cancel, ...(always === null ? [] : [always]), confirm);
     card.append(body, args, actions);
     host.appendChild(card);
     if (options.signal?.aborted === true) {

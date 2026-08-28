@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **"Always allow" on the confirmation card — a session-scoped waiver, per tool
+  name.** Confirmation was binary and permanent: `autoConfirm` is
+  all-or-nothing and `confirmPredicate` has no memory, so a tool the user
+  approves every single time keeps asking every single time.
+
+  A prompt approved nearly every time is not a decision, it is a speed bump, and
+  the reflex it trains is what makes the rare refusal easy to miss. Anthropic
+  published that users approve **~93%** of Claude Code permission prompts
+  manually and called interactive confirmation *"behaviorally unreliable as a
+  sole safety mechanism"* on exactly that basis. The waiver exists so the
+  prompts that remain still mean something.
+
+  **The button appears only where the `x-destructive` default is what gated the
+  call.** `confirmPredicate` is documented as authoritative, so letting one
+  click retire it would silently defeat a host policy — and because the offer
+  and the allowlist sit on the same path, there is no dead button either. The
+  waiver is per tool name and per element, held in memory and never persisted: a
+  session decision that outlived the tab would be a permanent grant made by one
+  click, which is what `autoConfirm` already exists to say deliberately.
+
+  New `::part()` `confirm-always`, new string `confirmAlways`, and
+  `requestConfirmation` gains an `onAlwaysAllow` option — its presence is what
+  renders the button, so the affordance can never appear with nothing listening.
+  The card still resolves `true`: the waiver is *in addition to* approving this
+  call, not instead of it.
+
+### Fixed
+
+- **The confirmation card's action row could push a button outside the card.**
+  It was a `justify-content: flex-end` flex line with no wrap, built when there
+  were two buttons. Measured in Chromium at a 260px panel: the three buttons want
+  71 + 107 + 81 plus two 8px gaps against a 200px row, and the overflow went off
+  the **left** edge — Cancel rendered, styled and reporting its label, 27px
+  outside the box the user can see and hit.
+
+  `flex-wrap: wrap` lets the row take a second line instead, as the checkpoint
+  row already does. Found by measuring rather than by review: happy-dom lays out
+  no boxes and answers 0 for every width, so it called the overflowing row and
+  the fitting one the same pass. The new browser test fails against the previous
+  stylesheet at that width and passes at the two wider ones, which is the honest
+  shape of the bug.
+
+### Added
+
 - **`ag-ui-invalidate` and `RunFinishedDetail.invalidated` — the agent tells your
   page what it moved.** The agent writes and the page still shows the old list.
   `ag-ui-run-finished` already said *something* moved, so this is **precision on

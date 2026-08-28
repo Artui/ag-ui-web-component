@@ -1819,6 +1819,7 @@ export const STYLES = `
 
 .confirm-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
 }
@@ -1843,6 +1844,19 @@ export const STYLES = `
   border-color: var(--_accent);
   background: var(--_accent);
   color: #ffffff;
+}
+
+/* The session waiver. Deliberately the quietest of the three: it is the widest
+   decision on the card, so it should be reachable without being the one the eye
+   lands on when the user means to say yes once. */
+.confirm-btn--always {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.confirm-btn--always:hover,
+.confirm-btn--always:focus-visible {
+  opacity: 1;
 }
 
 /* Approval card — the server-side-tool gate (approve/deny an interrupt). */
