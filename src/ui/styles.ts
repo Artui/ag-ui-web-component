@@ -579,6 +579,25 @@ export const STYLES = `
   display: none;
 }
 
+/* Screen-reader-only status region. Off-screen rather than display:none or
+   visibility:hidden, both of which take the element out of the accessibility
+   tree entirely -- a hidden live region announces nothing at all, which is the
+   classic way this pattern is written wrong.
+
+   The 1px box with clip-path, rather than width/height 0, is the shape that
+   survives: a zero-sized element is dropped from the tree by some engines. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;

@@ -33,6 +33,16 @@ export interface UiStrings {
   // ── Messages region ─────────────────────────────────────────────────────────
   /** `aria-label` of the scrolling message log. */
   conversation: string;
+  /** Announced when a turn starts. Screen-reader only; never rendered. */
+  announceResponding: string;
+  /** Announced when the answer has finished arriving. Screen-reader only. */
+  announceAnswerReady: string;
+  /** Announced when a card is waiting for the user's decision. Token: `{count}`. */
+  announceAwaitingDecision: string;
+  /** Announced when the user stopped the run. Screen-reader only. */
+  announceStopped: string;
+  /** Announced when the run failed. Screen-reader only. */
+  announceFailed: string;
   /** `aria-label` of the "thinking" pending indicator, and the thoughts region's
    * header while the model is still reasoning. */
   thinking: string;
@@ -229,6 +239,11 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   forkedRun: "branched",
 
   conversation: "Conversation",
+  announceResponding: "Assistant is responding",
+  announceAnswerReady: "Assistant answered",
+  announceAwaitingDecision: "{count} action is waiting for your approval",
+  announceStopped: "Response stopped",
+  announceFailed: "The response failed",
   thinking: "Assistant is thinking…",
   thoughts: "Thoughts",
   stopped: "⏹ Stopped",
