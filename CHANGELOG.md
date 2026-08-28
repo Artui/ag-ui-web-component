@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Quote a selection into the composer.** Selecting text in the transcript now
+  floats a **Quote** offer beside it; taking it drops the selection in as a
+  markdown blockquote and leaves the caret on a fresh line under it. Nothing is
+  sent -- a quotation is how a question narrows to one part of an answer, so the
+  question still has to be written. Quoting appends, so a second quotation is a
+  second thing being asked about. Long selections cap at 500 characters.
+  `data-quote-selection="false"` turns the offer off; the `quote-selection`
+  `::part()` styles it.
+
+  **The half worth having is the one the transcript cannot reach.** A chat
+  mounted beside a table, a diff or a report sits in the surface the user
+  actually works in, and a selection made *there* is one no hosted chat can see.
+  The new public `quote(text)` is that seam: a host reads its own selection --
+  or a per-row "ask about this" button -- and hands over the text. The README
+  carries both recipes.
+
+  Reading a selection out of a shadow tree is the part that takes care, and the
+  component now does it properly: engines disagree about what
+  `document.getSelection()` reports for a selection made inside a shadow root,
+  and `getComposedRanges` is used where the engine has it, with the direct read
+  behind it. `quotableSelection`, `asQuote` and `MAX_QUOTE_CHARS` are exported
+  for a host with the same problem in its own component.
+
 - **`approveWithEdits` — edit a gated call's arguments before approving it.**
   AG-UI's resume payload carries `editedArgs` and the protocol gates it on the
   agent's `approveWithEdits` capability; the approval card could not offer it.

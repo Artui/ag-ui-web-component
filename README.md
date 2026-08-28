@@ -54,6 +54,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
 - [Editing a gated call before approving it](#editing-a-gated-call-before-approving-it)
 - [Localizing the timestamps](#localizing-the-timestamps)
 - [Message actions: copy, retry, feedback](#message-actions-copy-retry-feedback)
+- [Quoting a selection](#quoting-a-selection)
 - [Run notices: compaction and agent skills](#run-notices-compaction-and-agent-skills)
 - [Skills: prompt chips and slash palette](#skills-prompt-chips-and-slash-palette)
 - [MPA durability: surviving full page reloads](#mpa-durability-surviving-full-page-reloads)
@@ -181,6 +182,7 @@ another origin, add `credentials="include"` too; see
 | `data-icon-url` | — | Header (and launcher) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
 | `data-launcher-icon-url` | — | Icon image URL for the collapsed launcher only, when it should differ from the header's. Falls back to `data-icon-url`; a slotted `slot="launcher"` wins over both. |
 | `data-unread-badge` | — | **On by default.** `="false"` hides the launcher's unread badge; the count and the `ag-ui-unread` event keep running. See [Collapsing to the launcher](#collapsing-to-the-launcher). |
+| `data-quote-selection` | — | **On by default.** `="false"` stops the transcript offering to quote a selection. `quote()` keeps working either way. See [Quoting a selection](#quoting-a-selection). |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
 `icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
@@ -1324,6 +1326,55 @@ chat.addEventListener("ag-ui-feedback", (e) => {
 await chat.retryLastTurn(); // false when there is nothing to ask again
 ```
 
+## Quoting a selection
+
+Select any text in the transcript and a small **Quote** offer floats beside it.
+Taking it drops the selection into the composer as a markdown blockquote and
+leaves the caret on a fresh line under it — a quotation is how a question
+narrows to one part of an answer, so nothing is sent until you say what you are
+asking.
+
+Quoting **appends**, after whatever is already typed, so a second quotation is a
+second thing being asked about rather than a replacement for the first. Long
+selections are capped at 500 characters: select-all-then-quote is a gesture the
+transcript already answers, and pasting the whole conversation back costs tokens
+to say nothing.
+
+Set `data-quote-selection="false"` to turn the offer off. The `quote-selection`
+`part` styles it.
+
+### The half that matters: selection in **your** page
+
+The transcript is the easy half. A chat mounted beside a table, a diff or a
+report is sitting in the surface the user actually works in — and *that*
+selection is one no hosted chat can reach. `quote()` is the seam:
+
+```js
+// "Ask about this row" — a button on each row of your own table.
+row.querySelector(".ask").addEventListener("click", () => {
+  chat.quote(row.innerText);
+});
+
+// Or the page's own selection, wherever the user made it.
+document.addEventListener("mouseup", () => {
+  const text = String(document.getSelection() ?? "");
+  if (text.trim() !== "") {
+    chat.quote(text);
+  }
+});
+```
+
+`quote()` never sends — pair it with [`sendMessage()`](#sending-from-your-own-ui)
+if you want a one-click "explain this" that skips the composer entirely.
+
+> **Reading a selection out of a shadow tree takes care.**
+> Engines disagree about what `document.getSelection()` reports for a selection
+> made *inside* a shadow root: WebKit rescopes the endpoints to the host element,
+> so you get the whole widget and none of the words, while Chromium hands back
+> the shadow nodes directly. `getComposedRanges` settles it, and this component
+> uses it where it exists. `quotableSelection(container, root)` is exported if
+> you have the same problem in your own component.
+
 ## Run notices: compaction and agent skills
 
 Some things a run does are neither text nor a tool the user asked for — the server condensed
@@ -1988,6 +2039,10 @@ re-export point. Internal modules import from leaf paths.
 | `renderChart(spec)` | function | Draw one spec as a self-contained block, or `null` when it says nothing. |
 | `chartSpecFrom(value)` | function | Read an arbitrary payload into a `ChartSpec`, or `null` if it cannot be drawn honestly. |
 | `ChartSpec` / `ChartSeries` / `ChartKind` | type | A chart as data, one named series, and how it is drawn. |
+| `quotableSelection(container, root)` | function | The current selection when it lies inside `container`, read through the shadow-aware API where the engine has one. |
+| `QuotableSelection` | type | `{ text, rect }` — what was selected, and where it sits. |
+| `asQuote(text)` | function | Shape text as a markdown blockquote with a blank line after it. |
+| `MAX_QUOTE_CHARS` | const | The cap a quotation is truncated to (500). |
 | `typeInto` / `highlightThenClick` / `pressThenClick` / `selectOption` / `toggleControl` / `scrollIntoCenterView` / `flash` / `focusWithFlash` / `prefersReducedMotion` | function | Animation primitives. |
 | `fillField` / `clickElement` / `pressButton` / `selectControl` / `setControlValue` / `toggleCheckbox` | function | DOM-driver primitives. |
 | `setNativeValue` / `setNativeChecked` | function | Set a control via its native prototype setter (React-controlled inputs). |

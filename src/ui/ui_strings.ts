@@ -142,6 +142,8 @@ export interface UiStrings {
   suggestions: string;
   /** `aria-label` of a message's action row. */
   messageActions: string;
+  /** The offer that floats beside a selection in the transcript. */
+  quoteSelection: string;
   /** Copy this message (button `title` / `aria-label`). Its confirmation and
    * failure text are the code block's `copied` / `copyFailed`, which say the
    * same thing about the same clipboard. */
@@ -322,6 +324,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   approvalArgsNotAnObject: "Arguments have to be a JSON object.",
   suggestions: "Suggested follow-ups",
   messageActions: "Message actions",
+  quoteSelection: "Quote",
   copyMessage: "Copy message",
   retryMessage: "Try again",
   feedbackUp: "Good answer",

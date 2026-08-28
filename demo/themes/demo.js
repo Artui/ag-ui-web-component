@@ -227,6 +227,20 @@ $("cfg-reset-size").addEventListener("click", () => {
   sessionStorage.removeItem("ag-ui-chat:size");
 });
 
+// The half of quote-to-composer the component cannot build for you: a
+// selection made in the *page*. The transcript wires its own offer; this is the
+// four lines a host writes to extend it to whatever it is the user is reading.
+// Selections inside the widget are skipped -- that is the built-in's job.
+document.addEventListener("mouseup", (event) => {
+  if (event.composedPath().includes(chat)) {
+    return;
+  }
+  const text = String(document.getSelection() ?? "");
+  if (text.trim() !== "") {
+    chat.quote(text);
+  }
+});
+
 $("save").addEventListener("click", () => {
   $("banner").classList.add("show");
 });
