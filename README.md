@@ -1555,6 +1555,56 @@ The element takes no view of what a name means and forwards every one, so a name
 it has never heard of reaches you unchanged. A host with no listener for a name
 simply ignores it, which is the graceful outcome an open field exists for.
 
+**`ag-ui-invalidate`** *(event)* — the agent named resources its write moved.
+`detail: { keys, reason }` (typed `InvalidateDetail`).
+
+One `CUSTOM` name routed to its own event so you do not have to string-match;
+every other name still arrives as `ag-ui-custom`. It fires **as each
+announcement arrives**, during the run, and the same keys ride
+`ag-ui-run-finished` again at the end as `invalidated`, de-duplicated.
+
+> **Do not reload the page on this.** The user was probably typing. An
+> agent-triggered reload or a blind refetch into a live form destroys unsaved
+> input, and from their side the page threw their work away on its own. Check
+> first, and offer rather than act:
+
+```js
+chat.addEventListener("ag-ui-invalidate", (e) => {
+  if (formIsDirty()) {
+    showBanner("This data changed. Refresh when you're ready.", e.detail.keys);
+    return;
+  }
+  refetch(e.detail.keys);   // e.detail.keys → ["orders", "orders/42"]
+});
+```
+
+**Keys are opaque and matching is exact.** `orders/42` does not imply `orders` —
+a prefix rule would be the component guessing at a scheme it does not own, and
+`orders/1` would match `orders/11`. A server that wants the collection refreshed
+names it. Your own matching may be hierarchical, because in your vocabulary the
+scheme is known; that is what TanStack query keys are built for.
+
+Already listening on `ag-ui-run-finished`? Upgrading is one line, and the `else`
+is the whole compatibility story:
+
+```js
+if (detail.invalidated.length > 0) refetchOnly(detail.invalidated);
+else if (detail.tools.some((t) => t.side === "server")) refetchEverything();
+```
+
+| Server | Client | Result |
+| --- | --- | --- |
+| old | old | coarse refetch, as today |
+| new | old | the `CUSTOM` event is ignored; coarse refetch still fires |
+| old | new | `invalidated` is empty; the `else` branch runs |
+| new | new | precise, and live during the run |
+
+Nothing negotiates and nothing handshakes, which is what makes this shippable
+across repos with independent release cadences.
+
+**Note:** it reaches **the page that started the run**, during the run. There is one
+response stream per run and no channel to anybody else's browser.
+
 ## Resuming a run
 
 When the server persists run checkpoints (django-ag-ui's `step_store`), a run
@@ -1732,6 +1782,7 @@ re-export point. Internal modules import from leaf paths.
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
 | `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
 | `CustomAgentDetail` | type | `ag-ui-custom` detail: an AG-UI `CUSTOM` event's `name` and `value`, verbatim. |
+| `InvalidateDetail` | type | `ag-ui-invalidate` detail: the resource `keys` that moved, and the `reason`. |
 | `ActivityRenderer` | type | Draws one activity from its `content`. Pure: it runs again on every restore. |
 | `ActivityRegistration` | type | What `registerActivityRenderer` takes: `type`, `render`, and an optional `removedNotice`. |
 | `createStateHookTools(binding)` / `StateHook` | deprecated | The former names for `createPageStateTools` / `PageState`. |
@@ -1808,6 +1859,8 @@ re-export point. Internal modules import from leaf paths.
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
 | `CUSTOM_AGENT_EVENT` | The agent-`CUSTOM` CustomEvent name (`ag-ui-custom`). |
+| `INVALIDATE_EVENT` | The resource-invalidation CustomEvent name (`ag-ui-invalidate`). |
+| `INVALIDATE_CUSTOM_NAME` | The AG-UI `CUSTOM` `name` that carries one (`ag_ui.invalidate`). |
 | `ATTACHMENT_EVENT` | The attachments-changed CustomEvent name (`ag-ui-attachments`). |
 | `STATE_EVENT` | The shared-state CustomEvent name (`ag-ui-state`). |
 | `CHART_ACTIVITY_TYPE` | The `ACTIVITY_SNAPSHOT` type a server sets to push a chart. |

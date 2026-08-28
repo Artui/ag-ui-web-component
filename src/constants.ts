@@ -74,6 +74,32 @@ export const RUN_FINISHED_EVENT = "ag-ui-run-finished";
  */
 export const CUSTOM_AGENT_EVENT = "ag-ui-custom";
 
+/**
+ * The agent named resources its write has moved. `detail` is
+ * {@link InvalidateDetail}.
+ *
+ * A convention on top of {@link CUSTOM_AGENT_EVENT}, not a second channel: the
+ * wire carries an ordinary AG-UI `CUSTOM` event whose `name` is
+ * {@link INVALIDATE_CUSTOM_NAME}, and this is that one name routed to its own
+ * DOM event so a host does not have to string-match. Every other name still
+ * arrives as `ag-ui-custom`.
+ *
+ * Fires **as each announcement arrives**, during the run, which is what makes a
+ * long multi-step run feel live: the list refreshes as the third of eight writes
+ * lands rather than when everything finishes. {@link RUN_FINISHED_EVENT} carries
+ * the same keys again at the end, de-duplicated, for a host that would rather
+ * refetch once.
+ */
+export const INVALIDATE_EVENT = "ag-ui-invalidate";
+
+/**
+ * The AG-UI `CUSTOM` event `name` that carries an invalidation.
+ *
+ * Matched exactly. Namespaced so it cannot collide with a host's own custom
+ * events, which share the field.
+ */
+export const INVALIDATE_CUSTOM_NAME = "ag_ui.invalidate";
+
 /** Roles a chat message can take. */
 export const MESSAGE_ROLE = {
   USER: "user",

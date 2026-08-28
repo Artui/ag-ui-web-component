@@ -9,6 +9,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ag-ui-invalidate` and `RunFinishedDetail.invalidated` — the agent tells your
+  page what it moved.** The agent writes and the page still shows the old list.
+  `ag-ui-run-finished` already said *something* moved, so this is **precision on
+  a channel that ships**: the server names the resources and a host refetches
+  only those.
+
+  ```js
+  chat.addEventListener("ag-ui-invalidate", (e) => {
+    if (formIsDirty()) return showBanner("This data changed.", e.detail.keys);
+    refetch(e.detail.keys);
+  });
+  ```
+
+  **Do not reload on this.** The user was probably typing, and an
+  agent-triggered reload into a live form destroys unsaved input with no
+  explanation the user can see. The component never reloads by itself and offers
+  no option that would.
+
+  **Two dispatches, deliberately.** The live event fires as each announcement
+  arrives, which is what makes a long multi-step run feel live -- the list
+  refreshes as the third of eight writes lands. `invalidated` on the existing
+  run-finished detail carries the same keys de-duplicated at the end, so a host
+  already listening there upgrades by reading one extra field:
+
+  ```js
+  if (detail.invalidated.length > 0) refetchOnly(detail.invalidated);
+  else if (detail.tools.some((t) => t.side === "server")) refetchEverything();
+  ```
+
+  That `else` is the whole compatibility story. A new server with an old client
+  has its `CUSTOM` event ignored and still gets the coarse refetch; an old server
+  with a new client leaves `invalidated` empty and falls through to the same
+  branch. Nothing negotiates, which is what makes this shippable across repos
+  with independent release cadences.
+
+  **Keys are opaque and matching is exact.** `orders/42` does not imply `orders`
+  -- a prefix rule would be this component guessing at a scheme it does not own,
+  and `orders/1` would match `orders/11`. A server that wants the collection
+  refreshed names it. Hosts may match hierarchically in their own vocabulary,
+  where the scheme is known.
+
+  Built on the `CUSTOM` carrier rather than `ACTIVITY_SNAPSHOT`, because an
+  invalidation is an imperative: activities are materialised into messages,
+  persisted and replayed on every thread restore, and an invalidation replayed on
+  every thread load is a refetch storm. Nothing is rendered or persisted, and
+  that absence is asserted. Every other `CUSTOM` name still arrives on
+  `ag-ui-custom` unchanged, and an invalidation does **not** also fire it -- a
+  host listening to both would otherwise refetch twice for one announcement.
+
+  Requires django-ag-ui 0.51 to have anything to receive.
+
 - **`registerActivityRenderer` — `activityType` is an open set now, not two
   branches.** AG-UI leaves exactly two payload names an open string the protocol
   does not enumerate, and the component treated neither as open: `chart` and
