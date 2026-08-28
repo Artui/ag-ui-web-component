@@ -1,6 +1,7 @@
 import { randomUUID } from "@ag-ui/client";
 import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
 import {
+  ANNOUNCE_CLEAR_MS,
   ATTACHMENT_EVENT,
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
@@ -63,6 +64,7 @@ import {
 import { wrapWords } from "../ui/reveal_words.js";
 import { renderRunNotice } from "../ui/run_notice.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
+import { createStickToBottom, type StickToBottom } from "../ui/stick_to_bottom.js";
 import { STYLES } from "../ui/styles.js";
 import { ThoughtsBlock } from "../ui/thoughts_block.js";
 import { ThreadDrawer } from "../ui/thread_drawer.js";
@@ -471,6 +473,35 @@ export class AgUiChat extends HTMLElement {
    */
   #runTools: { readonly id: string; readonly name: string }[] = [];
   readonly #root: ShadowRoot;
+  /** Screen-reader-only status region -- see {@link AgUiChat.#announce}. */
+  readonly #announcer = document.createElement("div");
+  /** Return-to-foot affordance, shown only once something has been missed. */
+  readonly #jumpButton = document.createElement("button");
+  /**
+   * Positioning context for {@link AgUiChat.#jumpButton}.
+   *
+   * The button cannot live in the scrolling list -- it would scroll away with
+   * the content it is offering to scroll to -- and it cannot be positioned
+   * against the panel either: the panel's foot is below the composer, the skill
+   * chips and the footer, so `bottom` measured from there lands the button on
+   * top of the composer rather than over the transcript. This wrapper is the
+   * only box whose foot *is* the transcript's foot.
+   */
+  readonly #messagesWrap = document.createElement("div");
+  /** Follows the foot of the transcript, and stops when the reader scrolls away. */
+  #scroller!: StickToBottom;
+  /** Pending clear of {@link AgUiChat.#announcer}; see why it is cleared at all. */
+  #announceTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Whether this turn already announced how it ended.
+   *
+   * `onSettled` is the terminal guarantee and fires however the run ended, so
+   * it is the only place that can promise the user hears *something*. But a
+   * stopped or failed run has already said the truer thing from `onCancelled`
+   * or `onError`, and "assistant answered" after "response stopped" is worse
+   * than silence.
+   */
+  #announcedOutcome = false;
   readonly #chat: HTMLDivElement;
   readonly #messages: HTMLDivElement;
   readonly #input: HTMLTextAreaElement;
@@ -930,7 +961,7 @@ export class AgUiChat extends HTMLElement {
           });
     this.#confirmAbort = null;
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
     return answer;
   }
 
@@ -1244,6 +1275,11 @@ export class AgUiChat extends HTMLElement {
     this.#cancelRun();
     this.#attachTray?.dispose();
     this.#voice?.dispose();
+    this.#scroller.dispose();
+    if (this.#announceTimer !== null) {
+      clearTimeout(this.#announceTimer);
+      this.#announceTimer = null;
+    }
   }
 
   /**
@@ -2254,7 +2290,14 @@ export class AgUiChat extends HTMLElement {
       this.#messages.appendChild(bubble);
     }
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    // A user bubble means someone just pressed Send, which is as deliberate as
+    // pressing the jump button -- so it goes to the bottom even if they had
+    // scrolled away to re-read something before typing.
+    if (role === MESSAGE_ROLE.USER) {
+      this.#scroller.jump();
+    } else {
+      this.#scroller.follow();
+    }
     return bubble;
   }
 
@@ -2278,9 +2321,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   #render(): void {
-    const style = document.createElement("style");
-    style.textContent = STYLES;
-
     this.#chat.className = "chat";
     this.#chat.setAttribute("part", "panel");
 
@@ -2355,10 +2395,41 @@ export class AgUiChat extends HTMLElement {
 
     this.#messages.className = "messages";
     this.#messages.setAttribute("part", "messages");
-    // Screen readers announce streamed messages as they arrive.
     this.#messages.setAttribute("role", "log");
-    this.#messages.setAttribute("aria-live", "polite");
+    // NOT a live region. The streaming bubble's innerHTML is replaced inside
+    // this element on every animation frame, and `role="log"` already implies
+    // polite announcement whose default `aria-relevant` includes text
+    // additions -- so a screen reader was asked to re-announce the whole answer
+    // tens of times as it streamed. `aria-live="off"` is an explicit override
+    // of the role's implicit value, which is why the role can stay: the log
+    // semantics are what let the transcript be navigated as one, and only the
+    // announcing is the defect. Status goes to #announcer instead.
+    this.#messages.setAttribute("aria-live", "off");
     this.#messages.setAttribute("aria-label", this.#strings.conversation);
+
+    this.#jumpButton.className = "jump-latest";
+    this.#jumpButton.type = "button";
+    this.#jumpButton.setAttribute("part", "jump-latest");
+    this.#jumpButton.textContent = this.#strings.jumpToLatest;
+    this.#jumpButton.addEventListener("click", () => {
+      this.#scroller.jump();
+    });
+
+    // Built here rather than at field initialisation: the viewport has to exist
+    // and the observer has to have something to observe.
+    this.#scroller = createStickToBottom({
+      viewport: this.#messages,
+      onMissedContent: (missed) => {
+        this.#jumpButton.dataset["missed"] = String(missed);
+      },
+    });
+
+    this.#announcer.className = "sr-only";
+    this.#announcer.setAttribute("role", "status");
+    this.#announcer.setAttribute("aria-live", "polite");
+    // Atomic: each announcement replaces the last and is read whole. Without
+    // it a reader may announce only the changed words between two statuses.
+    this.#announcer.setAttribute("aria-atomic", "true");
 
     // Empty-state region: a host slot at the top of the list, hidden as soon as
     // anything renders.
@@ -2450,9 +2521,14 @@ export class AgUiChat extends HTMLElement {
     inputRow.append(composer, this.#fileInput);
     // Skill surfaces sit just above the input: palette (opens on `/`), chips,
     // the missing-placeholder hint, and the pending-attachments tray.
+    this.#messagesWrap.className = "messages-wrap";
+    // Sibling of the list inside a shared box, not a child of it: the
+    // affordance offering to scroll must not scroll away with the content.
+    this.#messagesWrap.append(this.#messages, this.#jumpButton);
+
     this.#chat.append(
       header,
-      this.#messages,
+      this.#messagesWrap,
       this.#skillsMenu.palette,
       this.#skillsMenu.chips,
       this.#skillHint,
@@ -2517,7 +2593,68 @@ export class AgUiChat extends HTMLElement {
         label: this.#strings.resizePanel,
       }),
     );
-    this.#root.append(style, this.#chat, this.#launcher);
+    this.#adoptStyles();
+    this.#root.append(this.#announcer, this.#chat, this.#launcher);
+  }
+
+  /**
+   * Attach the stylesheet without an inline `<style>` element.
+   *
+   * A host with a strict `style-src` and no `'unsafe-inline'` drops an injected
+   * `<style>` silently: the component mounts, functions, and renders completely
+   * unstyled, with nothing in the console to point at. `adoptedStyleSheets`
+   * carries no inline-style origin, so it is unaffected by that policy.
+   *
+   * The sheet is constructed **per instance** rather than shared at module
+   * scope. A shared sheet would additionally avoid re-parsing the stylesheet
+   * once per mounted element, which is what `adoptedStyleSheets` is usually
+   * reached for -- but a module-level singleton is exactly what this package
+   * forbids, and the CSP defect is fixed either way. Per instance is no worse
+   * than the `<style>` element it replaces, which also parsed once per mount.
+   *
+   * No fallback: constructible `CSSStyleSheet` is Chrome 73, Firefox 101 and
+   * Safari 16.4, all below this package's declared Safari 17 runtime target. A
+   * guard here would be code no supported browser can reach, and the only way
+   * to keep it would be to exempt it from the coverage gate.
+   */
+  /**
+   * Say one short thing to a screen reader, without touching the transcript.
+   *
+   * The transcript cannot do this job. It is rewritten on every animation
+   * frame while an answer streams, so as a live region it re-announced the
+   * whole answer tens of times per turn -- not merely unhelpful but actively
+   * hostile. The published fix for this exact bug (Microsoft's Bot Framework
+   * WebChat #3236) is architectural rather than a matter of tuning attributes:
+   * demote the visible transcript out of live-region duty and put one
+   * synthesised status per event into a separate invisible region. MDN and
+   * Scott O'Hara prescribe the same empty-region-then-inject shape.
+   *
+   * Roughly four calls land per turn -- responding, answered, a card is waiting,
+   * stopped or failed -- so the user is told what happened and reads the answer
+   * itself by navigating the log, at their own pace, rather than having it
+   * shouted at them a token at a time.
+   *
+   * **The clear is load-bearing, twice.** A reader announces a live region when
+   * its content *changes*, so setting the same string twice running -- two turns
+   * in a row both starting -- is not a change and is silently not announced.
+   * Emptying first makes the next set a change again. It also stops a stale
+   * status being read out when a reader later lands on the region.
+   */
+  #announce(message: string): void {
+    if (this.#announceTimer !== null) {
+      clearTimeout(this.#announceTimer);
+    }
+    this.#announcer.textContent = message;
+    this.#announceTimer = setTimeout(() => {
+      this.#announceTimer = null;
+      this.#announcer.textContent = "";
+    }, ANNOUNCE_CLEAR_MS);
+  }
+
+  #adoptStyles(): void {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(STYLES);
+    this.#root.adoptedStyleSheets = [sheet];
   }
 
   /**
@@ -2962,7 +3099,7 @@ export class AgUiChat extends HTMLElement {
         strings: this.#strings,
       });
       this.#updateEmptyState();
-      this.#messages.scrollTop = this.#messages.scrollHeight;
+      this.#scroller.follow();
       const accepted = await decision;
       this.#confirmAbort = null;
       card.recordDecision(accepted ? "approved" : "declined");
@@ -3044,6 +3181,13 @@ export class AgUiChat extends HTMLElement {
   ): Promise<Record<string, InterruptResponse>> {
     // One controller covers the whole batch: a single Stop denies all of them.
     this.#confirmAbort = new AbortController();
+    // The run has stopped and is waiting on a person. Nothing else on screen
+    // says so to a screen reader: the cards appear inside the transcript, which
+    // is deliberately not a live region, so without this the run simply goes
+    // quiet and the user has no reason to go looking.
+    this.#announce(
+      this.#strings.announceAwaitingDecision.replace("{count}", String(interrupts.length)),
+    );
     this.#hidePending();
     const signal = this.#confirmAbort.signal;
     const answered = await Promise.all(
@@ -3089,7 +3233,7 @@ export class AgUiChat extends HTMLElement {
       }),
     );
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
     this.#confirmAbort = null;
     const responses: Record<string, InterruptResponse> = {};
     for (const { id, approved } of answered) {
@@ -3103,6 +3247,12 @@ export class AgUiChat extends HTMLElement {
   #handlers(): AgUiClientHandlers {
     return {
       onRunStart: () => {
+        // Per *round*, so guard on the turn: a run that calls three tools fires
+        // this three times and the user needs telling once.
+        if (!this.#running) {
+          this.#announcedOutcome = false;
+          this.#announce(this.#strings.announceResponding);
+        }
         this.#setRunning(true);
         // Open the answer group on the turn's first run so the pending
         // indicator (and everything after) lands inside the well. Idempotent:
@@ -3215,6 +3365,8 @@ export class AgUiChat extends HTMLElement {
         this.#endStream();
       },
       onError: (message) => {
+        this.#announcedOutcome = true;
+        this.#announce(this.#strings.announceFailed);
         this.#hidePending();
         this.#revealWords(this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`));
         this.#endStream();
@@ -3222,12 +3374,17 @@ export class AgUiChat extends HTMLElement {
       onCancelled: () => {
         // Deliberate stop, not a failure: keep whatever partial text already
         // streamed and add a muted note instead of an error bubble.
+        this.#announcedOutcome = true;
+        this.#announce(this.#strings.announceStopped);
         this.#hidePending();
         this.#appendStoppedNote();
         this.#endStream();
       },
       onSettled: () => {
         // Terminal guarantee: whatever path ended the run, return to rest.
+        if (!this.#announcedOutcome) {
+          this.#announce(this.#strings.announceAnswerReady);
+        }
         this.#hidePending();
         this.#setRunning(false);
         this.#endStream();
@@ -3286,7 +3443,7 @@ export class AgUiChat extends HTMLElement {
     note.textContent = this.#strings.stopped;
     this.#ensureGroup().appendChild(note);
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
   }
 
   /**
@@ -3311,7 +3468,7 @@ export class AgUiChat extends HTMLElement {
     this.#pending = pending;
     this.#ensureGroup().appendChild(pending);
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
   }
 
   /** Remove the pending indicator if shown. */
@@ -3331,7 +3488,7 @@ export class AgUiChat extends HTMLElement {
       const group = this.#ensureGroup();
       group.insertBefore(this.#thoughts.element, group.firstChild);
       this.#updateEmptyState();
-      this.#messages.scrollTop = this.#messages.scrollHeight;
+      this.#scroller.follow();
     }
     return this.#thoughts;
   }
@@ -3388,7 +3545,7 @@ export class AgUiChat extends HTMLElement {
     this.#streamBuffer = buffer;
     const bubble = this.#openStream();
     bubble.innerHTML = renderMarkdown(buffer, { allowImages: this.allowImages });
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
     return bubble;
   }
 
@@ -3439,7 +3596,7 @@ export class AgUiChat extends HTMLElement {
   #appendNotice(icon: string, text: string, kind: string): void {
     this.#ensureGroup().appendChild(renderRunNotice(icon, text, kind));
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
   }
 
   /**
@@ -3541,7 +3698,7 @@ export class AgUiChat extends HTMLElement {
 
   #afterTranscriptGrew(): void {
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
   }
 
   #cardFor(call: AgUiToolCall): ToolCallCard {
@@ -3563,7 +3720,7 @@ export class AgUiChat extends HTMLElement {
     this.#toolCards.set(call.id, card);
     this.#ensureGroup().appendChild(card.element);
     this.#updateEmptyState();
-    this.#messages.scrollTop = this.#messages.scrollHeight;
+    this.#scroller.follow();
     return card;
   }
 }

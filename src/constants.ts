@@ -221,3 +221,13 @@ export const ICON_FILE_TEXT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidde
  * event, which is the graceful outcome.
  */
 export const CHART_ACTIVITY_TYPE = "chart";
+
+/**
+ * How long a screen-reader status stays in the announcer before it is emptied.
+ *
+ * Long enough for a reader to pick the change up, short enough that the region
+ * is empty again before the next status lands. Emptying is what makes an
+ * identical consecutive message announce at all -- a live region is read on
+ * *change*, and setting the same string twice is not one.
+ */
+export const ANNOUNCE_CLEAR_MS = 150;

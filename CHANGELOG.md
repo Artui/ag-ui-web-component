@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A screen reader re-announced the whole answer tens of times per turn.** The
+  transcript carried both `role="log"` and an explicit `aria-live="polite"`,
+  and the streaming bubble's `innerHTML` is replaced inside it on every
+  animation frame. `role="log"` already implies polite announcement and the
+  default `aria-relevant` includes text additions, so every frame was a fresh
+  announcement of the answer so far. That is not merely unhelpful; it is
+  hostile.
+
+  The transcript is demoted out of live-region duty with an explicit
+  `aria-live="off"`, which overrides the value the role implies. **The role
+  stays** -- the log semantics are what let the transcript be navigated as one,
+  and only the announcing was the defect.
+
+  A separate visually-hidden status region takes over, and roughly four short
+  statuses land per turn: responding, answered, a decision is waiting and how
+  many, stopped, failed. Five new `strings` keys (`announceResponding`,
+  `announceAnswerReady`, `announceAwaitingDecision`, `announceStopped`,
+  `announceFailed`) make all of them translatable. The answer's own words never
+  reach it, and neither does an exception's.
+
+- **The transcript could not be read while anything streamed.** Eleven separate
+  sites assigned `scrollTop = scrollHeight` unconditionally, and nothing in the
+  element listened for a `scroll` event -- so nothing knew the reader had
+  scrolled up, and scrolling back during a run was undone by the next token.
+
+  All eleven now follow the foot only while the reader is already there. A
+  **jump-to-latest** button (`jump-latest` part, `jumpToLatest` string) appears
+  once they have scrolled away *and* have since missed something; scrolling up
+  through a settled transcript is not a reason to nag. A user's own message
+  still goes to the foot -- pressing Send is as deliberate as pressing the
+  button. `overflow-anchor: none` stops the browser's own scroll anchoring
+  competing for the same job.
+
+- **A strict-CSP host got an unstyled widget.** The stylesheet was injected as
+  an inline `<style>`, which a host with a strict `style-src` and no
+  `'unsafe-inline'` drops silently: the component mounted, functioned, and
+  rendered with no styling at all, and nothing in the console pointed at why.
+  It is attached with `adoptedStyleSheets` instead, which carries no
+  inline-style origin.
+
+  The sheet is per instance rather than shared at module scope. A shared one
+  would also stop re-parsing the stylesheet once per mount, but a module-level
+  singleton is what this package forbids, and per instance is no worse than the
+  `<style>` it replaces.
+
+  All three came out of a **survey of how other products build chat**, not a
+  review. Two review passes and a full audit wave went over this component
+  without surfacing any of them, because each is invisible unless you ask how
+  everyone else does it.
+
 ## [0.28.0] — 2026-08-26
 
 ### Added
