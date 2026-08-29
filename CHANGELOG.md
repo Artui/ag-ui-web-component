@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] — 2026-08-29
+
 ### Added
 
 - **Quote a selection into the composer.** Selecting text in the transcript now
@@ -95,7 +97,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   formatter is read at render rather than at connect, so setting it after mount
   works.
 
-### Added
 
 - **Server-pushed follow-up suggestions.** A `suggestions` activity draws its
   prompts as chips; clicking one sends it as the user's message. Registered
@@ -117,20 +118,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SUGGESTIONS_ACTIVITY_TYPE`, and `renderSuggestionChips` / `suggestionPrompts`
   exported for a host drawing its own.
 
-### Fixed
-
-- **The message action row sat closer to the block below it than to the message
-  it acts on.** The answer group is a flex column with a 10px gap, so the row's
-  `margin-top: 6px` **added** to that gap instead of tightening it: 16px above,
-  10px below, and the buttons read as belonging to whatever card followed. A
-  negative margin pulls the row back inside the gap — 4px above, 10px below.
-
-  Found by driving the demo, not by any assertion: every existing check was
-  satisfied by the broken spacing. Ordered correctly, contained correctly,
-  visible — and grouped with the wrong thing. The new browser case fails against
-  the previous stylesheet with `expected 16 to be less than 10`.
-
-### Added
 
 - **A message action row — copy, retry, thumbs up/down — under every finished
   assistant message.** There were **zero** message-level actions before this;
@@ -169,16 +156,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error, which is a failure". This is a failure that now needs a control, so the
   taxonomy already had the answer.
 
-### Fixed
-
-- **The action row is a sibling of the message bubble, not a child.** Inside, the
-  buttons join the bubble's `textContent` — which is what Copy reads, what
-  history persists, and what every existing assertion about a message's text
-  compares against. An answer would have been copied back carrying the glyphs of
-  the buttons that copied it. Caught by twelve existing tests failing at once,
-  which is the check working.
-
-### Added
 
 - **"Always allow" on the confirmation card — a session-scoped waiver, per tool
   name.** Confirmation was binary and permanent: `autoConfirm` is
@@ -206,23 +183,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The card still resolves `true`: the waiver is *in addition to* approving this
   call, not instead of it.
 
-### Fixed
-
-- **The confirmation card's action row could push a button outside the card.**
-  It was a `justify-content: flex-end` flex line with no wrap, built when there
-  were two buttons. Measured in Chromium at a 260px panel: the three buttons want
-  71 + 107 + 81 plus two 8px gaps against a 200px row, and the overflow went off
-  the **left** edge — Cancel rendered, styled and reporting its label, 27px
-  outside the box the user can see and hit.
-
-  `flex-wrap: wrap` lets the row take a second line instead, as the checkpoint
-  row already does. Found by measuring rather than by review: happy-dom lays out
-  no boxes and answers 0 for every width, so it called the overflowing row and
-  the fitting one the same pass. The new browser test fails against the previous
-  stylesheet at that width and passes at the two wider ones, which is the honest
-  shape of the bug.
-
-### Added
 
 - **`ag-ui-invalidate` and `RunFinishedDetail.invalidated` — the agent tells your
   page what it moved.** The agent writes and the page still shows the old list.
@@ -336,6 +296,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wants it can register it and decide about duplication itself.
 
 ### Fixed
+
+- **The message action row sat closer to the block below it than to the message
+  it acts on.** The answer group is a flex column with a 10px gap, so the row's
+  `margin-top: 6px` **added** to that gap instead of tightening it: 16px above,
+  10px below, and the buttons read as belonging to whatever card followed. A
+  negative margin pulls the row back inside the gap — 4px above, 10px below.
+
+  Found by driving the demo, not by any assertion: every existing check was
+  satisfied by the broken spacing. Ordered correctly, contained correctly,
+  visible — and grouped with the wrong thing. The new browser case fails against
+  the previous stylesheet with `expected 16 to be less than 10`.
+
+
+- **The action row is a sibling of the message bubble, not a child.** Inside, the
+  buttons join the bubble's `textContent` — which is what Copy reads, what
+  history persists, and what every existing assertion about a message's text
+  compares against. An answer would have been copied back carrying the glyphs of
+  the buttons that copied it. Caught by twelve existing tests failing at once,
+  which is the check working.
+
+
+- **The confirmation card's action row could push a button outside the card.**
+  It was a `justify-content: flex-end` flex line with no wrap, built when there
+  were two buttons. Measured in Chromium at a 260px panel: the three buttons want
+  71 + 107 + 81 plus two 8px gaps against a 200px row, and the overflow went off
+  the **left** edge — Cancel rendered, styled and reporting its label, 27px
+  outside the box the user can see and hit.
+
+  `flex-wrap: wrap` lets the row take a second line instead, as the checkpoint
+  row already does. Found by measuring rather than by review: happy-dom lays out
+  no boxes and answers 0 for every width, so it called the overflowing row and
+  the fitting one the same pass. The new browser test fails against the previous
+  stylesheet at that width and passes at the two wider ones, which is the honest
+  shape of the bug.
+
 
 - **A server that replaced the conversation did it in silence.** AG-UI's
   `MESSAGES_SNAPSHOT` is applied by `@ag-ui/client` before any subscriber runs,
@@ -2370,7 +2365,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.26.1...v0.27.0
 [0.26.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.26.0...v0.26.1
