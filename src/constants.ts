@@ -158,8 +158,31 @@ export const X_NAVIGATES_KEY = "x-navigates";
  */
 export const READ_PAGE_TOOL = "read_page";
 
-/** Upper bound on frontend tool-call → re-run rounds within one send. */
+/**
+ * Default upper bound on frontend tool-call → re-run rounds within one send.
+ * Overridable via `data-max-tool-rounds`, or `AgUiClientConfig.maxToolRounds`
+ * for a host driving the client directly.
+ */
 export const MAX_TOOL_ROUNDS = 10;
+
+/**
+ * The actions a finished assistant message's row can carry, and the tokens
+ * `data-message-actions` selects them by.
+ *
+ * All three are on when the attribute is absent. Naming them individually
+ * rather than shipping one on/off switch is what the three differ over: feedback
+ * is only useful to a host listening for {@link FEEDBACK_EVENT}, retry re-runs
+ * the agent and a constrained surface may not permit that, and copy is the one
+ * nobody objects to. A single switch would make dropping either of the first two
+ * cost the third, and a host that only wanted one gone would rebuild the row
+ * from `attachMessageActions` -- reimplementing the part names, the accessible
+ * grouping and the retry hand-off to lose two buttons.
+ */
+export const MESSAGE_ACTIONS = {
+  COPY: "copy",
+  RETRY: "retry",
+  FEEDBACK: "feedback",
+} as const;
 
 /**
  * Lifecycle status of a rendered tool-call card. A card opens as `PENDING`

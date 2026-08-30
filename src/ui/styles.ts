@@ -1195,6 +1195,21 @@ export const STYLES = `
   color: var(--_fg);
 }
 
+/* A region a host formatter took over, marked by the card. Preformatted
+   whitespace is what makes the built-in block read as written, and it is the one
+   thing a host cannot want: a table inherits it as mangled cell spacing, and a
+   sentence as line breaks nobody typed.
+
+   Whitespace only. The card's own face, frame, padding and scroll cap stay,
+   because the card is one visual object -- the head row and the status pill are
+   monospaced too -- and a region that dropped the family would be the only part
+   of it wearing a different one. A host that wants that restyles the
+   tool-card-result part, which does not need the formatter at all. */
+.tool-call-args[data-formatted],
+.tool-call-result[data-formatted] {
+  white-space: normal;
+}
+
 /* Display modes are pure visibility over one DOM shape, selected from the host
    attribute rather than a value stamped on the card at build time, so flipping
    data-tool-display re-styles cards already on screen. See ToolCallCard.

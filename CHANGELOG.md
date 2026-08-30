@@ -7,6 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`formatToolPayload` — a host hook for what a tool card's body says.** The
+  card pretty-printed its two payloads as JSON and offered no way in, so a
+  thirty-field result rendered as a wall of text where the host wanted a table
+  or a sentence. `ClientTool.render` could not answer it: it is handed the
+  *arguments* only, and a server-side tool has no `ClientTool` at all, which
+  left the result region the one part of the transcript a host could not reach.
+  The hook is asked about each region of each card and may return a `Node`, a
+  `string`, or `null` to leave the built-in rendering alone.
+
+  **Both halves, one hook, told apart by `kind`.** They take different code
+  paths — arguments are rendered when the card is built, the result when it
+  settles — so covering only the result would have left the other half needing a
+  second hook later, and two hooks differing only in which region they draw is a
+  worse surface than one that says which. They do not carry the same thing,
+  which is why the payload is a discriminated union rather than a flat
+  `(toolName, payload, kind)`: `arguments` hands over the parsed record the call
+  was made with, `result` the raw string the tool returned plus the outcome it
+  settled on. Flattening them would have forced every formatter to re-derive
+  which it had, and re-serialised the arguments for nothing.
+
+  **Scoped to presentation, deliberately.** The card and the model already read
+  separate copies of a tool result — the model's is maintained by
+  `@ag-ui/client` from the same event and persisted with the history, and the
+  card has always shown that string reformatted — so a formatter changes what
+  the person reads and nothing the agent reads. That is what makes restyling
+  safe here, and equally why *rewording* was rejected: renaming a value belongs
+  on the server, where it reaches the model's prose too, instead of leaving the
+  card disagreeing with the answer beside it. A returned string is set as text
+  and never parsed as markup, so this is not a second HTML channel into the
+  transcript.
+
+  A region a formatter drew is marked `data-formatted`, which relaxes the
+  preformatted whitespace the JSON block relies on — a table would otherwise
+  inherit it as mangled cell spacing. Whitespace only: the card's face, frame
+  and scroll cap stay, because the card is one visual object and a payload sized
+  for a wide page must still be contained by a sidebar. `ToolPayload`,
+  `ToolPayloadFormatter` and `ToolCallCardOptions` are exported for a host
+  building cards itself.
+
+- **`data-max-tool-rounds` — the tool-round budget is configurable.** The cap on
+  frontend tool-call to re-run rounds within one send was the constant
+  `MAX_TOOL_ROUNDS` (10) with one read and no way to change it. Ten suits a chat
+  whose tools answer questions; a page-driving deployment reaches it
+  legitimately — filling a form is one round per field — and the symptom is not
+  an error but an answer that stops mid-task, which reads as the model giving
+  up. `AgUiClientConfig.maxToolRounds` is the seam for a host driving the client
+  directly. A value below one is ignored rather than honoured: it would not be a
+  smaller budget but a send that never runs the agent at all, which would look
+  exactly like a broken endpoint. Validation lives in the client, so the
+  attribute and the config option cannot drift apart.
+
+- **`data-message-actions` — the message action row has an opt-out.** The row
+  shipped with `::part()` hooks and no off switch, and ran on every finished
+  assistant bubble; a host embedding the component in a constrained surface had
+  no way to suppress it. The attribute is a comma list of the actions to keep
+  (`copy` / `retry` / `feedback`), and `="false"` — the spelling its sibling
+  gesture `data-quote-selection` already uses — leaves none. Absent means all
+  three, so the attribute only ever subtracts and a host that never sets it
+  keeps exactly what it had.
+
+  **Per-action rather than one switch**, because the three disappear for
+  different reasons: the rating pair is only useful to a host listening for
+  `ag-ui-feedback` and is two dead buttons otherwise, retry re-runs the agent
+  which a constrained surface may forbid, and copy is the one nobody objects to.
+  A single switch would have made dropping either of the first two cost the
+  third — and a host wanting one gone would have rebuilt the row from
+  `attachMessageActions`, reimplementing the part names, the accessible grouping
+  and the retry hand-off in order to lose two buttons. With nothing left the row
+  is not built at all: an empty one still takes its margin and still announces
+  itself to a screen reader as a group of actions. `MESSAGE_ACTIONS` is exported
+  as the token vocabulary.
+
+### Changed
+
+- **`MessageActionsOptions.text` is optional**, and its absence is what omits
+  the copy button — the same idiom `onFeedback` already used, where what a
+  button needs to do its job is also the statement that it belongs. Additive for
+  existing callers.
+
 ## [0.29.0] — 2026-08-29
 
 ### Added

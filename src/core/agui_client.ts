@@ -182,6 +182,22 @@ export interface AgUiClientConfig extends AgUiRunInputs {
    * passes its localized string.
    */
   connectionLostMessage?: string;
+  /**
+   * Upper bound on frontend tool-call to re-run rounds within one
+   * {@link AgUiClient.send}. Defaults to {@link MAX_TOOL_ROUNDS}.
+   *
+   * The default suits a chat whose tools answer questions. A page-driving
+   * deployment reaches it legitimately -- filling a form field by field is one
+   * round each -- and the symptom is not an error but an answer that stops
+   * mid-task, which reads as the model giving up. Raise it where a turn is
+   * expected to take many small steps.
+   *
+   * Read once, when the client is built. The bound is a property of the
+   * deployment rather than of a run, so re-reading it per round would only make
+   * a mid-run change possible, and a mid-run change to how long the run may
+   * last is not a thing a host has any way to reason about.
+   */
+  maxToolRounds?: number;
 }
 
 /**
@@ -219,6 +235,7 @@ export class AgUiClient {
    */
   readonly #closedMessageIds = new Set<string>();
   readonly #connectionLostMessage: string;
+  readonly #maxToolRounds: number;
   // Set by cancel(); reset at the top of each #run(). Checked by the loop so
   // a cancel between frontend-tool rounds doesn't start another round.
   #cancelled = false;
@@ -232,6 +249,12 @@ export class AgUiClient {
     this.#resolveInterrupts = config.resolveInterrupts ?? null;
     this.#onPersist = config.onPersist ?? (() => {});
     this.#connectionLostMessage = config.connectionLostMessage ?? "Connection lost";
+    // Validated here rather than at each caller, so the element's attribute and
+    // a direct consumer get the same answer. A bound below one -- or a NaN from
+    // an unparseable attribute -- is not a smaller budget but a send that runs
+    // the agent zero times, which would look exactly like a broken endpoint.
+    const rounds = config.maxToolRounds ?? MAX_TOOL_ROUNDS;
+    this.#maxToolRounds = rounds >= 1 ? Math.floor(rounds) : MAX_TOOL_ROUNDS;
     const onStateChanged = config.onStateChanged;
     if (onStateChanged !== undefined) {
       // The agent applies STATE_SNAPSHOT / STATE_DELTA itself; subscribing is
@@ -270,7 +293,8 @@ export class AgUiClient {
    *
    * When the agent calls frontend tools, this executes them and re-runs the
    * agent with the results, looping until the agent stops calling frontend
-   * tools (bounded by {@link MAX_TOOL_ROUNDS}).
+   * tools (bounded by {@link AgUiClientConfig.maxToolRounds}, which defaults to
+   * {@link MAX_TOOL_ROUNDS}).
    *
    * `attachments` ride on the user message as a non-standard field so the
    * default store round-trips them for history replay; see
@@ -389,7 +413,7 @@ export class AgUiClient {
     // continues an unfinished frontend-tool round after a page load; this stays
     // inside one #run().
     let resume: ResumeEntry[] | undefined;
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    for (let round = 0; round < this.#maxToolRounds; round += 1) {
       // A cancel during the previous round's tool execution lands here: the
       // running handler completed, but no further round starts.
       if (this.#cancelled) {

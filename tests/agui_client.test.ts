@@ -303,6 +303,36 @@ describe("AgUiClient", () => {
     expect(runs).toBe(MAX_TOOL_ROUNDS);
   });
 
+  it("takes a configured round bound, and rejects one that would run nothing", async () => {
+    // A page-driving deployment reaches ten rounds legitimately -- one per
+    // field filled -- and the symptom is an answer that stops mid-task rather
+    // than an error. A bound below one is not a smaller budget but a send that
+    // never runs the agent at all, so it falls back rather than being honoured.
+    async function roundsUnder(maxToolRounds?: number): Promise<number> {
+      let runs = 0;
+      const fake = makeFakeAgent({
+        script: (emit) => {
+          runs += 1;
+          emit.toolCall(`tc${runs}`, "fill_field", {});
+        },
+      });
+      await new AgUiClient({
+        agent: fake.agent,
+        handlers: recordingHandlers(),
+        executeTool: async () => ({ content: "ok" }),
+        ...(maxToolRounds === undefined ? {} : { maxToolRounds }),
+      }).send("x");
+      return runs;
+    }
+
+    expect(await roundsUnder(3)).toBe(3);
+    // A fractional bound floors rather than running a partial round.
+    expect(await roundsUnder(2.9)).toBe(2);
+    expect(await roundsUnder(0)).toBe(MAX_TOOL_ROUNDS);
+    expect(await roundsUnder(Number.NaN)).toBe(MAX_TOOL_ROUNDS);
+    expect(await roundsUnder()).toBe(MAX_TOOL_ROUNDS);
+  });
+
   it("exposes the agent's message history", async () => {
     const fake = makeFakeAgent();
     const client = new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() });

@@ -15,6 +15,8 @@ import {
   INVALIDATE_CUSTOM_NAME,
   INVALIDATE_EVENT,
   LOAD_CAPABILITY_TOOL,
+  MAX_TOOL_ROUNDS,
+  MESSAGE_ACTIONS,
   MESSAGE_ROLE,
   READ_PAGE_TOOL,
   RUN_FINISHED_EVENT,
@@ -82,7 +84,11 @@ import { STYLES } from "../ui/styles.js";
 import { renderSuggestionChips } from "../ui/suggestion_chips.js";
 import { ThoughtsBlock } from "../ui/thoughts_block.js";
 import { ThreadDrawer } from "../ui/thread_drawer.js";
-import { ToolCallCard, type ToolDisplayMode } from "../ui/tool_call_card.js";
+import {
+  ToolCallCard,
+  type ToolDisplayMode,
+  type ToolPayloadFormatter,
+} from "../ui/tool_call_card.js";
 import { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "../ui/ui_strings.js";
 import { VoiceInput } from "../ui/voice_input.js";
 import {
@@ -531,6 +537,31 @@ export class AgUiChat extends HTMLElement {
    * schema never reaches the browser. Client tools should prefer `x-summary`.
    */
   toolSummaries: Record<string, string> = {};
+
+  /**
+   * Optional presentation hook for the two payload regions of a tool-call card
+   * -- the arguments and the result. Unset (the default) leaves both
+   * pretty-printed as JSON.
+   *
+   * The seam exists because a wide result has no good rendering as JSON: a
+   * thirty-field row is a wall of text where the host wanted a table, or a
+   * sentence. `ClientTool.render` cannot answer it -- it is handed the
+   * *arguments* only, and a server-side tool has no `ClientTool` at all, so the
+   * result region was the one part of the transcript a host could not reach.
+   *
+   * **Presentation, not translation.** The card and the model already read
+   * separate copies of a tool result: the model's is maintained by
+   * `@ag-ui/client` from the same event and persisted with the history, and the
+   * card has always shown that string reformatted. So a formatter changes what
+   * the person reads and nothing the agent reads -- which makes restyling safe
+   * and *rewording* a way to make the card disagree with the prose beside it.
+   * Rename a value on the server, where it reaches both.
+   *
+   * Read at render time rather than captured, so a host that sets it from a
+   * framework effect after the first card still formats the results that settle
+   * afterwards. See {@link ToolPayloadFormatter}.
+   */
+  formatToolPayload: ToolPayloadFormatter | null = null;
 
   /**
    * Localizable UI strings — a partial override merged over the English
@@ -1742,6 +1773,42 @@ export class AgUiChat extends HTMLElement {
   #hideQuote(): void {
     this.#quoteButton.hidden = true;
     this.#quoting = "";
+  }
+
+  /**
+   * The tool-round budget from `data-max-tool-rounds`, for one send.
+   *
+   * Anything unparseable becomes `NaN`, which {@link AgUiClient} rejects along
+   * with a bound below one -- so the two ways of setting this are validated in
+   * one place rather than agreeing by coincidence.
+   */
+  #maxToolRounds(): number {
+    const attr = this.getAttribute("data-max-tool-rounds");
+    return attr === null ? MAX_TOOL_ROUNDS : Number.parseInt(attr, 10);
+  }
+
+  /**
+   * Which message actions a finished bubble offers, from
+   * `data-message-actions`.
+   *
+   * Absent means all of them, so the attribute only ever subtracts: the row
+   * shipped without an off switch and a host that never sets this must keep
+   * exactly what it had. A value names the survivors, which makes
+   * `data-message-actions="false"` -- the spelling its sibling
+   * `data-quote-selection` uses -- an empty set by falling out of the same rule
+   * rather than by a case of its own.
+   */
+  #messageActions(): ReadonlySet<string> {
+    const attr = this.getAttribute("data-message-actions");
+    if (attr === null) {
+      return new Set(Object.values(MESSAGE_ACTIONS));
+    }
+    return new Set(
+      attr
+        .split(",")
+        .map((token) => token.trim())
+        .filter((token) => token !== ""),
+    );
   }
 
   /** The client-side upload size cap from `data-attachment-max-bytes`. */
@@ -3414,6 +3481,7 @@ export class AgUiChat extends HTMLElement {
         onPersist: (messages) => this.conversationStore.saveMessages(this.#threadId, messages),
         onStateChanged: (state) => this.#onSharedStateChanged(state),
         connectionLostMessage: this.#strings.connectionLost,
+        maxToolRounds: this.#maxToolRounds(),
       });
     }
     return this.#client;
@@ -3437,32 +3505,45 @@ export class AgUiChat extends HTMLElement {
    * Every finished bubble gets copy and feedback -- both are safe on a message
    * of any age. Retry moves to the newest, because it is the only one where
    * re-running answers the same question rather than rewriting history.
+   *
+   * `data-message-actions` subtracts from that. The row is built only when
+   * something survives to go in it: an empty row still takes its margin, still
+   * answers to the `message-actions` part, and still reads to a screen reader
+   * as a group of actions with none in it.
    */
   #attachActions(bubble: HTMLDivElement, options: { rateable?: boolean } = {}): void {
-    attachMessageActions(bubble, {
-      strings: this.#strings,
-      // Read at click time, not captured: a bubble rendered from markdown holds
-      // its text in the DOM, and that is what the user sees and means to copy.
-      text: () => bubble.textContent as string,
-      // A failed run is copyable -- error text is what people paste into a bug
-      // report -- but not rateable: a rating is a statement about an *answer*,
-      // and mixing "the connection dropped" into that signal makes the host's
-      // feedback data say less than it did before.
-      ...(options.rateable === false
-        ? {}
-        : {
-            onFeedback: (rating: "up" | "down") => {
-              this.dispatchEvent(
-                new CustomEvent<FeedbackDetail>(FEEDBACK_EVENT, {
-                  detail: { content: bubble.textContent as string, rating },
-                  bubbles: true,
-                  composed: true,
-                }),
-              );
-            },
-          }),
-    });
-    this.#moveRetryTo(messageActionBar(bubble, this.#strings));
+    const enabled = this.#messageActions();
+    const copyable = enabled.has(MESSAGE_ACTIONS.COPY);
+    // A failed run is copyable -- error text is what people paste into a bug
+    // report -- but not rateable: a rating is a statement about an *answer*,
+    // and mixing "the connection dropped" into that signal makes the host's
+    // feedback data say less than it did before.
+    const rateable = options.rateable !== false && enabled.has(MESSAGE_ACTIONS.FEEDBACK);
+    if (copyable || rateable) {
+      attachMessageActions(bubble, {
+        strings: this.#strings,
+        // Read at click time, not captured: a bubble rendered from markdown
+        // holds its text in the DOM, and that is what the user sees and means
+        // to copy.
+        ...(copyable ? { text: () => bubble.textContent as string } : {}),
+        ...(rateable
+          ? {
+              onFeedback: (rating: "up" | "down") => {
+                this.dispatchEvent(
+                  new CustomEvent<FeedbackDetail>(FEEDBACK_EVENT, {
+                    detail: { content: bubble.textContent as string, rating },
+                    bubbles: true,
+                    composed: true,
+                  }),
+                );
+              },
+            }
+          : {}),
+      });
+    }
+    if (enabled.has(MESSAGE_ACTIONS.RETRY)) {
+      this.#moveRetryTo(messageActionBar(bubble, this.#strings));
+    }
   }
 
   /** Move the Retry button onto `bar`, taking it off whoever held it. */
@@ -4404,7 +4485,12 @@ export class AgUiChat extends HTMLElement {
         : (this.toolSummaries[call.name] ??
           this.#toolCatalog[call.name]?.summary ??
           prettifyToolName(call.name));
-    const card = new ToolCallCard(call.name, call.args, summary, this.#strings);
+    const card = new ToolCallCard(call.name, call.args, summary, this.#strings, {
+      // A thunk over the live property, not the property itself: the card keeps
+      // this for the life of the call, and the result region is filled when the
+      // tool settles -- which can be long after a host set the hook.
+      formatPayload: (payload) => this.formatToolPayload?.(payload) ?? null,
+    });
     this.#toolCards.set(call.id, card);
     this.#ensureGroup().appendChild(card.element);
     this.#updateEmptyState();

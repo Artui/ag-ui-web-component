@@ -43,6 +43,61 @@ function formatPayload(text: string): string {
 }
 
 /**
+ * One region of a card's body, handed to a host {@link ToolPayloadFormatter}.
+ *
+ * A discriminated union rather than three positional parameters because the two
+ * halves do not carry the same thing: arguments are the parsed record the call
+ * was made with, and a result is the raw string the tool returned, which may not
+ * be JSON at all. Flattening both into one `payload` parameter would force every
+ * formatter to re-derive which it had before it could read it, and the
+ * arguments would arrive re-serialised for no reason.
+ *
+ * `toolName` is the raw tool name, not the card's `x-summary` label -- a
+ * formatter dispatches on identity, and the label is a display string a server
+ * may change.
+ */
+export type ToolPayload =
+  | {
+      readonly kind: "arguments";
+      readonly toolName: string;
+      readonly args: Record<string, unknown>;
+    }
+  | {
+      readonly kind: "result";
+      readonly toolName: string;
+      readonly status: SettledStatus;
+      readonly text: string;
+    };
+
+/**
+ * Renders one region of a tool card's body, for a host that would rather show a
+ * table or a summary line than a wall of pretty-printed JSON.
+ *
+ * Return a `Node` to take the region over, a `string` to replace its text, or
+ * `null` to fall through to the built-in pretty-print -- so a formatter that
+ * only cares about one tool, or only about results, declines the rest rather
+ * than reimplementing them.
+ *
+ * **Presentation only.** The model reads the tool result from its own copy of
+ * the message, which this never touches, so anything said here is said to the
+ * person and not to the agent. Translating a value -- an enum constant into a
+ * friendly label, an epoch into a date -- belongs on the server, where it also
+ * reaches the model's prose; doing it here would make the card and the answer
+ * beside it disagree about what happened.
+ *
+ * A returned string is set as text, never parsed as markup: this is not a
+ * second HTML channel into the transcript, and a host that wants elements
+ * builds them itself and returns the node.
+ */
+export type ToolPayloadFormatter = (payload: ToolPayload) => Node | string | null;
+
+/** Optional per-card wiring beyond the name, arguments, label and strings. */
+export interface ToolCallCardOptions {
+  /** Host presentation hook for both body regions. See {@link ToolPayloadFormatter}. */
+  readonly formatPayload?: ToolPayloadFormatter;
+}
+
+/**
  * A live tool-call card for the chat transcript.
  *
  * Construction renders a status icon, the tool name, a status pill, and a body
@@ -60,6 +115,12 @@ function formatPayload(text: string): string {
  * from the card's `data-status`, so a host themes it through the
  * `--ag-ui-tool-icon-*` custom properties or the `tool-card-icon` part without
  * the card reaching into the host stylesheet.
+ *
+ * Either region may be drawn by the host instead: `options.formatPayload` is
+ * asked about each one and pretty-prints as before whenever it declines. The
+ * arguments are offered from the constructor and the result from {@link settle},
+ * because that is when each exists -- so a formatter is asked twice per card,
+ * potentially long apart.
  *
  * Pure DOM. The host appends {@link element} into its shadow root; all visible
  * text comes from {@link UiStrings}.
@@ -98,6 +159,9 @@ export class ToolCallCard {
    * still exist when the user is asked to approve, edit or deny the call.
    */
   readonly args: Record<string, unknown>;
+  /** The raw tool name, kept for the payloads handed to {@link ToolPayloadFormatter}. */
+  readonly #name: string;
+  readonly #formatPayload: ToolPayloadFormatter | null;
   #settled = false;
 
   constructor(
@@ -105,9 +169,12 @@ export class ToolCallCard {
     args: Record<string, unknown>,
     summary?: string,
     strings: UiStrings = DEFAULT_UI_STRINGS,
+    options: ToolCallCardOptions = {},
   ) {
     this.#strings = strings;
     this.args = args;
+    this.#name = name;
+    this.#formatPayload = options.formatPayload ?? null;
 
     this.element = document.createElement("div");
     this.element.className = "tool-call";
@@ -146,7 +213,11 @@ export class ToolCallCard {
     head.append(icon, label, this.#status, this.#decision);
 
     const argsSection = this.#section("args", strings.argumentsLabel);
-    argsSection.body.textContent = JSON.stringify(args, null, 2);
+    this.#renderPayload(
+      argsSection.body,
+      { kind: "arguments", toolName: name, args },
+      JSON.stringify(args, null, 2),
+    );
     // Drop the region rather than frame an empty object.
     argsSection.root.hidden = Object.keys(args).length === 0;
 
@@ -224,8 +295,42 @@ export class ToolCallCard {
     this.element.setAttribute("data-status", status);
     this.#status.textContent = statusLabels(this.#strings)[status];
     this.#resultLabel.textContent = resultLabels(this.#strings)[status];
-    this.#resultBody.textContent = formatPayload(text);
+    this.#renderPayload(
+      this.#resultBody,
+      { kind: "result", toolName: this.#name, status, text },
+      formatPayload(text),
+    );
     this.#resultSection.hidden = false;
+  }
+
+  /**
+   * Fill one body region, offering it to the host formatter first.
+   *
+   * `fallback` is computed by the caller rather than here because the two
+   * regions build it differently -- arguments are already parsed, a result is a
+   * string that may or may not be JSON -- and because a formatter that takes
+   * the region over should not have paid for a pretty-print nobody sees. It is
+   * cheap either way; the point is that the built-in rendering stays written
+   * once, beside the payload it belongs to.
+   *
+   * The `data-formatted` marker is what the shadow CSS reads to relax the
+   * preformatted whitespace on a region a host owns -- a table inherits it as
+   * mangled cell spacing, a sentence as line breaks nobody typed. Marked for a
+   * returned string too: one rule, and a summary line wants ordinary wrapping
+   * as much as a table does.
+   */
+  #renderPayload(body: HTMLPreElement, payload: ToolPayload, fallback: string): void {
+    const rendered = this.#formatPayload === null ? null : this.#formatPayload(payload);
+    if (rendered === null) {
+      body.textContent = fallback;
+      return;
+    }
+    body.setAttribute("data-formatted", "true");
+    if (typeof rendered === "string") {
+      body.textContent = rendered;
+      return;
+    }
+    body.replaceChildren(rendered);
   }
 
   /** Build one labelled region of the body: a heading plus a payload block. */

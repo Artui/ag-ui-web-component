@@ -183,6 +183,8 @@ another origin, add `credentials="include"` too; see
 | `data-launcher-icon-url` | — | Icon image URL for the collapsed launcher only, when it should differ from the header's. Falls back to `data-icon-url`; a slotted `slot="launcher"` wins over both. |
 | `data-unread-badge` | — | **On by default.** `="false"` hides the launcher's unread badge; the count and the `ag-ui-unread` event keep running. See [Collapsing to the launcher](#collapsing-to-the-launcher). |
 | `data-quote-selection` | — | **On by default.** `="false"` stops the transcript offering to quote a selection. `quote()` keeps working either way. See [Quoting a selection](#quoting-a-selection). |
+| `data-message-actions` | — | **All on by default.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry"`). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
+| `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
 `icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
@@ -486,7 +488,12 @@ an AG-UI `AbstractAgent`. On the first send the element builds a client (via the
    render into a bubble; each `TOOL_CALL_END` becomes a tool-call card.
 3. Any **frontend** tool calls collected during the run are executed locally, their results are
    appended as `tool` messages, and the agent is re-run with the results.
-4. This repeats until the agent stops calling frontend tools, bounded by `MAX_TOOL_ROUNDS`.
+4. This repeats until the agent stops calling frontend tools, bounded by `MAX_TOOL_ROUNDS`
+   (10) — raise it with `data-max-tool-rounds`, or `AgUiClientConfig.maxToolRounds` when you
+   drive the client yourself. The default suits a chat whose tools answer questions; a
+   page-driving deployment reaches it legitimately, one round per field filled, and the symptom
+   is not an error but an answer that stops mid-task. A value below 1 is ignored rather than
+   honoured — it would be a send that never runs the agent at all.
 
 Tool calls the client doesn't own (server-side tools the server already executed) are left alone —
 the loop doesn't re-run them, but their streamed `TOOL_CALL_RESULT` is rendered into the tool-call
@@ -1118,6 +1125,42 @@ visible. Style them via the `tool-card-args` / `tool-card-result` parts, their h
 transcript, the way `data-answer-well` does — the modes are pure visibility over one DOM shape,
 selected by the shadow CSS from the host attribute.
 
+### Drawing a card's body yourself
+
+A thirty-field result is a wall of JSON where a host wanted a table, or a
+sentence. `formatToolPayload` is the seam: it is asked about each region of each
+card and may return a `Node` to take it over, a `string` to replace its text, or
+`null` to leave the built-in pretty-print alone.
+
+```js
+chat.formatToolPayload = (payload) => {
+  if (payload.kind !== "result" || payload.toolName !== "list_orders") {
+    return null; // everything else keeps the default rendering
+  }
+  const table = document.createElement("table");
+  // ... build it from JSON.parse(payload.text)
+  return table;
+};
+```
+
+Both halves come through the same hook, told apart by `kind`: `arguments`
+carries the parsed record the call was made with, `result` the raw string the
+tool returned plus the outcome it settled on. A region a formatter took over is
+marked `data-formatted`, which relaxes the preformatted whitespace the default
+JSON block relies on — a table would otherwise inherit it as mangled cell
+spacing. Whitespace only: the card's face, frame and scroll cap stay, so one long
+payload still cannot stretch the transcript, and a host wanting different
+typography restyles the `tool-card-result` part.
+
+This is **presentation, not translation.** The card and the model already read
+separate copies of a tool result — the model's is maintained by `@ag-ui/client`
+from the same event — so a formatter changes what the person reads and nothing
+the agent reads. That is what makes restyling safe here, and it is also why
+*rewording* belongs on the server: renamed there, the new wording reaches the
+model's prose too, instead of leaving the card disagreeing with the answer beside
+it. A returned string is set as text, never parsed as markup — this is not a
+second HTML channel into the transcript.
+
 A gated call carries the decision (`approved by you` / `declined by you`, part
 `tool-card-decision`, attribute `data-decision`) — from the client-side confirmation card and
 from the server-side approval interrupt alike. The prompt itself disappears once answered: a
@@ -1315,6 +1358,22 @@ statement about answer quality and mixing it into feedback makes that signal say
 less. This is why a dropped connection is still rendered as an **error** rather
 than demoted to a run notice — a notice "never settles, takes no action, and
 carries no controls", and a failure with a way back needs one.
+
+The row can be trimmed, or removed, with `data-message-actions` — a comma list of
+the actions to keep, or `="false"` for none at all:
+
+```html
+<!-- copy only: nothing here listens for a rating, and the surface forbids re-runs -->
+<ag-ui-chat endpoint="/agent/" data-message-actions="copy"></ag-ui-chat>
+```
+
+It is per-action rather than one switch because the three disappear for
+different reasons. Thumbs are only useful to a host listening for
+`ag-ui-feedback`, and two buttons that lead nowhere are worse than none. Retry
+re-runs the agent, which a constrained surface may not permit. Copy is the one
+nobody objects to — and with a single switch, dropping either of the others would
+have cost it too. Nothing survives, and no row is built at all: an empty row
+still takes its margin and still announces itself as a group of actions.
 
 `retryLastTurn()` is public, for a host driving its own message UI.
 
@@ -2034,6 +2093,9 @@ re-export point. Internal modules import from leaf paths.
 | --- | --- | --- |
 | `ToolCallCard` | class | A live tool-call card for the transcript. |
 | `ToolCallStatus` / `SettledStatus` / `ToolDisplayMode` | type | Card lifecycle states + display mode. |
+| `ToolPayloadFormatter` | type | Draws one region of a card's body (`AgUiChat.formatToolPayload`); `null` falls through to the built-in pretty-print. |
+| `ToolPayload` | type | The region being drawn: `arguments` (the parsed record) or `result` (the raw string and its outcome). |
+| `ToolCallCardOptions` | type | Per-card wiring beyond name / args / label / strings — currently `formatPayload`. |
 | `requestConfirmation(host, request, options?)` | function | Append the inline confirmation card to the transcript. |
 | `ConfirmationRequest` | type | What the card displays. |
 | `ConfirmationOptions` | type | `{ signal?, strings? }` — abort resolves the card as declined; `strings` localizes it. |
@@ -2087,6 +2149,7 @@ re-export point. Internal modules import from leaf paths.
 | `COMPACTION_ACTIVITY_TYPE` | The `ACTIVITY_SNAPSHOT` type reporting a trimmed history. |
 | `LOAD_CAPABILITY_TOOL` | The agent-side capability-loading tool's name. |
 | `MESSAGE_ROLE` | Message role constants. |
+| `MESSAGE_ACTIONS` | The message-action tokens `data-message-actions` selects by (`copy` / `retry` / `feedback`). |
 | `TOOL_CALL_STATUS` | Tool-call card status constants. |
 | `TOOL_DISPLAY` | Tool-call display-mode constants (`minimal` / `compact` / `full`). |
 | `X_CONFIRM_KEY` | Confirmation-prompt key: on a tool's JSON Schema for a client-side confirmation, and in an AG-UI interrupt's `metadata` for a server-side approval. |
