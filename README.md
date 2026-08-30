@@ -161,7 +161,7 @@ another origin, add `credentials="include"` too; see
 | --- | --- | --- |
 | `endpoint` | `endpoint` | The AG-UI endpoint URL. Required to send. Reflecting getter + setter. |
 | `credentials` | `credentials` | Cookie policy for every request the element makes: `omit` / `same-origin` / `include`. Unset means the browser default (`same-origin`), which sends no cookies cross-origin. See [Authenticating requests](#authenticating-requests). |
-| `title-text` | — | Header label; defaults to `"Assistant"`. The only **observed** attribute (live-updates the header). |
+| `title-text` | — | Header label; defaults to `"Assistant"`. Live: writing it after the element connects re-labels the header. See [When each attribute is read](#when-each-attribute-is-read). |
 | `data-tool-display` | `toolDisplay` | Tool-call card detail: `inline` / `minimal` / `compact` / `full` (default `full`). |
 | `data-text-animation` | — | Incoming-text reveal: `none` (default) / `fade` / `word`. |
 | `data-prompt-chips` | — | Present (bare, or any value but `"false"`) to surface skills as chips. |
@@ -185,6 +185,13 @@ another origin, add `credentials="include"` too; see
 | `data-quote-selection` | — | **On by default.** `="false"` stops the transcript offering to quote a selection. `quote()` keeps working either way. See [Quoting a selection](#quoting-a-selection). |
 | `data-message-actions` | — | **All on by default.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry"`). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
+| `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
+| `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
+| `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
+| `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded` / `page`). Persisted per-tab in `sessionStorage`. |
+| `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
+| `density` | — | CSS-only: `comfortable` (default) / `compact`. |
+| `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` / `embedded`. |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
 `icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
@@ -196,19 +203,39 @@ same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
   <svg slot="icon-new" width="16" height="16"><!-- ... --></svg>
 </ag-ui-chat>
 ```
-| `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
-| `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
-| `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
-| `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded` / `page`). Persisted per-tab in `sessionStorage`. |
-| `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
-| `density` | — | CSS-only: `comfortable` (default) / `compact`. |
-| `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` / `embedded`. |
 
-**Properties** (JS only, not attributes): `headers`, `getHeaders`, `allowImages`, `autoConfirm`,
-`confirmPredicate`, `askUser`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`,
-`getPageMap`, `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`,
-`navigationResult`, `skillContext`, `toolSummaries`, `strings`, `resolvePageTarget`, plus the
-mirrors `endpoint` / `userKey` / `toolDisplay` / `collapsed` / `credentials`.
+#### When each attribute is read
+
+The element observes two groups of attributes, and they behave differently once it is in the DOM.
+Nothing outside those groups is observed: a CSS-only attribute (`theme`, `density`, `data-side`,
+`data-answer-well`) is read by the stylesheet rather than by script, and `endpoint`,
+`data-tool-display`, `data-text-animation`, `data-runs-url`, `data-page-actions`,
+`data-message-actions`, `data-max-tool-rounds`, `data-unread-badge` and `data-quote-selection` are
+re-read at each use, so a late write to any of those simply takes effect. The one attribute in
+neither camp is `data-launcher-icon-url`: it is read while the element connects, like the group
+below, but is not observed, so a late write is inert and says nothing.
+
+**Live attributes.** Written at any time, before or after the element connects, and acted on
+either way: `title-text`, `placement`, `credentials`, `user-key`.
+
+**Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
+all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;
+the element logs a console warning naming the attribute rather than failing silently, because the
+symptom is an affordance that never appears and that reads as a broken component. Set them before
+the element enters the DOM, or remove and re-insert it. See
+[Framework hosts](#framework-hosts-configure-before-you-insert), where the boundary bites hardest.
+The list: `data-attachments-url`, `data-attachment-accept`, `data-attachment-max-bytes`,
+`data-transcribe-url`, `data-threads-url`, `data-threads-cache`, `data-tools-url`,
+`data-skills-url`, `data-skills`, `data-prompt-chips`, `data-slash-commands`, `data-theme-toggle`,
+`data-strings`, `data-icon-url`.
+
+**Properties** (JS only, not attributes): `headers`, `getHeaders`, `trustedOrigins`, `allowImages`,
+`autoConfirm`, `confirmPredicate`, `askUser`, `askUserRenderer`, `approvalRenderer`,
+`approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
+`autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
+`skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
+`resolvePageTarget`, `sharedState`, plus the read-only `unread` and `unhandledActivityTypes`, and
+the attribute mirrors `endpoint` / `userKey` / `toolDisplay` / `collapsed` / `credentials`.
 
 `headers` and `getHeaders` authenticate **every** request the element makes, not only the agent
 run; `getHeaders` is the one to use for a credential that rotates. See
@@ -228,15 +255,20 @@ the django-ag-ui `@tool` registry), whose schema never reaches the browser — e
 labels are fetched automatically — per card, `x-summary` → an explicit
 `toolSummaries` entry → the fetched catalog → the raw name.
 
-**Properties** (selected): `sharedState` — AG-UI shared state (documented under Tools & state).
+`sharedState` is AG-UI shared state, documented under
+[the run loop](#the-run-loop-and-the-ag-ui-client); `unread` and `unhandledActivityTypes` are
+read-only counters, covered under [the unread badge](#the-unread-badge) and
+[finding out what arrived](#finding-out-what-arrived).
 
 Code blocks in an agent's answer carry a **copy button**, revealed on hover or
 keyboard focus and styleable via the `code-copy` part. Override its labels with
 the `copyCode` / `copied` / `copyFailed` strings.
 
-**Methods**: `registerTool`, `registerPageState`, `setSkills`, `sendMessage`, `attachFile`,
-`appendMessage`, `newChat`, `setCollapsed`, `toggleCollapsed`, `toggleTheme`, `openThreads`,
-`openCheckpoints`, `reload`.
+**Methods**: `registerTool`, `registerPageState`, `registerActivityRenderer`, `setSkills`,
+`sendMessage`, `attachFile`, `appendMessage`, `retryLastTurn`, `quote`, `offerQuoteInPage`,
+`enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `toggleTheme`, `openThreads`,
+`openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `reload`, and the deprecated
+`registerStateHook` (renamed to `registerPageState`).
 
 ### Sending from your own UI
 
@@ -1083,7 +1115,7 @@ interchangeable:
 | | Carrier | Reaches | Persisted | Replayed |
 | --- | --- | --- | --- | --- |
 | **Content** | `ACTIVITY_SNAPSHOT` | the transcript | yes | yes |
-| **Imperative** | `CUSTOM` | your page, as [`ag-ui-custom`](#events) | no | no |
+| **Imperative** | `CUSTOM` | your page, as [`ag-ui-custom`](#host-seams-the-spa-story) | no | no |
 
 ⇒ **Content has a place in the conversation and should come back. An imperative
 has no place and no meaning once acted on** — replaying "refetch the board" on
@@ -1340,7 +1372,7 @@ message's own text.
   rather than being told its last answer was wrong.
 - **Copy** puts the message's text on the clipboard, and says so on the button.
   A refused clipboard permission is reported there too, rather than thrown.
-- **Thumbs up / down** fire [`ag-ui-feedback`](#events) and **store nothing**.
+- **Thumbs up / down** fire `ag-ui-feedback` (wired below) and **store nothing**.
 
 Retry sits on the **last** answer only. Re-running an older turn is branching,
 and for a page-driving agent editing a past turn is not neutral — those turns
@@ -2022,9 +2054,9 @@ re-export point. Internal modules import from leaf paths.
 | `isNavigates(parameters)` | function | Read the `x-navigates` flag. |
 | `createPageActionTools(enabled, resolveTarget)` | function | Build the opt-in `scroll_to` / `drag_and_drop` tools. |
 | `PAGE_ACTIONS` | const | The page-action opt-in tokens (`scroll` / `drag`). |
-| `ResolvePageTarget` | type | `(target) => HTMLElement | null` — the page-target resolver. |
+| `ResolvePageTarget` | type | `(target) => HTMLElement \| null` — the page-target resolver. |
 | `X_DESTRUCTIVE_KEY` / `X_NAVIGATES_KEY` | const | The JSON-Schema extension keys. |
-| `parseToolCatalog(data)` | function | Parse a fetched `data-tools-url` catalog into a `name` → `summary` map. |
+| `parseToolCatalog(data)` | function | Parse a fetched `data-tools-url` catalog into a `Record<string, ToolCatalogEntry>` — whole entries, not bare summaries, so a caller can reach `description` too. Malformed input yields an empty map rather than throwing. |
 | `ToolCatalogEntry` | type | One row of that catalog. |
 | `prettifyToolName(name)` | function | Last fallback of the tool-card label chain (`delete_record` reads as *Delete record*). |
 
@@ -2067,15 +2099,15 @@ re-export point. Internal modules import from leaf paths.
 | `RunIndex` | class | Reads a `data-runs-url` run index and derives its resume / fork endpoints. |
 | `RunRow` | type | One run index row (`{ run_id, thread_id, parent_run_id, started_at, continuable, preview? }`). |
 | `CheckpointMenu` | class | The *Continue a run* panel. |
-| `CheckpointVerb` | type | `"resume" | "fork"`. |
+| `CheckpointVerb` | type | `"resume" \| "fork"`. |
 
 ### Attachments
 
 | Export | Kind | Summary |
 | --- | --- | --- |
 | `uploadAttachment(file, options)` | function | The built-in upload (multipart, progress) → `AttachmentRef`. |
-| `UploadOptions` | type | `{ url, headers?, onProgress?, signal? }`. |
-| `UploadHandler` | type | `(file, onProgress) => Promise<AttachmentRef>` — the `uploadHandler` swap seam (TUS / S3). |
+| `UploadOptions` | type | `{ url, headers?, credentials?, onProgress?, signal? }`. `credentials` is spelled as a fetch mode but carried by `XMLHttpRequest.withCredentials`, so only `"include"` is distinguishable. |
+| `UploadHandler` | type | `(file, onProgress, signal?) => Promise<AttachmentRef>` — the `uploadHandler` swap seam (tus / S3). The signal fires when the tray removes a chip or the element is torn down; a handler that honours it aborts its own transport, so a cancelled upload leaves no orphaned file on the server. |
 | `AttachmentRef` | type | The durable upload ref (`{ id, name, mime, size, url? }`). |
 | `messageAttachments(message)` | function | Read the refs a restored user message carries. |
 
@@ -2084,7 +2116,7 @@ re-export point. Internal modules import from leaf paths.
 | Export | Kind | Summary |
 | --- | --- | --- |
 | `transcribeAudio(audio, options)` | function | The built-in transcription POST (multipart) → the transcript text. |
-| `TranscribeOptions` | type | `{ url, headers? }`. |
+| `TranscribeOptions` | type | `{ url, headers?, credentials? }` — `credentials` as fetch's own cookie mode. |
 | `TranscribeHandler` | type | `(audio) => Promise<string>` — the `transcribeHandler` swap seam (Web Speech, direct-to-provider). |
 
 ### UI & DOM primitives
@@ -2098,26 +2130,26 @@ re-export point. Internal modules import from leaf paths.
 | `ToolCallCardOptions` | type | Per-card wiring beyond name / args / label / strings — currently `formatPayload`. |
 | `requestConfirmation(host, request, options?)` | function | Append the inline confirmation card to the transcript. |
 | `ConfirmationRequest` | type | What the card displays. |
-| `ConfirmationOptions` | type | `{ signal?, strings? }` — abort resolves the card as declined; `strings` localizes it. |
+| `ConfirmationOptions` | type | `{ signal?, strings?, onAlwaysAllow? }` — abort resolves the card as declined; `strings` localizes it; passing `onAlwaysAllow` is what adds the third button. |
 | `UiStrings` | type | The flat table of every user-facing string. |
 | `DEFAULT_UI_STRINGS` | const | The English defaults (the override floor). |
 | `mergeUiStrings(overrides)` | function | Merge a partial override over the defaults. |
 | `renderMarkdown(text, options?)` | function | Render sanitized markdown/HTML (marked + DOMPurify). |
 | `RenderMarkdownOptions` | type | `{ allowImages? }` — opt `<img>` back into the sanitized output. |
 | `requestApproval(host, request, options?)` | function | Append the inline approval card that gates a server-side tool. |
-| `ApprovalRequest` | type | What that card displays (`{ message?, toolName? }`). |
-| `ApprovalOptions` | type | `{ signal?, strings? }` — abort resolves the card as denied; `strings` localizes it. |
+| `ApprovalRequest` | type | What that card displays (`{ message?, toolName?, args? }`). |
+| `ApprovalOptions` | type | `{ signal?, strings?, onEdit? }` — abort resolves the card as denied; `strings` localizes it; passing `onEdit` offers the call's arguments for editing and is called only when they actually changed. |
 | `ApprovalRenderer` | type | Replace the built-in approval card outright (`AgUiChat.approvalRenderer`). |
 | `requestQuestion(host, request, options?)` | function | Append the inline `ask_user` card (radios and/or free text). |
 | `QuestionRequest` | type | What that card asks. |
 | `QuestionOptions` | type | `{ signal?, strings? }` — abort resolves it with an empty answer. |
-| `QuestionRenderer` | type | Replace the built-in question card outright (`AgUiChat.questionRenderer`). |
+| `QuestionRenderer` | type | Replace the built-in question card outright (`AgUiChat.askUserRenderer`). |
 | `renderChart(spec)` | function | Draw one spec as a self-contained block, or `null` when it says nothing. |
 | `chartSpecFrom(value)` | function | Read an arbitrary payload into a `ChartSpec`, or `null` if it cannot be drawn honestly. |
 | `ChartSpec` / `ChartSeries` / `ChartKind` | type | A chart as data, one named series, and how it is drawn. |
 | `attachQuoteOffer(options)` | function | The page-side select-then-quote offer, with its guards. `AgUiChat.offerQuoteInPage()` is the one-line form. |
 | `PageQuoteOffer` / `PageQuoteOfferOptions` | type | The live offer (`{ element, detach }`) and what it takes. |
-| `quotableSelection(container, roots)` | function | The current selection when it lies inside `container`, read through the shadow-aware API where the engine has one. |
+| `quotableSelection(container, roots, near?)` | function | The current selection when it lies inside `container`, read through the shadow-aware API where the engine has one. `near` is where the gesture ended, used to pick the line the offer hangs from. |
 | `QuotableSelection` | type | `{ text, rect }` — what was selected, and where it sits. |
 | `asQuote(text)` | function | Shape text as a markdown blockquote with a blank line after it. |
 | `MAX_QUOTE_CHARS` | const | The cap a quotation is truncated to (500). |
@@ -2151,7 +2183,7 @@ re-export point. Internal modules import from leaf paths.
 | `MESSAGE_ROLE` | Message role constants. |
 | `MESSAGE_ACTIONS` | The message-action tokens `data-message-actions` selects by (`copy` / `retry` / `feedback`). |
 | `TOOL_CALL_STATUS` | Tool-call card status constants. |
-| `TOOL_DISPLAY` | Tool-call display-mode constants (`minimal` / `compact` / `full`). |
+| `TOOL_DISPLAY` | Tool-call display-mode constants (`inline` / `minimal` / `compact` / `full`). |
 | `X_CONFIRM_KEY` | Confirmation-prompt key: on a tool's JSON Schema for a client-side confirmation, and in an AG-UI interrupt's `metadata` for a server-side approval. |
 | `X_SUMMARY_KEY` | JSON-Schema key carrying a short tool-card label. |
 | `MAX_TOOL_ROUNDS` | Upper bound on tool-call → re-run rounds per send. |
