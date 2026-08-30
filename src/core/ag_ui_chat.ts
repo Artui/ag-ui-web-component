@@ -21,6 +21,7 @@ import {
   READ_PAGE_TOOL,
   RUN_FINISHED_EVENT,
   STATE_EVENT,
+  SUBAGENT_CUSTOM_NAME,
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
   TOGGLE_EVENT,
@@ -81,6 +82,8 @@ import { renderRunNotice } from "../ui/run_notice.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
 import { createStickToBottom, type StickToBottom } from "../ui/stick_to_bottom.js";
 import { STYLES } from "../ui/styles.js";
+import { SubAgentPanel } from "../ui/subagent_panel.js";
+import { subAgentUpdate } from "../ui/subagent_update.js";
 import { renderSuggestionChips } from "../ui/suggestion_chips.js";
 import { ThoughtsBlock } from "../ui/thoughts_block.js";
 import { ThreadDrawer } from "../ui/thread_drawer.js";
@@ -617,6 +620,16 @@ export class AgUiChat extends HTMLElement {
   readonly #toolRegistry = new ClientToolRegistry();
   /** Tool-call cards awaiting execution, keyed by call id. */
   readonly #toolCards = new Map<string, ToolCallCard>();
+  /**
+   * The live delegation panels, keyed by the **parent's** `delegate_task` call
+   * id — which is what the wire keys a sub-agent's progress on, so this map and
+   * {@link #toolCards} answer to the same key.
+   *
+   * Kept beside the cards rather than on them, so a card stays a card: the tool
+   * card holds the slot and this holds what went into it, the same division the
+   * approval prompt already uses.
+   */
+  readonly #subagentPanels = new Map<string, SubAgentPanel>();
   /**
    * Call ids whose card was already settled from a streamed server-side result
    * (`TOOL_CALL_RESULT`), so the post-run executeTool sweep doesn't overwrite
@@ -2448,6 +2461,11 @@ export class AgUiChat extends HTMLElement {
     this.#thoughts = null;
     this.#hidePending();
     this.#toolCards.clear();
+    // The panels go with the cards they hung off. Nothing restores them: the
+    // progress rode the imperative carrier and was never persisted, which is
+    // the correct half of that split -- a delegation that was live before this
+    // transcript was wiped is not live now.
+    this.#subagentPanels.clear();
     this.#serverSettled.clear();
     this.#cardElements.clear();
     this.#activityBlocks.clear();
@@ -3903,6 +3921,10 @@ export class AgUiChat extends HTMLElement {
           this.#dispatchInvalidation(value);
           return;
         }
+        if (name === SUBAGENT_CUSTOM_NAME) {
+          this.#reportSubAgent(value);
+          return;
+        }
         // Straight out to the host page, uninterpreted. This is the imperative
         // carrier: whatever it means, it means it to the page, not to the
         // transcript -- so it is dispatched and deliberately not rendered,
@@ -4087,6 +4109,52 @@ export class AgUiChat extends HTMLElement {
         composed: true,
       }),
     );
+  }
+
+  /**
+   * Draw one step of a delegated sub-agent's progress, on the card that
+   * delegated.
+   *
+   * `delegationId` is the parent's own `delegate_task` tool-call id, so the
+   * attachment point is a card this element already drew on `TOOL_CALL_START`.
+   * That is the whole design: a run that hands work to a sub-agent used to read
+   * as a stall -- the card sat at "running…" for the child's entire duration --
+   * and the fix is to narrate *into* the thing that was already standing there,
+   * rather than to float a second element with the same identity.
+   *
+   * A progress event for a call this client never drew is dropped. It has no
+   * card to attach to, and inventing a floating one is precisely the alternative
+   * that was rejected: parent and child interleave in the transcript with
+   * nothing marking whose is whose, and the persisted transcript -- which never
+   * held the progress at all -- would not match what was on screen.
+   *
+   * Nothing here writes to the conversation store. `CUSTOM` never enters
+   * `agent.messages`, so a reload mid-run leaves the tool card and loses the
+   * nested detail, which is the intended behaviour rather than a gap.
+   */
+  #reportSubAgent(value: unknown): void {
+    const update = subAgentUpdate(value);
+    if (update === null) {
+      return;
+    }
+    const card = this.#toolCards.get(update.delegationId);
+    if (card === undefined) {
+      return;
+    }
+    let panel = this.#subagentPanels.get(update.delegationId);
+    if (panel === undefined) {
+      // Created on whichever phase arrives first rather than only on `started`.
+      // The contract says exactly one opens a delegation, and a client that
+      // insisted on it would answer a server that dropped one frame by showing
+      // nothing at all for the rest of the run.
+      panel = new SubAgentPanel(this.#strings);
+      this.#subagentPanels.set(update.delegationId, panel);
+      card.subagentSlot.appendChild(panel.element);
+    }
+    panel.report(update);
+    // The card grew, and the transcript is usually pinned to the foot while a
+    // run is in flight.
+    this.#scroller.follow();
   }
 
   /** A muted "⏹ Stopped" line in the transcript (distinct from the ⚠️ error bubble). */

@@ -119,6 +119,45 @@ export const SUGGESTIONS_ACTIVITY_TYPE = "suggestions";
  */
 export const INVALIDATE_CUSTOM_NAME = "ag_ui.invalidate";
 
+/**
+ * The AG-UI `CUSTOM` event `name` carrying a delegated sub-agent's progress.
+ *
+ * Matched exactly, and namespaced the way {@link INVALIDATE_CUSTOM_NAME} is, so
+ * it cannot collide with a host's own custom events on the same open field.
+ *
+ * Routed to the delegating tool card rather than dispatched to the page: the
+ * payload keys on the **parent's own `delegate_task` call id**, so what it
+ * describes is already on screen and the progress belongs beside it. Every other
+ * name still reaches the host as {@link CUSTOM_AGENT_EVENT}.
+ *
+ * Deliberately on the imperative carrier and not on an activity, which means it
+ * is **never persisted and never replayed**. That is the right half of the
+ * split: a delegation that was live an hour ago is not live now, and replaying
+ * its progress on a thread restore would be a lie about a run that is over. On a
+ * reload mid-run the nested detail is gone and the tool card remains.
+ */
+export const SUBAGENT_CUSTOM_NAME = "ag_ui.subagent";
+
+/**
+ * The phases one delegation moves through, as the server spells them.
+ *
+ * Exactly one `STARTED` opens a delegation and exactly one `FINISHED` or
+ * `FAILED` closes it; the two tool phases repeat in between, once per call the
+ * child makes and once per result it gets back.
+ *
+ * `FAILED` carries **no exception text**, deliberately — the same reasoning that
+ * redacts a `RUN_ERROR`, since an exception's words are written for an operator.
+ * The detail rides the ordinary `TOOL_CALL_RESULT` for that delegation, on the
+ * card the progress is already attached to.
+ */
+export const SUBAGENT_PHASE = {
+  STARTED: "started",
+  TOOL_CALL: "tool_call",
+  TOOL_RESULT: "tool_result",
+  FINISHED: "finished",
+  FAILED: "failed",
+} as const;
+
 /** Roles a chat message can take. */
 export const MESSAGE_ROLE = {
   USER: "user",

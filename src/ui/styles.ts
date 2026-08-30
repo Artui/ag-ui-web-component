@@ -1274,6 +1274,174 @@ export const STYLES = `
   display: flex;
 }
 
+/* A delegated sub-agent's progress, inside the card that delegated. Empty on
+   every card that delegated nothing, so it collapses rather than adding a gap
+   to each one -- the same shape the approval slot uses. */
+.tool-call-subagent:empty {
+  display: none;
+}
+
+.tool-call-subagent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subagent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* The collapsed row is the status and the expander at once, which is what keeps
+   a ten-step child one row until somebody opens it. Full width and left-aligned,
+   because it is a line of the card rather than a button on it. */
+.subagent-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--_muted);
+  cursor: pointer;
+}
+
+/* Nothing behind the row yet -- a delegation that failed before calling
+   anything. Drop the affordances rather than offer a control that expands onto
+   an empty region, which is the refusal the card's own toggle already makes. */
+.subagent-row:disabled {
+  cursor: default;
+}
+
+.subagent-row::after {
+  content: "▸";
+  flex: none;
+  margin-left: auto;
+  color: var(--_accent);
+}
+
+.subagent-row[aria-expanded="true"]::after {
+  content: "▾";
+}
+
+.subagent-row:disabled::after {
+  display: none;
+}
+
+/* Empty in the DOM; the glyph is drawn here from the panel's data-phase, so a
+   host re-themes it through the same tool-icon custom properties the card uses. */
+.subagent-icon {
+  flex: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* Anything that is not a terminal phase is the child still working. Selected by
+   what it is not, so a phase this client has not heard of still spins rather
+   than rendering as a blank. */
+.subagent[data-phase]:not([data-phase="finished"]):not([data-phase="failed"]) .subagent-icon {
+  border: 2px solid var(--_muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ag-ui-tool-spin var(--_tool-spin-duration) linear infinite;
+}
+
+.subagent[data-phase="finished"] .subagent-icon::before {
+  content: var(--_tool-icon-done);
+  color: var(--_success);
+}
+
+.subagent[data-phase="failed"] .subagent-icon::before {
+  content: var(--_tool-icon-error);
+  color: var(--_danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subagent .subagent-icon {
+    animation: none;
+  }
+}
+
+/* The server's own pre-rendered line. Shrinks and wraps rather than pushing the
+   chevron out of the card, which is what a fixed-width sibling in a flex row
+   does to a panel at sidebar width. */
+.subagent-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The child's own calls. Indented and ruled, so the nesting is visible without
+   a second card frame around it. */
+.subagent-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--_border);
+}
+
+.subagent-steps[hidden] {
+  display: none;
+}
+
+.subagent-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--_muted);
+}
+
+.subagent-step-icon {
+  flex: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 8px;
+  height: 8px;
+  font-size: 9px;
+  line-height: 1;
+}
+
+/* No outcome yet: the wire says null while the call is in flight, and the
+   absence of the attribute is how that arrives here. A hollow ring, not a
+   spinner -- several can be on screen at once and the row above already spins. */
+.subagent-step:not([data-ok]) .subagent-step-icon {
+  border: 1px solid var(--_muted);
+  border-radius: 50%;
+}
+
+.subagent-step[data-ok="true"] .subagent-step-icon::before {
+  content: var(--_tool-icon-done);
+  color: var(--_success);
+}
+
+.subagent-step[data-ok="false"] .subagent-step-icon::before {
+  content: var(--_tool-icon-error);
+  color: var(--_danger);
+}
+
+.subagent-step-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .tool-call-toggle {
   align-self: flex-start;
   border: none;

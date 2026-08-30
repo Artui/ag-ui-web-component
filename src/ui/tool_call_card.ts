@@ -144,6 +144,23 @@ export class ToolCallCard {
    */
   readonly approvalSlot: HTMLDivElement;
 
+  /**
+   * Where a *nested* run's progress renders — the sub-agent this call delegated
+   * to, narrating itself while the card waits.
+   *
+   * A slot rather than a rendered thing, on the same reasoning as
+   * {@link approvalSlot}: the card owns the position and something else owns the
+   * content. What makes the position right is that the wire keys a delegation on
+   * this card's own `toolCallId`, so the run being narrated is the one this card
+   * already stands for.
+   *
+   * Placed above the Details toggle rather than inside the body, because the
+   * body is what the display modes hide — and a progress line that only appears
+   * in `full` mode would leave exactly the stall it exists to end. Empty on every
+   * card that delegated nothing, and hidden while empty by the shadow CSS.
+   */
+  readonly subagentSlot: HTMLDivElement;
+
   readonly #status: HTMLSpanElement;
   readonly #decision: HTMLSpanElement;
   readonly #toggle: HTMLButtonElement;
@@ -246,7 +263,11 @@ export class ToolCallCard {
     this.approvalSlot.className = "tool-call-approval";
     this.approvalSlot.setAttribute("part", "tool-card-approval");
 
-    this.element.append(head, this.#toggle, body, this.approvalSlot);
+    this.subagentSlot = document.createElement("div");
+    this.subagentSlot.className = "tool-call-subagent";
+    this.subagentSlot.setAttribute("part", "tool-card-subagent");
+
+    this.element.append(head, this.subagentSlot, this.#toggle, body, this.approvalSlot);
   }
 
   /**

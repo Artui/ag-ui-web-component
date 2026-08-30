@@ -131,6 +131,18 @@ export interface UiStrings {
   /** Label on the toggle that expands a tool card's body. */
   details: string;
 
+  // ── Delegated sub-agent ─────────────────────────────────────────────────────
+  /**
+   * The delegation row's text before the server's own status line lands.
+   *
+   * A fallback, not a state: every announcement carries a pre-rendered `status`,
+   * and this only shows if one arrives unusable. The row is the expander, so it
+   * must never be blank.
+   */
+  subAgentWorking: string;
+  /** `aria-label` of the region holding the sub-agent's own tool calls. */
+  subAgentSteps: string;
+
   // ── Confirmation card ───────────────────────────────────────────────────────
   /** `aria-label` of the editable arguments field on an approval card. */
   approvalEditArgs: string;
@@ -318,6 +330,9 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   errorLabel: "Error",
   declinedLabel: "Declined",
   details: "Details",
+
+  subAgentWorking: "Working…",
+  subAgentSteps: "Steps the sub-agent took",
 
   approvalEditArgs: "Edit the arguments before approving",
   approvalArgsInvalid: "That is not valid JSON, so nothing was sent.",

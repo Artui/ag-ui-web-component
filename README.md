@@ -49,6 +49,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
 - [New chat and collapse](#new-chat-and-collapse)
   - [Collapsing to the launcher](#collapsing-to-the-launcher)
 - [Tool-call display modes](#tool-call-display-modes)
+- [Delegated sub-agents](#delegated-sub-agents)
 - [Markdown rendering](#markdown-rendering)
 - [Follow-up suggestions](#follow-up-suggestions)
 - [Editing a gated call before approving it](#editing-a-gated-call-before-approving-it)
@@ -1219,6 +1220,72 @@ speed; the spin respects `prefers-reduced-motion`).
 
 ---
 
+## Delegated sub-agents
+
+A run that hands work to a sub-agent reads as a stall. The parent's
+`delegate_task` card sits at "running…" for the child's entire duration —
+however many tools the child calls, however long it takes — with nothing on
+screen to say anything is happening.
+
+If your server narrates that, the component draws it. The wire is an ordinary
+AG-UI `CUSTOM` event named `ag_ui.subagent`, carrying:
+
+| Key | Meaning |
+| --- | --- |
+| `delegationId` | the **parent's own `delegate_task` tool-call id** — not the child's run id |
+| `agent` | the child agent's name |
+| `phase` | one of `started`, `tool_call`, `tool_result`, `finished`, `failed` |
+| `status` | a pre-rendered line, ready to show |
+| `tool` | `toolCallId`, `name` and `ok`, on the two tool phases only |
+
+Exactly one `started` opens a delegation and exactly one `finished` or `failed`
+closes it. `ok` is a tri-state: `null` while the child's call runs, `true` on a
+result it accepted, `false` on one that came back to it.
+
+Because the key is the *parent's* call id, the surface attaches to a card that
+already exists rather than floating a second element with the same identity: one
+**collapsed row per delegation**, live, carrying the server's `status` line and
+nothing else, expanding onto the child's own tool calls. A ten-step child costs
+one row until somebody opens it, and there is no second visual language — it
+reads the way tool cards already read.
+
+`status` is why the collapsed row needs no wording of its own. The structured
+keys are there for a host that would rather write its own.
+
+The row shows in **every** [display mode](#tool-call-display-modes), including
+`minimal`. It sits outside the card body rather than in it, because the body is
+what the density modes hide — and a live progress line that only appeared in
+`full` would leave exactly the stall it exists to end. Same reasoning that shows
+a deferred card's arguments whatever the mode.
+
+**A failure carries no exception text on this channel, deliberately** — the same
+reasoning that redacts a `RUN_ERROR`, since an exception's words are written for
+an operator. The detail rides the ordinary tool result for that delegation, which
+lands in the same card's `Result` region a few pixels below. Nothing here invents
+words the server declined to send.
+
+**None of it is persisted.** A `CUSTOM` event never enters the message list, so
+nothing replays on a thread restore — which is the right half of the
+[carrier split](#which-carrier-should-the-server-use): a delegation that was live
+an hour ago is not live now, and replaying its progress would be a lie about a
+run that is over. Reload mid-run and the tool card is still there; the nested
+detail is not. That is the intended behaviour.
+
+Like `ag_ui.invalidate`, this name is **routed** rather than forwarded: it draws
+itself and does not also arrive as an `ag-ui-custom` event. Every other name
+still reaches your page untouched.
+
+Style it through `tool-card-subagent` (the region inside the card), `subagent`,
+`subagent-row`, `subagent-icon`, `subagent-status`, `subagent-steps`,
+`subagent-step`, `subagent-step-icon` and `subagent-step-name`. The two glyph
+states reuse the card's own `--ag-ui-tool-icon-done` / `--ag-ui-tool-icon-error`
+properties and its spinner speed, so re-theming the cards re-themes these. The
+row's own chrome comes from `subAgentWorking` and `subAgentSteps` in
+[`UiStrings`](#internationalization-i18n); everything else on the row is the
+server's text.
+
+---
+
 ## Resizing the panel
 
 The panel carries a drag handle on its leading corner (or leading edge, docked),
@@ -2322,7 +2389,8 @@ component sets, so a new one cannot ship undocumented.
 | Follow-up suggestions | `suggestions`, `suggestion-chip` |
 | Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`) |
 | Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-icon`, `run-notice-text` |
-| Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval` |
+| Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent` |
+| Delegated sub-agents | `subagent`, `subagent-row`, `subagent-icon`, `subagent-status`, `subagent-steps`, `subagent-step`, `subagent-step-icon`, `subagent-step-name` |
 | Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`, `confirm-always`) |
 | Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`), `approval-edit`, `approval-args`, `approval-error` |
 | Typed question | `question`, `question-body`, `question-options`, `question-choice`, `question-choice-text`, `question-radio`, `question-input`, `question-actions`, `question-button` |
