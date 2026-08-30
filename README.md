@@ -1440,6 +1440,9 @@ message's own text.
 - **Copy** puts the message's text on the clipboard, and says so on the button.
   A refused clipboard permission is reported there too, rather than thrown.
 - **Thumbs up / down** fire `ag-ui-feedback` (wired below) and **store nothing**.
+  **Off unless you ask for them** — `data-message-actions="copy,retry,feedback"`.
+  Without a listener the buttons still latch, so a reader is told a rating was
+  taken while nothing recorded it.
 
 Retry sits on the **last** answer only. Re-running an older turn is branching,
 and for a page-driving agent editing a past turn is not neutral — those turns
@@ -1465,6 +1468,9 @@ the actions to keep, or `="false"` for none at all:
 <!-- copy only: nothing here listens for a rating, and the surface forbids re-runs -->
 <ag-ui-chat endpoint="/agent/" data-message-actions="copy"></ag-ui-chat>
 ```
+
+The default is `copy,retry`. Those two work with nothing wired; the rating pair
+needs a listener, so it is asked for rather than assumed.
 
 It is per-action rather than one switch because the three disappear for
 different reasons. Thumbs are only useful to a host listening for

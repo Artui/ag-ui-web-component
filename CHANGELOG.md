@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The rating pair is off unless a host asks for it.** `data-message-actions`
+  now defaults to `copy,retry`; thumbs need
+  `data-message-actions="copy,retry,feedback"`.
+
+  Copy and retry work with nothing wired -- copy reads the DOM, retry drives this
+  element. The rating pair does not: it fires `ag-ui-feedback` and stores nothing
+  by design, because a rating belongs to whatever the host already uses for
+  product signal. With no listener the buttons still latch `aria-pressed`, which
+  is deliberate -- a rating is a standing statement about a message -- so a
+  reader is told their rating was taken, a screen reader announces it as pressed,
+  and nothing recorded anything.
+
+  This README has said since the row shipped that two buttons leading nowhere are
+  worse than none. Defaulting them on was that sentence being false. Neither
+  known consumer of this component listens for the event, so both were shipping
+  exactly the buttons the sentence warns about.
+
+  The row shipped two days ago in 0.29.0, so the population relying on the old
+  default is close to nobody, and a host that does listen restores them with one
+  attribute.
+
+
 ## [0.30.0] — 2026-08-30
 
 ### Added

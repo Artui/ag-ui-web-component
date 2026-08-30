@@ -188,8 +188,18 @@ describe("AgUiChat data-max-tool-rounds", () => {
 });
 
 describe("AgUiChat data-message-actions", () => {
-  it("gives a finished answer copy, retry and feedback by default", async () => {
+  it("gives a finished answer copy and retry by default, and no rating pair", async () => {
+    // Copy and retry work with nothing wired. The rating pair does not: it fires
+    // `ag-ui-feedback` and stores nothing, so with no listener the buttons latch
+    // `aria-pressed` and tell a reader their rating was taken while nothing
+    // recorded it. Off unless a host with a listener asks.
     const el = mountWithAgent(answers);
+    await send(el, "hi");
+    expect(actionNames(el).sort()).toEqual(["copy", "retry"]);
+  });
+
+  it("gives the rating pair to a host that asks for it", async () => {
+    const el = mountWithAgent(answers, { "data-message-actions": "copy,retry,feedback" });
     await send(el, "hi");
     expect(actionNames(el).sort()).toEqual(["copy", "down", "retry", "up"]);
   });

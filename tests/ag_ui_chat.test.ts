@@ -1507,9 +1507,13 @@ describe("AgUiChat", () => {
   });
 
   it("emits a feedback event and stores nothing", async () => {
+    // The rating pair is off unless asked for, so a test about what the rating
+    // *does* has to ask for it -- which is the same thing a host with a listener
+    // does, and is the point of the default.
     const { el } = mountWithAgent((emit) => {
       emit.textEnd("an answer");
     });
+    el.setAttribute("data-message-actions", "copy,retry,feedback");
     const seen: unknown[] = [];
     el.addEventListener(FEEDBACK_EVENT, (e) => seen.push((e as CustomEvent).detail));
 
