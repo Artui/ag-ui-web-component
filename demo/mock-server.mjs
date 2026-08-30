@@ -159,6 +159,84 @@ async function handleAgent(res, body) {
     });
     res.end();
     return;
+  } else if (/\bdelegate\b/i.test(prompt) || /\bsub-?agent\b/i.test(prompt)) {
+    // Two delegations, narrated. The point of the scenario is the wait: each
+    // sleep below is time a `delegate_task` card used to spend at "running…"
+    // with nothing on screen, which is the stall the nested row exists to end.
+    //
+    // The shape follows the fixture the tests replay -- `delegationId` is the
+    // parent's own call id, and the failure carries no exception text here,
+    // only on the tool result underneath it.
+    const parent = id("msg");
+    await streamText(res, parent, ["Handing this to two sub-agents."]);
+
+    const progress = (value) => emit(res, { type: "CUSTOM", name: "ag_ui.subagent", value });
+
+    const first = id("call");
+    emitToolCall(res, first, "delegate_task", {
+      agent_name: "researcher",
+      task: "Find settlement passages.",
+    });
+    progress({
+      delegationId: first,
+      agent: "researcher",
+      phase: "started",
+      status: "Delegated to researcher",
+    });
+    for (const [step, outcome] of [
+      ["sub-1", true],
+      ["sub-2", false],
+      ["sub-3", true],
+    ]) {
+      await sleep(700);
+      progress({
+        delegationId: first,
+        agent: "researcher",
+        phase: "tool_call",
+        status: "researcher: calling lookup_docs",
+        tool: { toolCallId: step, name: "lookup_docs", ok: null },
+      });
+      await sleep(900);
+      progress({
+        delegationId: first,
+        agent: "researcher",
+        phase: "tool_result",
+        status: `researcher: lookup_docs ${outcome ? "returned" : "failed"}`,
+        tool: { toolCallId: step, name: "lookup_docs", ok: outcome },
+      });
+    }
+    await sleep(600);
+    progress({
+      delegationId: first,
+      agent: "researcher",
+      phase: "finished",
+      status: "researcher finished",
+    });
+    emitToolResult(res, first, "Three passages mention settlement.");
+
+    const second = id("call");
+    emitToolCall(res, second, "delegate_task", {
+      agent_name: "auditor",
+      task: "Check them against the ledger.",
+    });
+    progress({
+      delegationId: second,
+      agent: "auditor",
+      phase: "started",
+      status: "Delegated to auditor",
+    });
+    await sleep(900);
+    progress({ delegationId: second, agent: "auditor", phase: "failed", status: "auditor failed" });
+    emitToolResult(
+      res,
+      second,
+      "Sub-agent 'auditor' failed: the auditor model went away\n\nFix the errors and try again.",
+    );
+
+    await streamText(res, id("msg"), [
+      "The handbook mentions settlement three times; ",
+      "the ledger check did not run.",
+    ]);
   } else if (/\bchart\b/i.test(prompt) && !isFollowUp) {
     // Both routes and every kind, driven from one prompt so they can be
     // compared on the page rather than in the abstract.
