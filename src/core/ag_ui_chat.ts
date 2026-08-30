@@ -1804,17 +1804,24 @@ export class AgUiChat extends HTMLElement {
    * Which message actions a finished bubble offers, from
    * `data-message-actions`.
    *
-   * Absent means all of them, so the attribute only ever subtracts: the row
-   * shipped without an off switch and a host that never sets this must keep
-   * exactly what it had. A value names the survivors, which makes
-   * `data-message-actions="false"` -- the spelling its sibling
-   * `data-quote-selection` uses -- an empty set by falling out of the same rule
-   * rather than by a case of its own.
+   * **Absent means copy and retry, not all three.** Those two work with nothing
+   * wired: copy reads the DOM, retry drives this element. The rating pair does
+   * not -- it fires `ag-ui-feedback` and stores nothing by design, because a
+   * rating belongs to whatever the host already uses for product signal. With no
+   * listener the buttons still latch `aria-pressed`, so a reader is told their
+   * rating was taken and a screen reader announces it, while nothing recorded
+   * anything. This README has always said two buttons that lead nowhere are
+   * worse than none; shipping them by default was that sentence being false.
+   *
+   * A host with a listener asks for them: `data-message-actions="copy,retry,feedback"`.
+   * A value names the survivors, which makes `data-message-actions="false"` --
+   * the spelling its sibling `data-quote-selection` uses -- an empty set by
+   * falling out of the same rule rather than by a case of its own.
    */
   #messageActions(): ReadonlySet<string> {
     const attr = this.getAttribute("data-message-actions");
     if (attr === null) {
-      return new Set(Object.values(MESSAGE_ACTIONS));
+      return new Set([MESSAGE_ACTIONS.COPY, MESSAGE_ACTIONS.RETRY]);
     }
     return new Set(
       attr

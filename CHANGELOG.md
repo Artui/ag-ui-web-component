@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] — 2026-08-30
+
+### Changed
+
+- **The rating pair is off unless a host asks for it.** `data-message-actions`
+  now defaults to `copy,retry`; thumbs need
+  `data-message-actions="copy,retry,feedback"`.
+
+  Copy and retry work with nothing wired -- copy reads the DOM, retry drives this
+  element. The rating pair does not: it fires `ag-ui-feedback` and stores nothing
+  by design, because a rating belongs to whatever the host already uses for
+  product signal. With no listener the buttons still latch `aria-pressed`, which
+  is deliberate -- a rating is a standing statement about a message -- so a
+  reader is told their rating was taken, a screen reader announces it as pressed,
+  and nothing recorded anything.
+
+  This README has said since the row shipped that two buttons leading nowhere are
+  worse than none. Defaulting them on was that sentence being false. Neither
+  known consumer of this component listens for the event, so both were shipping
+  exactly the buttons the sentence warns about.
+
+  The row shipped two days ago in 0.29.0, so the population relying on the old
+  default is close to nobody, and a host that does listen restores them with one
+  attribute.
+
+
 ## [0.30.0] — 2026-08-30
 
 ### Added
@@ -2562,7 +2588,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.0...HEAD
+[0.31.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.27.0...v0.28.0
