@@ -88,6 +88,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   button needs to do its job is also the statement that it belongs. Additive for
   existing callers.
 
+### Documentation
+
+- **The README's API reference now agrees with the source, and a test keeps it
+  there.** `tests/readme_api_surface.test.ts` asserted only that every exported
+  *name* appeared somewhere in the README, which is the weakest claim a document
+  can make about a symbol: two of the wrong descriptions below were about
+  symbols the README named correctly and then described wrongly, so they passed
+  the gate as written. It now checks the claims the README actually makes,
+  wherever those can be derived from the source cheaply — the completeness of
+  the attribute, method and property lists; the live / connect-time split
+  against `observedAttributes` itself; the members of a documented object shape
+  against the interface that declares them; the parameter count of a documented
+  call or arrow type; that every `chat.x` the README writes names a real member;
+  and the markdown mechanics that make a claim readable at all — a link
+  resolving to a heading, a table row not split by a bare `|`, a run of rows not
+  orphaned from its header. The file states its own boundary in a comment: it reads structure and
+  never semantics, so return types, parameter types, prose and inherited
+  interface members are deliberately outside it. Reimplementing a TypeScript
+  parser here would cost more than the drift it caught.
+
+- **`title-text` was documented as "the only observed attribute".** It is one of
+  eighteen, and the fourteen it did not mention are exactly the ones whose whole
+  purpose is to warn a framework host that a late attribute write is inert — so
+  the sentence told a reader that the machinery built for their case does not
+  exist. A new *When each attribute is read* subsection splits the observed set
+  into the four that are live and the fourteen that are connect-time, says what
+  a late write to each does, and names the one attribute
+  (`data-launcher-icon-url`) that is read while connecting but is not observed,
+  so a late write to that one is inert *and* silent.
+
+- **`UploadHandler` was documented without the `signal` that prevents a leak.**
+  The type takes a third `signal?: AbortSignal`, fired when the tray removes a
+  chip or the element is torn down. A tus or direct-to-S3 adapter written from
+  the two-parameter signature orphans a server-side file on every removed chip,
+  which is a storage bill rather than a visible bug. `UploadOptions` and
+  `TranscribeOptions` were each missing `credentials` for the same reason
+  nothing noticed: an omitted option reads as an option that does not exist.
+
+- **Other corrections found by the same sweep.** `parseToolCatalog` was still
+  documented with its pre-0.28.0 name-to-summary return, though it returns
+  `Record<string, ToolCatalogEntry>`; `QuestionRenderer` pointed at
+  `AgUiChat.questionRenderer`, which has never existed (the property is
+  `askUserRenderer`); `ConfirmationOptions`, `ApprovalOptions` and
+  `ApprovalRequest` each omitted a member; `quotableSelection` was documented
+  with two of its three parameters; the `TOOL_DISPLAY` constants row omitted
+  `inline` though the attribute row had it; the Methods list was eight short and
+  the Properties list nine, including the deprecated `registerStateHook` and the
+  `closeCheckpoints` / `toggleCheckpoints` pair; two rows hid an unescaped `|`
+  inside a code span, which splits the row wherever the README is rendered; a
+  paragraph with a code block sat in the middle of the attribute table, breaking
+  it into two tables and orphaning the seven rows below it; and two links
+  pointed at an `#events` section that has never existed.
+
 ## [0.29.0] — 2026-08-29
 
 ### Added
