@@ -34,6 +34,21 @@ function bubble(text = "the answer"): HTMLElement {
 }
 
 describe("attachMessageActions", () => {
+  it("omits Copy when no text source is passed", () => {
+    // The button's job and the statement that it belongs are the same option,
+    // so a host that turned Copy off cannot leave a button that copies nothing.
+    const el = bubble();
+
+    attachMessageActions(el, {
+      strings: DEFAULT_UI_STRINGS,
+      onFeedback: () => {},
+    });
+
+    const bar = el.nextElementSibling;
+    expect(bar?.querySelector(".message-action--copy")).toBeNull();
+    expect(bar?.querySelectorAll(".message-action")).toHaveLength(2);
+  });
+
   it("puts the row beside the bubble, never inside it", () => {
     const el = bubble();
 

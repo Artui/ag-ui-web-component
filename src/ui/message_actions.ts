@@ -8,11 +8,16 @@ export interface MessageActionsOptions {
   /** Localized strings. */
   strings: UiStrings;
   /**
-   * The text Copy puts on the clipboard. A function rather than a string
-   * because a bubble's content is rewritten while it streams, and the bar is
-   * attached to the element rather than to a snapshot of it.
+   * The text Copy puts on the clipboard. Absent means no copy button.
+   *
+   * A function rather than a string because a bubble's content is rewritten
+   * while it streams, and the bar is attached to the element rather than to a
+   * snapshot of it. Optional for the same reason `onFeedback` is: what a button
+   * needs to do its job is also the statement that the button belongs here, so
+   * there is no second flag saying the same thing and no way for the two to
+   * disagree.
    */
-  text: () => string;
+  text?: () => string;
   /**
    * Report a rating for this message. Absent means no feedback buttons.
    *
@@ -35,13 +40,21 @@ export interface MessageActionsOptions {
  *
  * Idempotent -- a bubble already given a bar is skipped, so a re-render or a
  * second call cannot stack rows.
+ *
+ * Each button is present because the option it needs was passed: `text` for
+ * Copy, `onFeedback` for the rating pair. Passing neither builds an empty row,
+ * which is a caller's mistake rather than a state to guard against -- the
+ * element skips the call entirely when a host has turned both off.
  */
 export function attachMessageActions(bubble: HTMLElement, options: MessageActionsOptions): void {
   if (existingBar(bubble) !== null) {
     return;
   }
   const bar = messageActionBar(bubble, options.strings);
-  bar.appendChild(copyButton(options));
+  const text = options.text;
+  if (text !== undefined) {
+    bar.appendChild(copyButton(options.strings, text));
+  }
   if (options.onFeedback !== undefined) {
     bar.append(
       feedbackButton("up", options.strings.feedbackUp, options.onFeedback),
@@ -104,11 +117,10 @@ export function messageActionButton(
   return button;
 }
 
-function copyButton(options: MessageActionsOptions): HTMLButtonElement {
-  const { strings } = options;
+function copyButton(strings: UiStrings, text: () => string): HTMLButtonElement {
   const button = messageActionButton("copy", strings.copyMessage, "⎘");
   button.addEventListener("click", () => {
-    void navigator.clipboard.writeText(options.text()).then(
+    void navigator.clipboard.writeText(text()).then(
       () => flash(button, strings.copied, strings.copyMessage),
       // A denied clipboard permission is the common case, not an exception:
       // say so on the button rather than throwing into an unhandled rejection.

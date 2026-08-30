@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ToolCallCard } from "../src/ui/tool_call_card.js";
+import { ToolCallCard, type ToolPayload } from "../src/ui/tool_call_card.js";
 import { mergeUiStrings } from "../src/ui/ui_strings.js";
 
 const args = (card: ToolCallCard) => card.element.querySelector<HTMLElement>(".tool-call-args");
@@ -207,5 +207,71 @@ describe("ToolCallCard", () => {
     expect(card.approvalSlot.getAttribute("part")).toBe("tool-card-approval");
     expect(card.approvalSlot.childElementCount).toBe(0);
     expect(card.element.contains(card.approvalSlot)).toBe(true);
+  });
+});
+
+describe("ToolCallCard — the host presentation hook", () => {
+  it("hands the result region to a host formatter, which may return a node", () => {
+    // A 32-field tool result renders as a wall of JSON. The formatter is the
+    // seam a host uses to draw a table or a summary line instead, and the
+    // region is a whole element so it can carry one.
+    const seen: ToolPayload[] = [];
+    const card = new ToolCallCard("list_orders", { status: "open" }, undefined, undefined, {
+      formatPayload: (payload) => {
+        seen.push(payload);
+        if (payload.kind !== "result") {
+          return null;
+        }
+        const row = document.createElement("span");
+        row.textContent = "3 orders";
+        return row;
+      },
+    });
+    card.settle("done", '{"count":3}');
+
+    expect(result(card)?.textContent).toBe("3 orders");
+    expect(result(card)?.getAttribute("data-formatted")).toBe("true");
+    expect(seen).toEqual([
+      { kind: "arguments", toolName: "list_orders", args: { status: "open" } },
+      { kind: "result", toolName: "list_orders", status: "done", text: '{"count":3}' },
+    ]);
+  });
+
+  it("offers the arguments region the same hook, keyed by kind", () => {
+    // The two halves take different paths through the card, so one hook covers
+    // both only because it is passed the region it is being asked about.
+    const card = new ToolCallCard("fill_field", { name: "city" }, undefined, undefined, {
+      formatPayload: (payload) => (payload.kind === "arguments" ? "city ← Paris" : null),
+    });
+    card.settle("done", "ok");
+
+    expect(args(card)?.textContent).toBe("city ← Paris");
+    expect(args(card)?.getAttribute("data-formatted")).toBe("true");
+    // The half the formatter declined keeps the built-in pretty-print.
+    expect(result(card)?.textContent).toBe("ok");
+    expect(result(card)?.hasAttribute("data-formatted")).toBe(false);
+  });
+
+  it("sets a returned string as text, never as markup", () => {
+    // Presentation, not a second markup channel: a formatter that returns a
+    // string cannot inject an element, so nothing here reaches the sanitiser.
+    const card = new ToolCallCard("q", {}, undefined, undefined, {
+      formatPayload: () => "<img src=x onerror=alert(1)>",
+    });
+    card.settle("error", "boom");
+
+    expect(result(card)?.querySelector("img")).toBeNull();
+    expect(result(card)?.textContent).toBe("<img src=x onerror=alert(1)>");
+  });
+
+  it("falls through to the built-in pretty-print when the formatter declines", () => {
+    const card = new ToolCallCard("q", { a: 1 }, undefined, undefined, {
+      formatPayload: () => null,
+    });
+    card.settle("done", '{"count":42}');
+
+    expect(args(card)?.textContent).toBe('{\n  "a": 1\n}');
+    expect(result(card)?.textContent).toBe('{\n  "count": 42\n}');
+    expect(result(card)?.hasAttribute("data-formatted")).toBe(false);
   });
 });

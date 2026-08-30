@@ -11,6 +11,7 @@ export {
   INVALIDATE_EVENT,
   LOAD_CAPABILITY_TOOL,
   MAX_TOOL_ROUNDS,
+  MESSAGE_ACTIONS,
   MESSAGE_ROLE,
   RUN_FINISHED_EVENT,
   STATE_EVENT,
@@ -193,8 +194,11 @@ export {
 export {
   type SettledStatus,
   ToolCallCard,
+  type ToolCallCardOptions,
   type ToolCallStatus,
   type ToolDisplayMode,
+  type ToolPayload,
+  type ToolPayloadFormatter,
 } from "./ui/tool_call_card.js";
 export { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "./ui/ui_strings.js";
 export { VERSION } from "./version.js";
