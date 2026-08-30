@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The sub-agent fixture was re-copied after the server added a `timestamp` to
+  every `CUSTOM` event.** Reading the wire rather than the prose is what found
+  that gap: `CUSTOM` was the only event type in the stream without one. The
+  client needed no change to absorb it — the field is additive and ignored here —
+  which is the degradation story working, and the copy is byte-identical to the
+  producer's again.
+
 - **A delegated sub-agent's progress, on the card that delegated it.** A run that
   hands work to a sub-agent read as a stall: the parent's `delegate_task` card
   sat at "running..." for the child's entire duration, however many tools the
