@@ -29,7 +29,8 @@ import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 import { SubAgentPanel } from "../../src/ui/subagent_panel.js";
 import { ToolCallCard } from "../../src/ui/tool_call_card.js";
-import { FIXTURE_EVENTS, subAgentValue } from "../helpers/subagent_fixture.js";
+import { DEFAULT_UI_STRINGS } from "../../src/ui/ui_strings.js";
+import { FIXTURE_EVENTS, lifecycleEvent } from "../helpers/subagent_fixture.js";
 
 /** The endpoint the mounted element runs against. */
 const ENDPOINT = "/agent/";
@@ -138,8 +139,20 @@ async function replay(el: AgUiChat): Promise<void> {
   }
 }
 
-const RESEARCHER_LAST = subAgentValue((v) => v.agent === "researcher" && v.phase === "finished");
-const AUDITOR_LAST = subAgentValue((v) => v.agent === "auditor" && v.phase === "failed");
+/**
+ * The two settled rows, as the element words them.
+ *
+ * The success line is this element's own -- `SUBAGENT_FINISHED` carries a run id
+ * and no rendered status, which is the better shape for a localised UI. The
+ * failure line *is* the server's, because the protocol requires a `message` on
+ * `SUBAGENT_ERROR`, and the server fills it with the sub-agent's name and
+ * nothing else.
+ */
+const RESEARCHER_FINISHED_LINE = DEFAULT_UI_STRINGS.subAgentFinished.replace(
+  "{agent}",
+  "researcher",
+);
+const AUDITOR_LAST = lifecycleEvent((event) => event.type === "SUBAGENT_ERROR");
 
 defineAgUiChat();
 
@@ -182,13 +195,27 @@ describe("a delegation, from recorded bytes (real browser)", () => {
     expect(cards.map((card) => card.querySelectorAll(".subagent").length)).toEqual([1, 1]);
   });
 
-  it("carries the status the server wrote, on the card the server keyed it to", async () => {
+  it("settles each row on the card the server keyed it to", async () => {
     const el = mount(SIDEBAR);
 
     await replay(el);
 
     const rows = [...shadow(el).querySelectorAll(".subagent-status")].map((n) => n.textContent);
-    expect(rows).toEqual([RESEARCHER_LAST.status, AUDITOR_LAST.status]);
+    expect(rows).toEqual([RESEARCHER_FINISHED_LINE, AUDITOR_LAST.message]);
+  });
+
+  it("settles each row into the phase its closing event named", async () => {
+    // The attribute a host styles the glyph off, and the only place the
+    // success/failure distinction is visible once both rows have stopped
+    // moving -- the failing one carries no text saying so.
+    const el = mount(SIDEBAR);
+
+    await replay(el);
+
+    const phases = [...shadow(el).querySelectorAll(".subagent")].map((n) =>
+      n.getAttribute("data-phase"),
+    );
+    expect(phases).toEqual(["finished", "failed"]);
   });
 
   it("keeps the delegation row inside the card it hangs off", async () => {

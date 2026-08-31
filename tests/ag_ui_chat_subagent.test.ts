@@ -27,11 +27,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { CUSTOM_AGENT_EVENT, ELEMENT_TAG } from "../src/constants.js";
 import type { AgUiChat, CustomAgentDetail } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 import {
   FIXTURE_CUSTOM_NAME,
   FIXTURE_EVENTS,
+  type FixtureLifecycleEvent,
   type FixtureSubAgentValue,
+  lifecycleEvent,
   subAgentValue,
 } from "./helpers/subagent_fixture.js";
 
@@ -98,6 +101,16 @@ function replayFixture(emit: Emit): void {
       emit.toolCall(id, names.get(id) ?? "", JSON.parse(args.get(id) ?? "{}"));
     } else if (type === "CUSTOM") {
       emit.custom(event["name"] as string, event["value"]);
+    } else if (type === "SUBAGENT_STARTED") {
+      emit.subAgentStarted(
+        event["subagentRunId"] as string,
+        event["name"] as string,
+        event["parentToolCallId"] as string,
+      );
+    } else if (type === "SUBAGENT_FINISHED") {
+      emit.subAgentFinished(event["subagentRunId"] as string);
+    } else if (type === "SUBAGENT_ERROR") {
+      emit.subAgentError(event["subagentRunId"] as string, event["message"] as string);
     } else if (type === "TOOL_CALL_RESULT") {
       emit.toolResult(event["toolCallId"] as string, event["content"] as string);
     } else if (type === "TEXT_MESSAGE_START") {
@@ -113,8 +126,12 @@ function replayFixture(emit: Emit): void {
 
 /** The delegation panel inside the card for `toolCallId`, or `null`. */
 function panelFor(el: AgUiChat, toolCallId: string): HTMLElement | null {
-  const started = subAgentValue((v) => v.delegationId === toolCallId && v.phase === "started");
-  return shadow(el).querySelector<HTMLElement>(`.subagent[data-agent="${started.agent}"]`);
+  // Named off the lifecycle event now, not off a CUSTOM payload: the agent's
+  // name arrives on SUBAGENT_STARTED, and it is the only place it is stated.
+  const started = lifecycleEvent(
+    (event) => event.type === "SUBAGENT_STARTED" && event.parentToolCallId === toolCallId,
+  );
+  return shadow(el).querySelector<HTMLElement>(`.subagent[data-agent="${started.name}"]`);
 }
 
 function rowOf(panel: HTMLElement): HTMLButtonElement {
@@ -133,12 +150,17 @@ function stepsOf(panel: HTMLElement): HTMLElement {
   return steps;
 }
 
-/** The recorded payloads, named by what they are so an assertion reads. */
-const RESEARCHER_LAST: FixtureSubAgentValue = subAgentValue(
-  (v) => v.agent === "researcher" && v.phase === "finished",
+/** The recorded events, named by what they are so an assertion reads. */
+const RESEARCHER_STARTED: FixtureLifecycleEvent = lifecycleEvent(
+  (event) => event.type === "SUBAGENT_STARTED" && event.name === "researcher",
 );
-const AUDITOR_LAST: FixtureSubAgentValue = subAgentValue(
-  (v) => v.agent === "auditor" && v.phase === "failed",
+const AUDITOR_LAST: FixtureLifecycleEvent = lifecycleEvent(
+  (event) => event.type === "SUBAGENT_ERROR",
+);
+/** The line the element words for itself when a delegation completes. */
+const RESEARCHER_FINISHED_LINE: string = DEFAULT_UI_STRINGS.subAgentFinished.replace(
+  "{agent}",
+  RESEARCHER_STARTED.name ?? "",
 );
 const RETRY: FixtureSubAgentValue = subAgentValue(
   (v) => v.phase === "tool_result" && v.tool?.ok === false,
@@ -165,16 +187,34 @@ describe("a delegated sub-agent's progress", () => {
     expect(shadow(el).querySelectorAll(".subagent")).toHaveLength(2);
   });
 
-  it("carries the server's own status line on the collapsed row", async () => {
-    // The structured keys are there for a host that wants its own wording; the
-    // row needs nothing but `status`.
+  it("words a settled delegation from its own strings", async () => {
+    // The lifecycle events carry a name and no rendered status -- deliberately,
+    // since a localised UI wants to word its own -- so the closing line comes
+    // from UiStrings here rather than off the wire. The two step phases still
+    // carry a server-rendered `status`; see the test below.
     const el = mount(replayFixture);
 
     await send(el);
 
     const panel = panelFor(el, "call-1") as HTMLElement;
-    expect(rowOf(panel).textContent).toContain(RESEARCHER_LAST.status);
+    expect(rowOf(panel).textContent).toContain(RESEARCHER_FINISHED_LINE);
     expect(stepsOf(panel).hidden).toBe(true);
+  });
+
+  it("carries the server's own status line for a step", async () => {
+    // The structured keys are there for a host that wants its own wording; a
+    // row that never expands needs nothing but `status`.
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("call-1", "delegate_task", { agent_name: "researcher" });
+      emit.subAgentStarted(RESEARCHER_STARTED.subagentRunId, "researcher", "call-1");
+      emit.custom(FIXTURE_CUSTOM_NAME, ACCEPTED);
+    });
+
+    await send(el);
+
+    const panel = panelFor(el, "call-1") as HTMLElement;
+    expect(rowOf(panel).textContent).toContain(ACCEPTED.status);
   });
 
   it("opens onto the child's own tool calls when asked", async () => {
@@ -231,7 +271,7 @@ describe("a delegated sub-agent's progress", () => {
     const panel = panelFor(el, "call-2") as HTMLElement;
     const card = panel.closest(".tool-call") as HTMLElement;
 
-    expect(panel.textContent).toBe(AUDITOR_LAST.status);
+    expect(panel.textContent).toBe(AUDITOR_LAST.message);
     expect(card.querySelector(".tool-call-result")?.textContent).toContain(
       "the auditor model went away",
     );
@@ -276,12 +316,79 @@ describe("a delegated sub-agent's progress", () => {
   });
 
   it("ignores progress for a delegation no card was drawn for", async () => {
-    // The card is the attachment point, so a progress event naming a call this
+    // The card is the attachment point, so an announcement naming a call this
     // client never saw has nowhere to go -- and must not invent a floating one.
-    const opening = subAgentValue((v) => v.agent === "researcher" && v.phase === "started");
+    // Asserted on both carriers, since both name the card the same way.
     const el = mount((emit) => {
       emit.runStart();
-      emit.custom(FIXTURE_CUSTOM_NAME, { ...opening, delegationId: "never-drawn" });
+      emit.custom(FIXTURE_CUSTOM_NAME, { ...ACCEPTED, delegationId: "never-drawn" });
+      emit.subAgentStarted("subagent-never-drawn", "researcher", "never-drawn");
+    });
+
+    await send(el);
+
+    expect(shadow(el).querySelectorAll(".subagent")).toHaveLength(0);
+  });
+
+  it("ignores a close naming a delegation it never saw open", async () => {
+    // The two closing events carry the child's run id and nothing else, so the
+    // pairing has to have been recorded on the opening one. A close without it
+    // names nothing this client can find, which is the same refusal.
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("call-1", "delegate_task", { agent_name: "researcher" });
+      emit.subAgentFinished("subagent-never-opened");
+      emit.subAgentError("subagent-never-opened", "researcher failed");
+    });
+
+    await send(el);
+
+    expect(shadow(el).querySelectorAll(".subagent")).toHaveLength(0);
+  });
+
+  it("settles a delegation whose name the server left empty", async () => {
+    // `name` is required by the protocol but not required to be useful. With no
+    // name there is nothing to interpolate into either line, so the row falls
+    // back to the neutral one rather than rendering "Delegated to " with a hole
+    // in it -- and it still has to settle, because the row is the control.
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("call-1", "delegate_task", {});
+      emit.subAgentStarted("subagent-call-1", "", "call-1");
+      emit.subAgentFinished("subagent-call-1");
+    });
+
+    await send(el);
+
+    const panel = shadow(el).querySelector<HTMLElement>(".subagent") as HTMLElement;
+    expect(panel.hasAttribute("data-agent")).toBe(false);
+    expect(rowOf(panel).textContent).toBe(DEFAULT_UI_STRINGS.subAgentWorking);
+    expect(panel.getAttribute("data-phase")).toBe("finished");
+  });
+
+  it("drops a close for a delegation whose card was never drawn", async () => {
+    // The open was remembered but drew nothing, so the close has a delegation
+    // to name and still no card to settle. It must stay silent rather than
+    // create the panel the open declined to.
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.subAgentStarted("subagent-never-drawn", "researcher", "never-drawn");
+      emit.subAgentFinished("subagent-never-drawn");
+    });
+
+    await send(el);
+
+    expect(shadow(el).querySelectorAll(".subagent")).toHaveLength(0);
+  });
+
+  it("draws nothing for a delegation that names no parent call", async () => {
+    // `parentToolCallId` is optional on the wire. Without one there is no card
+    // to hang off, and a floating panel is exactly what attaching was chosen
+    // over -- so the delegation is simply not drawn.
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("call-1", "delegate_task", { agent_name: "researcher" });
+      emit.subAgentStarted("subagent-orphan", "researcher");
     });
 
     await send(el);
@@ -340,7 +447,7 @@ describe("a delegated sub-agent's progress", () => {
     const stored = Object.keys(sessionStorage)
       .map((key) => sessionStorage.getItem(key) ?? "")
       .join("\n");
-    expect(stored).not.toContain(RESEARCHER_LAST.status);
-    expect(stored).not.toContain(AUDITOR_LAST.status);
+    expect(stored).not.toContain(RESEARCHER_FINISHED_LINE);
+    expect(stored).not.toContain(AUDITOR_LAST.message);
   });
 });

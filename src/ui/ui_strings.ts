@@ -140,6 +140,25 @@ export interface UiStrings {
    * must never be blank.
    */
   subAgentWorking: string;
+  /**
+   * The row's line while a delegation is running. Token: `{agent}`.
+   *
+   * Worded here rather than on the wire, unlike the two step phases. The
+   * protocol's `SUBAGENT_STARTED` carries the sub-agent's `name` and no rendered
+   * status -- which is the better shape for a localised UI, and the reason this
+   * string exists at all.
+   */
+  subAgentDelegatedTo: string;
+  /** The row's line once a delegation completed. Token: `{agent}`. */
+  subAgentFinished: string;
+  /**
+   * The row's line for a delegation that failed and named no agent.
+   *
+   * A fallback only: `SUBAGENT_ERROR` carries a required `message`, which the
+   * server fills with the sub-agent's name and nothing else, and that text is
+   * what the row shows. This covers a server that sent an empty one.
+   */
+  subAgentFailed: string;
   /** `aria-label` of the region holding the sub-agent's own tool calls. */
   subAgentSteps: string;
 
@@ -332,6 +351,9 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   details: "Details",
 
   subAgentWorking: "Working…",
+  subAgentDelegatedTo: "Delegated to {agent}",
+  subAgentFinished: "{agent} finished",
+  subAgentFailed: "The sub-agent failed",
   subAgentSteps: "Steps the sub-agent took",
 
   approvalEditArgs: "Edit the arguments before approving",

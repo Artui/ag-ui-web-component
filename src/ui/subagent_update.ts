@@ -5,6 +5,15 @@
  * renderer: the panel's job is drawing, and a value that reaches it has already
  * been vouched for.
  *
+ * **The three lifecycle phases are still accepted here, deliberately.** A current
+ * server sends only `tool_call` and `tool_result` on this carrier -- the
+ * delegation's lifetime moved to the protocol's `SUBAGENT_*` events -- but a
+ * server one release older sends all five, and this element is published and
+ * vendored separately from it. Continuing to narrow the older shape costs
+ * nothing (the panel needs those phases as visual states regardless) and is the
+ * difference between a mixed-version pair that degrades and one that shows a
+ * delegation which never opens.
+ *
  * Defensive about the payload, not about the name. A `CUSTOM` event's `value` is
  * `unknown` by the protocol, so a server can put anything there, and a malformed
  * announcement must not take a run down with it — the same rule the invalidation

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] — 2026-08-31
+
+### Added
+
+- **The delegation panel reads the protocol's own sub-agent events.**
+  `SUBAGENT_STARTED` / `SUBAGENT_FINISHED` / `SUBAGENT_ERROR` now open and settle
+  the panel; `AgUiClientHandlers` grows `onSubAgentStarted` /
+  `onSubAgentFinished` / `onSubAgentError` for a host that wants them directly.
+  A delegation is still keyed to the card that spawned it — the opening event's
+  `parentToolCallId` is the same value the `ag_ui.subagent` steps carry as
+  `delegationId`, and the pairing to `subagentRunId` is recorded there because
+  the two closing events carry the run id and nothing else.
+
+  The lifecycle wording moved client-side with it. The protocol's events carry a
+  name and no rendered status, which is the better shape for a localised UI, so
+  `UiStrings` gains `subAgentDelegatedTo`, `subAgentFinished` and
+  `subAgentFailed`. The two step phases still render the server's own `status`.
+
+### Changed
+
+- **`ag_ui.subagent` is now the steps channel only.** A current `django-ag-ui`
+  sends `tool_call` and `tool_result` on it and nothing else. The narrower still
+  accepts the three lifecycle phases, deliberately: a server one release older
+  sends all five, and this element is published and vendored separately from it,
+  so the older shape degrades rather than showing a delegation that never opens.
+
+- **Floored at `@ag-ui/core` and `@ag-ui/client` `>=0.0.59`**, raised from
+  `>=0.0.54`. 0.0.59 is the release that added the three events. The range stays
+  open at the top (`<0.1`) — a caret on a `0.0.x` would pin the patch and turn
+  the weekly unpinned-resolve job into a no-op.
+
+  The canonical AG-UI event set asserted by `tests/ag_ui_event_contract.test.ts`
+  moves from 33 to 36 in step, as does its twin in `django-ag-ui`'s suite.
+
 ## [0.31.1] — 2026-08-31
 
 ### Fixed
@@ -2615,7 +2649,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.29.0...v0.30.0

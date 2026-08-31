@@ -13,6 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { SUBAGENT_PHASE } from "../src/constants.js";
 import { SubAgentPanel, type SubAgentUpdate } from "../src/ui/subagent_panel.js";
 import { subAgentUpdate } from "../src/ui/subagent_update.js";
 import { DEFAULT_UI_STRINGS, mergeUiStrings } from "../src/ui/ui_strings.js";
@@ -27,11 +28,34 @@ function update(predicate: Parameters<typeof subAgentValue>[0]): SubAgentUpdate 
   return narrowed;
 }
 
-const OPENING = update((v) => v.agent === "researcher" && v.phase === "started");
+/**
+ * The two lifecycle updates the element builds for itself.
+ *
+ * Written here rather than narrowed from the fixture, and that is not a lapse
+ * in provenance: these phases no longer exist on the `CUSTOM` wire at all. The
+ * delegation's lifetime rides the protocol's `SUBAGENT_STARTED` /
+ * `SUBAGENT_FINISHED`, which carry a name and a run id and no rendered status,
+ * so the element words the line and hands the panel this shape. The fixture is
+ * still the source for everything that *is* on the wire, below.
+ */
+const OPENING: SubAgentUpdate = {
+  delegationId: "call-1",
+  agent: "researcher",
+  phase: SUBAGENT_PHASE.STARTED,
+  status: DEFAULT_UI_STRINGS.subAgentDelegatedTo.replace("{agent}", "researcher"),
+  tool: null,
+};
+const FINISHED: SubAgentUpdate = {
+  delegationId: "call-1",
+  agent: "researcher",
+  phase: SUBAGENT_PHASE.FINISHED,
+  status: DEFAULT_UI_STRINGS.subAgentFinished.replace("{agent}", "researcher"),
+  tool: null,
+};
+
 const CALLING = update((v) => v.phase === "tool_call" && v.tool?.toolCallId === "sub-1");
 const RETURNED = update((v) => v.phase === "tool_result" && v.tool?.ok === true);
 const RETRIED = update((v) => v.phase === "tool_result" && v.tool?.ok === false);
-const FINISHED = update((v) => v.agent === "researcher" && v.phase === "finished");
 
 function row(panel: SubAgentPanel): HTMLButtonElement {
   const found = panel.element.querySelector<HTMLButtonElement>(".subagent-row");
