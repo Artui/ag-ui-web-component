@@ -46,6 +46,18 @@ export interface Emit {
    */
   custom(name: string, value: unknown): void;
   /**
+   * Emit the protocol's own `SUBAGENT_STARTED`.
+   *
+   * `parentToolCallId` is optional on the wire, so it is optional here: a
+   * delegation that names no parent call is a case the element has to handle
+   * rather than one the fake should make impossible.
+   */
+  subAgentStarted(subagentRunId: string, name: string, parentToolCallId?: string): void;
+  /** Emit `SUBAGENT_FINISHED`, which carries the child's run id and nothing else. */
+  subAgentFinished(subagentRunId: string): void;
+  /** Emit `SUBAGENT_ERROR`, whose `message` the protocol requires. */
+  subAgentError(subagentRunId: string, message: string): void;
+  /**
    * Apply an AG-UI `MESSAGES_SNAPSHOT`.
    *
    * Mirrors what `@ag-ui/client` does with the real event: **replace** the
@@ -208,6 +220,32 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
     custom: (name, value) => {
       dispatch(s, "onCustomEvent", {
         event: { type: EventType.CUSTOM, name, value },
+      });
+    },
+    // The three lifecycle events are dispatched to subscribers and never
+    // written into the message list, which is exactly the property that made
+    // them adoptable for progress -- so the fake models them the same way,
+    // with no touch of `agent.messages`.
+    subAgentStarted: (subagentRunId, name, parentToolCallId) => {
+      dispatch(s, "onSubagentStartedEvent", {
+        event: {
+          type: EventType.SUBAGENT_STARTED,
+          subagentRunId,
+          name,
+          // Omitted rather than sent as null, which is what the protocol's own
+          // client demands of every optional field on these events.
+          ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
+        },
+      });
+    },
+    subAgentFinished: (subagentRunId) => {
+      dispatch(s, "onSubagentFinishedEvent", {
+        event: { type: EventType.SUBAGENT_FINISHED, subagentRunId },
+      });
+    },
+    subAgentError: (subagentRunId, message) => {
+      dispatch(s, "onSubagentErrorEvent", {
+        event: { type: EventType.SUBAGENT_ERROR, subagentRunId, message },
       });
     },
     messagesSnapshot: (next) => {

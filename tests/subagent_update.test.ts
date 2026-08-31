@@ -25,8 +25,8 @@ import { SUBAGENT_PHASE } from "../src/constants.js";
 import { subAgentUpdate } from "../src/ui/subagent_update.js";
 import { subAgentValue, subAgentValues } from "./helpers/subagent_fixture.js";
 
-/** A real opening payload, and a real one carrying a tool. */
-const OPENING = subAgentValue((v) => v.agent === "researcher" && v.phase === "started");
+/** Two real payloads: a call in flight, and a result that landed. */
+const A_STEP = subAgentValue((v) => v.phase === "tool_call" && v.tool?.toolCallId === "sub-1");
 const WITH_TOOL = subAgentValue((v) => v.phase === "tool_result" && v.tool?.ok === true);
 
 /** The same payload with one key replaced, as an untyped value off the wire. */
@@ -46,37 +46,43 @@ describe("narrowing a sub-agent announcement", () => {
 
   it("keeps the tool record whole, with the tri-state the wire sent", () => {
     expect(subAgentUpdate(WITH_TOOL)?.tool).toEqual(WITH_TOOL.tool);
-    expect(subAgentUpdate(OPENING)?.tool).toBeNull();
+    // A payload carrying no tool still narrows, to "said nothing about this".
+    // Every payload a current server writes carries one, so this is the
+    // defensive path rather than the ordinary one -- the value is `unknown`.
+    expect(subAgentUpdate(spoiled(A_STEP, { tool: undefined }))?.tool).toBeNull();
   });
 
   it("recognises every phase the contract names, and only those", () => {
+    // All five, including the three a current server no longer puts on this
+    // carrier: a server one release older still does, and this element ships
+    // and is vendored separately from it.
     for (const phase of Object.values(SUBAGENT_PHASE)) {
-      expect(subAgentUpdate(spoiled(OPENING, { phase }))?.phase).toBe(phase);
+      expect(subAgentUpdate(spoiled(A_STEP, { phase }))?.phase).toBe(phase);
     }
-    expect(subAgentUpdate(spoiled(OPENING, { phase: "half_done" }))).toBeNull();
-    expect(subAgentUpdate(spoiled(OPENING, { phase: 3 }))).toBeNull();
+    expect(subAgentUpdate(spoiled(A_STEP, { phase: "half_done" }))).toBeNull();
+    expect(subAgentUpdate(spoiled(A_STEP, { phase: 3 }))).toBeNull();
   });
 
   it("refuses a value that is not an object at all", () => {
     // An array is `typeof "object"` and carries none of these keys, and a JSON
     // decoder hands one over without a word.
-    for (const value of [null, undefined, "started", 7, [OPENING]]) {
+    for (const value of [null, undefined, "started", 7, [A_STEP]]) {
       expect(subAgentUpdate(value)).toBeNull();
     }
   });
 
   it("refuses an announcement with no delegation to attach to", () => {
     for (const delegationId of [undefined, "", 7, null]) {
-      expect(subAgentUpdate(spoiled(OPENING, { delegationId }))).toBeNull();
+      expect(subAgentUpdate(spoiled(A_STEP, { delegationId }))).toBeNull();
     }
   });
 
   it("degrades an unusable agent or status to nothing said", () => {
     for (const agent of [undefined, "", 7]) {
-      expect(subAgentUpdate(spoiled(OPENING, { agent }))?.agent).toBeNull();
+      expect(subAgentUpdate(spoiled(A_STEP, { agent }))?.agent).toBeNull();
     }
     for (const status of [undefined, "", { text: "hi" }]) {
-      expect(subAgentUpdate(spoiled(OPENING, { status }))?.status).toBeNull();
+      expect(subAgentUpdate(spoiled(A_STEP, { status }))?.status).toBeNull();
     }
   });
 

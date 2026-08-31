@@ -22,6 +22,7 @@ import {
   RUN_FINISHED_EVENT,
   STATE_EVENT,
   SUBAGENT_CUSTOM_NAME,
+  SUBAGENT_PHASE,
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
   TOGGLE_EVENT,
@@ -82,7 +83,7 @@ import { renderRunNotice } from "../ui/run_notice.js";
 import { SkillsMenu } from "../ui/skills_menu.js";
 import { createStickToBottom, type StickToBottom } from "../ui/stick_to_bottom.js";
 import { STYLES } from "../ui/styles.js";
-import { SubAgentPanel } from "../ui/subagent_panel.js";
+import { SubAgentPanel, type SubAgentPhase, type SubAgentUpdate } from "../ui/subagent_panel.js";
 import { subAgentUpdate } from "../ui/subagent_update.js";
 import { renderSuggestionChips } from "../ui/suggestion_chips.js";
 import { ThoughtsBlock } from "../ui/thoughts_block.js";
@@ -630,6 +631,17 @@ export class AgUiChat extends HTMLElement {
    * approval prompt already uses.
    */
   readonly #subagentPanels = new Map<string, SubAgentPanel>();
+  /**
+   * Which delegation each live `subagentRunId` belongs to.
+   *
+   * The protocol's closing events -- `SUBAGENT_FINISHED` and `SUBAGENT_ERROR`
+   * -- carry the child's run id and nothing else, while everything drawn here
+   * is keyed on the parent's `delegate_task` call id. `SUBAGENT_STARTED` is the
+   * one event carrying both, so the pairing is recorded there and read back on
+   * the close. A close naming a run this never saw open is dropped, which is
+   * the same refusal a step for an undrawn card gets.
+   */
+  readonly #subagentRunDelegations = new Map<string, string>();
   /**
    * Call ids whose card was already settled from a streamed server-side result
    * (`TOOL_CALL_RESULT`), so the post-run executeTool sweep doesn't overwrite
@@ -2473,6 +2485,7 @@ export class AgUiChat extends HTMLElement {
     // the correct half of that split -- a delegation that was live before this
     // transcript was wiped is not live now.
     this.#subagentPanels.clear();
+    this.#subagentRunDelegations.clear();
     this.#serverSettled.clear();
     this.#cardElements.clear();
     this.#activityBlocks.clear();
@@ -3945,6 +3958,32 @@ export class AgUiChat extends HTMLElement {
           }),
         );
       },
+      // The delegation's own lifetime, on the protocol's events rather than the
+      // CUSTOM channel its steps ride. Both end at the same panel.
+      onSubAgentStarted: (subagentRunId, agent, parentToolCallId) => {
+        // A delegation naming no parent call names no card, and a floating
+        // panel is exactly what attaching to the card was chosen over.
+        if (parentToolCallId === null) {
+          return;
+        }
+        this.#subagentRunDelegations.set(subagentRunId, parentToolCallId);
+        this.#applySubAgent({
+          delegationId: parentToolCallId,
+          agent: agent === "" ? null : agent,
+          phase: SUBAGENT_PHASE.STARTED,
+          status: this.#strings.subAgentDelegatedTo.replace("{agent}", agent),
+          tool: null,
+        });
+      },
+      onSubAgentFinished: (subagentRunId) => {
+        this.#closeSubAgent(subagentRunId, SUBAGENT_PHASE.FINISHED, null);
+      },
+      onSubAgentError: (subagentRunId, message) => {
+        // The server's own words, which the contract keeps to the sub-agent's
+        // name. Passed through as the status line and set with textContent
+        // downstream, never parsed as markup.
+        this.#closeSubAgent(subagentRunId, SUBAGENT_PHASE.FAILED, message);
+      },
       onMessagesSnapshot: () => {
         // Honoured for persistence and announced, not re-rendered.
         //
@@ -4144,6 +4183,57 @@ export class AgUiChat extends HTMLElement {
     if (update === null) {
       return;
     }
+    this.#applySubAgent(update);
+  }
+
+  /**
+   * Fold one already-narrowed update into the delegation's panel.
+   *
+   * The join point of the two carriers, and the reason it is separate from
+   * {@link #reportSubAgent}: a `CUSTOM` step arrives as `unknown` and has to be
+   * vouched for, while a lifecycle event arrives typed off the protocol and has
+   * nothing left to check. Both end up here, so the panel has one way in and
+   * the phases stay a single state machine regardless of which wire they came
+   * from.
+   */
+  /**
+   * Settle the delegation a closing lifecycle event names.
+   *
+   * `status` is the server's text on a failure and `null` on a success, where
+   * the wording is this element's own -- the protocol's finish event carries no
+   * message, which is the better shape for a localised UI and the reason
+   * {@link UiStrings.subAgentFinished} exists.
+   *
+   * The pairing is deliberately not deleted on close. A panel outlives the
+   * delegation it drew, the map is cleared with the transcript alongside the
+   * panels, and forgetting the id here would only make a duplicate close draw
+   * nothing instead of drawing the same settled row again.
+   */
+  #closeSubAgent(subagentRunId: string, phase: SubAgentPhase, status: string | null): void {
+    const delegationId = this.#subagentRunDelegations.get(subagentRunId);
+    if (delegationId === undefined) {
+      // A close naming a delegation this never saw open -- the same refusal a
+      // step for an undrawn card gets, and the same reason.
+      return;
+    }
+    const agent = this.#subagentPanels.get(delegationId)?.agent ?? null;
+    this.#applySubAgent({
+      delegationId,
+      agent,
+      phase,
+      status: status === null ? this.#finishedLine(agent) : status,
+      tool: null,
+    });
+  }
+
+  /** The row's line for a delegation that completed, named if its name is known. */
+  #finishedLine(agent: string | null): string {
+    return agent === null
+      ? this.#strings.subAgentWorking
+      : this.#strings.subAgentFinished.replace("{agent}", agent);
+  }
+
+  #applySubAgent(update: SubAgentUpdate): void {
     const card = this.#toolCards.get(update.delegationId);
     if (card === undefined) {
       return;

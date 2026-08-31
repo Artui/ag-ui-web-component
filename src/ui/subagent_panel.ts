@@ -83,6 +83,18 @@ export class SubAgentPanel {
   readonly element: HTMLDivElement;
 
   /**
+   * The child agent's name, as the last update that carried one gave it.
+   *
+   * Read back rather than only written to the DOM, because the two carriers
+   * split the name away from the close: `SUBAGENT_STARTED` names the agent and
+   * `SUBAGENT_FINISHED` carries only an id, so whoever words the closing line
+   * has to recover the name from what the delegation already told it.
+   */
+  get agent(): string | null {
+    return this.#agent;
+  }
+
+  /**
    * The collapsed row, which is the expander as well as the status.
    *
    * Disabled while the child has called nothing, so a delegation that failed
@@ -94,6 +106,7 @@ export class SubAgentPanel {
   readonly #steps: HTMLDivElement;
   /** The child's tool calls, keyed by the child's own call id. */
   readonly #stepRows = new Map<string, HTMLDivElement>();
+  #agent: string | null = null;
 
   constructor(strings: UiStrings = DEFAULT_UI_STRINGS) {
     this.element = document.createElement("div");
@@ -151,6 +164,7 @@ export class SubAgentPanel {
   report(update: SubAgentUpdate): void {
     this.element.setAttribute("data-phase", update.phase);
     if (update.agent !== null) {
+      this.#agent = update.agent;
       this.element.setAttribute("data-agent", update.agent);
     }
     if (update.status !== null) {

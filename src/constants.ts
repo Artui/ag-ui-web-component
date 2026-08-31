@@ -120,7 +120,7 @@ export const SUGGESTIONS_ACTIVITY_TYPE = "suggestions";
 export const INVALIDATE_CUSTOM_NAME = "ag_ui.invalidate";
 
 /**
- * The AG-UI `CUSTOM` event `name` carrying a delegated sub-agent's progress.
+ * The AG-UI `CUSTOM` event `name` carrying one step a delegated sub-agent took.
  *
  * Matched exactly, and namespaced the way {@link INVALIDATE_CUSTOM_NAME} is, so
  * it cannot collide with a host's own custom events on the same open field.
@@ -130,25 +130,44 @@ export const INVALIDATE_CUSTOM_NAME = "ag_ui.invalidate";
  * describes is already on screen and the progress belongs beside it. Every other
  * name still reaches the host as {@link CUSTOM_AGENT_EVENT}.
  *
+ * **This carries the steps only.** The delegation's own lifetime arrives on the
+ * protocol's `SUBAGENT_STARTED` / `SUBAGENT_FINISHED` / `SUBAGENT_ERROR` events,
+ * which name the same card through their `parentToolCallId`. The two are joined
+ * by that id, which is why the panel is keyed on it rather than on the
+ * `subagentRunId` the protocol's events carry.
+ *
  * Deliberately on the imperative carrier and not on an activity, which means it
  * is **never persisted and never replayed**. That is the right half of the
  * split: a delegation that was live an hour ago is not live now, and replaying
  * its progress on a thread restore would be a lie about a run that is over. On a
- * reload mid-run the nested detail is gone and the tool card remains.
+ * reload mid-run the nested detail is gone and the tool card remains. The three
+ * lifecycle events share that property -- `@ag-ui/client` dispatches them to
+ * subscribers without writing them into `agent.messages` -- which is what made
+ * them safe to adopt while the steps stayed here.
  */
 export const SUBAGENT_CUSTOM_NAME = "ag_ui.subagent";
 
 /**
- * The phases one delegation moves through, as the server spells them.
+ * The phases one delegation moves through, as the panel draws them.
  *
  * Exactly one `STARTED` opens a delegation and exactly one `FINISHED` or
  * `FAILED` closes it; the two tool phases repeat in between, once per call the
  * child makes and once per result it gets back.
  *
- * `FAILED` carries **no exception text**, deliberately — the same reasoning that
- * redacts a `RUN_ERROR`, since an exception's words are written for an operator.
- * The detail rides the ordinary `TOOL_CALL_RESULT` for that delegation, on the
- * card the progress is already attached to.
+ * **These are this element's five visual states, and they no longer come off one
+ * wire.** `TOOL_CALL` and `TOOL_RESULT` are spelled by the server, on the
+ * {@link SUBAGENT_CUSTOM_NAME} payload's `phase` field. The other three are this
+ * element's own names for the protocol's `SUBAGENT_STARTED` / `SUBAGENT_FINISHED`
+ * / `SUBAGENT_ERROR` events, which carry no phase field of their own because the
+ * event type *is* the phase. Keeping one vocabulary is what lets the panel stay
+ * a single state machine with one `data-phase` attribute for a host to style.
+ *
+ * `FAILED` carries **no exception text** from us — the protocol's error event
+ * has a required `message`, and the server sends only the sub-agent's name in
+ * it, on the same reasoning that redacts a `RUN_ERROR`, since an exception's
+ * words are written for an operator. The detail rides the ordinary
+ * `TOOL_CALL_RESULT` for that delegation, on the card the progress is already
+ * attached to.
  */
 export const SUBAGENT_PHASE = {
   STARTED: "started",

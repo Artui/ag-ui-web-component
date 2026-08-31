@@ -26,6 +26,10 @@ function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {
     onReasoningStart: () => calls.push("reasoning-start"),
     onReasoningDelta: (b) => calls.push(`reasoning:${b}`),
     onReasoningEnd: () => calls.push("reasoning-end"),
+    onSubAgentStarted: (runId, name, parentToolCallId) =>
+      calls.push(`subagent-started:${runId}:${name}:${parentToolCallId}`),
+    onSubAgentFinished: (runId) => calls.push(`subagent-finished:${runId}`),
+    onSubAgentError: (runId, message) => calls.push(`subagent-error:${runId}:${message}`),
     onRunEnd: () => calls.push("done"),
     onError: (m) => calls.push(`err:${m}`),
     onCancelled: () => calls.push("cancelled"),

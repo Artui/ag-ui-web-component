@@ -20,8 +20,18 @@
  *
  * Two fields are canonicalized by the generator and only two: `timestamp` (the
  * wall clock) and `messageId` / `parentMessageId` (fresh UUIDs). Every
- * `toolCallId` is what the server wrote, which matters here because the progress
- * events key on them.
+ * `toolCallId` is what the server wrote, which matters here because both
+ * carriers key on them, and so is every `subagentRunId` -- the server derives
+ * those from the delegation's tool call id rather than minting them, so they
+ * repeat across runs without needing to be settled.
+ *
+ * ## Two carriers, one file
+ *
+ * The recorded run carries both halves of the contract, and the interleaving is
+ * the part neither half states on its own: the delegation's lifetime on the
+ * protocol's `SUBAGENT_STARTED` / `SUBAGENT_FINISHED` / `SUBAGENT_ERROR`, and
+ * each tool call the child made on an `ag_ui.subagent` `CUSTOM` event between
+ * them.
  */
 
 import fixture from "../fixtures/subagent_progress_stream.json";
@@ -53,6 +63,42 @@ export const FIXTURE_SCENARIO: string = fixture.scenario;
 
 /** The `CUSTOM` event `name` the sub-agent progress channel uses on the wire. */
 export const FIXTURE_CUSTOM_NAME = "ag_ui.subagent";
+
+/** One decoded `SUBAGENT_*` event: the delegation's own lifecycle. */
+export interface FixtureLifecycleEvent {
+  readonly type: string;
+  readonly subagentRunId: string;
+  readonly name?: string;
+  readonly parentToolCallId?: string;
+  readonly message?: string;
+}
+
+/** Every lifecycle event the run carried, in order. */
+export function lifecycleEvents(): readonly FixtureLifecycleEvent[] {
+  return FIXTURE_EVENTS.filter((event) =>
+    String(event["type"]).startsWith("SUBAGENT_"),
+  ) as unknown as readonly FixtureLifecycleEvent[];
+}
+
+/**
+ * The one lifecycle event matching `predicate`.
+ *
+ * Selected by shape rather than by index, for the reason {@link subAgentValue}
+ * gives: a regenerated fixture that gains an event should fail on the assertion
+ * it invalidates, not on an off-by-one somewhere else.
+ */
+export function lifecycleEvent(
+  predicate: (event: FixtureLifecycleEvent) => boolean,
+): FixtureLifecycleEvent {
+  const found = lifecycleEvents().filter(predicate);
+  if (found.length !== 1) {
+    throw new Error(
+      `expected exactly one matching lifecycle event in the fixture, found ${found.length}. ` +
+        `Scenario: ${FIXTURE_SCENARIO}`,
+    );
+  }
+  return found[0] as FixtureLifecycleEvent;
+}
 
 /** Every sub-agent progress payload the run carried, in order. */
 export function subAgentValues(): readonly FixtureSubAgentValue[] {

@@ -13,6 +13,9 @@ import { describe, expect, it } from "vitest";
  * (`tests/test_ag_ui_event_contract.py`) and documented in the ecosystem
  * `architecture.md` ("Events the trio relies on"). Update all three together.
  */
+// The 36 AG-UI event types, as of @ag-ui/core 0.0.59 / ag-ui-protocol 0.1.21.
+// 0.1.21 is the bump that grew the catalogue, adding the three SUBAGENT_* events
+// below; the delegation lifecycle rides them, and the sub-agent panel reads them.
 const CANONICAL_AG_UI_EVENTS: ReadonlySet<string> = new Set([
   "ACTIVITY_DELTA",
   "ACTIVITY_SNAPSHOT",
@@ -33,6 +36,9 @@ const CANONICAL_AG_UI_EVENTS: ReadonlySet<string> = new Set([
   "STATE_SNAPSHOT",
   "STEP_FINISHED",
   "STEP_STARTED",
+  "SUBAGENT_ERROR",
+  "SUBAGENT_FINISHED",
+  "SUBAGENT_STARTED",
   "TEXT_MESSAGE_CHUNK",
   "TEXT_MESSAGE_CONTENT",
   "TEXT_MESSAGE_END",

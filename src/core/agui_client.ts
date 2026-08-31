@@ -127,6 +127,31 @@ export interface AgUiClientHandlers {
    * be the thing the open field exists to avoid.
    */
   onCustomEvent(name: string, value: unknown): void;
+  /**
+   * A delegated sub-agent started, inside the run.
+   *
+   * The protocol's own event, unlike the steps that follow it on
+   * {@link SUBAGENT_CUSTOM_NAME}. `parentToolCallId` links the delegation to the
+   * `delegate_task` call that spawned it -- the field AG-UI provides for the
+   * "agents as tools" shape -- and is `null` when the server did not send one,
+   * which a host reads as a delegation it has nothing to attach to.
+   *
+   * `subagentRunId` names the child run and is the only id the two closing
+   * events carry, so a host that wants to close what it opened has to remember
+   * the pairing.
+   */
+  onSubAgentStarted(subagentRunId: string, name: string, parentToolCallId: string | null): void;
+  /** The delegation named by `subagentRunId` completed. */
+  onSubAgentFinished(subagentRunId: string): void;
+  /**
+   * The delegation named by `subagentRunId` failed.
+   *
+   * `message` is server text and required by the protocol, but it is not an
+   * exception's words: `django-ag-ui` sends only which sub-agent failed, on the
+   * same reasoning that redacts a `RUN_ERROR`. Render it as text, never as
+   * markup.
+   */
+  onSubAgentError(subagentRunId: string, message: string): void;
   onError(message: string): void;
   /**
    * Fired when the user cancelled the run ({@link AgUiClient.cancel}) — the
@@ -566,6 +591,22 @@ export class AgUiClient {
       // so an ordinary text delta does not walk the transcript.
       onCustomEvent({ event }) {
         h.onCustomEvent(event.name, event.value);
+      },
+      // The delegation lifecycle. Forwarded rather than interpreted here, for
+      // the reason every other subscriber in this block is thin: this file
+      // adapts the protocol to the handler surface, and what a delegation looks
+      // like on screen is the element's business.
+      //
+      // `parentToolCallId` is optional on the wire and normalised to `null` so
+      // the handler has one absent-value to check rather than two.
+      onSubagentStartedEvent({ event }) {
+        h.onSubAgentStarted(event.subagentRunId, event.name, event.parentToolCallId ?? null);
+      },
+      onSubagentFinishedEvent({ event }) {
+        h.onSubAgentFinished(event.subagentRunId);
+      },
+      onSubagentErrorEvent({ event }) {
+        h.onSubAgentError(event.subagentRunId, event.message);
       },
       onMessagesSnapshotEvent({ event }) {
         h.onMessagesSnapshot(event.messages as readonly Message[]);
