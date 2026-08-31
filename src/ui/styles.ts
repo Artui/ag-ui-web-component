@@ -524,6 +524,15 @@ export const STYLES = `
    floating circle that would escape the host's layout. */
 :host([collapsed]) {
   pointer-events: none;
+  /* A collapsed host has to be allowed to shrink, and in the layout hosts
+     actually use it is not. Every collapse path here works by letting the host
+     size to its content -- the in-flow ones set height: auto, the floating one
+     leaves only the launcher -- and a flex or grid parent whose align-items is
+     the default stretch value overrides all of it. The panel then hides and the box
+     it occupied stays: a header bar over several hundred pixels of nothing.
+     Every known consumer hit this, because putting the element in a flex column
+     beside the page content is the obvious way to embed it. */
+  align-self: start;
 }
 
 :host([collapsed]) .chat {
