@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.1] — 2026-08-31
+
+### Fixed
+
+- **A collapsed widget did not give its space back inside a flex or grid parent.**
+  The panel hid and the box it occupied stayed: a header bar over several hundred
+  pixels of nothing.
+
+  Every collapse path works by letting the host size to its content -- the
+  in-flow placements set `height: auto` and keep the header bar, the floating one
+  leaves only the launcher. A parent whose `align-items` is the default stretch
+  overrides all of it, and putting the element in a flex row beside the page
+  content is the obvious way to embed it. `align-self: start` on the collapsed
+  host is the whole fix.
+
+  Reported from a running page rather than found here, and it was reaching every
+  known consumer: four frontends with byte-identical `display: flex` containers.
+
+  Scope worth stating, since it reads as narrow. `page` sizes itself to the
+  viewport, so a parent never stretches it. `floating` -- the default -- is
+  documented as never reflowing the page and hides its panel with `visibility` so
+  the transition has something to animate; a visibility-hidden box still occupies
+  its space, so a floating widget cannot shrink an in-flow parent and is not
+  meant to be in one. A host docking a full-height panel wants a placement rather
+  than the floating default.
+
+
 ## [0.31.0] — 2026-08-30
 
 ### Changed
@@ -2588,7 +2615,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.1...HEAD
+[0.31.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.28.0...v0.29.0
