@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.1] — 2026-08-31
+
 ### Fixed
 
 - **A collapsed widget did not give its space back inside a flex or grid parent.**
@@ -2613,7 +2615,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.1...HEAD
+[0.31.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.28.0...v0.29.0
