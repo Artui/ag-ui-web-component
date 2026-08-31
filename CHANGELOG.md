@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The demo's delegation scenario now streams the carrier a current server
+  writes.** It still emitted the five-phase `ag_ui.subagent` `CUSTOM` lifecycle
+  that 0.32.0 moved onto the protocol's `SUBAGENT_STARTED` / `_FINISHED` /
+  `_ERROR` — so the playground demonstrated only the shape kept for
+  back-compatibility, and the component's own showcase was the one place the new
+  wire could not be seen.
+
+  Found by driving the demo in a browser rather than by reading it. Worth noting
+  that the *rendering was identical either way*, which is the tolerance working
+  as intended and also the reason a passing look at the page proves nothing about
+  which wire produced it: the check that separates them is reading the stream.
+
+  The legacy shape stays accepted — `subAgentUpdate` still narrows all five
+  phases for a server one release behind, covered by
+  `tests/subagent_update.test.ts`. It is a tolerance, not something a showcase
+  should teach.
+
 ## [0.32.0] — 2026-08-31
 
 ### Added
