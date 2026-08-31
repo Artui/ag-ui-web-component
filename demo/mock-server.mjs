@@ -164,25 +164,45 @@ async function handleAgent(res, body) {
     // sleep below is time a `delegate_task` card used to spend at "running…"
     // with nothing on screen, which is the stall the nested row exists to end.
     //
-    // The shape follows the fixture the tests replay -- `delegationId` is the
-    // parent's own call id, and the failure carries no exception text here,
-    // only on the tool result underneath it.
+    // The shape follows the fixture the tests replay, which means **two
+    // carriers**: the delegation's own lifetime rides the protocol's
+    // SUBAGENT_STARTED / _FINISHED / _ERROR, and each tool call the child makes
+    // rides a CUSTOM `ag_ui.subagent` event keyed on the parent's call id.
+    //
+    // The lifecycle is where the protocol's own client is strict, so this
+    // scenario has to be too, or it streams something a browser rejects rather
+    // than something a server writes: exactly one open and one close per
+    // delegation, no reused subagentRunId, and no RUN_FINISHED while either is
+    // still open. The failure carries no exception text on the lifecycle event
+    // -- only on the tool result underneath it.
+    //
+    // `subagentRunId` is derived from the delegation's call id the way the
+    // server derives it, rather than minted here, so the id on screen is
+    // traceable to the card it belongs to.
     const parent = id("msg");
     await streamText(res, parent, ["Handing this to two sub-agents."]);
 
     const progress = (value) => emit(res, { type: "CUSTOM", name: "ag_ui.subagent", value });
+    const opened = (call, name) =>
+      emit(res, {
+        type: "SUBAGENT_STARTED",
+        subagentRunId: `subagent-${call}`,
+        name,
+        parentToolCallId: call,
+      });
+    // Optional fields are omitted rather than sent as null: the protocol's own
+    // client refuses an explicit null on every one of them.
+    const closed = (call) =>
+      emit(res, { type: "SUBAGENT_FINISHED", subagentRunId: `subagent-${call}` });
+    const errored = (call, message) =>
+      emit(res, { type: "SUBAGENT_ERROR", subagentRunId: `subagent-${call}`, message });
 
     const first = id("call");
     emitToolCall(res, first, "delegate_task", {
       agent_name: "researcher",
       task: "Find settlement passages.",
     });
-    progress({
-      delegationId: first,
-      agent: "researcher",
-      phase: "started",
-      status: "Delegated to researcher",
-    });
+    opened(first, "researcher");
     for (const [step, outcome] of [
       ["sub-1", true],
       ["sub-2", false],
@@ -206,12 +226,7 @@ async function handleAgent(res, body) {
       });
     }
     await sleep(600);
-    progress({
-      delegationId: first,
-      agent: "researcher",
-      phase: "finished",
-      status: "researcher finished",
-    });
+    closed(first);
     emitToolResult(res, first, "Three passages mention settlement.");
 
     const second = id("call");
@@ -219,14 +234,9 @@ async function handleAgent(res, body) {
       agent_name: "auditor",
       task: "Check them against the ledger.",
     });
-    progress({
-      delegationId: second,
-      agent: "auditor",
-      phase: "started",
-      status: "Delegated to auditor",
-    });
+    opened(second, "auditor");
     await sleep(900);
-    progress({ delegationId: second, agent: "auditor", phase: "failed", status: "auditor failed" });
+    errored(second, "auditor failed");
     emitToolResult(
       res,
       second,
