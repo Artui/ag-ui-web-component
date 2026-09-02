@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] — 2026-09-02
+
 ### Added
 
 - **The panel resizes from every edge and every corner**, not only one grip.
@@ -2798,7 +2800,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.30.0...v0.31.0
