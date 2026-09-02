@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The panel resizes from every edge and every corner**, not only one grip.
+  The model is that the edge a grip does not drag is the one that stays put, so
+  a grip names its own edge and no layout can invert it.
+
+  A drag on the edge the layout was *holding still* moves the panel as well as
+  resizing it -- a floating panel pinned bottom-right could not grow rightward,
+  because its right edge is what the placement fixed. Those grips take the
+  position over by writing `--ag-ui-inset`; a grip on a free edge still writes
+  nothing but the size, so a host positioning the panel with its own rule keeps
+  it until someone drags the edge it was holding.
+
+  Exactly one grip stays in the tab order -- the corner opposite the pinned one,
+  so an arrow key changes the size and never the position. Eight separators
+  between the transcript and the composer would be a keyboard obstacle rather
+  than keyboard parity, and one grip already reaches both axes. Every grip has
+  its own part, and the hit areas are sized by `--ag-ui-grip-corner` and
+  `--ag-ui-grip-edge`.
+
+- **Files can be pasted into the composer**, alongside the picker and a drop --
+  a screenshot straight from the clipboard, or a file copied in the file
+  manager. Text pastes carry no files, so ordinary pasting is untouched, and the
+  default is prevented only when the clipboard carries no text: copying a rich
+  selection containing an image puts both on the clipboard, and swallowing the
+  words someone meant to paste is the worse of the two failures.
+
 - **The collapsed launcher can be dragged anywhere on screen, and the panel
   opens into the clearest space around it.** Per axis, the element compares the
   room a panel would have on either side of the launcher and pins the side with
@@ -64,6 +89,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in one transcript.
 
 ### Fixed
+
+- **The anchor probe inverted at the size clamps.** The element learns which
+  edges its layout holds still by changing its own size by a pixel and seeing
+  what moved, and it grew. Growing cannot answer the question at a size already
+  resting against `max-width` or `max-height`: the box does not change, no edge
+  moves, and every clamped axis reported the edge that did *not* move -- which
+  is the free one. The grip landed on the corner the drag travels by, with the
+  direction inverted.
+
+  It needed no unusual setup to reach. The default panel is 380px wide against
+  a max-width of `100vw - 48px`, so **any viewport under 428px was born
+  clamped**. The probe now shrinks, which always moves an edge because it is
+  measured from the box's used width rather than from whatever was asked for,
+  and falls back to growing for an axis a host rule gives a minimum.
+
+- **A pasted blob with no filename** reached the upload as an empty `filename`
+  and showed in the tray as a chip with no label. It is given a name.
 
 - **A sub-agent failure whose message the server left empty settled the row to
   a blank line**, reading as a delegation that said nothing rather than one

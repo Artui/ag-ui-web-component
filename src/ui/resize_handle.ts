@@ -1,3 +1,13 @@
+/**
+ * Which edges a grip drags. An axis left out is an axis the grip does not
+ * move: the left-edge grip is `{ x: "left" }`, the top-right corner is
+ * `{ x: "right", y: "top" }`.
+ */
+export interface ResizeGrip {
+  readonly x?: "left" | "right";
+  readonly y?: "top" | "bottom";
+}
+
 /** Which edges the layout holds still while the panel changes size. */
 export interface ResizeAnchor {
   /** The horizontal edge that does not move. */
@@ -8,7 +18,7 @@ export interface ResizeAnchor {
 
 /**
  * What the current placement allows: both axes, width only, or nothing. Which
- * corner the grip sits on is separate, and is measured rather than assumed.
+ * edges a given grip drags is separate, and fixed when the grip is built.
  */
 export type ResizeAxis = "none" | "width" | "both";
 
@@ -18,7 +28,7 @@ export interface ResizeSize {
   readonly height?: number;
 }
 
-/** The panel's position on screen at the moment a drag starts. */
+/** The panel's position on screen, in viewport coordinates. */
 export interface PanelRect {
   readonly left: number;
   readonly top: number;
@@ -34,23 +44,16 @@ export interface ResizeOptions {
    * would survive the host switching to a docked or full-bleed layout.
    */
   readonly axis: () => ResizeAxis;
-  /**
-   * Which edges the layout is holding still, measured at the moment of the drag
-   * rather than derived from `placement`: a floating panel is pinned
-   * bottom-right, while an embedded one goes wherever the host's CSS puts it,
-   * so `placement` alone cannot answer the question.
-   */
-  readonly anchor: () => ResizeAnchor;
   /** The panel's current bounding box. */
   readonly rect: () => PanelRect;
-  /** Apply a size (the host writes the custom properties). */
-  readonly apply: (size: ResizeSize) => void;
+  /** Apply a box (the host decides what that costs in properties). */
+  readonly apply: (box: PanelRect) => void;
   /**
    * Called once per completed resize, for persistence: on `pointerup` for a
    * drag, and when the key comes up (or focus leaves the handle) for a key
    * press. Never per pointer move, and never per key repeat.
    */
-  readonly commit: (size: ResizeSize) => void;
+  readonly commit: (box: PanelRect) => void;
   /** Accessible label. */
   readonly label: string;
 }
@@ -59,68 +62,63 @@ export interface ResizeOptions {
 const MIN_WIDTH = 280;
 const MIN_HEIGHT = 240;
 
+/** Keyboard step, and the larger one Shift asks for. */
+const STEP = 16;
+const COARSE_STEP = 64;
+
 /**
- * A drag handle that resizes the chat panel.
+ * A drag handle that resizes the chat panel from one edge or corner.
  *
- * Two rules keep it correct, and both are easy to break invisibly:
+ * The rule that keeps it correct is that **the edge a grip does not drag is the
+ * one that stays put**. That is the whole model, and it is what lets the same
+ * code serve all eight grips: the left-edge grip moves the left edge and holds
+ * the right, the right-edge grip does the reverse, a corner does both axes.
  *
- * - The new size is measured from the edge that is *not* moving, never from a
- *   delta, and that edge is measured rather than assumed. Getting it wrong is
- *   very visible: the panel shrinks when dragged outward and travels by its
- *   opposite corner.
- * - It writes the `--ag-ui-width` / `--ag-ui-height` custom properties, not
- *   inline `width` / `height`. The placement rules set those same properties,
- *   so an inline dimension would outrank and fight them — a sidebar would keep
- *   its dragged width after switching to fullscreen. Writing the property
- *   leaves placement the final say.
+ * Which edge the *layout* pins is a different question and is deliberately not
+ * asked here. It matters only to the host, which has to rewrite its own
+ * position when a grip drags the very edge the layout was holding still --
+ * dragging the pinned edge of a panel is a move as much as a resize. The
+ * handle reports the box it wants; what that costs in CSS properties is the
+ * host's problem.
  *
- * Axes and anchor are both read per interaction, so a runtime `placement`
- * change takes effect at once.
+ * An earlier version took the anchor and derived the direction from it, which
+ * is where the asymmetries lived: whether an arrow key grew or shrank the
+ * panel depended on which corner the single grip had been placed on. With the
+ * grip stated outright, an arrow simply moves the edge it names.
  */
-export function createResizeHandle(options: ResizeOptions): HTMLDivElement {
+export function createResizeHandle(grip: ResizeGrip, options: ResizeOptions): HTMLDivElement {
   const handle = document.createElement("div");
-  handle.className = "resize-handle";
-  handle.setAttribute("part", "resize-handle");
+  handle.className = `resize-handle resize-handle--${gripName(grip)}`;
+  handle.setAttribute("part", `resize-handle resize-handle-${gripName(grip)}`);
+  // A separator with an orientation: an edge grip splits along one axis, and a
+  // corner has no single one to report.
   handle.setAttribute("role", "separator");
+  if (grip.x === undefined) {
+    handle.setAttribute("aria-orientation", "horizontal");
+  } else if (grip.y === undefined) {
+    handle.setAttribute("aria-orientation", "vertical");
+  }
   handle.setAttribute("aria-label", options.label);
   handle.tabIndex = 0;
 
-  /** The size implied by a pointer at (x, y), given which edges are pinned. */
-  const sizeAt = (
-    axis: ResizeAxis,
-    anchor: ResizeAnchor,
-    rect: PanelRect,
-    x: number,
-    y: number,
-  ): ResizeSize => {
-    const width = anchor.x === "right" ? rect.right - x : x - rect.left;
-    const clamped: ResizeSize = { width: Math.max(MIN_WIDTH, width) };
-    if (axis !== "both") {
-      return clamped;
-    }
-    const height = anchor.y === "bottom" ? rect.bottom - y : y - rect.top;
-    return { ...clamped, height: Math.max(MIN_HEIGHT, height) };
-  };
-
   handle.addEventListener("pointerdown", (event: PointerEvent) => {
     const axis = options.axis();
-    if (axis === "none") {
+    if (axis === "none" || !movable(grip, axis)) {
       return;
     }
-    // Captured once: the pinned edges cannot move during the drag, and reading
-    // them live would chase the panel as it resizes.
-    const anchor = options.anchor();
+    // Captured once: the edges this grip is not dragging cannot move during
+    // the drag, and reading them live would chase the panel as it resizes.
     const rect = options.rect();
 
     const onMove = (move: PointerEvent): void => {
-      options.apply(sizeAt(axis, anchor, rect, move.clientX, move.clientY));
+      options.apply(boxAt(grip, axis, rect, move.clientX, move.clientY));
     };
 
     const onUp = (up: PointerEvent): void => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       handle.removeAttribute("data-dragging");
-      options.commit(sizeAt(axis, anchor, rect, up.clientX, up.clientY));
+      options.commit(boxAt(grip, axis, rect, up.clientX, up.clientY));
     };
 
     handle.setAttribute("data-dragging", "true");
@@ -131,49 +129,44 @@ export function createResizeHandle(options: ResizeOptions): HTMLDivElement {
     event.preventDefault();
   });
 
-  // The size the current key gesture has applied but not yet persisted. The
+  // The box the current key gesture has applied but not yet persisted. The
   // pointer path can commit inline because a drag has one unambiguous end;
   // a key press does not, so the gesture's result is held here until it does.
-  let pending: ResizeSize | null = null;
+  let pending: PanelRect | null = null;
 
   /** End a key gesture: persist what it applied, once. */
   const settle = (): void => {
     if (pending === null) {
       return;
     }
-    const size = pending;
+    const box = pending;
     pending = null;
-    options.commit(size);
+    options.commit(box);
   };
 
   // Keyboard parity: a pointer-only resize is unreachable without a mouse, and
-  // this control has no equivalent elsewhere in the UI.
+  // this control has no equivalent elsewhere in the UI. An arrow moves the edge
+  // this grip names, in the direction it names -- so the same key grows one
+  // side's grip and shrinks the opposite one, which is what a pointer does too.
   handle.addEventListener("keydown", (event: KeyboardEvent) => {
     const axis = options.axis();
-    if (axis === "none") {
+    if (axis === "none" || !movable(grip, axis)) {
       return;
     }
-    const anchor = options.anchor();
+    const step = event.shiftKey ? COARSE_STEP : STEP;
     const rect = options.rect();
-    const step = event.shiftKey ? 64 : 16;
-    // An arrow moves the grip, so whether it grows or shrinks depends on which
-    // side the grip is on — the asymmetry the pointer path also handles.
-    const outward = anchor.x === "right" ? -1 : 1;
-    const width = rect.right - rect.left;
-    const height = rect.bottom - rect.top;
-    let next: ResizeSize | null = null;
-    if (event.key === "ArrowLeft") {
-      next = { width: Math.max(MIN_WIDTH, width - step * outward) };
-    } else if (event.key === "ArrowRight") {
-      next = { width: Math.max(MIN_WIDTH, width + step * outward) };
-    } else if (axis === "both" && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-      const grow = event.key === (anchor.y === "bottom" ? "ArrowUp" : "ArrowDown");
-      next = { height: Math.max(MIN_HEIGHT, height + (grow ? step : -step)) };
+    const delta = ARROWS[event.key];
+    if (delta === undefined) {
+      return;
     }
-    if (next === null) {
+    // An arrow across this grip's fixed axis has no edge to move.
+    if ((delta.x !== 0 && grip.x === undefined) || (delta.y !== 0 && grip.y === undefined)) {
       return;
     }
     event.preventDefault();
+    const x = (grip.x === "left" ? rect.left : rect.right) + delta.x * step;
+    const y = (grip.y === "top" ? rect.top : rect.bottom) + delta.y * step;
+    const next = boxAt(grip, axis, rect, x, y);
     // Live feedback per key event, persistence only when the gesture ends:
     // `commit` promises one call per completed resize, and a held arrow key
     // repeats at the OS rate (20-30 events a second), so committing here would
@@ -190,4 +183,47 @@ export function createResizeHandle(options: ResizeOptions): HTMLDivElement {
   handle.addEventListener("blur", settle);
 
   return handle;
+}
+
+/** Which way each arrow key pushes the edge under it. */
+const ARROWS: Record<string, { x: number; y: number } | undefined> = {
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+};
+
+/** The hyphenated name of a grip, for its class and part. */
+export function gripName(grip: ResizeGrip): string {
+  return [grip.y, grip.x].filter((side) => side !== undefined).join("-");
+}
+
+/** Whether the current placement leaves this grip anything to move. */
+function movable(grip: ResizeGrip, axis: ResizeAxis): boolean {
+  // A docked panel owns its height, so a grip that only moves a horizontal
+  // edge has nothing to do and must not pretend otherwise.
+  return axis === "both" || grip.x !== undefined;
+}
+
+/**
+ * The box a pointer at (x, y) implies for this grip.
+ *
+ * Each axis is clamped by pushing the *dragged* edge back to the minimum,
+ * never by moving the edge that is supposed to be standing still: clamping the
+ * wrong one is how a panel dragged past its minimum starts travelling.
+ */
+function boxAt(
+  grip: ResizeGrip,
+  axis: ResizeAxis,
+  rect: PanelRect,
+  x: number,
+  y: number,
+): PanelRect {
+  const left = grip.x === "left" ? Math.min(x, rect.right - MIN_WIDTH) : rect.left;
+  const right = grip.x === "right" ? Math.max(x, rect.left + MIN_WIDTH) : rect.right;
+  // A placement that owns its height leaves the vertical edges where they are.
+  const vertical = axis === "both";
+  const top = vertical && grip.y === "top" ? Math.min(y, rect.bottom - MIN_HEIGHT) : rect.top;
+  const bottom = vertical && grip.y === "bottom" ? Math.max(y, rect.top + MIN_HEIGHT) : rect.bottom;
+  return { left, top, right, bottom };
 }

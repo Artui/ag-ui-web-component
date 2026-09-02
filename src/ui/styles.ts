@@ -59,6 +59,13 @@ export const STYLES = `
   --_on-accent: var(--ag-ui-on-accent, #ffffff);
   --_on-danger: var(--ag-ui-on-danger, #ffffff);
 
+  /* Resize grips: the corner squares and the edge strips between them. Wide
+     enough to hit without being wide enough to swallow a click on the content
+     underneath, and adjustable for a host with a coarser pointer. */
+  --_grip-corner: var(--ag-ui-grip-corner, 14px);
+  --_grip-edge: var(--ag-ui-grip-edge, 6px);
+  --_grip-edge-docked: var(--ag-ui-grip-edge-docked, 8px);
+
   /* Status accents for tool-call cards. */
   --_success: var(--ag-ui-success, #15803d);
   --_danger: var(--ag-ui-danger, #b91c1c);
@@ -1527,9 +1534,16 @@ export const STYLES = `
   content: var(--_disclosure-expanded) " ";
 }
 
-/* Resize handle: a corner grip on a floating panel, an edge grip on a docked
-   one. Absent entirely where the placement is full-bleed, since there is
-   nothing to drag. */
+/* Resize grips: every edge and every corner, so the panel can be dragged from
+   whichever side the reader is already near. Absent entirely where the
+   placement is full-bleed, since there is nothing to drag.
+
+   The whole set is always laid out. Which edges the *layout* pins is not a
+   question the stylesheet needs to answer any more -- it decided where the one
+   grip went, and there is no longer one grip. The element still measures and
+   stamps data-resize-anchor, because it decides what a drag on a pinned edge
+   costs in position and which grip carries the tab stop, but no rule here
+   reads it. */
 .resize-handle {
   position: absolute;
   z-index: 2;
@@ -1542,95 +1556,102 @@ export const STYLES = `
   outline-offset: -2px;
 }
 
-/* The grip sits on the corner opposite the panel's anchor, because a resize
-   measures from whichever edge is not moving.
+/* Corners first in the file and last in the DOM, so they take the pointer
+   where they overlap an edge strip. */
+.resize-handle--top-left,
+.resize-handle--top-right,
+.resize-handle--bottom-left,
+.resize-handle--bottom-right {
+  width: var(--_grip-corner);
+  height: var(--_grip-corner);
+}
 
-   Default is floating: pinned bottom-right, so the grip is top-left. */
-.resize-handle {
+.resize-handle--top-left {
   top: 0;
   left: 0;
-  width: 14px;
-  height: 14px;
   cursor: nwse-resize;
 }
 
-/* Placement is only the opening guess, and these two rules are all it is good
-   for. Embedded sits in normal flow, pinned top-left, so it grows bottom-right;
-   bottom-left is pinned there, so its free corner is top-right. */
-:host([placement="embedded"]) .resize-handle {
-  top: auto;
-  left: auto;
-  right: 0;
-  bottom: 0;
-  cursor: nwse-resize;
-}
-
-:host([placement="bottom-left"]) .resize-handle {
-  left: auto;
+.resize-handle--top-right {
+  top: 0;
   right: 0;
   cursor: nesw-resize;
 }
 
-/* Then the measurement corrects it. Which edges are held still belongs to the
-   host's layout, not to placement -- a floating panel a host right-aligns is
-   anchored bottom-left -- so the element measures them and stamps a single
-   hyphenated "<y>-<x>" token here. Equal specificity to the rules above, so
-   source order is what lets the measured value win.
-
-   Two traps, both of which silently draw the grip on the corner that moves:
-
-   Never write these as [data-resize-anchor~="left"]. The stamped value is one
-   hyphenated token and ~= matches whitespace-separated words, so it can never
-   match.
-
-   Each rule must set both sides of its axis, not only the side it moves, or it
-   cannot undo a placement guess that flipped the other way. */
-:host([data-resize-anchor$="-left"]) .resize-handle {
-  left: auto;
-  right: 0;
-}
-
-:host([data-resize-anchor$="-right"]) .resize-handle {
-  left: 0;
-  right: auto;
-}
-
-:host([data-resize-anchor^="top-"]) .resize-handle {
-  top: auto;
+.resize-handle--bottom-left {
   bottom: 0;
-}
-
-:host([data-resize-anchor^="bottom-"]) .resize-handle {
-  top: 0;
-  bottom: auto;
-}
-
-/* One axis flipped means the drag runs along the other diagonal. */
-:host([data-resize-anchor="top-left"]) .resize-handle,
-:host([data-resize-anchor="bottom-right"]) .resize-handle {
-  cursor: nwse-resize;
-}
-
-:host([data-resize-anchor="top-right"]) .resize-handle,
-:host([data-resize-anchor="bottom-left"]) .resize-handle {
+  left: 0;
   cursor: nesw-resize;
 }
 
-/* Docked: the placement owns the height, so only the inner edge is the user's --
-   an edge, not a corner, so this outranks the measured anchor by coming after. */
-:host([placement="sidebar"]) .resize-handle,
-:host([placement="side"]) .resize-handle {
-  top: 0;
-  bottom: auto;
-  width: 8px;
-  height: 100%;
+.resize-handle--bottom-right {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+/* Edge strips, held clear of the corners at both ends so a corner drag is
+   never swallowed by the edge next to it. */
+.resize-handle--left,
+.resize-handle--right {
+  top: var(--_grip-corner);
+  bottom: var(--_grip-corner);
+  width: var(--_grip-edge);
   cursor: ew-resize;
 }
 
-/* Docked to the left, so the inner edge is the right-hand one. */
-:host([placement="sidebar"][data-side="left"]) .resize-handle {
-  left: auto;
+.resize-handle--left {
+  left: 0;
+}
+
+.resize-handle--right {
   right: 0;
+}
+
+.resize-handle--top,
+.resize-handle--bottom {
+  left: var(--_grip-corner);
+  right: var(--_grip-corner);
+  height: var(--_grip-edge);
+  cursor: ns-resize;
+}
+
+.resize-handle--top {
+  top: 0;
+}
+
+.resize-handle--bottom {
+  bottom: 0;
+}
+
+/* Docked: the placement owns the height, so the horizontal edges and every
+   corner are inert and must not advertise a drag that does nothing. The two
+   vertical edges remain, which is the same affordance these placements had
+   when there was one grip -- now on both sides, since either may be the inner
+   one depending on which side the rail is docked to. */
+:host([placement="sidebar"]) .resize-handle--top,
+:host([placement="sidebar"]) .resize-handle--bottom,
+:host([placement="sidebar"]) .resize-handle--top-left,
+:host([placement="sidebar"]) .resize-handle--top-right,
+:host([placement="sidebar"]) .resize-handle--bottom-left,
+:host([placement="sidebar"]) .resize-handle--bottom-right,
+:host([placement="side"]) .resize-handle--top,
+:host([placement="side"]) .resize-handle--bottom,
+:host([placement="side"]) .resize-handle--top-left,
+:host([placement="side"]) .resize-handle--top-right,
+:host([placement="side"]) .resize-handle--bottom-left,
+:host([placement="side"]) .resize-handle--bottom-right {
+  display: none;
+}
+
+/* The vertical edges run the full height once no corner shares them. */
+:host([placement="sidebar"]) .resize-handle--left,
+:host([placement="sidebar"]) .resize-handle--right,
+:host([placement="side"]) .resize-handle--left,
+:host([placement="side"]) .resize-handle--right {
+  top: 0;
+  bottom: 0;
+  width: var(--_grip-edge-docked);
 }
 
 /* Full-bleed: nothing to drag. */

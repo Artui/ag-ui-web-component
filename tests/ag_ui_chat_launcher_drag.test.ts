@@ -287,6 +287,66 @@ describe("dragging the collapsed launcher", () => {
     expect(el.collapsed).toBe(true);
   });
 
+  it("takes the launcher along when a resize moves the panel's pinned corner", () => {
+    const { el, launcher } = mount({ id: "resized-panel" });
+    el.setCollapsed(true);
+    drag(launcher, [956, 748], [156, 148]);
+    el.setCollapsed(false);
+
+    // The launcher was dropped near the top-left, so that is the corner the
+    // panel is now pinned by -- and the top-left grip drags the very edges the
+    // layout is holding still, which moves the panel as well as resizing it.
+    const grip = shadow(el).querySelector(".resize-handle--top-left") as HTMLElement;
+    grip.dispatchEvent(pointer("pointerdown", 0, 0));
+    window.dispatchEvent(pointer("pointermove", 100, 100));
+    window.dispatchEvent(pointer("pointerup", 100, 100));
+
+    // Without this the next expand would re-derive the panel's position from a
+    // launcher still standing where the panel used to be, undoing the resize.
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("100px auto auto 100px");
+    expect(sessionStorage.getItem("ag-ui-chat:launcher:resized-panel")).toBe(
+      JSON.stringify({ left: 100, top: 100 }),
+    );
+  });
+
+  it("takes the launcher along from the opposite corner too", () => {
+    const { el, launcher } = mount({ id: "resized-br" });
+    el.setCollapsed(true);
+    // A short drag that keeps it in the bottom-right, so the panel stays pinned
+    // there and the grip on that corner is the one dragging the pinned edges.
+    drag(launcher, [956, 748], [940, 730]);
+    expect(el.getAttribute("data-expand-corner")).toBe("bottom-right");
+    el.setCollapsed(false);
+
+    const grip = shadow(el).querySelector(".resize-handle--bottom-right") as HTMLElement;
+    grip.dispatchEvent(pointer("pointerdown", 0, 0));
+    window.dispatchEvent(pointer("pointermove", 1000, 800));
+    window.dispatchEvent(pointer("pointerup", 1000, 800));
+
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("auto 0px 0px auto");
+    expect(sessionStorage.getItem("ag-ui-chat:launcher:resized-br")).toBe(
+      JSON.stringify({ left: 944, top: 744 }),
+    );
+  });
+
+  it("leaves the position alone when a resize only moves a free edge", () => {
+    const { el, launcher } = mount({ id: "free-edge" });
+    el.setCollapsed(true);
+    drag(launcher, [956, 748], [156, 148]);
+    const placed = el.style.getPropertyValue("--ag-ui-inset");
+    el.setCollapsed(false);
+
+    // Pinned top-left, so the right edge is a free one: this is a resize and
+    // nothing more, and the panel must not take ownership of a position it was
+    // not asked to move.
+    const grip = shadow(el).querySelector(".resize-handle--right") as HTMLElement;
+    grip.dispatchEvent(pointer("pointerdown", 0, 0));
+    window.dispatchEvent(pointer("pointermove", 700, 400));
+    window.dispatchEvent(pointer("pointerup", 700, 400));
+
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(placed);
+  });
+
   it("stops listening to the window once it leaves the document", () => {
     const { el, launcher } = mount({ id: "gone" });
     el.setCollapsed(true);

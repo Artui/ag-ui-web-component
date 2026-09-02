@@ -84,8 +84,11 @@ import type { RelativeTimeFormatter } from "../ui/relative_time.js";
 import { renderMarkdown } from "../ui/render_markdown.js";
 import {
   createResizeHandle,
+  gripName,
+  type PanelRect,
   type ResizeAnchor,
   type ResizeAxis,
+  type ResizeGrip,
   type ResizeSize,
 } from "../ui/resize_handle.js";
 import { wrapWords } from "../ui/reveal_words.js";
@@ -320,6 +323,21 @@ const LAUNCHER_KEY = "ag-ui-chat:launcher";
  * covers the screen it would be opening into.
  */
 const DRAGGABLE_PLACEMENTS = new Set([null, "", "floating", "bottom-left"]);
+
+/**
+ * Every edge and corner the panel can be dragged by. Corners last, so they sit
+ * above the edge strips they overlap and win the pointer at the corners.
+ */
+const RESIZE_GRIPS: readonly ResizeGrip[] = [
+  { y: "top" },
+  { y: "bottom" },
+  { x: "left" },
+  { x: "right" },
+  { x: "left", y: "top" },
+  { x: "right", y: "top" },
+  { x: "left", y: "bottom" },
+  { x: "right", y: "bottom" },
+];
 
 /** Pixels between a selection and the offer to quote it. */
 const QUOTE_GAP = 6;
@@ -805,6 +823,16 @@ export class AgUiChat extends HTMLElement {
    * Null means the host's layout still decides, and the anchor is measured.
    */
   #expandCorner: ExpandCorner | null = null;
+
+  /**
+   * The edges the layout is holding still, as last measured. Cached because a
+   * resize reads it per pointer move and measuring forces a reflow -- thirty a
+   * second while the panel is already being laid out on every one of them.
+   */
+  #anchor: ResizeAnchor = { x: "right", y: "bottom" };
+
+  /** The eight grips, by name, so the keyboard-reachable one can be moved. */
+  readonly #resizeHandles = new Map<string, HTMLDivElement>();
 
   /**
    * Re-clamp the dragged launcher when the window changes size. Bound once as
@@ -1671,6 +1699,7 @@ export class AgUiChat extends HTMLElement {
     this.#fileInput.accept = accept;
     this.#attachButton.hidden = false;
     this.#enableDragAndDrop();
+    this.#enablePaste();
   }
 
   /** The built-in multipart upload handler for `data-attachments-url`, or `null`. */
@@ -1939,6 +1968,41 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * Accept files pasted into the composer.
+   *
+   * The whole tray already exists behind this: a paste is one more way to hand
+   * it a `File`, alongside the picker and a drop.
+   *
+   * Two rules keep it from stealing a paste that was never about files.
+   * `clipboardData.files` is empty for text, so ordinary pasting is untouched.
+   * And the default is only prevented when the clipboard carries **no text**:
+   * copying a rich selection that happens to contain an image puts both on the
+   * clipboard, and swallowing the words someone meant to paste in order to
+   * attach a picture they did not is the worse of the two failures.
+   */
+  #enablePaste(): void {
+    this.#chat.addEventListener("paste", (event: ClipboardEvent) => {
+      // Nullish rather than a null check: the property is typed as nullable,
+      // and an engine that fires a plain Event for a paste leaves it absent
+      // instead, which is not the same value and is the same situation.
+      const clipboard = event.clipboardData ?? null;
+      if (clipboard === null) {
+        return;
+      }
+      const files = Array.from(clipboard.files);
+      if (files.length === 0) {
+        return;
+      }
+      if (clipboard.getData("text/plain") === "") {
+        event.preventDefault();
+      }
+      for (const file of files) {
+        this.#attachTray?.add(named(file));
+      }
+    });
+  }
+
+  /**
    * When `data-threads-url` is set, route thread enumeration / load / rename /
    * delete through that server endpoint (wrapping the current store as the
    * client-only fallback), so the history drawer shows durable, cross-device
@@ -2198,15 +2262,57 @@ export class AgUiChat extends HTMLElement {
     const before = this.getBoundingClientRect();
     const width = this.style.getPropertyValue("--ag-ui-width");
     const height = this.style.getPropertyValue("--ag-ui-height");
-    this.#applySize({ width: before.width + 1, height: before.height + 1 });
-    const after = this.getBoundingClientRect();
+    // Shrink first. Growing is the obvious probe and cannot answer the question
+    // at a size already resting against max-width or max-height: the box does
+    // not change, no edge moves, and every clamped axis then reads as pinned on
+    // the side that did not move -- which is the side that is free. That is not
+    // an edge case. The default panel is 380px wide against a max-width of
+    // 100vw minus 48, so any viewport under 428px is born clamped, and the grip
+    // rendered on the wrong corner with the drag inverted before anyone touched
+    // it. Shrinking always moves an edge, because the shrink is measured from
+    // the box's *used* width rather than from whatever was asked for.
+    const shrunk = this.#probeAnchor(before, -1);
+    // Unless a host rule sets a minimum, in which case that axis is asked the
+    // opposite question rather than left to a guess.
+    const grown = shrunk.x === null || shrunk.y === null ? this.#probeAnchor(before, 1) : shrunk;
     // Restore exactly what was there, including "nothing" — leaving a probe
     // value behind would pin a panel that had been sizing itself.
     this.#restoreProperty("--ag-ui-width", width);
     this.#restoreProperty("--ag-ui-height", height);
     return {
-      x: Math.abs(after.left - before.left) < 0.5 ? "left" : "right",
-      y: Math.abs(after.top - before.top) < 0.5 ? "top" : "bottom",
+      // Neither direction moved it: the axis cannot be resized at all, so the
+      // floating default is the best answer available and is the one the
+      // stylesheet would have used with no measurement at all.
+      x: shrunk.x ?? grown.x ?? "right",
+      y: shrunk.y ?? grown.y ?? "bottom",
+    };
+  }
+
+  /**
+   * Which edge each axis holds still when the panel changes size by `delta`.
+   *
+   * Null for an axis whose size did not change: nothing moved, so nothing was
+   * learned, and reporting the unmoved edge as the pinned one would be exactly
+   * backwards.
+   */
+  #probeAnchor(
+    before: DOMRect,
+    delta: number,
+  ): { x: "left" | "right" | null; y: "top" | "bottom" | null } {
+    this.#applySize({ width: before.width + delta, height: before.height + delta });
+    const after = this.getBoundingClientRect();
+    const moved = (a: number, b: number): boolean => Math.abs(a - b) >= 0.5;
+    return {
+      x: moved(after.width, before.width)
+        ? moved(after.left, before.left)
+          ? "right"
+          : "left"
+        : null,
+      y: moved(after.height, before.height)
+        ? moved(after.top, before.top)
+          ? "bottom"
+          : "top"
+        : null,
     };
   }
 
@@ -2220,7 +2326,9 @@ export class AgUiChat extends HTMLElement {
     // unreliable at a size resting against max-width or max-height, where a
     // nudge moves no edge and every axis reads as pinned on the wrong side.
     const anchor = this.#expandCorner ?? this.#measureAnchor();
+    this.#anchor = anchor;
     this.setAttribute("data-resize-anchor", `${anchor.y}-${anchor.x}`);
+    this.#focusableGrip();
   }
 
   /** Put a custom property back to a previous value, or remove it if there was none. */
@@ -2360,7 +2468,16 @@ export class AgUiChat extends HTMLElement {
   /** Move the launcher and remember where, per tab, like the dragged size. */
   #commitLauncher(left: number, top: number): void {
     this.#moveLauncher(left, top);
-    writeStoredItem(this.#storageKey(LAUNCHER_KEY), JSON.stringify({ left, top }));
+    this.#storeLauncherPosition();
+  }
+
+  /** Write the current launcher position, if this element owns one. */
+  #storeLauncherPosition(): void {
+    const position = this.#launcherPos;
+    if (position === null) {
+      return;
+    }
+    writeStoredItem(this.#storageKey(LAUNCHER_KEY), JSON.stringify(position));
   }
 
   /**
@@ -2414,6 +2531,84 @@ export class AgUiChat extends HTMLElement {
     this.style.removeProperty("--ag-ui-inset");
     this.style.removeProperty("--ag-ui-launcher-inset");
     this.removeAttribute("data-expand-corner");
+  }
+
+  /**
+   * Apply the box a grip is asking for.
+   *
+   * The size is the easy half. The other half is that **dragging the edge the
+   * layout is holding still moves the panel as well as resizing it**, and the
+   * layout cannot express that on its own: a floating panel pinned bottom-right
+   * cannot grow rightward, because its right edge is what the placement fixed.
+   * So a grip on a pinned edge takes the position over -- which is the same
+   * ownership the launcher drag takes, written the same way.
+   *
+   * A grip on a free edge writes nothing but the size, exactly as before, so a
+   * host positioning the panel with its own rule keeps that rule until someone
+   * drags the edge it was holding.
+   */
+  #applyResize(grip: ResizeGrip, box: PanelRect): void {
+    this.#applySize({ width: box.right - box.left, height: box.bottom - box.top });
+    if (grip.x !== this.#anchor.x && grip.y !== this.#anchor.y) {
+      return;
+    }
+    const viewport = this.#viewport();
+    const anchor = this.#anchor;
+    const side = (value: number): string => `${Math.round(value)}px`;
+    this.style.setProperty(
+      "--ag-ui-inset",
+      [
+        anchor.y === "top" ? side(box.top) : "auto",
+        anchor.x === "right" ? side(viewport.width - box.right) : "auto",
+        anchor.y === "bottom" ? side(viewport.height - box.bottom) : "auto",
+        anchor.x === "left" ? side(box.left) : "auto",
+      ].join(" "),
+    );
+    // The launcher lives at this corner of the panel, so a corner that moved
+    // takes it along. Without this the next expand would re-derive the panel's
+    // position from a launcher still standing where the panel used to be, and
+    // undo the move.
+    if (this.#launcherPos !== null) {
+      const size = this.#launcher.offsetWidth;
+      this.#launcherPos = {
+        left: anchor.x === "left" ? box.left : box.right - size,
+        top: anchor.y === "top" ? box.top : box.bottom - size,
+      };
+    }
+  }
+
+  /** Finish a resize: keep the box, remember it, and re-read the pinned edges. */
+  #commitResize(grip: ResizeGrip, box: PanelRect): void {
+    this.#applyResize(grip, box);
+    this.#persistSize({ width: box.right - box.left, height: box.bottom - box.top });
+    this.#storeLauncherPosition();
+    // Re-stamp after the drag: a host whose layout changed underneath us would
+    // otherwise keep the tab-reachable grip in the old corner, which reads as
+    // the control being in the wrong place even though the drag was right.
+    this.#syncResizeAnchor();
+  }
+
+  /**
+   * Put the tab stop on the grip diagonally opposite the pinned corner.
+   *
+   * That is the corner a resize grows the panel from, so an arrow key there
+   * changes the size and never the position -- the behaviour the single grip
+   * this replaced had, kept for the one path that cannot simply grab a
+   * different edge.
+   */
+  #focusableGrip(): void {
+    const free = `${this.#anchor.y === "top" ? "bottom" : "top"}-${
+      this.#anchor.x === "left" ? "right" : "left"
+    }`;
+    for (const [name, handle] of this.#resizeHandles) {
+      const reachable = name === free;
+      handle.tabIndex = reachable ? 0 : -1;
+      if (reachable) {
+        handle.removeAttribute("aria-hidden");
+      } else {
+        handle.setAttribute("aria-hidden", "true");
+      }
+    }
   }
 
   /** Persist a dragged size per tab, alongside the collapsed/theme preferences. */
@@ -3313,22 +3508,26 @@ export class AgUiChat extends HTMLElement {
       commit: (left, top) => this.#commitLauncher(left, top),
     });
 
-    this.#chat.append(
-      createResizeHandle({
+    for (const grip of RESIZE_GRIPS) {
+      const handle = createResizeHandle(grip, {
         axis: () => this.#resizeAxis(),
-        anchor: () => this.#measureAnchor(),
         rect: () => this.getBoundingClientRect(),
-        apply: (size) => this.#applySize(size),
-        commit: (size) => {
-          this.#persistSize(size);
-          // Re-stamp after the drag: a host whose layout changed underneath us
-          // would otherwise keep the grip in the old corner, which reads as the
-          // control being in the wrong place even though the drag was right.
-          this.#syncResizeAnchor();
-        },
+        apply: (box) => this.#applyResize(grip, box),
+        commit: (box) => this.#commitResize(grip, box),
         label: this.#strings.resizePanel,
-      }),
-    );
+      });
+      // Only one of the eight is in the tab order. Eight separators between the
+      // transcript and the composer is not keyboard parity, it is a keyboard
+      // obstacle -- and one grip already reaches both axes, which is exactly
+      // what the single grip this replaced offered. #syncResizeAnchor decides
+      // which one, and it is the free corner, so an arrow key grows the panel
+      // rather than moving it.
+      handle.tabIndex = -1;
+      handle.setAttribute("aria-hidden", "true");
+      this.#resizeHandles.set(gripName(grip), handle);
+      this.#chat.appendChild(handle);
+    }
+    this.#focusableGrip();
     this.#adoptStyles();
     this.#root.append(this.#announcer, this.#chat, this.#launcher);
   }
@@ -4953,6 +5152,31 @@ interface RestoredToolCall {
  */
 function restoredToolCalls(value: unknown): readonly RestoredToolCall[] {
   return Array.isArray(value) ? value.filter(isRestoredToolCall) : [];
+}
+
+/**
+ * A pasted file, guaranteed to have a name.
+ *
+ * A file dropped or picked always carries one; a pasted one need not. Some
+ * engines hand over a blob with an empty name, which travels all the way to
+ * the upload as an empty `filename` and lands on the server as a file nobody
+ * can identify -- while the chip in the tray shows an empty label. A file that
+ * already has a name keeps it, including the generic one Chrome gives a pasted
+ * screenshot: it is at least what the file is, and the chip shows the size
+ * beside it.
+ */
+function named(file: File): File {
+  if (file.name !== "") {
+    return file;
+  }
+  // The subtype is the extension for every clipboard image type worth naming.
+  // A type with no slash in it falls back to the whole string, and an absent
+  // one leaves a bare stamp rather than a name ending in a dot.
+  const subtype = file.type.split("/")[1] ?? file.type;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return new File([file], subtype === "" ? `pasted-${stamp}` : `pasted-${stamp}.${subtype}`, {
+    type: file.type,
+  });
 }
 
 /** Whether an unknown history entry has enough shape to render a tool card. */
