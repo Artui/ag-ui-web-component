@@ -45,6 +45,30 @@ export const STYLES = `
   --_text: var(--ag-ui-text, var(--_fg));
   --_surface: var(--ag-ui-surface, transparent);
 
+  /* Message action row: the control box and the mark inside it. The box has a
+     floor of 24px so it stays a reliable target at every density. */
+  --_action-size: var(--ag-ui-action-size, 28px);
+  --_action-icon-size: var(--ag-ui-action-icon-size, 15px);
+  --_tooltip-bg: var(--ag-ui-tooltip-bg, #1f2430);
+  --_tooltip-fg: var(--ag-ui-tooltip-fg, #f5f6fa);
+
+  /* Text and marks drawn on top of the accent and danger fills. Separate
+     tokens because they are not free: a host that themes the accent to a pale
+     colour has white-on-pale with no way to correct it, which is the one
+     theming change that makes a control unreadable rather than merely off. */
+  --_on-accent: var(--ag-ui-on-accent, #ffffff);
+  --_on-danger: var(--ag-ui-on-danger, #ffffff);
+
+  /* Resize grips: the corner squares and the edge strips between them. Wide
+     enough to hit without being wide enough to swallow a click on the content
+     underneath, and adjustable for a host with a coarser pointer. */
+  --_grip-corner: var(--ag-ui-grip-corner, 14px);
+  --_grip-edge: var(--ag-ui-grip-edge, 6px);
+  --_grip-edge-docked: var(--ag-ui-grip-edge-docked, 8px);
+  /* The mark drawn inside a grip, as opposed to the area it answers to. */
+  --_grip-mark-length: var(--ag-ui-grip-mark-length, 28px);
+  --_grip-mark-thickness: var(--ag-ui-grip-mark-thickness, 3px);
+
   /* Status accents for tool-call cards. */
   --_success: var(--ag-ui-success, #15803d);
   --_danger: var(--ag-ui-danger, #b91c1c);
@@ -55,6 +79,12 @@ export const STYLES = `
   --_tool-icon-done: var(--ag-ui-tool-icon-done, "✓");
   --_tool-icon-error: var(--ag-ui-tool-icon-error, "✕");
   --_tool-icon-declined: var(--ag-ui-tool-icon-declined, "⊘");
+
+  /* Disclosure marks on every expandable row. Tokenised for the same reason
+     the status icons above are: a host re-theming one set and not the other
+     ends up with two vocabularies in one transcript. */
+  --_disclosure-collapsed: var(--ag-ui-disclosure-collapsed, "▸");
+  --_disclosure-expanded: var(--ag-ui-disclosure-expanded, "▾");
   --_tool-spin-duration: var(--ag-ui-tool-spin-duration, 0.7s);
 
   /* Answer well (opt-in via data-answer-well) — boxes a whole assistant turn. */
@@ -335,6 +365,9 @@ export const STYLES = `
   font: inherit;
   cursor: pointer;
   pointer-events: auto;
+  /* A touch drag on the launcher moves it; without this the page scrolls under
+     the finger instead and the launcher never moves at all. */
+  touch-action: none;
   opacity: 0;
   transform: scale(0.4);
   visibility: hidden;
@@ -362,6 +395,15 @@ export const STYLES = `
 
 :host([collapsed]) .launcher:active {
   transform: scale(0.94);
+}
+
+/* A drag is a press and a hover at the same time, so both scale rules above are
+   live throughout it. Cancelling them is what keeps the launcher the size of
+   the thing under the pointer while it travels; the position itself comes from
+   inset, which nothing here transitions, so it tracks the pointer exactly. */
+:host([collapsed]) .launcher[data-dragging] {
+  transform: none;
+  cursor: grabbing;
 }
 
 .launcher .icon-holder {
@@ -556,6 +598,31 @@ export const STYLES = `
 
 :host([placement="bottom-left"]) .chat {
   transform-origin: bottom left;
+}
+
+/* Once the launcher has been dragged the element places itself, and stamps the
+   corner it chose to open away from. The morph has to start at that same
+   corner: scaling out of the one the placement originally guessed reads as the
+   panel leaping across the screen before it opens.
+
+   Equal specificity to the placement rule above, so source order is what lets
+   the stamped value win -- the same arrangement the resize grip uses, and the
+   same trap. Write these with = on the whole hyphenated token; a ~= would match
+   whitespace-separated words and so could never match at all. */
+:host([data-expand-corner="top-left"]) .chat {
+  transform-origin: top left;
+}
+
+:host([data-expand-corner="top-right"]) .chat {
+  transform-origin: top right;
+}
+
+:host([data-expand-corner="bottom-left"]) .chat {
+  transform-origin: bottom left;
+}
+
+:host([data-expand-corner="bottom-right"]) .chat {
+  transform-origin: bottom right;
 }
 
 /* The two in-flow placements keep the original collapse: hide the body, let
@@ -983,11 +1050,11 @@ export const STYLES = `
 }
 
 .thoughts-toggle::before {
-  content: "▾ ";
+  content: var(--_disclosure-expanded) " ";
 }
 
 .thoughts-toggle[aria-expanded="false"]::before {
-  content: "▸ ";
+  content: var(--_disclosure-collapsed) " ";
 }
 
 /* A gentle pulse on the label while reasoning is still streaming. */
@@ -1329,14 +1396,14 @@ export const STYLES = `
 }
 
 .subagent-row::after {
-  content: "▸";
+  content: var(--_disclosure-collapsed);
   flex: none;
   margin-left: auto;
   color: var(--_accent);
 }
 
 .subagent-row[aria-expanded="true"]::after {
-  content: "▾";
+  content: var(--_disclosure-expanded);
 }
 
 .subagent-row:disabled::after {
@@ -1463,16 +1530,23 @@ export const STYLES = `
 }
 
 .tool-call-toggle::before {
-  content: "▸ ";
+  content: var(--_disclosure-collapsed) " ";
 }
 
 .tool-call-toggle[aria-expanded="true"]::before {
-  content: "▾ ";
+  content: var(--_disclosure-expanded) " ";
 }
 
-/* Resize handle: a corner grip on a floating panel, an edge grip on a docked
-   one. Absent entirely where the placement is full-bleed, since there is
-   nothing to drag. */
+/* Resize grips: every edge and every corner, so the panel can be dragged from
+   whichever side the reader is already near. Absent entirely where the
+   placement is full-bleed, since there is nothing to drag.
+
+   The whole set is always laid out. Which edges the *layout* pins is not a
+   question the stylesheet needs to answer any more -- it decided where the one
+   grip went, and there is no longer one grip. The element still measures and
+   stamps data-resize-anchor, because it decides what a drag on a pinned edge
+   costs in position and which grip carries the tab stop, but no rule here
+   reads it. */
 .resize-handle {
   position: absolute;
   z-index: 2;
@@ -1485,95 +1559,102 @@ export const STYLES = `
   outline-offset: -2px;
 }
 
-/* The grip sits on the corner opposite the panel's anchor, because a resize
-   measures from whichever edge is not moving.
+/* Corners first in the file and last in the DOM, so they take the pointer
+   where they overlap an edge strip. */
+.resize-handle--top-left,
+.resize-handle--top-right,
+.resize-handle--bottom-left,
+.resize-handle--bottom-right {
+  width: var(--_grip-corner);
+  height: var(--_grip-corner);
+}
 
-   Default is floating: pinned bottom-right, so the grip is top-left. */
-.resize-handle {
+.resize-handle--top-left {
   top: 0;
   left: 0;
-  width: 14px;
-  height: 14px;
   cursor: nwse-resize;
 }
 
-/* Placement is only the opening guess, and these two rules are all it is good
-   for. Embedded sits in normal flow, pinned top-left, so it grows bottom-right;
-   bottom-left is pinned there, so its free corner is top-right. */
-:host([placement="embedded"]) .resize-handle {
-  top: auto;
-  left: auto;
-  right: 0;
-  bottom: 0;
-  cursor: nwse-resize;
-}
-
-:host([placement="bottom-left"]) .resize-handle {
-  left: auto;
+.resize-handle--top-right {
+  top: 0;
   right: 0;
   cursor: nesw-resize;
 }
 
-/* Then the measurement corrects it. Which edges are held still belongs to the
-   host's layout, not to placement -- a floating panel a host right-aligns is
-   anchored bottom-left -- so the element measures them and stamps a single
-   hyphenated "<y>-<x>" token here. Equal specificity to the rules above, so
-   source order is what lets the measured value win.
-
-   Two traps, both of which silently draw the grip on the corner that moves:
-
-   Never write these as [data-resize-anchor~="left"]. The stamped value is one
-   hyphenated token and ~= matches whitespace-separated words, so it can never
-   match.
-
-   Each rule must set both sides of its axis, not only the side it moves, or it
-   cannot undo a placement guess that flipped the other way. */
-:host([data-resize-anchor$="-left"]) .resize-handle {
-  left: auto;
-  right: 0;
-}
-
-:host([data-resize-anchor$="-right"]) .resize-handle {
-  left: 0;
-  right: auto;
-}
-
-:host([data-resize-anchor^="top-"]) .resize-handle {
-  top: auto;
+.resize-handle--bottom-left {
   bottom: 0;
-}
-
-:host([data-resize-anchor^="bottom-"]) .resize-handle {
-  top: 0;
-  bottom: auto;
-}
-
-/* One axis flipped means the drag runs along the other diagonal. */
-:host([data-resize-anchor="top-left"]) .resize-handle,
-:host([data-resize-anchor="bottom-right"]) .resize-handle {
-  cursor: nwse-resize;
-}
-
-:host([data-resize-anchor="top-right"]) .resize-handle,
-:host([data-resize-anchor="bottom-left"]) .resize-handle {
+  left: 0;
   cursor: nesw-resize;
 }
 
-/* Docked: the placement owns the height, so only the inner edge is the user's --
-   an edge, not a corner, so this outranks the measured anchor by coming after. */
-:host([placement="sidebar"]) .resize-handle,
-:host([placement="side"]) .resize-handle {
-  top: 0;
-  bottom: auto;
-  width: 8px;
-  height: 100%;
+.resize-handle--bottom-right {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+/* Edge strips, held clear of the corners at both ends so a corner drag is
+   never swallowed by the edge next to it. */
+.resize-handle--left,
+.resize-handle--right {
+  top: var(--_grip-corner);
+  bottom: var(--_grip-corner);
+  width: var(--_grip-edge);
   cursor: ew-resize;
 }
 
-/* Docked to the left, so the inner edge is the right-hand one. */
-:host([placement="sidebar"][data-side="left"]) .resize-handle {
-  left: auto;
+.resize-handle--left {
+  left: 0;
+}
+
+.resize-handle--right {
   right: 0;
+}
+
+.resize-handle--top,
+.resize-handle--bottom {
+  left: var(--_grip-corner);
+  right: var(--_grip-corner);
+  height: var(--_grip-edge);
+  cursor: ns-resize;
+}
+
+.resize-handle--top {
+  top: 0;
+}
+
+.resize-handle--bottom {
+  bottom: 0;
+}
+
+/* Docked: the placement owns the height, so the horizontal edges and every
+   corner are inert and must not advertise a drag that does nothing. The two
+   vertical edges remain, which is the same affordance these placements had
+   when there was one grip -- now on both sides, since either may be the inner
+   one depending on which side the rail is docked to. */
+:host([placement="sidebar"]) .resize-handle--top,
+:host([placement="sidebar"]) .resize-handle--bottom,
+:host([placement="sidebar"]) .resize-handle--top-left,
+:host([placement="sidebar"]) .resize-handle--top-right,
+:host([placement="sidebar"]) .resize-handle--bottom-left,
+:host([placement="sidebar"]) .resize-handle--bottom-right,
+:host([placement="side"]) .resize-handle--top,
+:host([placement="side"]) .resize-handle--bottom,
+:host([placement="side"]) .resize-handle--top-left,
+:host([placement="side"]) .resize-handle--top-right,
+:host([placement="side"]) .resize-handle--bottom-left,
+:host([placement="side"]) .resize-handle--bottom-right {
+  display: none;
+}
+
+/* The vertical edges run the full height once no corner shares them. */
+:host([placement="sidebar"]) .resize-handle--left,
+:host([placement="sidebar"]) .resize-handle--right,
+:host([placement="side"]) .resize-handle--left,
+:host([placement="side"]) .resize-handle--right {
+  top: 0;
+  bottom: 0;
+  width: var(--_grip-edge-docked);
 }
 
 /* Full-bleed: nothing to drag. */
@@ -1582,9 +1663,62 @@ export const STYLES = `
   display: none;
 }
 
-.resize-handle[data-dragging] {
+/* The visible mark on a grip.
+
+   Filling the whole strip was what the single corner grip did, and at 14px
+   square nobody ever saw it. On a strip running the length of an edge the same
+   fill reads as a border the panel grew -- square ended, stopping short of the
+   corner radius at both ends, and easily mistaken for a rendering fault rather
+   than for something to grab.
+
+   So the hit area stays the full strip and the mark is a short pill centred on
+   it, which cannot be read as an edge of anything and never meets the radius.
+
+   It shows on hover and focus as well as during the drag. With eight grips, a
+   mark that appears only once you are already dragging is a mark that never
+   told anyone the grips were there. */
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
   background: var(--_accent);
-  opacity: 0.35;
+  opacity: 0;
+  transition: opacity var(--_motion) var(--_ease);
+}
+
+.resize-handle--top::after,
+.resize-handle--bottom::after {
+  width: var(--_grip-mark-length);
+  height: var(--_grip-mark-thickness);
+}
+
+.resize-handle--left::after,
+.resize-handle--right::after {
+  width: var(--_grip-mark-thickness);
+  height: var(--_grip-mark-length);
+}
+
+/* A corner has no length to run along, so it gets a dot instead of a pill. */
+.resize-handle--top-left::after,
+.resize-handle--top-right::after,
+.resize-handle--bottom-left::after,
+.resize-handle--bottom-right::after {
+  width: var(--_grip-mark-thickness);
+  height: var(--_grip-mark-thickness);
+}
+
+.resize-handle:hover::after,
+.resize-handle:focus-visible::after {
+  opacity: 0.5;
+}
+
+/* Equal specificity to the pair above, so source order is what makes the drag
+   the stronger of the two states. */
+.resize-handle[data-dragging]::after {
+  opacity: 0.9;
 }
 
 /* ── Composer ───────────────────────────────────────────────────────────────
@@ -1698,7 +1832,7 @@ export const STYLES = `
   border: none;
   border-radius: 50%;
   background: var(--_accent);
-  color: #ffffff;
+  color: var(--_on-accent);
   font: inherit;
   line-height: 1;
   cursor: pointer;
@@ -1772,13 +1906,13 @@ export const STYLES = `
 /* Recording: a red tint + a gentle pulse so it's clearly "live". */
 .voice-btn[data-state="recording"] {
   background: var(--_danger);
-  color: #ffffff;
+  color: var(--_on-danger);
   animation: ag-ui-voice-pulse 1.2s ease-in-out infinite;
 }
 
 .voice-btn[data-state="recording"]:hover {
   background: var(--_danger);
-  color: #ffffff;
+  color: var(--_on-danger);
 }
 
 @keyframes ag-ui-voice-pulse {
@@ -2068,7 +2202,7 @@ export const STYLES = `
 .confirm-btn--confirm {
   border-color: var(--_accent);
   background: var(--_accent);
-  color: #ffffff;
+  color: var(--_on-accent);
 }
 
 /* The session waiver. Deliberately the quietest of the three: it is the widest
@@ -2136,22 +2270,90 @@ export const STYLES = `
   margin-top: -6px;
 }
 
+/* The row's controls are icon-only, so the box is the whole target. Sized from
+   a variable a host can raise, with a floor rather than a fixed height: the
+   compact density shrinks the font, and a target that shrinks with it lands
+   under the 24px minimum that makes a control reliably tappable. It used to,
+   at roughly 20px square. */
 .message-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: var(--_action-size);
+  min-height: var(--_action-size);
+  padding: 4px;
   border: none;
   border-radius: 6px;
-  padding: 2px 6px;
   font: inherit;
   line-height: 1.2;
   cursor: pointer;
   background: transparent;
   color: var(--_muted);
   opacity: 0.75;
+  /* The tooltip below is positioned against this box. */
+  position: relative;
 }
 
 .message-action:hover,
 .message-action:focus-visible {
   opacity: 1;
   background: var(--_border);
+}
+
+.message-action-icon {
+  display: inline-flex;
+  width: var(--_action-icon-size);
+  height: var(--_action-icon-size);
+}
+
+.message-action-icon .glyph {
+  width: 100%;
+  height: 100%;
+}
+
+/* The label, drawn rather than left to the browser.
+
+   A title attribute is the usual answer and covers only half the readers: it
+   never appears on keyboard focus, so tabbing onto an icon-only control shows
+   nothing at all. The attribute stays for the pointer users who expect it, and
+   this shows the same words on hover and on focus alike.
+
+   Left-aligned rather than centred because the row sits at the left edge of an
+   answer inside a scrolling column, and a centred tooltip on the first control
+   is clipped by that column. Growing rightward keeps it inside.
+
+   Not exposed to assistive technology: the button already carries the same
+   string as its accessible name, and this would be a second copy of it. */
+.message-action::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 3;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--_tooltip-bg);
+  color: var(--_tooltip-fg);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--_motion) var(--_ease);
+}
+
+.message-action:hover::after,
+.message-action:focus-visible::after {
+  opacity: 1;
+}
+
+/* Touch has no hover to reveal it, and a tooltip that latches open under a
+   finger covers the answer it belongs to. */
+@media (hover: none) {
+  .message-action::after {
+    content: none;
+  }
 }
 
 .message-action[aria-pressed="true"] {
@@ -2211,7 +2413,7 @@ export const STYLES = `
 .approval-btn--approve {
   border-color: var(--_accent);
   background: var(--_accent);
-  color: #ffffff;
+  color: var(--_on-accent);
 }
 
 /* Question card — the built-in ask_user prompt (radios and/or free text). */
@@ -2277,7 +2479,7 @@ export const STYLES = `
   font-weight: 600;
   cursor: pointer;
   background: var(--_accent);
-  color: #ffffff;
+  color: var(--_on-accent);
 }
 
 .question-btn:disabled {
@@ -2546,7 +2748,7 @@ export const STYLES = `
   font-weight: 600;
   border-color: var(--_accent);
   background: var(--_accent);
-  color: #ffffff;
+  color: var(--_on-accent);
 }
 
 .checkpoint-fork:hover {
@@ -2721,7 +2923,7 @@ export const STYLES = `
   border: none;
   border-radius: 6px;
   background: var(--_danger);
-  color: #ffffff;
+  color: var(--_on-danger);
   padding: 3px 10px;
   font: inherit;
   cursor: pointer;

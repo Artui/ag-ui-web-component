@@ -366,6 +366,40 @@ describe("a delegated sub-agent's progress", () => {
     expect(panel.getAttribute("data-phase")).toBe("finished");
   });
 
+  it("names a failure the server left blank", async () => {
+    // `message` is required by the protocol but not required to carry words.
+    // An empty one used to settle the row to nothing at all, which reads as a
+    // delegation that said nothing rather than one that failed -- and the
+    // fallback for it had been written into the string table and never wired
+    // to anything.
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("call-1", "delegate_task", { agent_name: "researcher" });
+      emit.subAgentStarted("subagent-call-1", "researcher", "call-1");
+      emit.subAgentError("subagent-call-1", "");
+    });
+
+    await send(el);
+
+    const panel = shadow(el).querySelector<HTMLElement>(".subagent") as HTMLElement;
+    expect(rowOf(panel).textContent).toBe(DEFAULT_UI_STRINGS.subAgentFailed);
+    expect(panel.getAttribute("data-phase")).toBe("failed");
+  });
+
+  it("keeps the server's own words when it sent some", async () => {
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("call-1", "delegate_task", { agent_name: "researcher" });
+      emit.subAgentStarted("subagent-call-1", "researcher", "call-1");
+      emit.subAgentError("subagent-call-1", "researcher ran out of budget");
+    });
+
+    await send(el);
+
+    const panel = shadow(el).querySelector<HTMLElement>(".subagent") as HTMLElement;
+    expect(rowOf(panel).textContent).toBe("researcher ran out of budget");
+  });
+
   it("drops a close for a delegation whose card was never drawn", async () => {
     // The open was remembered but drew nothing, so the close has a delegation
     // to name and still no card to settle. It must stay silent rather than

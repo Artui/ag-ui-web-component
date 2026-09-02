@@ -7,7 +7,148 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] — 2026-09-02
+
+### Added
+
+- **The panel resizes from every edge and every corner**, not only one grip.
+  The model is that the edge a grip does not drag is the one that stays put, so
+  a grip names its own edge and no layout can invert it.
+
+  A drag on the edge the layout was *holding still* moves the panel as well as
+  resizing it -- a floating panel pinned bottom-right could not grow rightward,
+  because its right edge is what the placement fixed. Those grips take the
+  position over by writing `--ag-ui-inset`; a grip on a free edge still writes
+  nothing but the size, so a host positioning the panel with its own rule keeps
+  it until someone drags the edge it was holding.
+
+  Exactly one grip stays in the tab order -- the corner opposite the pinned one,
+  so an arrow key changes the size and never the position. Eight separators
+  between the transcript and the composer would be a keyboard obstacle rather
+  than keyboard parity, and one grip already reaches both axes. Every grip has
+  its own part, and the hit areas are sized by `--ag-ui-grip-corner` and
+  `--ag-ui-grip-edge`.
+
+  Each grip draws a short pill centred on its edge -- a dot in a corner --
+  shown on hover and focus as well as during a drag, since a mark that appears
+  only once you are already dragging never told anyone the grips were there.
+  Filling the whole handle was what the single corner grip did, and at 14px
+  square nobody saw it; on a strip running the length of an edge the same fill
+  is a square-ended bar stopping short of the corner radius, which reads as a
+  border the panel grew. It was reported as one. The mark is sized by
+  `--ag-ui-grip-mark-length` and `--ag-ui-grip-mark-thickness`.
+
+- **Files can be pasted into the composer**, alongside the picker and a drop --
+  a screenshot straight from the clipboard, or a file copied in the file
+  manager. Text pastes carry no files, so ordinary pasting is untouched, and the
+  default is prevented only when the clipboard carries no text: copying a rich
+  selection containing an image puts both on the clipboard, and swallowing the
+  words someone meant to paste is the worse of the two failures.
+
+- **The collapsed launcher can be dragged anywhere on screen, and the panel
+  opens into the clearest space around it.** Per axis, the element compares the
+  room a panel would have on either side of the launcher and pins the side with
+  more of it, so a launcher dropped top-left opens down and to the right. What
+  it compares is the room the *panel* would get rather than which half of the
+  screen the launcher is in; those disagree either side of centre, and only the
+  first is about whether the panel fits.
+
+  Where the panel fits on neither side -- the middle of a short viewport -- the
+  launcher still keeps its position: the panel is clamped into the viewport and
+  the launcher's own inset carries the difference, which is why it can end up
+  outside its own host box. Nothing clips it there, and it keeps its pointer
+  events.
+
+  The position persists per tab beside the collapsed, theme and size
+  preferences, arrow keys move it from the keyboard, and
+  `data-launcher-drag="false"` opts out -- as does any placement that already
+  places the launcher itself. An undragged launcher is untouched: with nothing
+  stored the element writes no position at all, and feeding the geometry the
+  resting corner reproduces the existing default unchanged.
+
+  Two things worth carrying. A drag ends in a `click` the browser synthesises,
+  which would expand the panel the user was only moving -- but suppressing it
+  by arming a flag also swallows `Enter` on the focused button, assistive
+  activation, and a host's own `click()`, none of which can be the tail of a
+  drag and all of which are the only way in without a pointer. The suppression
+  is therefore narrowed to clicks carrying a click count. And the launcher is
+  scaled in four separate states, so `getBoundingClientRect` reports a box a few
+  pixels off in every one of them; the size comes from `offsetWidth` and the
+  position from the rect's centre, which a centred scale cannot move.
+
+- **Copy puts the message on the clipboard in both flavours**, so a table
+  pastes as a table. `text/html` carries the markup for a target that reads it;
+  the plain flavour is serialised structurally -- tab separated table rows,
+  which is what a spreadsheet splits on, and list items that keep their markers.
+
+  It was `textContent`, which is the obvious source and loses every piece of
+  structure the message had: descendants concatenated with no separator, so a
+  table arrived as one run of cells with the headers welded to the first row.
+
+  A host driving its own bar opts in by passing the new `html` alongside `text`;
+  with `text` alone the clipboard gets plain text only, as before.
+
+- **What is drawn on the accent and danger fills is now a variable**
+  (`--ag-ui-on-accent`, `--ag-ui-on-danger`). Eight rules had white hardcoded
+  against those two fills, so theming the accent to anything pale produced
+  white-on-pale on the send button, both approval buttons, the confirmation
+  card and the checkpoint row, with no way to correct it.
+
+- **The disclosure marks are variables too** (`--ag-ui-disclosure-collapsed`,
+  `--ag-ui-disclosure-expanded`). The tool-status marks already were, so a host
+  re-theming the marks changed half of them and ended up with two vocabularies
+  in one transcript.
+
+### Fixed
+
+- **The anchor probe inverted at the size clamps.** The element learns which
+  edges its layout holds still by changing its own size by a pixel and seeing
+  what moved, and it grew. Growing cannot answer the question at a size already
+  resting against `max-width` or `max-height`: the box does not change, no edge
+  moves, and every clamped axis reported the edge that did *not* move -- which
+  is the free one. The grip landed on the corner the drag travels by, with the
+  direction inverted.
+
+  It needed no unusual setup to reach. The default panel is 380px wide against
+  a max-width of `100vw - 48px`, so **any viewport under 428px was born
+  clamped**. The probe now shrinks, which always moves an edge because it is
+  measured from the box's used width rather than from whatever was asked for,
+  and falls back to growing for an axis a host rule gives a minimum.
+
+- **A pasted blob with no filename** reached the upload as an empty `filename`
+  and showed in the tray as a chip with no label. It is given a name.
+
+- **A sub-agent failure whose message the server left empty settled the row to
+  a blank line**, reading as a delegation that said nothing rather than one
+  that failed. The fallback for it existed in the string table, documented as
+  covering exactly this, and was wired to nothing.
+
+- **Copying an answer that contained a code block copied the word Copy with
+  it.** The code blocks' copy buttons are appended *inside* their own `pre`, so
+  they are descendants of the message, and reading `textContent` picked their
+  label up mid-sentence. Both clipboard flavours now come from a copy of the
+  message with the component's own buttons removed.
+
+- **The message action controls were about 20px square**, under the 24px that
+  makes a control reliably tappable, and marked with text glyphs -- the copy
+  mark in particular has no font behind it on most systems, so it rendered as
+  a mark nobody could name on a target nobody could hit. They are now sized
+  from `--ag-ui-action-size` with a 24px floor and drawn with the same icon set
+  as the rest of the component.
+
+- **An icon-only action was unnamed for anyone using a keyboard.** The label was
+  carried by `title`, which browsers never show on focus. Each control now draws
+  its own label on hover and on focus alike, and the icon holder has its own
+  part so a host can swap the mark.
+
 ### Changed
+
+- **The resize grip is placed from the corner the element chose, when it chose
+  one.** With a dragged position the pinned edges are known rather than probed,
+  so `#measureAnchor` is skipped. The probe nudges the size by a pixel and reads
+  which edges moved, which cannot work at a size already resting against
+  `max-width` or `max-height` -- every clamped axis reads as pinned on the wrong
+  side. That is a pre-existing defect on the measured path and is untouched here.
 
 - **The demo's delegation scenario now streams the carrier a current server
   writes.** It still emitted the five-phase `ag_ui.subagent` `CUSTOM` lifecycle
@@ -2668,7 +2809,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.30.0...v0.31.0

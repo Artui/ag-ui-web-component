@@ -174,7 +174,7 @@ another origin, add `credentials="include"` too; see
 | `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
 | `data-threads-cache` | — | **On by default.** `="false"` stops mirroring message bodies into `sessionStorage` when `data-threads-url` is set, for a deployment that put history on the server so transcripts stay off the client. Only meaningful alongside `data-threads-url`. |
 | `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's ⭯ *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
-| `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's paperclip picker + drag-and-drop. |
+| `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's paperclip picker, drag-and-drop, and paste. |
 | `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
 | `data-attachment-max-bytes` | — | Client-side upload size cap in bytes (default 10 MiB; `0` disables). The server stays authoritative. |
 | `data-transcribe-url` | — | URL of the voice-transcription endpoint (django-ag-ui's `TranscribeView`); reveals the composer's mic button. See [Voice input](#voice-input). |
@@ -183,6 +183,7 @@ another origin, add `credentials="include"` too; see
 | `data-icon-url` | — | Header (and launcher) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
 | `data-launcher-icon-url` | — | Icon image URL for the collapsed launcher only, when it should differ from the header's. Falls back to `data-icon-url`; a slotted `slot="launcher"` wins over both. |
 | `data-unread-badge` | — | **On by default.** `="false"` hides the launcher's unread badge; the count and the `ag-ui-unread` event keep running. See [Collapsing to the launcher](#collapsing-to-the-launcher). |
+| `data-launcher-drag` | — | **On by default.** `="false"` leaves the collapsed launcher wherever your CSS puts it. Otherwise it can be dragged anywhere on screen and the panel opens into the clearest space. See [Moving the launcher](#moving-the-launcher). |
 | `data-quote-selection` | — | **On by default.** `="false"` stops the transcript offering to quote a selection. `quote()` keeps working either way. See [Quoting a selection](#quoting-a-selection). |
 | `data-message-actions` | — | **All on by default.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry"`). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
@@ -211,8 +212,8 @@ The element observes two groups of attributes, and they behave differently once 
 Nothing outside those groups is observed: a CSS-only attribute (`theme`, `density`, `data-side`,
 `data-answer-well`) is read by the stylesheet rather than by script, and `endpoint`,
 `data-tool-display`, `data-text-animation`, `data-runs-url`, `data-page-actions`,
-`data-message-actions`, `data-max-tool-rounds`, `data-unread-badge` and `data-quote-selection` are
-re-read at each use, so a late write to any of those simply takes effect. The one attribute in
+`data-message-actions`, `data-max-tool-rounds`, `data-unread-badge`, `data-launcher-drag` and
+`data-quote-selection` are re-read at each use, so a late write to any of those simply takes effect. The one attribute in
 neither camp is `data-launcher-icon-url`: it is read while the element connects, like the group
 below, but is not observed, so a late write is inert and says nothing.
 
@@ -968,6 +969,34 @@ default**; `data-unread-badge="false"` turns the badge off.
 The count is also the launcher's accessible name (`Expand — 2 unread`, from the `expandUnread`
 string), because a coloured dot says nothing to a screen reader.
 
+#### Moving the launcher
+
+The collapsed launcher can be dragged anywhere on screen, and it stays there — per tab, in
+`sessionStorage`, namespaced per element exactly like the collapsed, theme and size preferences.
+Arrow keys move it from the keyboard (`Shift` for a larger step). `data-launcher-drag="false"`
+turns it off; so does any placement that already places the launcher itself — `sidebar` collapses
+it to a full-height rail, `embedded` and `page` hide it and keep their header bar, and a
+full-bleed panel has no clear space to open into.
+
+**The panel then opens into whichever side of the launcher has more room.** For each axis the
+element compares the space a panel would have on either side of the launcher and pins the side
+with more of it, so a launcher dragged to the top-left opens down and to the right. What it
+compares is the room the *panel* would get, not which half of the screen the launcher is in —
+those give different answers either side of centre, and only the first one is about whether the
+panel fits.
+
+A launcher parked where the panel fits neither way — the middle of a short viewport — keeps its
+position anyway: the panel is clamped into the viewport and the launcher carries the difference,
+which is why it can end up sitting outside its own host box. Nothing clips it there.
+
+A drag writes `--ag-ui-inset` and `--ag-ui-launcher-inset` on the host, and an inline custom
+property outranks your stylesheet's rule for the same one — the same trade a dragged size makes
+against a placement. Switching to a placement that places itself hands both back.
+
+> **An undragged launcher is untouched.** With nothing stored, the element writes neither
+> property and your CSS decides, exactly as before. The geometry is built so that feeding it the
+> resting position reproduces the default `auto 24px 24px auto` unchanged.
+
 ```js
 chat.unread; // 2
 
@@ -1288,22 +1317,48 @@ server's text.
 
 ## Resizing the panel
 
-The panel carries a drag handle on its leading corner (or leading edge, docked),
-so a reader can widen it without the host having to re-theme anything.
+The panel carries a grip on **every edge and every corner**, so it can be
+dragged from whichever side you are already near.
 
-- `placement="full"` / `placement="page"` get **no handle** — a full-bleed layout
+- `placement="full"` / `placement="page"` get **no grips** — a full-bleed layout
   is `100vw`/`100vh` by definition, so there is nothing to drag.
-- `placement="sidebar"` / `placement="side"` get **width only**; the placement
-  owns the height.
-- Everything else resizes on both axes.
+- `placement="sidebar"` / `placement="side"` keep only the two vertical edges;
+  the placement owns the height, so a horizontal edge or a corner would
+  advertise a drag that does nothing.
+- Everything else gets all eight.
 
-**The grip sits at the corner your layout grows toward, and the component
-measures which one that is.** A resize has to be computed from the edge that
-stays still, and that belongs to *your* CSS rather than to `placement` — a
-floating panel is pinned bottom-right, an embedded one goes wherever the page
-puts it. The element probes its own geometry and reflects the result as
-`data-resize-anchor` (e.g. `bottom-right` means those two edges are fixed), which
-is what positions the grip.
+**The edge a grip does not drag is the one that stays put.** That is the whole
+model: the left grip moves the left edge and holds the right, the right grip
+does the reverse, a corner does both axes. A grip names its own edge, so no
+layout can invert it.
+
+### Dragging the edge your layout was holding still
+
+A floating panel pinned bottom-right cannot grow rightward on its own — its
+right edge is what the placement fixed. So **a drag on a pinned edge moves the
+panel as well as resizing it**, and the component takes the position over by
+writing `--ag-ui-inset`, the same ownership a dragged launcher takes.
+
+A grip on a free edge writes nothing but the size, exactly as before, so a host
+positioning the panel with its own rule keeps that rule until someone drags the
+edge it was holding.
+
+Which edges those are belongs to *your* CSS rather than to `placement` — a
+floating panel a host right-aligns is anchored bottom-left — so the element
+probes its own geometry and reflects the result as `data-resize-anchor` (e.g.
+`bottom-right` means those two edges are fixed). Nothing in the stylesheet reads
+it any more; the element uses it to decide what a drag on a pinned edge costs,
+and which grip carries the keyboard.
+
+> **The probe shrinks rather than grows.** Growing by a pixel cannot answer the
+> question at a size already resting against `max-width` or `max-height`: the
+> box does not change, no edge moves, and every clamped axis reads as pinned on
+> the side that is actually free. That was reachable with no user action at all
+> — the default panel is 380px wide against a max-width of `100vw - 48px`, so
+> any viewport under 428px was born clamped, with the grip on the wrong corner
+> and the drag inverted.
+
+### Sizes, keyboard, and parts
 
 A drag writes `--ag-ui-width` / `--ag-ui-height` on the host as custom
 properties.
@@ -1323,8 +1378,31 @@ container.
 
 The size persists per tab (`sessionStorage`, namespaced per element like the
 collapsed and theme preferences) and is restored before the first paint.
-Arrow keys resize from the keyboard (`Shift` for a larger step); style the grip
-via the `resize-handle` part.
+
+**Exactly one grip is in the tab order** — the corner diagonally opposite the
+pinned one, so an arrow key changes the size and never the position. Eight
+separators between the transcript and the composer would be a keyboard
+obstacle rather than keyboard parity, and one grip already reaches both axes.
+Arrow keys resize from it (`Shift` for a larger step).
+
+Each grip draws a short pill centred on its edge — a dot in a corner — on hover
+and focus as well as during a drag. **The hit area and the mark are separate on
+purpose**: the area is the whole strip, so the grip is easy to catch, while the
+mark stays small enough that it cannot be read as a border and never meets the
+panel's corner radius.
+
+Every grip has its own part (`resize-handle-left`, `resize-handle-bottom-right`,
+and so on, plus `resize-handle` on all of them). Hit areas and marks are sized
+separately, so a coarser pointer can get a bigger target without a heavier mark.
+
+```css
+ag-ui-chat {
+  --ag-ui-grip-corner: 20px;          /* the corner squares */
+  --ag-ui-grip-edge: 10px;            /* the edge strips */
+  --ag-ui-grip-mark-length: 28px;     /* the pill drawn inside them */
+  --ag-ui-grip-mark-thickness: 3px;
+}
+```
 
 ---
 
@@ -1471,6 +1549,53 @@ the actions to keep, or `="false"` for none at all:
 
 The default is `copy,retry`. Those two work with nothing wired; the rating pair
 needs a listener, so it is asked for rather than assumed.
+
+### What Copy puts on the clipboard
+
+Both flavours of the message: `text/plain` for anywhere, and `text/html` for a
+target that understands it. A table therefore pastes into a spreadsheet as
+columns and into a document as a table.
+
+The plain flavour is serialised structurally rather than read off `textContent`,
+which is the obvious source and loses everything: it concatenates descendants
+with no separator, so a table arrives as one unbroken run of cells with the
+headers welded to the first row. Rows are tab separated because that is what a
+spreadsheet splits on; list items keep their bullets and numbers; a code block
+keeps its own whitespace.
+
+Both flavours are taken from a copy of the message with the component's own
+buttons removed. The code blocks' copy buttons live *inside* their `pre`, so
+they are descendants of the message: before this, copying an answer containing a
+code block copied the word Copy along with it.
+
+A host that drives its own bar gets the same by passing `html` alongside `text`
+to `attachMessageActions`; with `text` alone the clipboard gets plain text only,
+exactly as before.
+
+### Sizing and theming the row
+
+The controls are icon-only, so the whole box is the target. It is sized from
+`--ag-ui-action-size`, with a floor rather than a fixed height so the compact
+density cannot shrink it below the 24px that keeps it reliably tappable.
+
+Each control draws its own label on hover **and on keyboard focus**. That is not
+the `title` attribute repeated: a `title` never appears on focus, so an
+icon-only button is unnamed for anyone tabbing to it. On a touch device, where
+there is no hover to reveal it and it would sit over the answer, it is not
+drawn at all.
+
+```css
+ag-ui-chat {
+  --ag-ui-action-size: 28px;        /* the control box; floors at 24px */
+  --ag-ui-action-icon-size: 15px;   /* the mark inside it */
+  --ag-ui-tooltip-bg: #1f2430;
+  --ag-ui-tooltip-fg: #f5f6fa;
+}
+```
+
+To swap a mark for your own, style its part — `message-action-icon-copy` and its
+siblings. A slot would be the better channel and cannot be used: these repeat
+once per message, and a named slot can only be filled once.
 
 It is per-action rather than one switch because the three disappear for
 different reasons. Thumbs are only useful to a host listening for
@@ -2031,12 +2156,29 @@ error — a history affordance that fails is empty, not broken.
 ## File uploads
 
 Set **`data-attachments-url`** (django-ag-ui's `AttachmentsView`) to let the user attach files
-to a message. A button and drag-and-drop appear on the composer; each picked file uploads
+to a message. A button, drag-and-drop, and **paste** appear on the composer; each picked file uploads
 out-of-band (multipart, with the element's `headers`) and shows a chip in a pending tray —
 `uploading` (with a progress bar) → `ready`, or `error` with a retry. On send, the ready files'
 **refs** ride on the user bubble as read-only chips and the agent reads their contents
 server-side via the `read_attachment` tool. The wire stays vanilla AG-UI: only lightweight refs
 (`{ id, name, mime, size }`) travel, never the bytes.
+
+### Pasting
+
+A paste carrying files puts them on the tray, the same way the picker and a drop
+do — a screenshot straight from the clipboard, or a file copied in the file
+manager.
+
+Two rules keep it from stealing a paste that was never about files. Text pastes
+carry no files at all, so ordinary pasting is untouched. And the default is
+prevented **only when the clipboard carries no text**: copying a rich selection
+that happens to contain an image puts both on the clipboard, and swallowing the
+words someone meant to paste in order to attach a picture they did not is the
+worse of the two failures.
+
+A pasted blob that arrives with no filename — some engines hand one over that
+way — is given one, rather than reaching the server as an empty `filename` and
+showing in the tray as a chip with no label.
 
 ```html
 <ag-ui-chat
@@ -2155,7 +2297,7 @@ re-export point. Internal modules import from leaf paths.
 | `suggestionPrompts` | function | The usable prompts in a `suggestions` activity's content, bounded and trimmed. |
 | `attachMessageActions` | function | Give a finished bubble its action row (copy, and feedback when a handler is passed). |
 | `messageActionBar` | function | The empty action row for a bubble, created if it has none — the shared shell both callers use. |
-| `MessageActionsOptions` | type | What `attachMessageActions` takes: `strings`, a `text` source, an optional `onFeedback`. |
+| `MessageActionsOptions` | type | What `attachMessageActions` takes: `strings`, a `text` source, an optional `html` source for the rich clipboard flavour, an optional `onFeedback`. |
 | `ActivityRenderer` | type | Draws one activity from its `content`. Pure: it runs again on every restore. |
 | `ActivityRegistration` | type | What `registerActivityRenderer` takes: `type`, `render`, and an optional `removedNotice`. |
 | `createStateHookTools(binding)` / `StateHook` | deprecated | The former names for `createPageStateTools` / `PageState`. |
@@ -2293,11 +2435,28 @@ ag-ui-chat {
   --ag-ui-fg: #1a1a2e;
   --ag-ui-radius: 12px;
 
+  /* What is drawn on top of the accent and danger fills. Change these with
+     the fills: a pale accent leaves white-on-pale everywhere they are used. */
+  --ag-ui-on-accent: #ffffff;
+  --ag-ui-on-danger: #ffffff;
+
   /* Layout */
   --ag-ui-width: 380px;
   --ag-ui-height: 560px;
   --ag-ui-inset: auto 24px 24px auto;
   --ag-ui-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
+}
+```
+
+Marks are variables too, so one vocabulary covers a re-theme rather than
+leaving half the transcript in the built-in set: `--ag-ui-tool-icon-done` /
+`-error` / `-declined` for tool status, and `--ag-ui-disclosure-collapsed` /
+`--ag-ui-disclosure-expanded` for every expandable row.
+
+```css
+ag-ui-chat {
+  --ag-ui-disclosure-collapsed: "+";
+  --ag-ui-disclosure-expanded: "-";
 }
 ```
 
@@ -2387,13 +2546,13 @@ component sets, so a new one cannot ship undocumented.
 
 | Feature | Parts |
 | --- | --- |
-| Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `pending`, `stopped`, `jump-latest`, `resize-handle` |
+| Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `pending`, `stopped`, `jump-latest`, and one per resize grip: `resize-handle` plus `resize-handle-top`, `resize-handle-bottom`, `resize-handle-left`, `resize-handle-right`, `resize-handle-top-left`, `resize-handle-top-right`, `resize-handle-bottom-left`, `resize-handle-bottom-right` |
 | Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `collapse-button`, `theme-toggle` |
 | Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
 | Follow-up suggestions | `suggestions`, `suggestion-chip` |
-| Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`) |
+| Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`), and the icon holder inside each: `message-action-icon` (plus `message-action-icon-retry`, `message-action-icon-copy`, `message-action-icon-up`, `message-action-icon-down`) |
 | Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-icon`, `run-notice-text` |
 | Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent` |
 | Delegated sub-agents | `subagent`, `subagent-row`, `subagent-icon`, `subagent-status`, `subagent-steps`, `subagent-step`, `subagent-step-icon`, `subagent-step-name` |

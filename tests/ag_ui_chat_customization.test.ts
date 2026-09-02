@@ -481,20 +481,40 @@ describe("panel resize", () => {
     sessionStorage.removeItem(SIZE_KEY);
   });
 
-  it("keeps one handle and lets placement decide what it does", () => {
-    // Visibility and position are CSS from the host attribute, so switching
-    // placement moves the grip rather than leaving the one it mounted with.
+  it("keeps the same grips and lets placement decide what they do", () => {
+    // Which grips are shown and what each may move is CSS and the live axis
+    // check, so switching placement re-purposes the set rather than rebuilding
+    // it. All eight edges and corners are always present.
     const el = mount();
-    const handle = shadow(el).querySelector(".resize-handle");
-    expect(handle).not.toBeNull();
+    const grips = [...shadow(el).querySelectorAll(".resize-handle")];
+    expect(grips).toHaveLength(8);
     el.setAttribute("placement", "full");
-    expect(shadow(el).querySelector(".resize-handle")).toBe(handle);
+    expect([...shadow(el).querySelectorAll(".resize-handle")]).toEqual(grips);
   });
 
-  it("measures which edges the layout holds still, rather than assuming", () => {
-    // The reported defect: the anchor was derived from `placement`, so a host
-    // that right-aligns the panel got a resize that shrank when dragged outward
-    // and travelled by the opposite corner. It is now probed.
+  it("puts exactly one grip in the tab order", () => {
+    // Eight separators between the transcript and the composer is not keyboard
+    // parity, it is a keyboard obstacle; one grip already reaches both axes.
+    const el = mount();
+    const reachable = [...shadow(el).querySelectorAll<HTMLElement>(".resize-handle")].filter(
+      (grip) => grip.tabIndex === 0,
+    );
+
+    expect(reachable).toHaveLength(1);
+    // And the rest are out of the accessibility tree, not just out of the tab
+    // order, so they are not announced as seven unusable separators.
+    expect(
+      [...shadow(el).querySelectorAll(".resize-handle")].filter(
+        (grip) => grip.getAttribute("aria-hidden") === "true",
+      ),
+    ).toHaveLength(7);
+  });
+
+  it("computes each grip from the edge that grip does not drag", () => {
+    // The reported defect: the direction was derived from `placement`, so a
+    // host that right-aligns the panel got a resize that shrank when dragged
+    // outward and travelled by the opposite corner. A grip now names its own
+    // edge, which makes the layout unable to invert it at all.
     const el = mount();
     // A right-anchored layout: growing the panel moves its left edge outward.
     let width = 300;
@@ -508,7 +528,7 @@ describe("panel resize", () => {
       original(name, value);
     };
 
-    const handle = shadow(el).querySelector<HTMLElement>(".resize-handle");
+    const handle = shadow(el).querySelector<HTMLElement>(".resize-handle--left");
     const down = new Event("pointerdown", { bubbles: true, cancelable: true });
     Object.assign(down, { clientX: 200, clientY: 100 });
     handle?.dispatchEvent(down);
@@ -516,8 +536,8 @@ describe("panel resize", () => {
     Object.assign(move, { clientX: 150, clientY: 100 });
     window.dispatchEvent(move);
 
-    // right (500) - pointer (150) = 350. A left-anchored reading would have
-    // given 150 - left, clamped to the 280 minimum.
+    // The left grip holds the right edge: 500 - 150 = 350, whatever the host's
+    // own layout pins.
     expect(el.style.getPropertyValue("--ag-ui-width")).toBe("350px");
   });
 
@@ -533,7 +553,9 @@ describe("panel resize", () => {
       sessionStorage.removeItem(SIZE_KEY);
       const el = mount({ placement });
       el.getBoundingClientRect = () => ({ left: 0, top: 0, right: 300, bottom: 400 }) as DOMRect;
-      const handle = shadow(el).querySelector<HTMLElement>(".resize-handle");
+      // The corner, so one gesture asks for both axes and the placement is
+      // what decides which of them it gets.
+      const handle = shadow(el).querySelector<HTMLElement>(".resize-handle--bottom-right");
       const down = new Event("pointerdown", { bubbles: true, cancelable: true });
       Object.assign(down, { clientX: 0, clientY: 0 });
       handle?.dispatchEvent(down);

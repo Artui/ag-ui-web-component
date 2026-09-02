@@ -4,59 +4,23 @@ import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 
 /**
- * The resize grip belongs on the corner that moves, and only a measurement
- * knows which one that is.
+ * Where the resize grips are, and what the panel does at its size clamps.
  *
- * The element measures the edges its host's layout holds still and stamps them
- * as data-resize-anchor="<y>-<x>". The stylesheet then places the grip on the
- * opposite corner. Two defects made that untrue for a year of releases, and
- * both were invisible to the existing suite:
+ * Both halves are cascade and layout questions, which is why they are in the
+ * Chromium project: happy-dom resolves computed styles well enough to agree
+ * with a broken stylesheet, and computes no box at all.
  *
- * - the position rules were written as [data-resize-anchor~="left"], and `~=`
- *   matches whitespace-separated words while the stamped value is one
- *   hyphenated token, so they could never match. The grip stayed wherever
- *   `placement` had guessed while the *cursor* rules (written with `=`) did
- *   follow the measurement, so the pointer promised a diagonal the grip was not
- *   on;
- * - and a duplicated copy of the whole block sat earlier in the file behind a
- *   selector welded to the previous rule by a stray comment.
+ * The grips used to be one grip, placed on the corner opposite whichever edges
+ * the layout pinned. Two defects made that untrue for a year of releases and
+ * were invisible to the suite -- the position rules were written with the ~=
+ * operator against a single hyphenated token, so they could never match, and a
+ * duplicate of the whole block sat earlier in the file behind a selector welded
+ * to the previous rule by a stray comment. There are now eight grips at fixed
+ * places, so that whole class of defect is gone with the rules that carried it.
  *
- * These assertions are in the Chromium project because they are cascade
- * questions: two rule sets of equal specificity where source order decides, and
- * `auto` versus `0` on a side. happy-dom resolves computed styles well enough
- * to agree with a broken stylesheet, which is exactly the failure mode being
- * guarded.
- *
- * Note that getComputedStyle resolves `auto` to a *used* pixel value, so the
- * pinned side cannot be found by looking for the string "auto" -- the pinned
- * side is the one that computes to 0px. Reading it the other way is how an
- * earlier version of this test reported every case as failing while the
- * stylesheet was correct.
+ * What remains is the measurement, which still decides what a drag on a pinned
+ * edge costs in position and which grip carries the tab stop.
  */
-
-/** The corner a grip belongs on: diagonally opposite the anchored one. */
-function freeCorner(anchor: string): string {
-  const [y, x] = anchor.split("-");
-  return `${y === "top" ? "bottom" : "top"}-${x === "left" ? "right" : "left"}`;
-}
-
-/** Which corner the grip is actually pinned to, per the resolved cascade. */
-function gripCorner(el: AgUiChat): string {
-  const handle = el.shadowRoot?.querySelector(".resize-handle");
-  if (!(handle instanceof HTMLElement)) {
-    throw new Error("expected a .resize-handle in the shadow root");
-  }
-  const style = getComputedStyle(handle);
-  return `${style.top === "0px" ? "top" : "bottom"}-${style.left === "0px" ? "left" : "right"}`;
-}
-
-function grip(el: AgUiChat): CSSStyleDeclaration {
-  const handle = el.shadowRoot?.querySelector(".resize-handle");
-  if (!(handle instanceof HTMLElement)) {
-    throw new Error("expected a .resize-handle in the shadow root");
-  }
-  return getComputedStyle(handle);
-}
 
 function mount(attrs: Record<string, string> = {}): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
@@ -67,82 +31,104 @@ function mount(attrs: Record<string, string> = {}): AgUiChat {
   return el;
 }
 
-const ANCHORS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
+beforeAll(() => {
+  defineAgUiChat();
+});
 
-describe("the resize grip follows the measured anchor (real browser)", () => {
-  beforeAll(() => {
-    defineAgUiChat();
-  });
+afterEach(() => {
+  document.body.innerHTML = "";
+});
 
-  afterEach(() => {
-    document.body.innerHTML = "";
-  });
+describe("where the grips sit (real browser)", () => {
+  /** Which sides of the panel a grip is pinned to, per the resolved cascade. */
+  function sides(el: AgUiChat, name: string): string[] {
+    const handle = el.shadowRoot?.querySelector(`.resize-handle--${name}`);
+    if (!(handle instanceof HTMLElement)) {
+      throw new Error(`expected a .resize-handle--${name} in the shadow root`);
+    }
+    const style = getComputedStyle(handle);
+    // getComputedStyle resolves `auto` to a *used* pixel value, so a pinned
+    // side cannot be found by looking for the string "auto" -- it is the one
+    // that computes to 0px. Reading it the other way round is how an earlier
+    // version of this file reported every case as failing while the stylesheet
+    // was correct.
+    return (["top", "right", "bottom", "left"] as const).filter((side) => style[side] === "0px");
+  }
 
-  it.each(ANCHORS)("puts the grip opposite a measured %s anchor", (anchor) => {
-    const el = mount();
-    el.setAttribute("data-resize-anchor", anchor);
-
-    expect(gripCorner(el)).toBe(freeCorner(anchor));
-  });
-
-  it.each(ANCHORS)("points the cursor along the drag diagonal for %s", (anchor) => {
-    const el = mount();
-    el.setAttribute("data-resize-anchor", anchor);
-
-    const diagonal =
-      anchor === "top-left" || anchor === "bottom-right" ? "nwse-resize" : "nesw-resize";
-    expect(grip(el).cursor).toBe(diagonal);
-  });
-
-  it.each(ANCHORS)("overrides the placement guess when the measurement is %s", (anchor) => {
-    // placement="embedded" guesses bottom-right, which is right only for a host
-    // that left-aligns the panel. The measurement has to win in every direction,
-    // which is why each rule sets both sides of its axis rather than only the
-    // side it moves -- a one-way rule cannot undo the guess.
-    const el = mount({ placement: "embedded" });
-    el.setAttribute("data-resize-anchor", anchor);
-
-    expect(gripCorner(el)).toBe(freeCorner(anchor));
-  });
-
-  it("keeps the placement guess until a measurement arrives", () => {
-    // No anchor stamped yet: the panel is pinned bottom-right by default, so
-    // the grip opens top-left. A wrong first guess costs a grip in the wrong
-    // corner for a frame and never a wrong resize.
+  it("pins each grip to the edges it is named for", () => {
     const el = mount();
 
-    expect(el.hasAttribute("data-resize-anchor")).toBe(false);
-    expect(gripCorner(el)).toBe("top-left");
+    expect(sides(el, "top")).toEqual(["top"]);
+    expect(sides(el, "bottom")).toEqual(["bottom"]);
+    expect(sides(el, "left")).toEqual(["left"]);
+    expect(sides(el, "right")).toEqual(["right"]);
+    expect(sides(el, "top-left").sort()).toEqual(["left", "top"]);
+    expect(sides(el, "top-right").sort()).toEqual(["right", "top"]);
+    expect(sides(el, "bottom-left").sort()).toEqual(["bottom", "left"]);
+    expect(sides(el, "bottom-right").sort()).toEqual(["bottom", "right"]);
   });
 
-  it("gives a docked panel an edge grip, whatever was measured", () => {
-    // Docked placements own the height, so the grip is an edge rather than a
-    // corner and the measured anchor must not turn it back into one.
-    const el = mount({ placement: "side" });
-    el.setAttribute("data-resize-anchor", "top-right");
+  it("points each cursor along the direction that grip actually travels", () => {
+    const el = mount();
+    const cursor = (name: string): string => {
+      const handle = el.shadowRoot?.querySelector(`.resize-handle--${name}`) as HTMLElement;
+      return getComputedStyle(handle).cursor;
+    };
 
-    const style = grip(el);
-    expect(style.cursor).toBe("ew-resize");
-    expect(style.width).toBe("8px");
+    expect(cursor("left")).toBe("ew-resize");
+    expect(cursor("right")).toBe("ew-resize");
+    expect(cursor("top")).toBe("ns-resize");
+    expect(cursor("bottom")).toBe("ns-resize");
+    // The corners run along the two diagonals.
+    expect(cursor("top-left")).toBe("nwse-resize");
+    expect(cursor("bottom-right")).toBe("nwse-resize");
+    expect(cursor("top-right")).toBe("nesw-resize");
+    expect(cursor("bottom-left")).toBe("nesw-resize");
   });
 
-  it.each(["full", "page"])("has no grip at all in %s", (placement) => {
-    const el = mount({ placement });
-    el.setAttribute("data-resize-anchor", "top-left");
+  it("keeps the edge strips clear of the corners at both ends", () => {
+    const el = mount();
+    const box = (name: string): DOMRect => {
+      const handle = el.shadowRoot?.querySelector(`.resize-handle--${name}`);
+      if (!(handle instanceof HTMLElement)) {
+        throw new Error(`expected a .resize-handle--${name} in the shadow root`);
+      }
+      return handle.getBoundingClientRect();
+    };
 
-    expect(grip(el).display).toBe("none");
+    const panel = el.getBoundingClientRect();
+    const left = box("left");
+    // An edge strip that ran the full height would swallow the corner drags at
+    // either end of it, and a corner is the only grip that moves both axes.
+    expect(left.top).toBeGreaterThan(panel.top);
+    expect(left.bottom).toBeLessThan(panel.bottom);
+    expect(box("top").left).toBeGreaterThan(panel.left);
+    expect(box("top").right).toBeLessThan(panel.right);
   });
 
-  it("cannot express the anchor with a ~= selector", () => {
-    // The regression in one line: the stamped value is a single hyphenated
-    // token, so the word-matching operator never fires against it. This is a
-    // property of the value format rather than of the stylesheet, so it stays
-    // true no matter how the rules are rewritten -- which is the point.
-    const probe = document.createElement("div");
-    probe.setAttribute("data-resize-anchor", "bottom-left");
+  it("leaves a docked panel only the two vertical edges", () => {
+    const el = mount({ placement: "sidebar" });
+    const shown = (name: string): boolean => {
+      const handle = el.shadowRoot?.querySelector(`.resize-handle--${name}`) as HTMLElement;
+      return getComputedStyle(handle).display !== "none";
+    };
 
-    expect(probe.matches('[data-resize-anchor~="left"]')).toBe(false);
-    expect(probe.matches('[data-resize-anchor$="-left"]')).toBe(true);
+    // The placement owns the height, so a horizontal edge and every corner
+    // would advertise a drag that does nothing.
+    expect(shown("left")).toBe(true);
+    expect(shown("right")).toBe(true);
+    expect(shown("top")).toBe(false);
+    expect(shown("bottom")).toBe(false);
+    expect(shown("bottom-right")).toBe(false);
+  });
+
+  it("gives a full-bleed panel none at all", () => {
+    const el = mount({ placement: "full" });
+
+    for (const name of ["left", "right", "top", "bottom", "bottom-right"]) {
+      const handle = el.shadowRoot?.querySelector(`.resize-handle--${name}`) as HTMLElement;
+      expect(getComputedStyle(handle).display, name).toBe("none");
+    }
   });
 });
 
@@ -195,5 +181,164 @@ describe("the page placement's reading column reaches the composer", () => {
       throw new Error("expected .input-row in the shadow root");
     }
     expect(getComputedStyle(inputRow).paddingInlineStart).toBe("12px");
+  });
+});
+
+/**
+ * The measurement itself, at the sizes where it used to invert.
+ *
+ * The element learns which edges its layout holds still by changing its own
+ * size by a pixel and seeing what moved. Growing was the original probe and
+ * cannot answer the question at a size already resting against max-width or
+ * max-height: nothing moves, so every clamped axis reported the edge that did
+ * not move -- which is the free one -- and the grip rendered on the corner the
+ * drag travels by, with the direction inverted.
+ *
+ * It needed no unusual setup to reach. The default panel is 380px wide against
+ * a max-width of 100vw minus 48, so any viewport under 428px is born clamped.
+ */
+describe("the anchor measurement, against the size clamps", () => {
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 60));
+
+  it("reads the pinned edges of a panel clamped on both axes", async () => {
+    const el = mount();
+    // Far past both clamps, so growing by a pixel changes nothing at all.
+    el.style.setProperty("--ag-ui-width", "5000px");
+    el.style.setProperty("--ag-ui-height", "5000px");
+    await settle();
+
+    // The floating default is inset: auto 24px 24px auto -- pinned bottom
+    // right, whatever the clamps do to its size.
+    expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+  });
+
+  it("reads them for a panel clamped on one axis only", async () => {
+    const el = mount();
+    el.style.setProperty("--ag-ui-width", "5000px");
+    el.style.setProperty("--ag-ui-height", "200px");
+    await settle();
+
+    expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+  });
+
+  it("still reads a panel that is nowhere near its clamps", async () => {
+    const el = mount();
+    el.style.setProperty("--ag-ui-width", "200px");
+    el.style.setProperty("--ag-ui-height", "200px");
+    await settle();
+
+    expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+  });
+
+  it("reads the opposite corner for a placement pinned there", async () => {
+    const el = mount({ placement: "bottom-left" });
+    el.style.setProperty("--ag-ui-width", "5000px");
+    await settle();
+
+    // Clamped, and still measured rather than guessed: this one is pinned left.
+    expect(el.getAttribute("data-resize-anchor")).toBe("bottom-left");
+  });
+
+  it("leaves the panel exactly the size it found it", async () => {
+    const el = mount();
+    el.style.setProperty("--ag-ui-width", "300px");
+    await settle();
+    const width = el.getBoundingClientRect().width;
+
+    // The probe writes and restores the size properties; a value left behind
+    // would pin a panel that had been sizing itself.
+    el.setAttribute("placement", "bottom-left");
+    await settle();
+
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("300px");
+    expect(el.getBoundingClientRect().width).toBe(width);
+  });
+});
+
+/**
+ * What a grip looks like, which is a different question from where it is.
+ *
+ * The drag state used to fill the whole handle with the accent. On the single
+ * 14px corner grip that was invisible; on a strip running the length of an edge
+ * it is a square-ended bar stopping short of the panel's corner radius at both
+ * ends, which reads as a border the panel grew rather than as something to
+ * grab. It was reported as one, which is the strongest evidence a piece of
+ * feedback is saying the wrong thing.
+ */
+describe("the mark on a grip", () => {
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 260));
+
+  function mark(el: AgUiChat, name: string): CSSStyleDeclaration {
+    const handle = el.shadowRoot?.querySelector(`.resize-handle--${name}`);
+    if (!(handle instanceof HTMLElement)) {
+      throw new Error(`expected a .resize-handle--${name} in the shadow root`);
+    }
+    return getComputedStyle(handle, "::after");
+  }
+
+  function handle(el: AgUiChat, name: string): HTMLElement {
+    const found = el.shadowRoot?.querySelector(`.resize-handle--${name}`);
+    if (!(found instanceof HTMLElement)) {
+      throw new Error(`expected a .resize-handle--${name} in the shadow root`);
+    }
+    return found;
+  }
+
+  it("draws nothing at rest", async () => {
+    const el = mount();
+    await settle();
+
+    expect(mark(el, "bottom").opacity).toBe("0");
+    expect(mark(el, "bottom-right").opacity).toBe("0");
+  });
+
+  it("never fills the strip itself, whatever state it is in", async () => {
+    const el = mount();
+    handle(el, "bottom").setAttribute("data-dragging", "true");
+    await settle();
+
+    // The fill is what was mistaken for a border. The mark lives in ::after so
+    // the hit area can stay the full strip without looking like one.
+    const strip = getComputedStyle(handle(el, "bottom"));
+    expect(strip.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(strip.opacity).toBe("1");
+  });
+
+  it("shows a pill along an edge and a dot in a corner", async () => {
+    const el = mount();
+    handle(el, "bottom").setAttribute("data-dragging", "true");
+    handle(el, "left").setAttribute("data-dragging", "true");
+    handle(el, "bottom-right").setAttribute("data-dragging", "true");
+    await settle();
+
+    // Wide and short on a horizontal edge, tall and narrow on a vertical one.
+    expect(mark(el, "bottom").width).toBe("28px");
+    expect(mark(el, "bottom").height).toBe("3px");
+    expect(mark(el, "left").width).toBe("3px");
+    expect(mark(el, "left").height).toBe("28px");
+    // A corner has no length to run along.
+    expect(mark(el, "bottom-right").width).toBe("3px");
+    expect(mark(el, "bottom-right").height).toBe("3px");
+  });
+
+  it("makes the drag the strongest state it has", async () => {
+    const el = mount();
+    handle(el, "bottom").setAttribute("data-dragging", "true");
+    await settle();
+
+    expect(Number.parseFloat(mark(el, "bottom").opacity)).toBeGreaterThan(0.8);
+  });
+
+  it("keeps the mark clear of the panel's rounded corners", async () => {
+    const el = mount();
+    const panel = el.getBoundingClientRect();
+    const strip = handle(el, "bottom").getBoundingClientRect();
+    const radius = Number.parseFloat(getComputedStyle(el).borderRadius) || 12;
+
+    // The mark is centred in a strip that is already inset past the corners, so
+    // the nearest it comes to a corner is half the strip minus half the mark.
+    const clearance = (strip.width - 28) / 2;
+    expect(strip.left - panel.left).toBeGreaterThanOrEqual(radius - 2);
+    expect(clearance).toBeGreaterThan(radius);
   });
 });

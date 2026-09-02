@@ -44,6 +44,18 @@ function file(name = "notes.txt", type = "text/plain", size = 5): File {
   return new File(["x".repeat(size)], name, { type });
 }
 
+/** Paste onto the chat shell, with whatever the clipboard is carrying. */
+function paste(el: AgUiChat, files: File[], text = ""): Event {
+  const chat = shadow(el).querySelector(".chat");
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  (event as { clipboardData?: unknown }).clipboardData = {
+    files,
+    getData: (type: string) => (type === "text/plain" ? text : ""),
+  };
+  chat?.dispatchEvent(event);
+  return event;
+}
+
 /** Drop files onto the chat shell (the drag-and-drop path). */
 function drop(el: AgUiChat, files: File[]): void {
   const chat = shadow(el).querySelector(".chat");
@@ -347,5 +359,78 @@ describe("AgUiChat — attachments", () => {
     await flush();
 
     expect(shadow(el).querySelector(".run-notice--attachment-pending")).toBeNull();
+  });
+});
+
+describe("pasting files into the composer", () => {
+  it("queues a pasted file into the tray", async () => {
+    const { el } = mount();
+    paste(el, [file("shot.png", "image/png", 8)]);
+    await flush();
+
+    const chips = shadow(el).querySelectorAll(".attachment-chip");
+    expect(chips).toHaveLength(1);
+    expect(chips[0]?.textContent).toContain("shot.png");
+  });
+
+  it("leaves an ordinary text paste completely alone", () => {
+    const { el } = mount();
+
+    const event = paste(el, [], "some words");
+
+    // No files, so nothing to attach and nothing to intercept: the textarea
+    // gets the paste the browser was already going to give it.
+    expect(shadow(el).querySelectorAll(".attachment-chip")).toHaveLength(0);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("intercepts a paste that is only files", () => {
+    const { el } = mount();
+
+    const event = paste(el, [file()]);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("attaches the file and still pastes the words when the clipboard has both", () => {
+    const { el } = mount();
+
+    // Copying a rich selection containing an image puts both on the clipboard.
+    // Swallowing the words in order to attach a picture nobody asked for is the
+    // worse of the two failures.
+    const event = paste(el, [file()], "the surrounding sentence");
+
+    expect(shadow(el).querySelectorAll(".attachment-chip")).toHaveLength(1);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("names a pasted blob that arrived without one", async () => {
+    const { el } = mount();
+    paste(el, [new File(["x"], "", { type: "image/png" })]);
+    await flush();
+
+    const label = shadow(el).querySelector(".attachment-chip-name")?.textContent ?? "";
+    // An empty name reaches the server as an unidentifiable upload, and shows
+    // in the tray as a chip with no label.
+    expect(label).toMatch(/^pasted-.+\.png$/);
+  });
+
+  it("names one whose type says nothing either", async () => {
+    const { el } = mount();
+    paste(el, [new File(["x"], "", { type: "" })]);
+    await flush();
+
+    const label = shadow(el).querySelector(".attachment-chip-name")?.textContent ?? "";
+    expect(label).toMatch(/^pasted-[^.]+$/);
+  });
+
+  it("ignores a paste carrying no clipboard at all", () => {
+    const { el } = mount();
+    const chat = shadow(el).querySelector(".chat");
+
+    expect(() =>
+      chat?.dispatchEvent(new Event("paste", { bubbles: true, cancelable: true })),
+    ).not.toThrow();
+    expect(shadow(el).querySelectorAll(".attachment-chip")).toHaveLength(0);
   });
 });
