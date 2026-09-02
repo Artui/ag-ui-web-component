@@ -52,6 +52,13 @@ export const STYLES = `
   --_tooltip-bg: var(--ag-ui-tooltip-bg, #1f2430);
   --_tooltip-fg: var(--ag-ui-tooltip-fg, #f5f6fa);
 
+  /* Text and marks drawn on top of the accent and danger fills. Separate
+     tokens because they are not free: a host that themes the accent to a pale
+     colour has white-on-pale with no way to correct it, which is the one
+     theming change that makes a control unreadable rather than merely off. */
+  --_on-accent: var(--ag-ui-on-accent, #ffffff);
+  --_on-danger: var(--ag-ui-on-danger, #ffffff);
+
   /* Status accents for tool-call cards. */
   --_success: var(--ag-ui-success, #15803d);
   --_danger: var(--ag-ui-danger, #b91c1c);
@@ -62,6 +69,12 @@ export const STYLES = `
   --_tool-icon-done: var(--ag-ui-tool-icon-done, "✓");
   --_tool-icon-error: var(--ag-ui-tool-icon-error, "✕");
   --_tool-icon-declined: var(--ag-ui-tool-icon-declined, "⊘");
+
+  /* Disclosure marks on every expandable row. Tokenised for the same reason
+     the status icons above are: a host re-theming one set and not the other
+     ends up with two vocabularies in one transcript. */
+  --_disclosure-collapsed: var(--ag-ui-disclosure-collapsed, "▸");
+  --_disclosure-expanded: var(--ag-ui-disclosure-expanded, "▾");
   --_tool-spin-duration: var(--ag-ui-tool-spin-duration, 0.7s);
 
   /* Answer well (opt-in via data-answer-well) — boxes a whole assistant turn. */
@@ -1027,11 +1040,11 @@ export const STYLES = `
 }
 
 .thoughts-toggle::before {
-  content: "▾ ";
+  content: var(--_disclosure-expanded) " ";
 }
 
 .thoughts-toggle[aria-expanded="false"]::before {
-  content: "▸ ";
+  content: var(--_disclosure-collapsed) " ";
 }
 
 /* A gentle pulse on the label while reasoning is still streaming. */
@@ -1373,14 +1386,14 @@ export const STYLES = `
 }
 
 .subagent-row::after {
-  content: "▸";
+  content: var(--_disclosure-collapsed);
   flex: none;
   margin-left: auto;
   color: var(--_accent);
 }
 
 .subagent-row[aria-expanded="true"]::after {
-  content: "▾";
+  content: var(--_disclosure-expanded);
 }
 
 .subagent-row:disabled::after {
@@ -1507,11 +1520,11 @@ export const STYLES = `
 }
 
 .tool-call-toggle::before {
-  content: "▸ ";
+  content: var(--_disclosure-collapsed) " ";
 }
 
 .tool-call-toggle[aria-expanded="true"]::before {
-  content: "▾ ";
+  content: var(--_disclosure-expanded) " ";
 }
 
 /* Resize handle: a corner grip on a floating panel, an edge grip on a docked
@@ -1742,7 +1755,7 @@ export const STYLES = `
   border: none;
   border-radius: 50%;
   background: var(--_accent);
-  color: #ffffff;
+  color: var(--_on-accent);
   font: inherit;
   line-height: 1;
   cursor: pointer;
@@ -1816,13 +1829,13 @@ export const STYLES = `
 /* Recording: a red tint + a gentle pulse so it's clearly "live". */
 .voice-btn[data-state="recording"] {
   background: var(--_danger);
-  color: #ffffff;
+  color: var(--_on-danger);
   animation: ag-ui-voice-pulse 1.2s ease-in-out infinite;
 }
 
 .voice-btn[data-state="recording"]:hover {
   background: var(--_danger);
-  color: #ffffff;
+  color: var(--_on-danger);
 }
 
 @keyframes ag-ui-voice-pulse {
@@ -2112,7 +2125,7 @@ export const STYLES = `
 .confirm-btn--confirm {
   border-color: var(--_accent);
   background: var(--_accent);
-  color: #ffffff;
+  color: var(--_on-accent);
 }
 
 /* The session waiver. Deliberately the quietest of the three: it is the widest
@@ -2323,7 +2336,7 @@ export const STYLES = `
 .approval-btn--approve {
   border-color: var(--_accent);
   background: var(--_accent);
-  color: #ffffff;
+  color: var(--_on-accent);
 }
 
 /* Question card — the built-in ask_user prompt (radios and/or free text). */
@@ -2389,7 +2402,7 @@ export const STYLES = `
   font-weight: 600;
   cursor: pointer;
   background: var(--_accent);
-  color: #ffffff;
+  color: var(--_on-accent);
 }
 
 .question-btn:disabled {
@@ -2658,7 +2671,7 @@ export const STYLES = `
   font-weight: 600;
   border-color: var(--_accent);
   background: var(--_accent);
-  color: #ffffff;
+  color: var(--_on-accent);
 }
 
 .checkpoint-fork:hover {
@@ -2833,7 +2846,7 @@ export const STYLES = `
   border: none;
   border-radius: 6px;
   background: var(--_danger);
-  color: #ffffff;
+  color: var(--_on-danger);
   padding: 3px 10px;
   font: inherit;
   cursor: pointer;

@@ -52,7 +52,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A host driving its own bar opts in by passing the new `html` alongside `text`;
   with `text` alone the clipboard gets plain text only, as before.
 
+- **What is drawn on the accent and danger fills is now a variable**
+  (`--ag-ui-on-accent`, `--ag-ui-on-danger`). Eight rules had white hardcoded
+  against those two fills, so theming the accent to anything pale produced
+  white-on-pale on the send button, both approval buttons, the confirmation
+  card and the checkpoint row, with no way to correct it.
+
+- **The disclosure marks are variables too** (`--ag-ui-disclosure-collapsed`,
+  `--ag-ui-disclosure-expanded`). The tool-status marks already were, so a host
+  re-theming the marks changed half of them and ended up with two vocabularies
+  in one transcript.
+
 ### Fixed
+
+- **A sub-agent failure whose message the server left empty settled the row to
+  a blank line**, reading as a delegation that said nothing rather than one
+  that failed. The fallback for it existed in the string table, documented as
+  covering exactly this, and was wired to nothing.
 
 - **Copying an answer that contained a code block copied the word Copy with
   it.** The code blocks' copy buttons are appended *inside* their own `pre`, so

@@ -4203,7 +4203,18 @@ export class AgUiChat extends HTMLElement {
         // The server's own words, which the contract keeps to the sub-agent's
         // name. Passed through as the status line and set with textContent
         // downstream, never parsed as markup.
-        this.#closeSubAgent(subagentRunId, SUBAGENT_PHASE.FAILED, message);
+        //
+        // The message is required by the protocol and can still arrive empty,
+        // which would settle the row to a blank line -- a delegation that reads
+        // as having said nothing rather than as having failed. The fallback was
+        // written and documented in UiStrings and never wired up, so until now
+        // the only reader who knew it existed was the one reading the string
+        // table.
+        this.#closeSubAgent(
+          subagentRunId,
+          SUBAGENT_PHASE.FAILED,
+          message === "" ? this.#strings.subAgentFailed : message,
+        );
       },
       onMessagesSnapshot: () => {
         // Honoured for persistence and announced, not re-rendered.

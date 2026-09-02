@@ -2369,11 +2369,28 @@ ag-ui-chat {
   --ag-ui-fg: #1a1a2e;
   --ag-ui-radius: 12px;
 
+  /* What is drawn on top of the accent and danger fills. Change these with
+     the fills: a pale accent leaves white-on-pale everywhere they are used. */
+  --ag-ui-on-accent: #ffffff;
+  --ag-ui-on-danger: #ffffff;
+
   /* Layout */
   --ag-ui-width: 380px;
   --ag-ui-height: 560px;
   --ag-ui-inset: auto 24px 24px auto;
   --ag-ui-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
+}
+```
+
+Marks are variables too, so one vocabulary covers a re-theme rather than
+leaving half the transcript in the built-in set: `--ag-ui-tool-icon-done` /
+`-error` / `-declined` for tool status, and `--ag-ui-disclosure-collapsed` /
+`--ag-ui-disclosure-expanded` for every expandable row.
+
+```css
+ag-ui-chat {
+  --ag-ui-disclosure-collapsed: "+";
+  --ag-ui-disclosure-expanded: "-";
 }
 ```
 
