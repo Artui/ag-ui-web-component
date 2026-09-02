@@ -335,6 +335,9 @@ export const STYLES = `
   font: inherit;
   cursor: pointer;
   pointer-events: auto;
+  /* A touch drag on the launcher moves it; without this the page scrolls under
+     the finger instead and the launcher never moves at all. */
+  touch-action: none;
   opacity: 0;
   transform: scale(0.4);
   visibility: hidden;
@@ -362,6 +365,15 @@ export const STYLES = `
 
 :host([collapsed]) .launcher:active {
   transform: scale(0.94);
+}
+
+/* A drag is a press and a hover at the same time, so both scale rules above are
+   live throughout it. Cancelling them is what keeps the launcher the size of
+   the thing under the pointer while it travels; the position itself comes from
+   inset, which nothing here transitions, so it tracks the pointer exactly. */
+:host([collapsed]) .launcher[data-dragging] {
+  transform: none;
+  cursor: grabbing;
 }
 
 .launcher .icon-holder {
@@ -556,6 +568,31 @@ export const STYLES = `
 
 :host([placement="bottom-left"]) .chat {
   transform-origin: bottom left;
+}
+
+/* Once the launcher has been dragged the element places itself, and stamps the
+   corner it chose to open away from. The morph has to start at that same
+   corner: scaling out of the one the placement originally guessed reads as the
+   panel leaping across the screen before it opens.
+
+   Equal specificity to the placement rule above, so source order is what lets
+   the stamped value win -- the same arrangement the resize grip uses, and the
+   same trap. Write these with = on the whole hyphenated token; a ~= would match
+   whitespace-separated words and so could never match at all. */
+:host([data-expand-corner="top-left"]) .chat {
+  transform-origin: top left;
+}
+
+:host([data-expand-corner="top-right"]) .chat {
+  transform-origin: top right;
+}
+
+:host([data-expand-corner="bottom-left"]) .chat {
+  transform-origin: bottom left;
+}
+
+:host([data-expand-corner="bottom-right"]) .chat {
+  transform-origin: bottom right;
 }
 
 /* The two in-flow placements keep the original collapse: hide the body, let

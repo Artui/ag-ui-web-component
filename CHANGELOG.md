@@ -7,7 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The collapsed launcher can be dragged anywhere on screen, and the panel
+  opens into the clearest space around it.** Per axis, the element compares the
+  room a panel would have on either side of the launcher and pins the side with
+  more of it, so a launcher dropped top-left opens down and to the right. What
+  it compares is the room the *panel* would get rather than which half of the
+  screen the launcher is in; those disagree either side of centre, and only the
+  first is about whether the panel fits.
+
+  Where the panel fits on neither side -- the middle of a short viewport -- the
+  launcher still keeps its position: the panel is clamped into the viewport and
+  the launcher's own inset carries the difference, which is why it can end up
+  outside its own host box. Nothing clips it there, and it keeps its pointer
+  events.
+
+  The position persists per tab beside the collapsed, theme and size
+  preferences, arrow keys move it from the keyboard, and
+  `data-launcher-drag="false"` opts out -- as does any placement that already
+  places the launcher itself. An undragged launcher is untouched: with nothing
+  stored the element writes no position at all, and feeding the geometry the
+  resting corner reproduces the existing default unchanged.
+
+  Two things worth carrying. A drag ends in a `click` the browser synthesises,
+  which would expand the panel the user was only moving -- but suppressing it
+  by arming a flag also swallows `Enter` on the focused button, assistive
+  activation, and a host's own `click()`, none of which can be the tail of a
+  drag and all of which are the only way in without a pointer. The suppression
+  is therefore narrowed to clicks carrying a click count. And the launcher is
+  scaled in four separate states, so `getBoundingClientRect` reports a box a few
+  pixels off in every one of them; the size comes from `offsetWidth` and the
+  position from the rect's centre, which a centred scale cannot move.
+
 ### Changed
+
+- **The resize grip is placed from the corner the element chose, when it chose
+  one.** With a dragged position the pinned edges are known rather than probed,
+  so `#measureAnchor` is skipped. The probe nudges the size by a pixel and reads
+  which edges moved, which cannot work at a size already resting against
+  `max-width` or `max-height` -- every clamped axis reads as pinned on the wrong
+  side. That is a pre-existing defect on the measured path and is untouched here.
 
 - **The demo's delegation scenario now streams the carrier a current server
   writes.** It still emitted the five-phase `ag_ui.subagent` `CUSTOM` lifecycle

@@ -56,7 +56,15 @@ import { renderChart } from "../ui/chart_block.js";
 import { chartSpecFrom } from "../ui/chart_spec_from.js";
 import { CHART_TOOL_NAME, createChartTool } from "../ui/chart_tool.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/checkpoint_menu.js";
+import { clampLauncher } from "../ui/clamp_launcher.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
+import { enableLauncherDrag } from "../ui/launcher_drag.js";
+import {
+  type ExpandCorner,
+  type Extent,
+  type LauncherBox,
+  launcherPlacement,
+} from "../ui/launcher_placement.js";
 import {
   attachMessageActions,
   messageActionBar,
@@ -299,6 +307,17 @@ const SIZE_KEY = "ag-ui-chat:size";
 
 /** Per-tab persistence key for the built-in theme toggle. */
 const THEME_KEY = "ag-ui-chat:theme";
+
+/** Per-tab persistence key for a dragged launcher position. */
+const LAUNCHER_KEY = "ag-ui-chat:launcher";
+
+/**
+ * Placements whose launcher can be dragged. The rest have nowhere to put it:
+ * a sidebar collapses to a full-height edge rail, "embedded" and "page" hide
+ * the launcher entirely and keep their header bar, and a full-bleed panel
+ * covers the screen it would be opening into.
+ */
+const DRAGGABLE_PLACEMENTS = new Set([null, "", "floating", "bottom-left"]);
 
 /** Pixels between a selection and the offer to quote it. */
 const QUOTE_GAP = 6;
@@ -771,6 +790,27 @@ export class AgUiChat extends HTMLElement {
   readonly #emptyWrap: HTMLDivElement;
   /** Upload tray; created on connect only when `data-attachments-url` is set. */
   #attachTray: AttachmentTray | null = null;
+
+  /**
+   * Where the user dragged the launcher, in viewport coordinates, or null
+   * while the host's own CSS still places it. Set means this element owns its
+   * position -- see #applyLauncherPlacement for what that costs the host.
+   */
+  #launcherPos: { readonly left: number; readonly top: number } | null = null;
+
+  /**
+   * The corner the panel opens away from, once this element is placing itself.
+   * Null means the host's layout still decides, and the anchor is measured.
+   */
+  #expandCorner: ExpandCorner | null = null;
+
+  /**
+   * Re-clamp the dragged launcher when the window changes size. Bound once as
+   * a field so `removeEventListener` on disconnect gets the same reference.
+   */
+  readonly #onViewportResize = (): void => {
+    this.#restoreLauncherPosition();
+  };
   /** Mic button mount point (input row); the control mounts on connect when enabled. */
   readonly #voiceSlot: HTMLSpanElement;
   /** Voice-input control; created on connect when transcription is available. */
@@ -1007,6 +1047,9 @@ export class AgUiChat extends HTMLElement {
       // else: a size dragged under the previous placement would otherwise sit
       // inline and outrank the new one.
       this.#releaseOwnedAxes();
+      // Position is owned the same way a size is: a placement that places
+      // itself takes back a launcher the user had dragged somewhere else.
+      this.#releaseLauncherPosition();
       // Placement also moves the panel, so the edges its layout holds still
       // change with it. Deferred a frame so the new rules have applied.
       requestAnimationFrame(() => this.#syncResizeAnchor());
@@ -1433,7 +1476,12 @@ export class AgUiChat extends HTMLElement {
     // frame so the host's own stylesheet has applied; re-measured on every drag
     // anyway, so a wrong first guess costs a grip in the wrong corner and never
     // a wrong resize.
-    requestAnimationFrame(() => this.#syncResizeAnchor());
+    requestAnimationFrame(() => {
+      // Before the anchor, which #applyLauncherPlacement stamps itself once a
+      // dragged position exists.
+      this.#restoreLauncherPosition();
+      this.#syncResizeAnchor();
+    });
     // Resolve the string table before rendering any chrome (defaults are the
     // floor; `data-strings` then the `strings` property layer over them).
     this.#strings = mergeUiStrings({ ...this.#readStringOverrides(), ...this.strings });
@@ -1463,6 +1511,7 @@ export class AgUiChat extends HTMLElement {
         namespace === "" ? this.conversationStore : new SessionStorageStore(namespace);
       this.conversationStore = this.#builtinStore;
     }
+    window.addEventListener("resize", this.#onViewportResize);
     this.#wireThreadStore();
     this.#wireAttachments();
     this.#wireVoice();
@@ -1535,6 +1584,7 @@ export class AgUiChat extends HTMLElement {
    */
   disconnectedCallback(): void {
     this.#connected = false;
+    window.removeEventListener("resize", this.#onViewportResize);
     // Give the namespace back. A disconnect is not necessarily a farewell — a
     // DOM move and a framework re-render both look like one — and an element
     // that could not reclaim its own namespace on the way back in would lose
@@ -2061,6 +2111,12 @@ export class AgUiChat extends HTMLElement {
    * its own chrome.
    */
   setCollapsed(collapsed: boolean): void {
+    if (!collapsed) {
+      // Re-decide which way to open before opening: the viewport may have
+      // changed since the launcher was dropped, and this corner is what the
+      // panel grows from.
+      this.#restoreLauncherPosition();
+    }
     if (collapsed) {
       this.setAttribute("collapsed", "");
     } else {
@@ -2157,7 +2213,11 @@ export class AgUiChat extends HTMLElement {
     if (!this.#connected) {
       return;
     }
-    const anchor = this.#measureAnchor();
+    // When this element owns its position it knows which edges are pinned --
+    // it just wrote them -- so there is nothing to probe. The probe is also
+    // unreliable at a size resting against max-width or max-height, where a
+    // nudge moves no edge and every axis reads as pinned on the wrong side.
+    const anchor = this.#expandCorner ?? this.#measureAnchor();
     this.setAttribute("data-resize-anchor", `${anchor.y}-${anchor.x}`);
   }
 
@@ -2209,6 +2269,149 @@ export class AgUiChat extends HTMLElement {
     if (axis === "none") {
       this.style.removeProperty("--ag-ui-width");
     }
+  }
+
+  /**
+   * Whether this placement lets the launcher be dragged, read per interaction
+   * because `placement` is a live attribute. `data-launcher-drag="false"` opts
+   * a host out without giving up the launcher itself.
+   */
+  #launcherDraggable(): boolean {
+    return (
+      this.getAttribute("data-launcher-drag") !== "false" &&
+      DRAGGABLE_PLACEMENTS.has(this.getAttribute("placement"))
+    );
+  }
+
+  /** The viewport the launcher and the panel both have to fit inside. */
+  #viewport(): Extent {
+    return { width: window.innerWidth, height: window.innerHeight };
+  }
+
+  /**
+   * The launcher's box in viewport coordinates, with its transform divided out.
+   *
+   * The launcher is scaled in four states -- the collapse animation, hover,
+   * press, and the resting scale(0.4) it sits at while the panel is open -- and
+   * `getBoundingClientRect` reports every one of them. A drag that started from
+   * that rect would begin a couple of pixels off, because a press is one of
+   * those states.
+   *
+   * So the size comes from `offsetWidth`/`offsetHeight`, which are layout
+   * metrics no transform reaches, and the position from the rect's *centre*,
+   * which a centred scale is the one point that cannot move.
+   */
+  #launcherBox(): LauncherBox {
+    const width = this.#launcher.offsetWidth;
+    const height = this.#launcher.offsetHeight;
+    const dragged = this.#launcherPos;
+    if (dragged !== null) {
+      return { left: dragged.left, top: dragged.top, width, height };
+    }
+    const rect = this.#launcher.getBoundingClientRect();
+    return {
+      left: rect.left + rect.width / 2 - width / 2,
+      top: rect.top + rect.height / 2 - height / 2,
+      width,
+      height,
+    };
+  }
+
+  /**
+   * Place the host box and the launcher for the position the user dragged to.
+   *
+   * This writes `--ag-ui-inset`, which is a host-facing property: an inline
+   * value outranks the page's own rule for it, exactly as a dragged width
+   * outranks a placement's. That is the intent -- the user moved it -- and it
+   * is why switching to a placement that owns its position hands the property
+   * back rather than leaving a stale inline one behind.
+   */
+  #applyLauncherPlacement(at: { readonly left: number; readonly top: number }): void {
+    // The single gate: callers hand over a position and this decides whether
+    // it is this element's to honour. Checking in both places instead would
+    // leave one of the two checks permanently unreachable.
+    if (!this.#launcherDraggable()) {
+      return;
+    }
+    this.#launcherPos = at;
+    // The host box keeps its expanded size while collapsed, so its own rect is
+    // the panel's size in either state and needs no separate bookkeeping.
+    const panel = this.getBoundingClientRect();
+    const placement = launcherPlacement(
+      this.#launcherBox(),
+      { width: panel.width, height: panel.height },
+      this.#viewport(),
+    );
+    this.style.setProperty("--ag-ui-inset", placement.hostInset);
+    this.style.setProperty("--ag-ui-launcher-inset", placement.launcherInset);
+    this.#expandCorner = placement.corner;
+    // The corner the panel grows from, for the open/close animation's origin.
+    this.setAttribute("data-expand-corner", `${placement.corner.y}-${placement.corner.x}`);
+    this.#syncResizeAnchor();
+  }
+
+  /** Move the launcher live during a drag, without persisting. */
+  #moveLauncher(left: number, top: number): void {
+    this.#applyLauncherPlacement({ left, top });
+  }
+
+  /** Move the launcher and remember where, per tab, like the dragged size. */
+  #commitLauncher(left: number, top: number): void {
+    this.#moveLauncher(left, top);
+    writeStoredItem(this.#storageKey(LAUNCHER_KEY), JSON.stringify({ left, top }));
+  }
+
+  /**
+   * Re-apply the dragged position against the current viewport: on connect,
+   * whenever the window resizes, and before an expand. The viewport that
+   * stored a position may since have shrunk, and a launcher past the edge is
+   * unreachable -- it is the only way back to a collapsed conversation.
+   */
+  #restoreLauncherPosition(): void {
+    const stored = this.#launcherPos ?? this.#readLauncherPosition();
+    if (stored === null) {
+      return;
+    }
+    const box = this.#launcherBox();
+    this.#applyLauncherPlacement(
+      clampLauncher({ ...box, left: stored.left, top: stored.top }, this.#viewport()),
+    );
+  }
+
+  /** The persisted launcher position for this instance, or null. */
+  #readLauncherPosition(): { readonly left: number; readonly top: number } | null {
+    const raw = this.#readScopedItem(LAUNCHER_KEY);
+    if (raw === null) {
+      return null;
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null) {
+        return null;
+      }
+      const { left, top } = parsed as { left?: unknown; top?: unknown };
+      return typeof left === "number" && typeof top === "number" ? { left, top } : null;
+    } catch {
+      // A corrupt entry is not worth failing a mount over; fall back to the
+      // placement's own corner.
+      return null;
+    }
+  }
+
+  /**
+   * Give the position back to the host when the new placement owns it, the way
+   * #releaseOwnedAxes gives back a size. Without this a dragged inset survives
+   * the switch inline and pins a sidebar to wherever the floating launcher was.
+   */
+  #releaseLauncherPosition(): void {
+    if (this.#launcherDraggable()) {
+      return;
+    }
+    this.#launcherPos = null;
+    this.#expandCorner = null;
+    this.style.removeProperty("--ag-ui-inset");
+    this.style.removeProperty("--ag-ui-launcher-inset");
+    this.removeAttribute("data-expand-corner");
   }
 
   /** Persist a dragged size per tab, alongside the collapsed/theme preferences. */
@@ -3098,6 +3301,15 @@ export class AgUiChat extends HTMLElement {
       this.#badge,
     );
     this.#launcher.addEventListener("click", () => this.setCollapsed(false));
+    // Only while collapsed: the launcher is scaled away and unclickable behind
+    // the open panel, so a drag there would move something nobody can see.
+    enableLauncherDrag(this.#launcher, {
+      enabled: () => this.collapsed && this.#launcherDraggable(),
+      rect: () => this.#launcherBox(),
+      viewport: () => this.#viewport(),
+      apply: (left, top) => this.#moveLauncher(left, top),
+      commit: (left, top) => this.#commitLauncher(left, top),
+    });
 
     this.#chat.append(
       createResizeHandle({

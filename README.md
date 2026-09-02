@@ -183,6 +183,7 @@ another origin, add `credentials="include"` too; see
 | `data-icon-url` | — | Header (and launcher) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
 | `data-launcher-icon-url` | — | Icon image URL for the collapsed launcher only, when it should differ from the header's. Falls back to `data-icon-url`; a slotted `slot="launcher"` wins over both. |
 | `data-unread-badge` | — | **On by default.** `="false"` hides the launcher's unread badge; the count and the `ag-ui-unread` event keep running. See [Collapsing to the launcher](#collapsing-to-the-launcher). |
+| `data-launcher-drag` | — | **On by default.** `="false"` leaves the collapsed launcher wherever your CSS puts it. Otherwise it can be dragged anywhere on screen and the panel opens into the clearest space. See [Moving the launcher](#moving-the-launcher). |
 | `data-quote-selection` | — | **On by default.** `="false"` stops the transcript offering to quote a selection. `quote()` keeps working either way. See [Quoting a selection](#quoting-a-selection). |
 | `data-message-actions` | — | **All on by default.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry"`). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
@@ -211,8 +212,8 @@ The element observes two groups of attributes, and they behave differently once 
 Nothing outside those groups is observed: a CSS-only attribute (`theme`, `density`, `data-side`,
 `data-answer-well`) is read by the stylesheet rather than by script, and `endpoint`,
 `data-tool-display`, `data-text-animation`, `data-runs-url`, `data-page-actions`,
-`data-message-actions`, `data-max-tool-rounds`, `data-unread-badge` and `data-quote-selection` are
-re-read at each use, so a late write to any of those simply takes effect. The one attribute in
+`data-message-actions`, `data-max-tool-rounds`, `data-unread-badge`, `data-launcher-drag` and
+`data-quote-selection` are re-read at each use, so a late write to any of those simply takes effect. The one attribute in
 neither camp is `data-launcher-icon-url`: it is read while the element connects, like the group
 below, but is not observed, so a late write is inert and says nothing.
 
@@ -967,6 +968,34 @@ default**; `data-unread-badge="false"` turns the badge off.
 
 The count is also the launcher's accessible name (`Expand — 2 unread`, from the `expandUnread`
 string), because a coloured dot says nothing to a screen reader.
+
+#### Moving the launcher
+
+The collapsed launcher can be dragged anywhere on screen, and it stays there — per tab, in
+`sessionStorage`, namespaced per element exactly like the collapsed, theme and size preferences.
+Arrow keys move it from the keyboard (`Shift` for a larger step). `data-launcher-drag="false"`
+turns it off; so does any placement that already places the launcher itself — `sidebar` collapses
+it to a full-height rail, `embedded` and `page` hide it and keep their header bar, and a
+full-bleed panel has no clear space to open into.
+
+**The panel then opens into whichever side of the launcher has more room.** For each axis the
+element compares the space a panel would have on either side of the launcher and pins the side
+with more of it, so a launcher dragged to the top-left opens down and to the right. What it
+compares is the room the *panel* would get, not which half of the screen the launcher is in —
+those give different answers either side of centre, and only the first one is about whether the
+panel fits.
+
+A launcher parked where the panel fits neither way — the middle of a short viewport — keeps its
+position anyway: the panel is clamped into the viewport and the launcher carries the difference,
+which is why it can end up sitting outside its own host box. Nothing clips it there.
+
+A drag writes `--ag-ui-inset` and `--ag-ui-launcher-inset` on the host, and an inline custom
+property outranks your stylesheet's rule for the same one — the same trade a dragged size makes
+against a placement. Switching to a placement that places itself hands both back.
+
+> **An undragged launcher is untouched.** With nothing stored, the element writes neither
+> property and your CSS decides, exactly as before. The geometry is built so that feeding it the
+> resting position reproduces the default `auto 24px 24px auto` unchanged.
 
 ```js
 chat.unread; // 2
