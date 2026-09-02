@@ -254,3 +254,91 @@ describe("the anchor measurement, against the size clamps", () => {
     expect(el.getBoundingClientRect().width).toBe(width);
   });
 });
+
+/**
+ * What a grip looks like, which is a different question from where it is.
+ *
+ * The drag state used to fill the whole handle with the accent. On the single
+ * 14px corner grip that was invisible; on a strip running the length of an edge
+ * it is a square-ended bar stopping short of the panel's corner radius at both
+ * ends, which reads as a border the panel grew rather than as something to
+ * grab. It was reported as one, which is the strongest evidence a piece of
+ * feedback is saying the wrong thing.
+ */
+describe("the mark on a grip", () => {
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 260));
+
+  function mark(el: AgUiChat, name: string): CSSStyleDeclaration {
+    const handle = el.shadowRoot?.querySelector(`.resize-handle--${name}`);
+    if (!(handle instanceof HTMLElement)) {
+      throw new Error(`expected a .resize-handle--${name} in the shadow root`);
+    }
+    return getComputedStyle(handle, "::after");
+  }
+
+  function handle(el: AgUiChat, name: string): HTMLElement {
+    const found = el.shadowRoot?.querySelector(`.resize-handle--${name}`);
+    if (!(found instanceof HTMLElement)) {
+      throw new Error(`expected a .resize-handle--${name} in the shadow root`);
+    }
+    return found;
+  }
+
+  it("draws nothing at rest", async () => {
+    const el = mount();
+    await settle();
+
+    expect(mark(el, "bottom").opacity).toBe("0");
+    expect(mark(el, "bottom-right").opacity).toBe("0");
+  });
+
+  it("never fills the strip itself, whatever state it is in", async () => {
+    const el = mount();
+    handle(el, "bottom").setAttribute("data-dragging", "true");
+    await settle();
+
+    // The fill is what was mistaken for a border. The mark lives in ::after so
+    // the hit area can stay the full strip without looking like one.
+    const strip = getComputedStyle(handle(el, "bottom"));
+    expect(strip.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(strip.opacity).toBe("1");
+  });
+
+  it("shows a pill along an edge and a dot in a corner", async () => {
+    const el = mount();
+    handle(el, "bottom").setAttribute("data-dragging", "true");
+    handle(el, "left").setAttribute("data-dragging", "true");
+    handle(el, "bottom-right").setAttribute("data-dragging", "true");
+    await settle();
+
+    // Wide and short on a horizontal edge, tall and narrow on a vertical one.
+    expect(mark(el, "bottom").width).toBe("28px");
+    expect(mark(el, "bottom").height).toBe("3px");
+    expect(mark(el, "left").width).toBe("3px");
+    expect(mark(el, "left").height).toBe("28px");
+    // A corner has no length to run along.
+    expect(mark(el, "bottom-right").width).toBe("3px");
+    expect(mark(el, "bottom-right").height).toBe("3px");
+  });
+
+  it("makes the drag the strongest state it has", async () => {
+    const el = mount();
+    handle(el, "bottom").setAttribute("data-dragging", "true");
+    await settle();
+
+    expect(Number.parseFloat(mark(el, "bottom").opacity)).toBeGreaterThan(0.8);
+  });
+
+  it("keeps the mark clear of the panel's rounded corners", async () => {
+    const el = mount();
+    const panel = el.getBoundingClientRect();
+    const strip = handle(el, "bottom").getBoundingClientRect();
+    const radius = Number.parseFloat(getComputedStyle(el).borderRadius) || 12;
+
+    // The mark is centred in a strip that is already inset past the corners, so
+    // the nearest it comes to a corner is half the strip minus half the mark.
+    const clearance = (strip.width - 28) / 2;
+    expect(strip.left - panel.left).toBeGreaterThanOrEqual(radius - 2);
+    expect(clearance).toBeGreaterThan(radius);
+  });
+});

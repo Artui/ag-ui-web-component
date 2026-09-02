@@ -65,6 +65,9 @@ export const STYLES = `
   --_grip-corner: var(--ag-ui-grip-corner, 14px);
   --_grip-edge: var(--ag-ui-grip-edge, 6px);
   --_grip-edge-docked: var(--ag-ui-grip-edge-docked, 8px);
+  /* The mark drawn inside a grip, as opposed to the area it answers to. */
+  --_grip-mark-length: var(--ag-ui-grip-mark-length, 28px);
+  --_grip-mark-thickness: var(--ag-ui-grip-mark-thickness, 3px);
 
   /* Status accents for tool-call cards. */
   --_success: var(--ag-ui-success, #15803d);
@@ -1660,9 +1663,62 @@ export const STYLES = `
   display: none;
 }
 
-.resize-handle[data-dragging] {
+/* The visible mark on a grip.
+
+   Filling the whole strip was what the single corner grip did, and at 14px
+   square nobody ever saw it. On a strip running the length of an edge the same
+   fill reads as a border the panel grew -- square ended, stopping short of the
+   corner radius at both ends, and easily mistaken for a rendering fault rather
+   than for something to grab.
+
+   So the hit area stays the full strip and the mark is a short pill centred on
+   it, which cannot be read as an edge of anything and never meets the radius.
+
+   It shows on hover and focus as well as during the drag. With eight grips, a
+   mark that appears only once you are already dragging is a mark that never
+   told anyone the grips were there. */
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
   background: var(--_accent);
-  opacity: 0.35;
+  opacity: 0;
+  transition: opacity var(--_motion) var(--_ease);
+}
+
+.resize-handle--top::after,
+.resize-handle--bottom::after {
+  width: var(--_grip-mark-length);
+  height: var(--_grip-mark-thickness);
+}
+
+.resize-handle--left::after,
+.resize-handle--right::after {
+  width: var(--_grip-mark-thickness);
+  height: var(--_grip-mark-length);
+}
+
+/* A corner has no length to run along, so it gets a dot instead of a pill. */
+.resize-handle--top-left::after,
+.resize-handle--top-right::after,
+.resize-handle--bottom-left::after,
+.resize-handle--bottom-right::after {
+  width: var(--_grip-mark-thickness);
+  height: var(--_grip-mark-thickness);
+}
+
+.resize-handle:hover::after,
+.resize-handle:focus-visible::after {
+  opacity: 0.5;
+}
+
+/* Equal specificity to the pair above, so source order is what makes the drag
+   the stronger of the two states. */
+.resize-handle[data-dragging]::after {
+  opacity: 0.9;
 }
 
 /* ── Composer ───────────────────────────────────────────────────────────────

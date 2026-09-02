@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its own part, and the hit areas are sized by `--ag-ui-grip-corner` and
   `--ag-ui-grip-edge`.
 
+  Each grip draws a short pill centred on its edge -- a dot in a corner --
+  shown on hover and focus as well as during a drag, since a mark that appears
+  only once you are already dragging never told anyone the grips were there.
+  Filling the whole handle was what the single corner grip did, and at 14px
+  square nobody saw it; on a strip running the length of an edge the same fill
+  is a square-ended bar stopping short of the corner radius, which reads as a
+  border the panel grew. It was reported as one. The mark is sized by
+  `--ag-ui-grip-mark-length` and `--ag-ui-grip-mark-thickness`.
+
 - **Files can be pasted into the composer**, alongside the picker and a drop --
   a screenshot straight from the clipboard, or a file copied in the file
   manager. Text pastes carry no files, so ordinary pasting is untouched, and the

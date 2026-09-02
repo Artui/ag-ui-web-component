@@ -1385,14 +1385,22 @@ separators between the transcript and the composer would be a keyboard
 obstacle rather than keyboard parity, and one grip already reaches both axes.
 Arrow keys resize from it (`Shift` for a larger step).
 
+Each grip draws a short pill centred on its edge — a dot in a corner — on hover
+and focus as well as during a drag. **The hit area and the mark are separate on
+purpose**: the area is the whole strip, so the grip is easy to catch, while the
+mark stays small enough that it cannot be read as a border and never meets the
+panel's corner radius.
+
 Every grip has its own part (`resize-handle-left`, `resize-handle-bottom-right`,
-and so on, plus `resize-handle` on all of them), and their hit areas are sized
-by `--ag-ui-grip-corner` / `--ag-ui-grip-edge` for a coarser pointer.
+and so on, plus `resize-handle` on all of them). Hit areas and marks are sized
+separately, so a coarser pointer can get a bigger target without a heavier mark.
 
 ```css
 ag-ui-chat {
-  --ag-ui-grip-corner: 20px;
-  --ag-ui-grip-edge: 10px;
+  --ag-ui-grip-corner: 20px;          /* the corner squares */
+  --ag-ui-grip-edge: 10px;            /* the edge strips */
+  --ag-ui-grip-mark-length: 28px;     /* the pill drawn inside them */
+  --ag-ui-grip-mark-thickness: 3px;
 }
 ```
 
