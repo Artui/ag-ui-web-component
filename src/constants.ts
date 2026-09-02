@@ -346,6 +346,18 @@ export const ICON_LAUNCHER = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden
  * above; `iconFor` selects one by MIME family, never interpolating the MIME
  * string into the markup.
  */
+/** Copy: two overlapping sheets, the shape every toolbar uses for it. */
+export const ICON_COPY: string = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>`;
+
+/** Retry: a circular arrow. */
+export const ICON_RETRY: string = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 4v4h-4"/></svg>`;
+
+/** Rate up. */
+export const ICON_THUMB_UP: string = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v10H4V10z"/><path d="M7 10l4.5-7a2 2 0 0 1 3.4 2L13.5 9H19a2 2 0 0 1 2 2.3l-1.1 6.4A2 2 0 0 1 17.9 20H7"/></svg>`;
+
+/** Rate down: the up mark turned over, so the pair reads as one control. */
+export const ICON_THUMB_DOWN: string = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V4h3v10z"/><path d="M17 14l-4.5 7a2 2 0 0 1-3.4-2l1.4-4H5a2 2 0 0 1-2-2.3l1.1-6.4A2 2 0 0 1 6.1 4H17"/></svg>`;
+
 export const ICON_FILE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>`;
 
 /** An image attachment: a framed picture with a horizon and a sun. */

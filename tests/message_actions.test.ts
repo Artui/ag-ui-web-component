@@ -192,3 +192,98 @@ describe("the copy confirmation", () => {
     expect(copy?.classList.contains("message-action--confirmed")).toBe(false);
   });
 });
+
+describe("the clipboard flavours Copy writes", () => {
+  /** A bubble with a Copy button wired to `text` and, optionally, `html`. */
+  function copyable(html?: () => string): HTMLElement {
+    const el = bubble();
+    attachMessageActions(el, {
+      strings: DEFAULT_UI_STRINGS,
+      text: () => "plain",
+      ...(html === undefined ? {} : { html }),
+    });
+    const button = el.nextElementSibling?.querySelector(".message-action--copy");
+    (button as HTMLButtonElement).click();
+    return el;
+  }
+
+  it("writes both flavours when a rich one is offered", async () => {
+    const items: unknown[] = [];
+    class FakeItem {
+      constructor(readonly parts: Record<string, Blob>) {}
+    }
+    vi.stubGlobal("ClipboardItem", FakeItem);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        write: (given: unknown[]) => {
+          items.push(...given);
+          return Promise.resolve();
+        },
+        writeText: () => Promise.reject(new Error("should not be reached")),
+      },
+    });
+
+    copyable(() => "<table><tr><td>a</td></tr></table>");
+    await Promise.resolve();
+
+    // Both flavours in one item: the target picks the richest it understands,
+    // which is what makes a copied table paste as a table.
+    const parts = (items[0] as FakeItem).parts;
+    expect(Object.keys(parts).sort()).toEqual(["text/html", "text/plain"]);
+    vi.unstubAllGlobals();
+  });
+
+  it("falls back to plain text when the rich write is refused", async () => {
+    vi.stubGlobal(
+      "ClipboardItem",
+      class {
+        constructor(readonly parts: Record<string, Blob>) {}
+      },
+    );
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        write: () => Promise.reject(new Error("not allowed")),
+        writeText: (text: string) => {
+          written.push(text);
+          return Promise.resolve();
+        },
+      },
+    });
+
+    copyable(() => "<p>rich</p>");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Refusing the rich flavour is not a failure while the plain one lands.
+    expect(written).toEqual(["plain"]);
+    vi.unstubAllGlobals();
+  });
+
+  it("writes plain text only where ClipboardItem does not exist", async () => {
+    vi.stubGlobal("ClipboardItem", undefined);
+
+    copyable(() => "<p>rich</p>");
+    await Promise.resolve();
+
+    expect(written).toEqual(["plain"]);
+    vi.unstubAllGlobals();
+  });
+
+  it("reports failure where there is no clipboard at all", async () => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+    const el = bubble();
+    attachMessageActions(el, { strings: DEFAULT_UI_STRINGS, text: () => "plain" });
+    const button = el.nextElementSibling?.querySelector(
+      ".message-action--copy",
+    ) as HTMLButtonElement;
+
+    button.click();
+    await Promise.resolve();
+
+    // An embedding without the API is an ordinary outcome, said on the button
+    // rather than thrown at the host page.
+    expect(button.getAttribute("aria-label")).toBe(DEFAULT_UI_STRINGS.copyFailed);
+  });
+});

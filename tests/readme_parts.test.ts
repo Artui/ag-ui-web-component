@@ -45,13 +45,19 @@ const DYNAMIC: Record<string, readonly string[]> = {
   bubble: ["message", "message-user", "message-assistant"],
   approval_card: ["approval-button", "approval-approve", "approval-deny"],
   confirmation_card: ["confirm-button", "confirm-confirm", "confirm-cancel", "confirm-always"],
-  // message_actions messageActionButton(modifier, …) — retry / copy / thumbs.
+  // message_actions messageActionButton(modifier, …) — retry / copy / thumbs,
+  // and the icon holder inside each, which a host restyles to swap the mark.
   message_actions: [
     "message-action",
     "message-action-retry",
     "message-action-copy",
     "message-action-up",
     "message-action-down",
+    "message-action-icon",
+    "message-action-icon-retry",
+    "message-action-icon-copy",
+    "message-action-icon-up",
+    "message-action-icon-down",
   ],
   checkpoint_menu: ["checkpoint-action", "checkpoint-resume", "checkpoint-fork"],
   // tool_call_card #section(kind, …) — the arguments and result regions.
@@ -72,7 +78,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
  * it. Every one is accounted for in {@link DYNAMIC}; a new one moves this number,
  * which is the point.
  */
-const RUNTIME_ASSEMBLED = { template: 10, variable: 1 };
+const RUNTIME_ASSEMBLED = { template: 11, variable: 1 };
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

@@ -10,6 +10,7 @@ import {
   FEEDBACK_EVENT,
   ICON_ATTACH,
   ICON_LAUNCHER,
+  ICON_RETRY,
   ICON_SEND,
   ICON_STOP,
   INVALIDATE_CUSTOM_NAME,
@@ -58,6 +59,7 @@ import { CHART_TOOL_NAME, createChartTool } from "../ui/chart_tool.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/checkpoint_menu.js";
 import { clampLauncher } from "../ui/clamp_launcher.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
+import { copyPayload } from "../ui/copy_payload.js";
 import { enableLauncherDrag } from "../ui/launcher_drag.js";
 import {
   type ExpandCorner,
@@ -3774,14 +3776,21 @@ export class AgUiChat extends HTMLElement {
         strings: this.#strings,
         // Read at click time, not captured: a bubble rendered from markdown
         // holds its text in the DOM, and that is what the user sees and means
-        // to copy.
-        ...(copyable ? { text: () => bubble.textContent as string } : {}),
+        // to copy. Serialised rather than read off `textContent`, which welds
+        // a table into one run of digits and picks up the code blocks' own
+        // copy buttons on the way past.
+        ...(copyable
+          ? {
+              text: () => copyPayload(bubble).text,
+              html: () => copyPayload(bubble).html,
+            }
+          : {}),
         ...(rateable
           ? {
               onFeedback: (rating: "up" | "down") => {
                 this.dispatchEvent(
                   new CustomEvent<FeedbackDetail>(FEEDBACK_EVENT, {
-                    detail: { content: bubble.textContent as string, rating },
+                    detail: { content: copyPayload(bubble).text, rating },
                     bubbles: true,
                     composed: true,
                   }),
@@ -3799,7 +3808,7 @@ export class AgUiChat extends HTMLElement {
   /** Move the Retry button onto `bar`, taking it off whoever held it. */
   #moveRetryTo(bar: HTMLElement): void {
     this.#retryOwner?.querySelector(".message-action--retry")?.remove();
-    const retry = messageActionButton("retry", this.#strings.retryMessage, "\u21BB");
+    const retry = messageActionButton("retry", this.#strings.retryMessage, ICON_RETRY);
     retry.addEventListener("click", () => {
       void this.retryLastTurn();
     });

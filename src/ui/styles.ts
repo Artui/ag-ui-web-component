@@ -45,6 +45,13 @@ export const STYLES = `
   --_text: var(--ag-ui-text, var(--_fg));
   --_surface: var(--ag-ui-surface, transparent);
 
+  /* Message action row: the control box and the mark inside it. The box has a
+     floor of 24px so it stays a reliable target at every density. */
+  --_action-size: var(--ag-ui-action-size, 28px);
+  --_action-icon-size: var(--ag-ui-action-icon-size, 15px);
+  --_tooltip-bg: var(--ag-ui-tooltip-bg, #1f2430);
+  --_tooltip-fg: var(--ag-ui-tooltip-fg, #f5f6fa);
+
   /* Status accents for tool-call cards. */
   --_success: var(--ag-ui-success, #15803d);
   --_danger: var(--ag-ui-danger, #b91c1c);
@@ -2173,22 +2180,90 @@ export const STYLES = `
   margin-top: -6px;
 }
 
+/* The row's controls are icon-only, so the box is the whole target. Sized from
+   a variable a host can raise, with a floor rather than a fixed height: the
+   compact density shrinks the font, and a target that shrinks with it lands
+   under the 24px minimum that makes a control reliably tappable. It used to,
+   at roughly 20px square. */
 .message-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: var(--_action-size);
+  min-height: var(--_action-size);
+  padding: 4px;
   border: none;
   border-radius: 6px;
-  padding: 2px 6px;
   font: inherit;
   line-height: 1.2;
   cursor: pointer;
   background: transparent;
   color: var(--_muted);
   opacity: 0.75;
+  /* The tooltip below is positioned against this box. */
+  position: relative;
 }
 
 .message-action:hover,
 .message-action:focus-visible {
   opacity: 1;
   background: var(--_border);
+}
+
+.message-action-icon {
+  display: inline-flex;
+  width: var(--_action-icon-size);
+  height: var(--_action-icon-size);
+}
+
+.message-action-icon .glyph {
+  width: 100%;
+  height: 100%;
+}
+
+/* The label, drawn rather than left to the browser.
+
+   A title attribute is the usual answer and covers only half the readers: it
+   never appears on keyboard focus, so tabbing onto an icon-only control shows
+   nothing at all. The attribute stays for the pointer users who expect it, and
+   this shows the same words on hover and on focus alike.
+
+   Left-aligned rather than centred because the row sits at the left edge of an
+   answer inside a scrolling column, and a centred tooltip on the first control
+   is clipped by that column. Growing rightward keeps it inside.
+
+   Not exposed to assistive technology: the button already carries the same
+   string as its accessible name, and this would be a second copy of it. */
+.message-action::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 3;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--_tooltip-bg);
+  color: var(--_tooltip-fg);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--_motion) var(--_ease);
+}
+
+.message-action:hover::after,
+.message-action:focus-visible::after {
+  opacity: 1;
+}
+
+/* Touch has no hover to reveal it, and a tooltip that latches open under a
+   finger covers the answer it belongs to. */
+@media (hover: none) {
+  .message-action::after {
+    content: none;
+  }
 }
 
 .message-action[aria-pressed="true"] {

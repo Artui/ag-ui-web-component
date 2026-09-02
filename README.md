@@ -1501,6 +1501,53 @@ the actions to keep, or `="false"` for none at all:
 The default is `copy,retry`. Those two work with nothing wired; the rating pair
 needs a listener, so it is asked for rather than assumed.
 
+### What Copy puts on the clipboard
+
+Both flavours of the message: `text/plain` for anywhere, and `text/html` for a
+target that understands it. A table therefore pastes into a spreadsheet as
+columns and into a document as a table.
+
+The plain flavour is serialised structurally rather than read off `textContent`,
+which is the obvious source and loses everything: it concatenates descendants
+with no separator, so a table arrives as one unbroken run of cells with the
+headers welded to the first row. Rows are tab separated because that is what a
+spreadsheet splits on; list items keep their bullets and numbers; a code block
+keeps its own whitespace.
+
+Both flavours are taken from a copy of the message with the component's own
+buttons removed. The code blocks' copy buttons live *inside* their `pre`, so
+they are descendants of the message: before this, copying an answer containing a
+code block copied the word Copy along with it.
+
+A host that drives its own bar gets the same by passing `html` alongside `text`
+to `attachMessageActions`; with `text` alone the clipboard gets plain text only,
+exactly as before.
+
+### Sizing and theming the row
+
+The controls are icon-only, so the whole box is the target. It is sized from
+`--ag-ui-action-size`, with a floor rather than a fixed height so the compact
+density cannot shrink it below the 24px that keeps it reliably tappable.
+
+Each control draws its own label on hover **and on keyboard focus**. That is not
+the `title` attribute repeated: a `title` never appears on focus, so an
+icon-only button is unnamed for anyone tabbing to it. On a touch device, where
+there is no hover to reveal it and it would sit over the answer, it is not
+drawn at all.
+
+```css
+ag-ui-chat {
+  --ag-ui-action-size: 28px;        /* the control box; floors at 24px */
+  --ag-ui-action-icon-size: 15px;   /* the mark inside it */
+  --ag-ui-tooltip-bg: #1f2430;
+  --ag-ui-tooltip-fg: #f5f6fa;
+}
+```
+
+To swap a mark for your own, style its part — `message-action-icon-copy` and its
+siblings. A slot would be the better channel and cannot be used: these repeat
+once per message, and a named slot can only be filled once.
+
 It is per-action rather than one switch because the three disappear for
 different reasons. Thumbs are only useful to a host listening for
 `ag-ui-feedback`, and two buttons that lead nowhere are worse than none. Retry
@@ -2184,7 +2231,7 @@ re-export point. Internal modules import from leaf paths.
 | `suggestionPrompts` | function | The usable prompts in a `suggestions` activity's content, bounded and trimmed. |
 | `attachMessageActions` | function | Give a finished bubble its action row (copy, and feedback when a handler is passed). |
 | `messageActionBar` | function | The empty action row for a bubble, created if it has none — the shared shell both callers use. |
-| `MessageActionsOptions` | type | What `attachMessageActions` takes: `strings`, a `text` source, an optional `onFeedback`. |
+| `MessageActionsOptions` | type | What `attachMessageActions` takes: `strings`, a `text` source, an optional `html` source for the rich clipboard flavour, an optional `onFeedback`. |
 | `ActivityRenderer` | type | Draws one activity from its `content`. Pure: it runs again on every restore. |
 | `ActivityRegistration` | type | What `registerActivityRenderer` takes: `type`, `render`, and an optional `removedNotice`. |
 | `createStateHookTools(binding)` / `StateHook` | deprecated | The former names for `createPageStateTools` / `PageState`. |
@@ -2422,7 +2469,7 @@ component sets, so a new one cannot ship undocumented.
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
 | Follow-up suggestions | `suggestions`, `suggestion-chip` |
-| Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`) |
+| Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`), and the icon holder inside each: `message-action-icon` (plus `message-action-icon-retry`, `message-action-icon-copy`, `message-action-icon-up`, `message-action-icon-down`) |
 | Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-icon`, `run-notice-text` |
 | Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent` |
 | Delegated sub-agents | `subagent`, `subagent-row`, `subagent-icon`, `subagent-status`, `subagent-steps`, `subagent-step`, `subagent-step-icon`, `subagent-step-name` |

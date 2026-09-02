@@ -1,3 +1,4 @@
+import { ICON_COPY, ICON_THUMB_DOWN, ICON_THUMB_UP } from "../constants.js";
 import type { UiStrings } from "./ui_strings.js";
 
 /** How long a button shows its confirmation before reverting. */
@@ -18,6 +19,17 @@ export interface MessageActionsOptions {
    * disagree.
    */
   text?: () => string;
+  /**
+   * The rich flavour to copy alongside `text`, as an HTML fragment. Absent
+   * means the clipboard gets plain text only, which is what this did before
+   * the option existed.
+   *
+   * It is what makes a copied table paste as a table: a spreadsheet or a chat
+   * client reads `text/html` when it is offered and falls back to the plain
+   * flavour when it is not, so the two are the same content at two fidelities
+   * rather than a choice the caller has to make.
+   */
+  html?: () => string;
   /**
    * Report a rating for this message. Absent means no feedback buttons.
    *
@@ -53,7 +65,7 @@ export function attachMessageActions(bubble: HTMLElement, options: MessageAction
   const bar = messageActionBar(bubble, options.strings);
   const text = options.text;
   if (text !== undefined) {
-    bar.appendChild(copyButton(options.strings, text));
+    bar.appendChild(copyButton(options.strings, text, options.html));
   }
   if (options.onFeedback !== undefined) {
     bar.append(
@@ -98,36 +110,100 @@ function existingBar(bubble: HTMLElement): HTMLElement | null {
   return next?.classList.contains("message-actions") === true ? (next as HTMLElement) : null;
 }
 
-/** Build one action button, labelled for screen readers rather than by glyph. */
+/**
+ * Build one action button, labelled for screen readers rather than by glyph.
+ *
+ * `icon` is icon markup rather than a text glyph, because the text glyphs these
+ * carried are the obscure end of the character set -- the copy mark in
+ * particular has no font behind it on most systems, so it rendered as a mark
+ * nobody could name on a control small enough that nobody could hit it either.
+ *
+ * The label is carried three ways, and each has a reader the others miss:
+ * `aria-label` for assistive technology, `title` for the browser's own
+ * tooltip, and `data-tooltip` for the one this component draws. The last is
+ * not redundant with the second -- a `title` never appears on keyboard focus,
+ * so without it a keyboard user has no way to see what the control does.
+ *
+ * The icon sits in its own part, so a host can restyle or replace it. A slot
+ * would be the better channel and cannot be used here: these repeat once per
+ * message, and a named slot can only be filled once.
+ */
 export function messageActionButton(
   modifier: string,
   label: string,
-  glyph: string,
+  icon: string,
 ): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `message-action message-action--${modifier}`;
   button.setAttribute("part", `message-action message-action-${modifier}`);
-  button.title = label;
-  button.setAttribute("aria-label", label);
-  const icon = document.createElement("span");
-  icon.setAttribute("aria-hidden", "true");
-  icon.textContent = glyph;
-  button.appendChild(icon);
+  setLabel(button, label);
+  const holder = document.createElement("span");
+  holder.className = "message-action-icon";
+  holder.setAttribute("part", `message-action-icon message-action-icon-${modifier}`);
+  holder.setAttribute("aria-hidden", "true");
+  // Author-written markup from constants, never message content.
+  holder.innerHTML = icon;
+  button.appendChild(holder);
   return button;
 }
 
-function copyButton(strings: UiStrings, text: () => string): HTMLButtonElement {
-  const button = messageActionButton("copy", strings.copyMessage, "⎘");
+/** Put `label` on every channel that names this button. */
+function setLabel(button: HTMLButtonElement, label: string): void {
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.dataset["tooltip"] = label;
+}
+
+function copyButton(
+  strings: UiStrings,
+  text: () => string,
+  html: (() => string) | undefined,
+): HTMLButtonElement {
+  const button = messageActionButton("copy", strings.copyMessage, ICON_COPY);
   button.addEventListener("click", () => {
-    void navigator.clipboard.writeText(text()).then(
-      () => flash(button, strings.copied, strings.copyMessage),
+    void write(text(), html?.()).then((ok) => {
       // A denied clipboard permission is the common case, not an exception:
       // say so on the button rather than throwing into an unhandled rejection.
-      () => flash(button, strings.copyFailed, strings.copyMessage),
-    );
+      flash(button, ok ? strings.copied : strings.copyFailed, strings.copyMessage);
+    });
   });
   return button;
+}
+
+/**
+ * Put the message on the clipboard, richest flavour first.
+ *
+ * Writing both flavours needs `ClipboardItem`, which not every engine that has
+ * `writeText` also has -- and even where the constructor exists the write can
+ * be refused. Neither is a failure worth reporting as one while the plain text
+ * would still have landed, so both fall through to `writeText` and only that
+ * decides what the button says.
+ */
+async function write(text: string, html: string | undefined): Promise<boolean> {
+  const clipboard = navigator.clipboard;
+  if (clipboard === undefined) {
+    return false;
+  }
+  if (html !== undefined && typeof ClipboardItem === "function") {
+    try {
+      await clipboard.write([
+        new ClipboardItem({
+          "text/plain": new Blob([text], { type: "text/plain" }),
+          "text/html": new Blob([html], { type: "text/html" }),
+        }),
+      ]);
+      return true;
+    } catch {
+      // Fall through to the plain flavour.
+    }
+  }
+  try {
+    await clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function feedbackButton(
@@ -138,7 +214,7 @@ function feedbackButton(
   const button = messageActionButton(
     rating === "up" ? "up" : "down",
     label,
-    rating === "up" ? "\u{1F44D}" : "\u{1F44E}",
+    rating === "up" ? ICON_THUMB_UP : ICON_THUMB_DOWN,
   );
   button.addEventListener("click", () => {
     // Pressed rather than removed: the rating is a standing statement about the
@@ -159,12 +235,10 @@ function feedbackButton(
  * cannot happen and cannot be covered.
  */
 function flash(button: HTMLButtonElement, message: string, label: string): void {
-  button.title = message;
-  button.setAttribute("aria-label", message);
+  setLabel(button, message);
   button.classList.add("message-action--confirmed");
   setTimeout(() => {
-    button.title = label;
-    button.setAttribute("aria-label", label);
+    setLabel(button, label);
     button.classList.remove("message-action--confirmed");
   }, CONFIRM_MS);
 }

@@ -40,6 +40,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pixels off in every one of them; the size comes from `offsetWidth` and the
   position from the rect's centre, which a centred scale cannot move.
 
+- **Copy puts the message on the clipboard in both flavours**, so a table
+  pastes as a table. `text/html` carries the markup for a target that reads it;
+  the plain flavour is serialised structurally -- tab separated table rows,
+  which is what a spreadsheet splits on, and list items that keep their markers.
+
+  It was `textContent`, which is the obvious source and loses every piece of
+  structure the message had: descendants concatenated with no separator, so a
+  table arrived as one run of cells with the headers welded to the first row.
+
+  A host driving its own bar opts in by passing the new `html` alongside `text`;
+  with `text` alone the clipboard gets plain text only, as before.
+
+### Fixed
+
+- **Copying an answer that contained a code block copied the word Copy with
+  it.** The code blocks' copy buttons are appended *inside* their own `pre`, so
+  they are descendants of the message, and reading `textContent` picked their
+  label up mid-sentence. Both clipboard flavours now come from a copy of the
+  message with the component's own buttons removed.
+
+- **The message action controls were about 20px square**, under the 24px that
+  makes a control reliably tappable, and marked with text glyphs -- the copy
+  mark in particular has no font behind it on most systems, so it rendered as
+  a mark nobody could name on a target nobody could hit. They are now sized
+  from `--ag-ui-action-size` with a 24px floor and drawn with the same icon set
+  as the rest of the component.
+
+- **An icon-only action was unnamed for anyone using a keyboard.** The label was
+  carried by `title`, which browsers never show on focus. Each control now draws
+  its own label on hover and on focus alike, and the icon holder has its own
+  part so a host can swap the mark.
+
 ### Changed
 
 - **The resize grip is placed from the corner the element chose, when it chose
