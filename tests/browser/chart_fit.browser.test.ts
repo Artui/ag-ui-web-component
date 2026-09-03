@@ -72,6 +72,21 @@ function svgBox(block: HTMLElement): DOMRect {
   return (block.querySelector("svg") as SVGSVGElement).getBoundingClientRect();
 }
 
+/**
+ * How much the browser is magnifying the drawing: rendered width over the
+ * viewBox's own width. One means a user unit is a CSS pixel, which is the
+ * property the whole change is about -- and it is the one to assert, because
+ * the obvious alternative is not stable. Chromium reports a different glyph box
+ * for the same 10px text at an integer scale than at a fractional one (13px
+ * against 10.05px, hinted against not), so a label measured in one panel and
+ * compared against another can differ by 29% with nothing wrong.
+ */
+function scaleOf(block: HTMLElement): number {
+  const svg = block.querySelector("svg") as SVGSVGElement;
+  const units = Number((svg.getAttribute("viewBox") ?? "").split(" ")[2]);
+  return svg.getBoundingClientRect().width / units;
+}
+
 beforeAll(async () => {
   defineAgUiChat();
   // A desktop, because the default test viewport is a phone and the whole
@@ -88,35 +103,58 @@ afterEach(() => {
 });
 
 describe("a chart in a panel that has been widened", () => {
-  it("keeps its labels the same size whatever the panel's width", async () => {
+  it("draws one unit per pixel whatever the panel's width", async () => {
     const narrow = chartIn(mount("380px"));
     const wide = chartIn(mount("1100px"));
     await settle();
 
-    const ratio = labelHeight(wide) / labelHeight(narrow);
-    // Text drawn into a scaled viewBox would be near 3x here, which is what a
-    // 25px axis label in a wide panel was.
-    expect(ratio).toBeGreaterThan(0.9);
-    expect(ratio).toBeLessThan(1.1);
+    // Magnified, the wide one was 2.2 here and every 10px label with it.
+    expect(scaleOf(narrow)).toBeCloseTo(1, 1);
+    expect(scaleOf(wide)).toBeCloseTo(1, 1);
   });
 
-  it("fills the width it is given rather than leaving it empty", async () => {
+  it("never renders an axis label at display size", async () => {
+    const block = chartIn(mount("1100px"));
+    await settle();
+
+    // A loose ceiling on purpose: what matters is that a 10px label is not
+    // 29px, which is what it measured in this panel before.
+    expect(labelHeight(block)).toBeLessThan(16);
+  });
+
+  it("stops at its own width rather than stretching with the panel", async () => {
     const el = mount("1100px");
     const block = chartIn(el);
     await settle();
 
-    // The point of redrawing rather than capping: the chart still uses the
-    // panel, it just stops magnifying itself to do it.
-    expect(svgBox(block).width).toBeGreaterThan(900);
+    // Widening the panel does not resize what is already in it, which is how a
+    // message behaves and the reason a chart should not be the exception.
+    expect(svgBox(block).width).toBeCloseTo(480, 0);
+    const messages = (el.shadowRoot as ShadowRoot).querySelector(".messages") as HTMLElement;
+    expect(svgBox(block).width).toBeLessThan(messages.clientWidth / 2);
   });
 
-  it("stays inside its height band instead of eating the transcript", async () => {
+  it("keeps the frame it has always drawn once it is at its own width", async () => {
     const block = chartIn(mount("1100px"));
     await settle();
 
-    // Scaled, a 480x220 frame at this width is 500px tall.
-    expect(svgBox(block).height).toBeLessThanOrEqual(322);
-    expect(svgBox(block).height).toBeGreaterThan(260);
+    // The 480x220 frame exactly, which is what this renderer drew before it
+    // could measure anything at all. Scaled to the panel it was 489px tall.
+    expect(svgBox(block).height).toBeCloseTo(220, 0);
+  });
+
+  it("lets a host raise the cap without changing the label size", async () => {
+    const narrow = chartIn(mount("380px"));
+    const el = mount("1100px");
+    el.style.setProperty("--ag-ui-chart-max-width", "900px");
+    const wide = chartIn(el);
+    await settle();
+
+    // The escape hatch is about how much room the chart gets, never about how
+    // big its text is -- which is the whole distinction this change is built on.
+    expect(svgBox(wide).width).toBeCloseTo(900, 0);
+    expect(scaleOf(wide)).toBeCloseTo(1, 1);
+    expect(scaleOf(narrow)).toBeCloseTo(1, 1);
   });
 
   it("redraws when the panel itself is resized", async () => {

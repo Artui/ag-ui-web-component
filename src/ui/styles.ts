@@ -109,6 +109,11 @@ export const STYLES = `
   --_glyph-size: var(--ag-ui-glyph-size, 18px);
   --_glyph-stroke: var(--ag-ui-glyph-stroke, 1.75);
 
+  /* How wide a chart is allowed to get. A cap rather than a width: below it
+     the chart fills its column, and above it a wider panel is just a wider
+     panel. */
+  --_chart-max-width: var(--ag-ui-chart-max-width, 480px);
+
   /* Unread badge on the launcher. */
   --_badge-bg: var(--ag-ui-badge-bg, var(--_danger));
   --_badge-fg: var(--ag-ui-badge-fg, #ffffff);
@@ -2017,9 +2022,17 @@ export const STYLES = `
  * values, and the axis furniture inherits currentColor at low opacity so it
  * reads correctly in either theme without a second palette.
  */
+/* A chart is sized like a message, not like a panel: it takes the width it
+   needs and stops, rather than stretching into whatever room the transcript
+   has. A message bubble caps at 80% for the same reason -- widening the panel
+   should not resize what is already in it. The cap is a token so a host with a
+   wide panel and a real reason can raise it; the default is the width this
+   renderer has always drawn at. Below the cap the block still fills its column,
+   which is what a narrow panel needs. */
 .chart-block {
-  align-self: stretch;
-  max-width: 100%;
+  align-self: flex-start;
+  width: 100%;
+  max-width: var(--_chart-max-width);
   margin: 6px 0;
   color: var(--_fg);
 }

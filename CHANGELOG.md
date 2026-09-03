@@ -31,23 +31,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **A chart is drawn at the size it is shown at, rather than magnified to it.**
-  The renderer drew into a fixed 480x220 viewBox and let `width: 100%` scale the
-  result, which is a picture the browser enlarges: every stroke, every label and
-  the whole frame grew with the panel. Measured in a 1100px panel, the axis
-  labels came out **3.25x** the size they do at the default width and the chart
-  stood **489px** tall, pushing the answer it belonged to off the screen. Reported against a widened panel, where it is at
-  its worst, but the same scaling ran in reverse at the narrow end.
+- **A chart no longer grows with the panel.** Widening the panel used to resize
+  what was already in it: the renderer drew into a fixed 480x220 viewBox, the
+  block stretched to the transcript's full width, and `width: 100%` scaled the
+  drawing to fit it. In a 1100px panel the axis labels came out **3.25x** the
+  size they are at the default width and the chart stood **489px** tall, pushing
+  the answer it belonged to off the screen.
 
-  Geometry is now computed for the width the block actually has, one SVG unit
-  per CSS pixel, and recomputed when that width changes -- so the same label is
-  10px at every panel size and the chart still fills the width it is given.
-  Height follows width inside a 160-320px band; the default 480px width draws
-  exactly the frame it always did. Where the axis labels no longer fit, every
-  second or third is drawn rather than a smear of overlapping words, which is a
-  new answer to a collision that was there at every size before. Below 220px the
-  drawing scales down as it used to, since at that width nothing fits either
-  way.
+  Two separate things were wrong, and both are fixed:
+
+  - **It was magnified rather than sized.** Geometry is now computed for the
+    width the block actually has, one SVG unit per CSS pixel, and recomputed
+    when that width changes -- so a 10px axis label is 10px at every size,
+    including the narrow end, where the old drawing was shrunk to 7px in the
+    default 380px panel. Height follows width inside a 160-320px band, and the
+    480px width draws exactly the frame it always did. Where the labels no
+    longer fit, every second or third is drawn rather than a smear of
+    overlapping words -- a new answer to a collision that was there at every
+    size before. Below 220px the drawing scales down as it used to, since at
+    that width nothing fits either way.
+  - **It was stretched rather than sized too.** The block now takes the width it
+    needs and stops, capping at the new `--ag-ui-chart-max-width` (**480px**),
+    the way a message bubble caps rather than filling the panel. Raise the token
+    for a bigger chart and the labels stay 10px: the cap decides how much room
+    the drawing gets, never how big its type is.
 
 ## [0.33.1] — 2026-09-03
 

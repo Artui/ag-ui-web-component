@@ -14,11 +14,17 @@
  *
  * **The drawing is sized in CSS pixels, not scaled to them.** An SVG with a
  * fixed viewBox and `width: 100%` is a picture the browser magnifies: widen the
- * panel and every stroke, every label and the whole frame grow with it, so a
- * 10px axis label renders at 25px in a 1200px panel and the chart takes half
- * the transcript. So the geometry is computed for the width the block actually
- * has, one user unit to one CSS pixel, and recomputed when that width changes.
- * Text then stays 10px at every panel size and the height stays inside a band.
+ * panel and every stroke, every label and the whole frame grow with it. So the
+ * geometry is computed for the width the block actually has, one user unit to
+ * one CSS pixel, and recomputed when that width changes -- a 10px label is
+ * 10px at every size the block is given.
+ *
+ * How wide the block is allowed to get is the stylesheet's question, not this
+ * module's, and the answer there is that a chart stops at its own width rather
+ * than stretching with the panel, the way a message does. The two halves are
+ * separate on purpose: this one keeps a chart from being magnified, that one
+ * keeps it from being stretched, and a host that raises the cap gets a bigger
+ * chart with the same 10px labels rather than a magnified one.
  */
 
 const SVG_NS = "http://www.w3.org/2000/svg";

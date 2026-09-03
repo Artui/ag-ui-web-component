@@ -1091,17 +1091,24 @@ label — a shorter one misaligns every value after the gap, and a chart that is
 subtly wrong still reads as authoritative, so the whole spec is dropped instead.
 A pie's slices are its labels, so it draws the first series only.
 
-Theme the series with `--ag-ui-chart-1` … `--ag-ui-chart-6`, and style the block
-through the `chart-block`, `chart-title` and `chart-legend` parts.
+Theme the series with `--ag-ui-chart-1` … `--ag-ui-chart-6`, size it with
+`--ag-ui-chart-max-width`, and style the block through the `chart-block`,
+`chart-title` and `chart-legend` parts.
 
-**A chart is sized in pixels, not scaled to them.** It is drawn for the width
-the block actually has -- one SVG unit per CSS pixel -- and redrawn when that
-width changes, so a 10px axis label is 10px in a 380px panel and in a 1200px
-one. Height follows width inside a band (160-320px), which is what stops a wide
-panel from turning a chart into a banner. Where the labels no longer fit the
-axis draws every second or third one rather than a smear of overlapping words.
-Below 220px it goes back to scaling, since at that size nothing fits either
-way.
+**A chart stops at its own width, and is sized in pixels rather than scaled to
+them.** Two separate things, and a widened panel needs both.
+
+It is drawn for the width the block actually has -- one SVG unit per CSS pixel
+-- and redrawn when that width changes, so a 10px axis label is 10px in a 380px
+panel and in a 1200px one. Where the labels no longer fit, the axis draws every
+second or third rather than a smear of overlapping words. Below 220px it goes
+back to scaling, since at that size nothing fits either way.
+
+And it takes the width it needs rather than the width it is offered, capping at
+`--ag-ui-chart-max-width` (**480px**): widening the panel should no more resize
+a chart than it resizes a message. Raise the token for a bigger chart and the
+labels stay 10px -- the cap is about how much room the drawing gets, never
+about how big its type is. Height follows width inside a 160-320px band.
 
 ### Drawing something other than a chart
 
