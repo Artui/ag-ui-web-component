@@ -58,6 +58,7 @@ import { chartSpecFrom } from "../ui/chart_spec_from.js";
 import { CHART_TOOL_NAME, createChartTool } from "../ui/chart_tool.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/checkpoint_menu.js";
 import { clampLauncher } from "../ui/clamp_launcher.js";
+import { clampPanel } from "../ui/clamp_panel.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
 import { copyPayload } from "../ui/copy_payload.js";
 import { enableLauncherDrag } from "../ui/launcher_drag.js";
@@ -73,6 +74,8 @@ import {
   messageActionButton,
 } from "../ui/message_actions.js";
 import { attachQuoteOffer, type PageQuoteOffer } from "../ui/page_quote_offer.js";
+import { enablePanelDrag } from "../ui/panel_drag.js";
+import { placeWidget } from "../ui/place_widget.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
 import {
   type QuestionRenderer,
@@ -315,6 +318,15 @@ const THEME_KEY = "ag-ui-chat:theme";
 
 /** Per-tab persistence key for a dragged launcher position. */
 const LAUNCHER_KEY = "ag-ui-chat:launcher";
+
+/** A stored `{ left, top }` pair, or null for anything that is not one. */
+function asPoint(value: unknown): { readonly left: number; readonly top: number } | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const { left, top } = value as { left?: unknown; top?: unknown };
+  return typeof left === "number" && typeof top === "number" ? { left, top } : null;
+}
 
 /**
  * Placements whose launcher can be dragged. The rest have nowhere to put it:
@@ -817,6 +829,19 @@ export class AgUiChat extends HTMLElement {
    * position -- see #applyLauncherPlacement for what that costs the host.
    */
   #launcherPos: { readonly left: number; readonly top: number } | null = null;
+
+  /**
+   * Where the user dragged the *panel*, in viewport coordinates, or null while
+   * its position is still derived from the launcher's.
+   *
+   * The two gestures state different things and are restored differently. A
+   * launcher drag says where the bubble goes and leaves the panel to open into
+   * whatever space the viewport has, so it is re-derived every time -- which is
+   * what lets a widget re-decide its direction when the window changes under
+   * it. A header drag states the panel's own position, and re-deriving that
+   * from the launcher would move the panel the user just placed.
+   */
+  #panelPos: { readonly left: number; readonly top: number } | null = null;
 
   /**
    * The corner the panel opens away from, once this element is placing itself.
@@ -2444,6 +2469,10 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     this.#launcherPos = at;
+    // Dropping the bubble hands the panel's position back to the placement.
+    // Keeping a stated one would pin the panel where it was dragged and leave
+    // the launcher deriving nothing, which is the gesture doing half its job.
+    this.#panelPos = null;
     // The host box keeps its expanded size while collapsed, so its own rect is
     // the panel's size in either state and needs no separate bookkeeping.
     const panel = this.getBoundingClientRect();
@@ -2471,13 +2500,146 @@ export class AgUiChat extends HTMLElement {
     this.#storeLauncherPosition();
   }
 
-  /** Write the current launcher position, if this element owns one. */
+  /**
+   * Move the panel live during a header drag, without persisting.
+   *
+   * Only the host box is written, and that is the whole trick: the launcher is
+   * positioned *inside* that box, so leaving its own inset alone carries it
+   * along by exactly the distance the panel travelled -- which is what a person
+   * dragging a window expects of the thing it collapses into. Placing it on the
+   * panel's pinned corner instead, as an earlier version did, sent it leaping
+   * across the panel the moment the drag re-picked that corner.
+   *
+   * The corner is therefore held for the length of the gesture. Both insets are
+   * measured from it, and rewriting one of them from a new corner while the
+   * other still names the old one would move the launcher for no reason.
+   */
+  #movePanel(box: PanelRect): PanelRect {
+    if (!this.#launcherDraggable()) {
+      return box;
+    }
+    // Where the launcher rests, recorded before the first move writes anything.
+    // From here on the DOM shows it mid-gesture, so this is the last moment it
+    // can be read rather than derived.
+    if (this.#launcherPos === null) {
+      const resting = this.#launcherBox();
+      this.#launcherPos = { left: resting.left, top: resting.top };
+    }
+    const held = clampPanel(box, this.#viewport());
+    const corner = this.#expandCorner ?? this.#anchor;
+    const viewport = this.#viewport();
+    this.style.setProperty(
+      "--ag-ui-inset",
+      [
+        corner.y === "top" ? `${Math.round(held.top)}px` : "auto",
+        corner.x === "right" ? `${Math.round(viewport.width - held.right)}px` : "auto",
+        corner.y === "bottom" ? `${Math.round(viewport.height - held.bottom)}px` : "auto",
+        corner.x === "left" ? `${Math.round(held.left)}px` : "auto",
+      ].join(" "),
+    );
+    this.#panelPos = { left: held.left, top: held.top };
+    return held;
+  }
+
+  /**
+   * Finish a header drag: settle where both halves ended up, and remember it.
+   *
+   * The launcher travels the distance the panel actually travelled, which is
+   * the clamped distance rather than the pointer's -- a panel held against the
+   * viewport margin stops, and so does the bubble attached to it. Measured from
+   * the box the press started on, so a long drag cannot accumulate the rounding
+   * each move writes into the inset.
+   *
+   * Only now is the corner re-picked, from where the launcher has ended up, so
+   * the panel opens into clear space next time. Re-picking it moves nothing:
+   * both insets are rewritten from positions that are already decided.
+   */
+  #commitPanel(box: PanelRect, from: PanelRect): void {
+    const held = this.#movePanel(box);
+    const start = this.#launcherPos;
+    if (!this.#launcherDraggable() || start === null) {
+      return;
+    }
+    const carried = {
+      ...this.#launcherBox(),
+      left: start.left + (held.left - from.left),
+      top: start.top + (held.top - from.top),
+    };
+    // The screen is the last word: a bubble dragged past the edge is one nobody
+    // can click, and it is the only way back to a collapsed conversation.
+    this.#placePanelAndLauncher(held, {
+      ...carried,
+      ...clampLauncher(carried, this.#viewport()),
+    });
+    this.#storeLauncherPosition();
+  }
+
+  /**
+   * Write both insets for a panel and launcher that are already positioned,
+   * re-picking the corner they are measured from.
+   */
+  #placePanelAndLauncher(host: PanelRect, launcher: LauncherBox): void {
+    const viewport = this.#viewport();
+    const size = { width: host.right - host.left, height: host.bottom - host.top };
+    const { corner } = launcherPlacement(launcher, size, viewport);
+    const insets = placeWidget(host, launcher, corner, viewport);
+    this.style.setProperty("--ag-ui-inset", insets.hostInset);
+    this.style.setProperty("--ag-ui-launcher-inset", insets.launcherInset);
+    this.#launcherPos = { left: launcher.left, top: launcher.top };
+    this.#panelPos = { left: host.left, top: host.top };
+    this.#expandCorner = corner;
+    this.setAttribute("data-expand-corner", `${corner.y}-${corner.x}`);
+    this.#syncResizeAnchor();
+  }
+
+  /**
+   * Re-apply a panel position the user stated, against the current viewport.
+   *
+   * The launcher keeps its offset from the panel through the clamp -- it was
+   * put where it is relative to the panel, and a viewport that has since shrunk
+   * is no reason to move one without the other -- and is then held on screen in
+   * its own right.
+   */
+  #restorePanelPosition(at: { readonly left: number; readonly top: number }): void {
+    if (!this.#launcherDraggable()) {
+      return;
+    }
+    const rect = this.getBoundingClientRect();
+    const held = clampPanel(
+      { left: at.left, top: at.top, right: at.left + rect.width, bottom: at.top + rect.height },
+      this.#viewport(),
+    );
+    const launcher = this.#launcherBox();
+    const carried = {
+      ...launcher,
+      left: launcher.left + (held.left - at.left),
+      top: launcher.top + (held.top - at.top),
+    };
+    this.#placePanelAndLauncher(held, {
+      ...carried,
+      ...clampLauncher(carried, this.#viewport()),
+    });
+  }
+
+  /**
+   * Write the current position, if this element owns one.
+   *
+   * The panel's own position rides along only when the user stated it, because
+   * its presence is what tells a restore which of the two gestures to honour:
+   * with it, the panel goes back where it was put; without it, the panel is
+   * re-derived from the launcher and opens into whatever room the viewport has
+   * now.
+   */
   #storeLauncherPosition(): void {
     const position = this.#launcherPos;
     if (position === null) {
       return;
     }
-    writeStoredItem(this.#storageKey(LAUNCHER_KEY), JSON.stringify(position));
+    const panel = this.#panelPos;
+    writeStoredItem(
+      this.#storageKey(LAUNCHER_KEY),
+      JSON.stringify(panel === null ? position : { ...position, panel }),
+    );
   }
 
   /**
@@ -2487,18 +2649,32 @@ export class AgUiChat extends HTMLElement {
    * unreachable -- it is the only way back to a collapsed conversation.
    */
   #restoreLauncherPosition(): void {
-    const stored = this.#launcherPos ?? this.#readLauncherPosition();
-    if (stored === null) {
+    const stored = this.#readLauncherPosition();
+    const launcher = this.#launcherPos ?? stored;
+    if (launcher === null) {
+      return;
+    }
+    const panel = this.#panelPos ?? stored?.panel ?? null;
+    if (panel !== null) {
+      // Stated rather than derived: the launcher is only read here to keep the
+      // offset the two were left with, so it has to be seeded before the panel
+      // is placed around it.
+      this.#launcherPos = { left: launcher.left, top: launcher.top };
+      this.#restorePanelPosition(panel);
       return;
     }
     const box = this.#launcherBox();
     this.#applyLauncherPlacement(
-      clampLauncher({ ...box, left: stored.left, top: stored.top }, this.#viewport()),
+      clampLauncher({ ...box, left: launcher.left, top: launcher.top }, this.#viewport()),
     );
   }
 
-  /** The persisted launcher position for this instance, or null. */
-  #readLauncherPosition(): { readonly left: number; readonly top: number } | null {
+  /** The persisted position for this instance, or null. */
+  #readLauncherPosition(): {
+    readonly left: number;
+    readonly top: number;
+    readonly panel?: { readonly left: number; readonly top: number };
+  } | null {
     const raw = this.#readScopedItem(LAUNCHER_KEY);
     if (raw === null) {
       return null;
@@ -2508,8 +2684,15 @@ export class AgUiChat extends HTMLElement {
       if (typeof parsed !== "object" || parsed === null) {
         return null;
       }
-      const { left, top } = parsed as { left?: unknown; top?: unknown };
-      return typeof left === "number" && typeof top === "number" ? { left, top } : null;
+      const { left, top, panel } = parsed as { left?: unknown; top?: unknown; panel?: unknown };
+      if (typeof left !== "number" || typeof top !== "number") {
+        return null;
+      }
+      // A record written before the panel could be dragged has no panel half,
+      // and one written by a launcher drag never will -- both restore by
+      // deriving the panel, which is what they meant.
+      const at = asPoint(panel);
+      return at === null ? { left, top } : { left, top, panel: at };
     } catch {
       // A corrupt entry is not worth failing a mount over; fall back to the
       // placement's own corner.
@@ -2527,6 +2710,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     this.#launcherPos = null;
+    this.#panelPos = null;
     this.#expandCorner = null;
     this.style.removeProperty("--ag-ui-inset");
     this.style.removeProperty("--ag-ui-launcher-inset");
@@ -2574,6 +2758,10 @@ export class AgUiChat extends HTMLElement {
         left: anchor.x === "left" ? box.left : box.right - size,
         top: anchor.y === "top" ? box.top : box.bottom - size,
       };
+    }
+    // A stated panel position is a claim about this box, so it moves with it.
+    if (this.#panelPos !== null) {
+      this.#panelPos = { left: box.left, top: box.top };
     }
   }
 
@@ -3288,6 +3476,16 @@ export class AgUiChat extends HTMLElement {
     }
     controls.append(collapse);
     header.append(title, headerActions, controls);
+
+    // A panel is a window and a header is its title bar. Only while open: a
+    // collapsed widget has no header on screen, and the launcher is the handle
+    // then.
+    enablePanelDrag(header, {
+      enabled: () => !this.collapsed && this.#launcherDraggable(),
+      rect: () => this.getBoundingClientRect(),
+      apply: (box) => this.#movePanel(box),
+      commit: (box, from) => this.#commitPanel(box, from),
+    });
 
     this.#messages.className = "messages";
     this.#messages.setAttribute("part", "messages");

@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-09-03
+
+### Added
+
+- **The open panel moves by its header**, the way a window moves by its title
+  bar. The collapsed launcher has been draggable since 0.33.0 and the panel was
+  not, so a chat sitting over the thing it was being asked about could only be
+  moved by collapsing it first.
+
+  It is one widget being moved, not two things being placed: **the launcher
+  travels the same distance the panel does**, so a panel dragged 100px left
+  leaves the bubble it collapses into 100px left of where it was. The distance
+  is the panel's own rather than the pointer's -- a panel held against the
+  viewport's margin stops, and the bubble stops with it -- and the bubble is
+  then held on screen in its own right.
+
+  A stated position is also kept rather than re-derived, which is the whole
+  difference between the two drags. A launcher drag says where the bubble goes
+  and leaves the panel to open into whatever room the viewport has, re-decided
+  on every expand and every window resize; a header drag states the panel's own
+  position, so it survives collapsing, reopening and reloading, and dragging the
+  bubble again hands the decision back. Which corner the panel is pinned by is
+  re-picked when the drag ends, from where the bubble ended up, so the next
+  expand still opens into clear space -- and re-picking it moves nothing, since
+  both insets are written from positions that are already decided. Stored per
+  tab like the launcher's own position, and off under
+  `data-launcher-drag="false"` along with the launcher drag.
+
+  A press that starts on a control in the header stays that control's, including
+  one a host slotted in. There is no keyboard shortcut on the header on purpose:
+  a header is not a control, and making it focusable would put a tab stop with
+  no role ahead of the controls a keyboard user came for, while arrow keys on
+  the collapsed launcher already move the widget, panel included.
+
+### Fixed
+
+- **A chart no longer grows with the panel.** Widening the panel used to resize
+  what was already in it: the renderer drew into a fixed 480x220 viewBox, the
+  block stretched to the transcript's full width, and `width: 100%` scaled the
+  drawing to fit it. In a 1100px panel the axis labels came out **3.25x** the
+  size they are at the default width and the chart stood **489px** tall, pushing
+  the answer it belonged to off the screen.
+
+  Two separate things were wrong, and both are fixed:
+
+  - **It was magnified rather than sized.** Geometry is now computed for the
+    width the block actually has, one SVG unit per CSS pixel, and recomputed
+    when that width changes -- so a 10px axis label is 10px at every size,
+    including the narrow end, where the old drawing was shrunk to 7px in the
+    default 380px panel. Height follows width inside a 160-320px band, and the
+    480px width draws exactly the frame it always did. Where the labels no
+    longer fit, every second or third is drawn rather than a smear of
+    overlapping words -- a new answer to a collision that was there at every
+    size before. Below 220px the drawing scales down as it used to, since at
+    that width nothing fits either way.
+  - **It was stretched rather than sized too.** The block now takes the width it
+    needs and stops, capping at the new `--ag-ui-chart-max-width` (**480px**),
+    the way a message bubble caps rather than filling the panel. Raise the token
+    for a bigger chart and the labels stay 10px: the cap decides how much room
+    the drawing gets, never how big its type is.
+
 ## [0.33.1] — 2026-09-03
 
 ### Fixed
@@ -2840,7 +2901,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.33.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.33.1...v0.34.0
 [0.33.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.33.0...v0.33.1
 [0.33.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.31.1...v0.32.0

@@ -183,7 +183,7 @@ another origin, add `credentials="include"` too; see
 | `data-icon-url` | — | Header (and launcher) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
 | `data-launcher-icon-url` | — | Icon image URL for the collapsed launcher only, when it should differ from the header's. Falls back to `data-icon-url`; a slotted `slot="launcher"` wins over both. |
 | `data-unread-badge` | — | **On by default.** `="false"` hides the launcher's unread badge; the count and the `ag-ui-unread` event keep running. See [Collapsing to the launcher](#collapsing-to-the-launcher). |
-| `data-launcher-drag` | — | **On by default.** `="false"` leaves the collapsed launcher wherever your CSS puts it. Otherwise it can be dragged anywhere on screen and the panel opens into the clearest space. See [Moving the launcher](#moving-the-launcher). |
+| `data-launcher-drag` | — | **On by default.** `="false"` leaves the widget wherever your CSS puts it. Otherwise the collapsed launcher can be dragged anywhere on screen (the panel opens into the clearest space) and the open panel can be dragged by its header. See [Moving the launcher](#moving-the-launcher) and [Moving the panel](#moving-the-panel). |
 | `data-quote-selection` | — | **On by default.** `="false"` stops the transcript offering to quote a selection. `quote()` keeps working either way. See [Quoting a selection](#quoting-a-selection). |
 | `data-message-actions` | — | **All on by default.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry"`). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
@@ -997,6 +997,34 @@ against a placement. Switching to a placement that places itself hands both back
 > property and your CSS decides, exactly as before. The geometry is built so that feeding it the
 > resting position reproduces the default `auto 24px 24px auto` unchanged.
 
+#### Moving the panel
+
+An open panel moves by its **header**, the way a window moves by its title bar.
+
+**The launcher travels the same distance.** Drag the panel 100px left and the bubble it collapses
+into is 100px left of where it was — it is one widget being moved, not two things being placed.
+The distance is the panel's own, so a panel held against the viewport's margin stops and the
+bubble stops with it, and the bubble is then held on screen in its own right.
+
+**A position you state is kept, not re-derived.** That is the difference between the two drags: a
+launcher drag says where the bubble goes and lets the panel open into whatever room the viewport
+has, which is re-decided on every expand and every window resize; a header drag states the
+panel's own position, so it survives collapsing, reopening and reloading. Dragging the bubble
+again hands the decision back. Both are stored per tab, and `data-launcher-drag="false"` turns
+off both.
+
+Which corner the panel is *pinned* by is re-picked when the drag ends, from where the bubble has
+ended up, so the next expand still opens into clear space. Re-picking it moves nothing: the
+corner only says which edges the two insets are written from, and both are written from positions
+that are already decided.
+
+The controls in the header keep their own presses — a drag started on a button, a link or a field
+never begins, including one you slot in.
+
+There is no keyboard shortcut on the header, deliberately. A header is not a control, and making
+it focusable would put a tab stop with no role ahead of the controls a keyboard user came for —
+while arrow keys on the collapsed launcher already move the widget, panel included.
+
 ```js
 chat.unread; // 2
 
@@ -1074,8 +1102,24 @@ label — a shorter one misaligns every value after the gap, and a chart that is
 subtly wrong still reads as authoritative, so the whole spec is dropped instead.
 A pie's slices are its labels, so it draws the first series only.
 
-Theme the series with `--ag-ui-chart-1` … `--ag-ui-chart-6`, and style the block
-through the `chart-block`, `chart-title` and `chart-legend` parts.
+Theme the series with `--ag-ui-chart-1` … `--ag-ui-chart-6`, size it with
+`--ag-ui-chart-max-width`, and style the block through the `chart-block`,
+`chart-title` and `chart-legend` parts.
+
+**A chart stops at its own width, and is sized in pixels rather than scaled to
+them.** Two separate things, and a widened panel needs both.
+
+It is drawn for the width the block actually has -- one SVG unit per CSS pixel
+-- and redrawn when that width changes, so a 10px axis label is 10px in a 380px
+panel and in a 1200px one. Where the labels no longer fit, the axis draws every
+second or third rather than a smear of overlapping words. Below 220px it goes
+back to scaling, since at that size nothing fits either way.
+
+And it takes the width it needs rather than the width it is offered, capping at
+`--ag-ui-chart-max-width` (**480px**): widening the panel should no more resize
+a chart than it resizes a message. Raise the token for a bigger chart and the
+labels stay 10px -- the cap is about how much room the drawing gets, never
+about how big its type is. Height follows width inside a 160-320px band.
 
 ### Drawing something other than a chart
 

@@ -109,6 +109,11 @@ export const STYLES = `
   --_glyph-size: var(--ag-ui-glyph-size, 18px);
   --_glyph-stroke: var(--ag-ui-glyph-stroke, 1.75);
 
+  /* How wide a chart is allowed to get. A cap rather than a width: below it
+     the chart fills its column, and above it a wider panel is just a wider
+     panel. */
+  --_chart-max-width: var(--ag-ui-chart-max-width, 480px);
+
   /* Unread badge on the launcher. */
   --_badge-bg: var(--ag-ui-badge-bg, var(--_danger));
   --_badge-fg: var(--ag-ui-badge-fg, #ffffff);
@@ -497,6 +502,41 @@ export const STYLES = `
   border-bottom: 1px solid var(--_border);
   background: var(--_header-bg);
   color: var(--_header-fg);
+}
+
+/* The header is the panel's title bar: on the placements that let the widget
+   be moved it drags the whole thing, matching the launcher's own drag. The
+   selector lists those placements rather than asking JS to stamp an attribute,
+   because a cursor that appears one frame late reads as a control that only
+   sometimes exists. touch-action keeps a finger drag here moving the panel
+   instead of scrolling the page behind it. */
+:host(:not([placement])) .header,
+:host([placement=""]) .header,
+:host([placement="floating"]) .header,
+:host([placement="bottom-left"]) .header {
+  cursor: move;
+  touch-action: none;
+}
+
+/* A host that turned the drag off keeps a header that says so. */
+:host([data-launcher-drag="false"]) .header {
+  cursor: auto;
+  touch-action: auto;
+}
+
+/* :host is carried for the specificity, not the scope: the placement rules
+   above are a host selector plus a class plus an attribute, and a bare
+   .header[data-dragging] loses to them -- silently, because the drag still
+   works and only the cursor is wrong. */
+:host .header[data-dragging] {
+  cursor: grabbing;
+}
+
+/* The cursor inherits, so a control a host slots into the header would show
+   the drag cursor over something the drag deliberately ignores. Named to
+   match the controls panel_drag steps aside for. */
+.header ::slotted(:is(button, a, input, select, textarea)) {
+  cursor: pointer;
 }
 
 .header-title {
@@ -1982,11 +2022,28 @@ export const STYLES = `
  * values, and the axis furniture inherits currentColor at low opacity so it
  * reads correctly in either theme without a second palette.
  */
+/* A chart is sized like a message, not like a panel: it takes the width it
+   needs and stops, rather than stretching into whatever room the transcript
+   has. A message bubble caps at 80% for the same reason -- widening the panel
+   should not resize what is already in it. The cap is a token so a host with a
+   wide panel and a real reason can raise it; the default is the width this
+   renderer has always drawn at. Below the cap the block still fills its column,
+   which is what a narrow panel needs. */
 .chart-block {
-  align-self: stretch;
-  max-width: 100%;
+  align-self: flex-start;
+  width: 100%;
+  max-width: var(--_chart-max-width);
   margin: 6px 0;
   color: var(--_fg);
+}
+
+/* The drawing fills the block's width and carries its own height in the
+   viewBox, so it is laid out rather than magnified: block display keeps the
+   inline baseline gap from adding a stripe under every chart. */
+.chart-block svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .chart-title {
