@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A markdown table in an answer scrolled, at last.** The stylesheet has always
+  said a wide table should scroll inside its own box, and it never could:
+  `.message` set `word-break: break-word`, which is the legacy spelling of
+  "break anywhere", and breaking anywhere drops the **min-content width** of
+  every descendant to a single character. A table's column algorithm takes
+  min-content as an input, so the table always fitted `max-width: 100%`, the
+  `overflow-x: auto` beneath it never had anything to scroll, and the columns
+  absorbed the pressure by rendering one letter per line instead. A seven-column
+  header row came out **162px tall**.
+
+  It is now `overflow-wrap: break-word`, which breaks a word only when it would
+  otherwise overflow its line and leaves min-content alone. Same protection
+  against a long unbroken token blowing out a bubble -- which is all the
+  declaration was ever for -- and the table is free to be wider than the panel
+  and scroll. Measured at the default 380px panel: the header row drops from
+  162px to 50px, the table from 524px to 189px, the narrowest column from 36px
+  to 63px, and `scrollWidth` finally exceeds `clientWidth` (563 against 266).
+
+  Reported against 0.32.0 and present at least as far back as 0.27.0, so this is
+  not a recent regression. Thanks to the TrustPoint team for the measurements
+  and the revert control, which is what pinned the cause to one declaration.
+
+  The three other `word-break: break-word` declarations are untouched: they are
+  on `.thoughts-body`, `.tool-call-result` and `.confirm-args`, all of which are
+  filled with `textContent` and so cannot contain a table.
+
+
 ## [0.33.0] — 2026-09-02
 
 ### Added
