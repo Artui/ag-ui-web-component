@@ -14,13 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not, so a chat sitting over the thing it was being asked about could only be
   moved by collapsing it first.
 
-  It is one position, not two: dragging the panel takes the launcher with it, so
-  collapsing afterwards leaves the launcher on the corner the panel was dragged
-  to and the next expand opens there. Which corner the panel is pinned by is
-  re-decided as it moves -- the next expand and the resize grips both read it --
-  and re-deciding it never moves the panel, because the corner only says which
-  edges the inset is written from. Stored per tab like the launcher's own
-  position, held inside the same viewport margin, and off under
+  It is one widget being moved, not two things being placed: **the launcher
+  travels the same distance the panel does**, so a panel dragged 100px left
+  leaves the bubble it collapses into 100px left of where it was. The distance
+  is the panel's own rather than the pointer's -- a panel held against the
+  viewport's margin stops, and the bubble stops with it -- and the bubble is
+  then held on screen in its own right.
+
+  A stated position is also kept rather than re-derived, which is the whole
+  difference between the two drags. A launcher drag says where the bubble goes
+  and leaves the panel to open into whatever room the viewport has, re-decided
+  on every expand and every window resize; a header drag states the panel's own
+  position, so it survives collapsing, reopening and reloading, and dragging the
+  bubble again hands the decision back. Which corner the panel is pinned by is
+  re-picked when the drag ends, from where the bubble ended up, so the next
+  expand still opens into clear space -- and re-picking it moves nothing, since
+  both insets are written from positions that are already decided. Stored per
+  tab like the launcher's own position, and off under
   `data-launcher-drag="false"` along with the launcher drag.
 
   A press that starts on a control in the header stays that control's, including

@@ -381,6 +381,14 @@ export const ICON_FILE_TEXT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidde
 export const CHART_ACTIVITY_TYPE = "chart";
 
 /**
+ * The gutter a floating panel keeps from the viewport edge.
+ *
+ * It matches the default `--ag-ui-inset`, so an undragged widget resolves to
+ * exactly the placement it already had. Changing it moves every clamped panel.
+ */
+export const EDGE_MARGIN = 24;
+
+/**
  * How long a screen-reader status stays in the announcer before it is emptied.
  *
  * Long enough for a reader to pick the change up, short enough that the region

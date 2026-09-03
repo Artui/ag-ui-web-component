@@ -151,7 +151,30 @@ describe("dragging the panel by its header", () => {
     expect(el.getBoundingClientRect().left).toBeCloseTo(before.left, 0);
   });
 
-  it("collapses to a launcher on the corner the panel was dragged to", async () => {
+  it("carries the launcher exactly as far as the panel went", async () => {
+    const el = mount();
+    await settle(50);
+    const launcher = el.shadowRoot?.querySelector(".launcher") as HTMLElement;
+    // The centre, because the launcher is scaled behind an open panel and a
+    // centred scale leaves only the centre where it is.
+    const centre = (): { x: number; y: number } => {
+      const box = launcher.getBoundingClientRect();
+      return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    };
+    const before = centre();
+
+    await dragBy(el, -300, -100);
+
+    // The bubble a collapsed widget shrinks to is where the panel was, so a
+    // panel dragged 300 left and 100 up leaves it 300 left and 100 up. Glued
+    // to the panel's pinned corner it leapt across the panel instead, whenever
+    // the drag re-picked that corner.
+    const after = centre();
+    expect(after.x - before.x).toBeCloseTo(-300, 0);
+    expect(after.y - before.y).toBeCloseTo(-100, 0);
+  });
+
+  it("collapses to where the launcher was carried", async () => {
     const el = mount();
     await settle(50);
 
@@ -160,17 +183,30 @@ describe("dragging the panel by its header", () => {
     el.setCollapsed(true);
     await settle();
 
-    // Dragged up and to the left, the panel now has its room down and to the
-    // right, so it is pinned by its top-left corner -- and that is the corner
-    // the launcher has to be on, or the next expand would re-derive the old
-    // position from it and undo the drag.
-    expect(el.getAttribute("data-expand-corner")).toBe("top-left");
     const launcher = el.shadowRoot?.querySelector(".launcher") as HTMLElement;
     const box = launcher.getBoundingClientRect();
-    // The size from the layout metric and the position from the rect's centre:
-    // the launcher is scaled in several states and a centred scale leaves only
-    // the centre where it is.
-    expect(box.left + box.width / 2).toBeCloseTo(panel.left + launcher.offsetWidth / 2, 0);
-    expect(box.top + box.height / 2).toBeCloseTo(panel.top + launcher.offsetHeight / 2, 0);
+    // Still on the corner of the panel it was resting on, now that the panel
+    // has moved: bottom-right, at full size once the widget is collapsed.
+    expect(box.right).toBeCloseTo(panel.right, 0);
+    expect(box.bottom).toBeCloseTo(panel.bottom, 0);
+  });
+
+  it("reopens where it was dragged to", async () => {
+    const el = mount();
+    await settle(50);
+
+    await dragBy(el, -300, -100);
+    const moved = el.getBoundingClientRect();
+    el.setCollapsed(true);
+    await settle();
+    el.setCollapsed(false);
+    await settle();
+
+    // The expand re-derives the widget's layout, and a panel whose position
+    // the user stated has to survive that -- deriving it from the launcher
+    // would move it by the width of the panel.
+    const reopened = el.getBoundingClientRect();
+    expect(reopened.left).toBeCloseTo(moved.left, 0);
+    expect(reopened.top).toBeCloseTo(moved.top, 0);
   });
 });

@@ -999,16 +999,27 @@ against a placement. Switching to a placement that places itself hands both back
 
 #### Moving the panel
 
-An open panel moves by its **header**, the way a window moves by its title bar, and it is the
-same position: drag the panel and the launcher goes with it, so collapsing afterwards leaves the
-launcher on the corner the panel was dragged to and the next expand opens there. It is stored the
-same way, per tab, and `data-launcher-drag="false"` turns off both halves.
+An open panel moves by its **header**, the way a window moves by its title bar.
+
+**The launcher travels the same distance.** Drag the panel 100px left and the bubble it collapses
+into is 100px left of where it was — it is one widget being moved, not two things being placed.
+The distance is the panel's own, so a panel held against the viewport's margin stops and the
+bubble stops with it, and the bubble is then held on screen in its own right.
+
+**A position you state is kept, not re-derived.** That is the difference between the two drags: a
+launcher drag says where the bubble goes and lets the panel open into whatever room the viewport
+has, which is re-decided on every expand and every window resize; a header drag states the
+panel's own position, so it survives collapsing, reopening and reloading. Dragging the bubble
+again hands the decision back. Both are stored per tab, and `data-launcher-drag="false"` turns
+off both.
+
+Which corner the panel is *pinned* by is re-picked when the drag ends, from where the bubble has
+ended up, so the next expand still opens into clear space. Re-picking it moves nothing: the
+corner only says which edges the two insets are written from, and both are written from positions
+that are already decided.
 
 The controls in the header keep their own presses — a drag started on a button, a link or a field
-never begins — and the panel is held inside the viewport's margin exactly as a dragged launcher
-is. Which corner the panel is *pinned* by is re-decided as it moves, since that is what the next
-expand and the resize grips read, but re-deciding it never moves the panel: the corner only says
-which edges the inset is written from.
+never begins, including one you slot in.
 
 There is no keyboard shortcut on the header, deliberately. A header is not a control, and making
 it focusable would put a tab stop with no role ahead of the controls a keyboard user came for —

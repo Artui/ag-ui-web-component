@@ -1,3 +1,7 @@
+import { EDGE_MARGIN } from "../constants.js";
+import { clampPanel } from "./clamp_panel.js";
+import { placeWidget } from "./place_widget.js";
+
 /** A box in viewport coordinates. */
 export interface LauncherBox {
   readonly left: number;
@@ -32,13 +36,6 @@ export interface LauncherPlacement {
   /** An `inset` shorthand for the launcher, relative to the host box. */
   readonly launcherInset: string;
 }
-
-/**
- * The gutter a panel keeps from the viewport edge, matching the default
- * `--ag-ui-inset` so an undragged widget resolves to exactly the placement it
- * already had. Changing this moves every clamped panel.
- */
-const EDGE_MARGIN = 24;
 
 /**
  * Decide where a panel should open from a launcher the user has dragged.
@@ -88,56 +85,23 @@ export function launcherPlacement(
     y: roomRunningDown >= roomRunningUp ? "top" : "bottom",
   };
 
-  // The box the panel wants, then the box it can actually have. Clamping the
-  // near edge covers the far edge too: the panel is a fixed size here, and a
-  // panel too large for the viewport is held against the near margin and left
-  // to the max-width and max-height rules rather than centred by force.
+  // The box the panel wants, then the box it can actually have. The launcher
+  // is not moved by that clamp -- it is the fixed point of this gesture, so its
+  // own inset carries the difference and it can end up outside the host box.
   const wantedLeft =
     corner.x === "left" ? launcher.left : launcher.left + launcher.width - panel.width;
   const wantedTop =
     corner.y === "top" ? launcher.top : launcher.top + launcher.height - panel.height;
-  const hostLeft = clamp(wantedLeft, margin, viewport.width - margin - panel.width);
-  const hostTop = clamp(wantedTop, margin, viewport.height - margin - panel.height);
+  const host = clampPanel(
+    {
+      left: wantedLeft,
+      top: wantedTop,
+      right: wantedLeft + panel.width,
+      bottom: wantedTop + panel.height,
+    },
+    viewport,
+    margin,
+  );
 
-  const hostRight = hostLeft + panel.width;
-  const hostBottom = hostTop + panel.height;
-
-  return {
-    corner,
-    hostInset: inset({
-      top: corner.y === "top" ? hostTop : null,
-      right: corner.x === "right" ? viewport.width - hostRight : null,
-      bottom: corner.y === "bottom" ? viewport.height - hostBottom : null,
-      left: corner.x === "left" ? hostLeft : null,
-    }),
-    // Measured from the host box's pinned corner to the launcher's matching
-    // corner, so the launcher lands exactly where it was dropped.
-    launcherInset: inset({
-      top: corner.y === "top" ? launcher.top - hostTop : null,
-      right: corner.x === "right" ? hostRight - (launcher.left + launcher.width) : null,
-      bottom: corner.y === "bottom" ? hostBottom - (launcher.top + launcher.height) : null,
-      left: corner.x === "left" ? launcher.left - hostLeft : null,
-    }),
-  };
-}
-
-/**
- * Constrain a value, with the lower bound winning a contradiction. `Math.min`
- * first would put a panel wider than the viewport off the left edge instead of
- * against the near margin.
- */
-function clamp(value: number, low: number, high: number): number {
-  return Math.max(low, Math.min(value, high));
-}
-
-/** An `inset` shorthand; a null side is `auto`, so the opposite one pins it. */
-function inset(sides: {
-  top: number | null;
-  right: number | null;
-  bottom: number | null;
-  left: number | null;
-}): string {
-  const side = (value: number | null): string =>
-    value === null ? "auto" : `${Math.round(value)}px`;
-  return `${side(sides.top)} ${side(sides.right)} ${side(sides.bottom)} ${side(sides.left)}`;
+  return { corner, ...placeWidget(host, launcher, corner, viewport) };
 }

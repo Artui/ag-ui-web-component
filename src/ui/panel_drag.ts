@@ -10,10 +10,15 @@ export interface PanelDragOptions {
   readonly enabled: () => boolean;
   /** The panel's current box, in viewport coordinates. */
   readonly rect: () => PanelRect;
-  /** Put the panel at this box. Called per pointer move. */
-  readonly apply: (box: PanelRect) => void;
+  /**
+   * Put the panel at this box. Called per pointer move, with the box the press
+   * started on -- the whole gesture is one translation of that box, and a host
+   * with anything else to move alongside the panel needs the same distance
+   * rather than a distance measured from wherever the last move left things.
+   */
+  readonly apply: (box: PanelRect, from: PanelRect) => void;
   /** Called once per completed move, for persistence. Never per pointer move. */
-  readonly commit: (box: PanelRect) => void;
+  readonly commit: (box: PanelRect, from: PanelRect) => void;
 }
 
 /**
@@ -88,7 +93,7 @@ export function enablePanelDrag(handle: HTMLElement, options: PanelDragOptions):
       }
       dragging = true;
       handle.setAttribute("data-dragging", "true");
-      options.apply(boxAt(move.clientX, move.clientY));
+      options.apply(boxAt(move.clientX, move.clientY), start);
     };
 
     const onUp = (up: PointerEvent): void => {
@@ -98,7 +103,7 @@ export function enablePanelDrag(handle: HTMLElement, options: PanelDragOptions):
         return;
       }
       handle.removeAttribute("data-dragging");
-      options.commit(boxAt(up.clientX, up.clientY));
+      options.commit(boxAt(up.clientX, up.clientY), start);
     };
 
     // The press is the panel's from here: without this the browser starts
