@@ -183,7 +183,7 @@ another origin, add `credentials="include"` too; see
 | `data-icon-url` | — | Header (and launcher) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
 | `data-launcher-icon-url` | — | Icon image URL for the collapsed launcher only, when it should differ from the header's. Falls back to `data-icon-url`; a slotted `slot="launcher"` wins over both. |
 | `data-unread-badge` | — | **On by default.** `="false"` hides the launcher's unread badge; the count and the `ag-ui-unread` event keep running. See [Collapsing to the launcher](#collapsing-to-the-launcher). |
-| `data-launcher-drag` | — | **On by default.** `="false"` leaves the collapsed launcher wherever your CSS puts it. Otherwise it can be dragged anywhere on screen and the panel opens into the clearest space. See [Moving the launcher](#moving-the-launcher). |
+| `data-launcher-drag` | — | **On by default.** `="false"` leaves the widget wherever your CSS puts it. Otherwise the collapsed launcher can be dragged anywhere on screen (the panel opens into the clearest space) and the open panel can be dragged by its header. See [Moving the launcher](#moving-the-launcher) and [Moving the panel](#moving-the-panel). |
 | `data-quote-selection` | — | **On by default.** `="false"` stops the transcript offering to quote a selection. `quote()` keeps working either way. See [Quoting a selection](#quoting-a-selection). |
 | `data-message-actions` | — | **All on by default.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry"`). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
@@ -997,6 +997,23 @@ against a placement. Switching to a placement that places itself hands both back
 > property and your CSS decides, exactly as before. The geometry is built so that feeding it the
 > resting position reproduces the default `auto 24px 24px auto` unchanged.
 
+#### Moving the panel
+
+An open panel moves by its **header**, the way a window moves by its title bar, and it is the
+same position: drag the panel and the launcher goes with it, so collapsing afterwards leaves the
+launcher on the corner the panel was dragged to and the next expand opens there. It is stored the
+same way, per tab, and `data-launcher-drag="false"` turns off both halves.
+
+The controls in the header keep their own presses — a drag started on a button, a link or a field
+never begins — and the panel is held inside the viewport's margin exactly as a dragged launcher
+is. Which corner the panel is *pinned* by is re-decided as it moves, since that is what the next
+expand and the resize grips read, but re-deciding it never moves the panel: the corner only says
+which edges the inset is written from.
+
+There is no keyboard shortcut on the header, deliberately. A header is not a control, and making
+it focusable would put a tab stop with no role ahead of the controls a keyboard user came for —
+while arrow keys on the collapsed launcher already move the widget, panel included.
+
 ```js
 chat.unread; // 2
 
@@ -1076,6 +1093,15 @@ A pie's slices are its labels, so it draws the first series only.
 
 Theme the series with `--ag-ui-chart-1` … `--ag-ui-chart-6`, and style the block
 through the `chart-block`, `chart-title` and `chart-legend` parts.
+
+**A chart is sized in pixels, not scaled to them.** It is drawn for the width
+the block actually has -- one SVG unit per CSS pixel -- and redrawn when that
+width changes, so a 10px axis label is 10px in a 380px panel and in a 1200px
+one. Height follows width inside a band (160-320px), which is what stops a wide
+panel from turning a chart into a banner. Where the labels no longer fit the
+axis draws every second or third one rather than a smear of overlapping words.
+Below 220px it goes back to scaling, since at that size nothing fits either
+way.
 
 ### Drawing something other than a chart
 

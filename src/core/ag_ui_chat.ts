@@ -61,6 +61,7 @@ import { clampLauncher } from "../ui/clamp_launcher.js";
 import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
 import { copyPayload } from "../ui/copy_payload.js";
 import { enableLauncherDrag } from "../ui/launcher_drag.js";
+import { launcherForPanel } from "../ui/launcher_for_panel.js";
 import {
   type ExpandCorner,
   type Extent,
@@ -73,6 +74,7 @@ import {
   messageActionButton,
 } from "../ui/message_actions.js";
 import { attachQuoteOffer, type PageQuoteOffer } from "../ui/page_quote_offer.js";
+import { enablePanelDrag } from "../ui/panel_drag.js";
 import { prettifyToolName } from "../ui/prettify_tool_name.js";
 import {
   type QuestionRenderer,
@@ -2471,6 +2473,38 @@ export class AgUiChat extends HTMLElement {
     this.#storeLauncherPosition();
   }
 
+  /**
+   * Move the panel live during a header drag, without persisting.
+   *
+   * Routed through the launcher's own placement rather than writing the inset
+   * directly, and that is what keeps the gesture honest. The placement is the
+   * one thing that knows the panel's position, the launcher's position and the
+   * corner they share, so handing it the launcher position this box implies
+   * settles all three at once -- including the viewport clamp, which a second
+   * copy here would have to match exactly or the panel would jump the moment
+   * the drag ended.
+   *
+   * The corner it re-picks mid-drag moves nothing: {@link launcherForPanel}
+   * returns the position the placement agrees with, so the box that comes back
+   * out is the box that went in, expressed from whichever edges now have the
+   * clear space to open into.
+   */
+  #movePanel(box: PanelRect): void {
+    this.#applyLauncherPlacement(
+      launcherForPanel(
+        box,
+        { width: this.#launcher.offsetWidth, height: this.#launcher.offsetHeight },
+        this.#viewport(),
+      ),
+    );
+  }
+
+  /** Finish a header drag: keep the position and remember it, per tab. */
+  #commitPanel(box: PanelRect): void {
+    this.#movePanel(box);
+    this.#storeLauncherPosition();
+  }
+
   /** Write the current launcher position, if this element owns one. */
   #storeLauncherPosition(): void {
     const position = this.#launcherPos;
@@ -3288,6 +3322,16 @@ export class AgUiChat extends HTMLElement {
     }
     controls.append(collapse);
     header.append(title, headerActions, controls);
+
+    // A panel is a window and a header is its title bar. Only while open: a
+    // collapsed widget has no header on screen, and the launcher is the handle
+    // then.
+    enablePanelDrag(header, {
+      enabled: () => !this.collapsed && this.#launcherDraggable(),
+      rect: () => this.getBoundingClientRect(),
+      apply: (box) => this.#movePanel(box),
+      commit: (box) => this.#commitPanel(box),
+    });
 
     this.#messages.className = "messages";
     this.#messages.setAttribute("part", "messages");

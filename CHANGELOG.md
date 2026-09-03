@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The open panel moves by its header**, the way a window moves by its title
+  bar. The collapsed launcher has been draggable since 0.33.0 and the panel was
+  not, so a chat sitting over the thing it was being asked about could only be
+  moved by collapsing it first.
+
+  It is one position, not two: dragging the panel takes the launcher with it, so
+  collapsing afterwards leaves the launcher on the corner the panel was dragged
+  to and the next expand opens there. Which corner the panel is pinned by is
+  re-decided as it moves -- the next expand and the resize grips both read it --
+  and re-deciding it never moves the panel, because the corner only says which
+  edges the inset is written from. Stored per tab like the launcher's own
+  position, held inside the same viewport margin, and off under
+  `data-launcher-drag="false"` along with the launcher drag.
+
+  A press that starts on a control in the header stays that control's, including
+  one a host slotted in. There is no keyboard shortcut on the header on purpose:
+  a header is not a control, and making it focusable would put a tab stop with
+  no role ahead of the controls a keyboard user came for, while arrow keys on
+  the collapsed launcher already move the widget, panel included.
+
+### Fixed
+
+- **A chart is drawn at the size it is shown at, rather than magnified to it.**
+  The renderer drew into a fixed 480x220 viewBox and let `width: 100%` scale the
+  result, which is a picture the browser enlarges: every stroke, every label and
+  the whole frame grew with the panel. Measured in a 1100px panel, the axis
+  labels came out **3.25x** the size they do at the default width and the chart
+  stood **489px** tall, pushing the answer it belonged to off the screen. Reported against a widened panel, where it is at
+  its worst, but the same scaling ran in reverse at the narrow end.
+
+  Geometry is now computed for the width the block actually has, one SVG unit
+  per CSS pixel, and recomputed when that width changes -- so the same label is
+  10px at every panel size and the chart still fills the width it is given.
+  Height follows width inside a 160-320px band; the default 480px width draws
+  exactly the frame it always did. Where the axis labels no longer fit, every
+  second or third is drawn rather than a smear of overlapping words, which is a
+  new answer to a collision that was there at every size before. Below 220px the
+  drawing scales down as it used to, since at that width nothing fits either
+  way.
+
 ## [0.33.1] — 2026-09-03
 
 ### Fixed

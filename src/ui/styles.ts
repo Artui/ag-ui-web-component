@@ -499,6 +499,41 @@ export const STYLES = `
   color: var(--_header-fg);
 }
 
+/* The header is the panel's title bar: on the placements that let the widget
+   be moved it drags the whole thing, matching the launcher's own drag. The
+   selector lists those placements rather than asking JS to stamp an attribute,
+   because a cursor that appears one frame late reads as a control that only
+   sometimes exists. touch-action keeps a finger drag here moving the panel
+   instead of scrolling the page behind it. */
+:host(:not([placement])) .header,
+:host([placement=""]) .header,
+:host([placement="floating"]) .header,
+:host([placement="bottom-left"]) .header {
+  cursor: move;
+  touch-action: none;
+}
+
+/* A host that turned the drag off keeps a header that says so. */
+:host([data-launcher-drag="false"]) .header {
+  cursor: auto;
+  touch-action: auto;
+}
+
+/* :host is carried for the specificity, not the scope: the placement rules
+   above are a host selector plus a class plus an attribute, and a bare
+   .header[data-dragging] loses to them -- silently, because the drag still
+   works and only the cursor is wrong. */
+:host .header[data-dragging] {
+  cursor: grabbing;
+}
+
+/* The cursor inherits, so a control a host slots into the header would show
+   the drag cursor over something the drag deliberately ignores. Named to
+   match the controls panel_drag steps aside for. */
+.header ::slotted(:is(button, a, input, select, textarea)) {
+  cursor: pointer;
+}
+
 .header-title {
   flex: 1;
   min-width: 0;
@@ -1987,6 +2022,15 @@ export const STYLES = `
   max-width: 100%;
   margin: 6px 0;
   color: var(--_fg);
+}
+
+/* The drawing fills the block's width and carries its own height in the
+   viewBox, so it is laid out rather than magnified: block display keeps the
+   inline baseline gap from adding a stripe under every chart. */
+.chart-block svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .chart-title {

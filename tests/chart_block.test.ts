@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ChartSpec, renderChart, seriesColor } from "../src/ui/chart_block.js";
 
 function spec(over: Partial<ChartSpec> = {}): ChartSpec {
@@ -238,6 +238,151 @@ describe("renderChart is exported, so it must survive input the validator would 
       for (const attr of node.attributes) {
         expect(attr.value).not.toContain("NaN");
       }
+    }
+  });
+});
+
+describe("a chart is sized in pixels, not scaled to them", () => {
+  /**
+   * Stand in for the layout happy-dom does not do: hand the block a width and
+   * fire the observation the browser would have delivered.
+   */
+  function measure(block: HTMLDivElement | null, width: number): void {
+    if (block === null) {
+      throw new Error("expected a chart block");
+    }
+    Object.defineProperty(block, "clientWidth", { value: width, configurable: true });
+    for (const notify of observations) {
+      notify();
+    }
+  }
+
+  const observations: Array<() => void> = [];
+
+  beforeEach(() => {
+    observations.length = 0;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          observations.push(callback);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("draws one user unit per CSS pixel of the width it was given", () => {
+    // The whole complaint this answers: a viewBox that does not track the
+    // block's width is a picture the browser magnifies, so a 10px label
+    // renders at 25px in a wide panel and the chart eats the transcript.
+    const block = renderChart(spec());
+
+    measure(block, 960);
+
+    expect(svgOf(block)?.getAttribute("viewBox")).toBe("0 0 960 320");
+  });
+
+  it("keeps the height inside its band at both extremes", () => {
+    const wide = renderChart(spec());
+    measure(wide, 2400);
+    expect(svgOf(wide)?.getAttribute("viewBox")).toBe("0 0 2400 320");
+
+    const narrow = renderChart(spec());
+    measure(narrow, 240);
+    expect(svgOf(narrow)?.getAttribute("viewBox")).toBe("0 0 240 160");
+  });
+
+  it("draws the frame it always drew until it has been measured", () => {
+    // A caller that never puts the block in a document -- and every existing
+    // one, on the frame before the observer fires.
+    expect(svgOf(renderChart(spec()))?.getAttribute("viewBox")).toBe("0 0 480 220");
+  });
+
+  it("falls back to scaling below the width worth computing", () => {
+    const block = renderChart(spec());
+
+    measure(block, 0);
+
+    // Not a zero-wide frame, and not a division by zero: the SVG still fills
+    // its block, so this is the width the drawing stops shrinking at.
+    expect(svgOf(block)?.getAttribute("viewBox")).toBe("0 0 220 160");
+  });
+
+  it("leaves the drawing alone when the width has not moved", () => {
+    const block = renderChart(spec());
+    measure(block, 960);
+    const drawn = svgOf(block);
+
+    measure(block, 963);
+
+    // Rounded to the same step, so the same nodes are still on screen: a
+    // redraw per pixel of a panel drag is pure churn.
+    expect(svgOf(block)).toBe(drawn);
+  });
+
+  it("redraws when the width really changes", () => {
+    const block = renderChart(spec());
+    measure(block, 960);
+    const drawn = svgOf(block);
+
+    measure(block, 600);
+
+    expect(svgOf(block)).not.toBe(drawn);
+    expect(svgOf(block)?.getAttribute("viewBox")).toBe("0 0 600 275");
+  });
+
+  it("keeps the legend under the chart across a redraw", () => {
+    const block = renderChart(
+      spec({
+        series: [
+          { label: "one", points: [1, 2] },
+          { label: "two", points: [3, 4] },
+        ],
+      }),
+    );
+
+    measure(block, 960);
+
+    // Replaced in place rather than appended, or the legend would climb above
+    // the chart on the first resize.
+    expect([...(block?.children ?? [])].map((child) => child.tagName.toLowerCase())).toEqual([
+      "svg",
+      "div",
+    ]);
+  });
+
+  it("thins axis labels that cannot fit rather than smearing them", () => {
+    const labels = ["January", "February", "March", "April", "May", "June"];
+    const block = renderChart(
+      spec({ labels, series: [{ label: "s", points: [1, 2, 3, 4, 5, 6] }] }),
+    );
+
+    measure(block, 320);
+
+    // Two axis-value labels plus whichever month labels survived; at 46px a
+    // band, "February" does not, so they cannot all be there.
+    const drawn = [...(svgOf(block)?.querySelectorAll("text") ?? [])].map((t) => t.textContent);
+    expect(drawn).toContain("January");
+    expect(drawn).not.toContain("February");
+  });
+
+  it("draws every label once they fit", () => {
+    const labels = ["January", "February", "March", "April", "May", "June"];
+    const block = renderChart(
+      spec({ labels, series: [{ label: "s", points: [1, 2, 3, 4, 5, 6] }] }),
+    );
+
+    measure(block, 1200);
+
+    const drawn = [...(svgOf(block)?.querySelectorAll("text") ?? [])].map((t) => t.textContent);
+    for (const label of labels) {
+      expect(drawn).toContain(label);
     }
   });
 });
