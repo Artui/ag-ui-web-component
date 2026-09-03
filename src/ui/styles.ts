@@ -808,7 +808,22 @@ export const STYLES = `
   border-radius: var(--_msg-radius);
   line-height: 1.4;
   white-space: pre-wrap;
-  word-break: break-word;
+  /* overflow-wrap, not word-break, and the difference is the whole reason a
+     markdown table used to be unreadable.
+
+     Both stop one long unbroken token blowing out the bubble, which is all this
+     is for. But word-break: break-word is the legacy spelling of "break
+     anywhere", and breaking anywhere drops the *min-content* width of every
+     descendant to one character. A table's column algorithm takes min-content
+     as an input, so the table always fitted max-width: 100%, the overflow-x:
+     auto below it never had anything to scroll, and the columns absorbed the
+     pressure by rendering one letter per line instead. A seven-column header
+     came out 162px tall.
+
+     overflow-wrap: break-word breaks a word only when it would otherwise
+     overflow its line, and leaves min-content alone -- so the bubble is still
+     protected and the table is free to be wider than the panel and scroll. */
+  overflow-wrap: break-word;
 }
 
 /* ── Incoming-text animations (data-text-animation) ─────────────────────── */
