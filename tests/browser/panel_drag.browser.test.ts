@@ -56,6 +56,10 @@ beforeEach(() => {
   // shares one -- so without this each drag would start where the last one
   // finished and the panel would walk into the margin.
   sessionStorage.clear();
+  // Layout preferences are durable on purpose, so the per-tab clear no longer
+  // reaches all of them. Without this a dragged position leaks into the next
+  // test, which reads as a drag that travelled the wrong distance.
+  localStorage.clear();
 });
 
 afterEach(() => {

@@ -70,6 +70,10 @@ describe("collapse and slide-over motion (real browser)", () => {
   afterEach(() => {
     document.body.innerHTML = "";
     sessionStorage.clear();
+    // Layout preferences are durable on purpose, so the per-tab clear no longer
+    // reaches all of them. Without this a dragged position leaks into the next
+    // test, which reads as a drag that travelled the wrong distance.
+    localStorage.clear();
   });
 
   it("morphs the panel out and the launcher in when the widget collapses", () => {

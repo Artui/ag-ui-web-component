@@ -182,6 +182,34 @@ gh pr create
 3. **GitHub Environment** — create an `npm` environment under `Settings → Environments` (no
    secrets needed; OIDC handles auth).
 
+## happy-dom implements no `localStorage` at all
+
+`sessionStorage` under happy-dom is complete. `localStorage` beside it is an
+object whose `getItem`, `setItem`, `removeItem` and `clear` are every one
+`undefined` -- not a partial implementation, and not an exception you can catch
+by feature-detecting the object itself. Verified 2026-09-04 by probing both in
+the happy-dom project.
+
+Two consequences, and the second is the one that bites:
+
+- **Any code that writes a durable preference must tolerate the store being
+  absent**, because the whole API is missing rather than throwing on quota.
+  Guard the call, not the object.
+- **No happy-dom test can assert durable persistence.** A test that seeds
+  `localStorage` and expects it back gets `undefined is not a function` at best
+  and a vacuous pass at worst, and the write it was checking went nowhere. Those
+  assertions belong in the `chromium` project, for the same reason the
+  sanitisation ones do.
+
+The flip side is useful: happy-dom is an accurate stand-in for a browser in a
+privacy mode that denies the durable store, so the degraded path gets exercised
+by the bulk of the suite for free.
+
+Note also that the Chromium project shares one page context across a file, so a
+durable write outlives the test that made it. Anything clearing `sessionStorage`
+between tests has to clear `localStorage` too, or a stored position leaks into
+the next test and reads as a drag that travelled the wrong distance.
+
 ## Sanitisation is tested in a real browser, not happy-dom
 
 `vitest.config.ts` defines two projects. **happy-dom** runs the bulk of the

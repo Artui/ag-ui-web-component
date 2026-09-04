@@ -183,6 +183,10 @@ describe("a delegation, from recorded bytes (real browser)", () => {
   beforeEach(() => {
     document.body.replaceChildren();
     sessionStorage.clear();
+    // Layout preferences are durable on purpose, so the per-tab clear no longer
+    // reaches all of them. Without this a dragged position leaks into the next
+    // test, which reads as a drag that travelled the wrong distance.
+    localStorage.clear();
   });
 
   it("draws one delegation row per delegate_task card", async () => {

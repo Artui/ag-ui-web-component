@@ -223,8 +223,8 @@ $("cfg-ping").addEventListener("click", () => {
 $("cfg-reset-size").addEventListener("click", () => {
   chat.style.removeProperty("--ag-ui-width");
   chat.style.removeProperty("--ag-ui-height");
-  sessionStorage.removeItem("ag-ui-chat:size:/agent/");
-  sessionStorage.removeItem("ag-ui-chat:size");
+  localStorage.removeItem("ag-ui-chat:size:/agent/");
+  localStorage.removeItem("ag-ui-chat:size");
 });
 
 // Extend the transcript's select-then-quote gesture to the whole page, so the

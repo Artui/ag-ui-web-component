@@ -1550,7 +1550,7 @@ export class AgUiChat extends HTMLElement {
     // Restore a theme the built-in toggle persisted last visit (opt-in only, so
     // it never overrides a host that drives `theme` itself).
     if (this.getAttribute("data-theme-toggle") !== null) {
-      const saved = this.#readScopedItem(THEME_KEY);
+      const saved = this.#readPreference(THEME_KEY);
       if (saved !== null) {
         this.setAttribute("theme", saved);
       }
@@ -2284,7 +2284,7 @@ export class AgUiChat extends HTMLElement {
   toggleTheme(): void {
     const next = this.getAttribute("theme") === "dark" ? "light" : "dark";
     this.setAttribute("theme", next);
-    writeStoredItem(this.#storageKey(THEME_KEY), next);
+    this.#writePreference(THEME_KEY, next);
     this.#syncThemeGlyph();
   }
 
@@ -2670,8 +2670,8 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     const panel = this.#panelPos;
-    writeStoredItem(
-      this.#storageKey(LAUNCHER_KEY),
+    this.#writePreference(
+      LAUNCHER_KEY,
       JSON.stringify(panel === null ? position : { ...position, panel }),
     );
   }
@@ -2709,7 +2709,7 @@ export class AgUiChat extends HTMLElement {
     readonly top: number;
     readonly panel?: { readonly left: number; readonly top: number };
   } | null {
-    const raw = this.#readScopedItem(LAUNCHER_KEY);
+    const raw = this.#readPreference(LAUNCHER_KEY);
     if (raw === null) {
       return null;
     }
@@ -2836,12 +2836,12 @@ export class AgUiChat extends HTMLElement {
   /** Persist a dragged size per tab, alongside the collapsed/theme preferences. */
   #persistSize(size: ResizeSize): void {
     const stored = { ...this.#readSize(), ...size };
-    writeStoredItem(this.#storageKey(SIZE_KEY), JSON.stringify(stored));
+    this.#writePreference(SIZE_KEY, JSON.stringify(stored));
   }
 
   /** The persisted size for this instance, or an empty record. */
   #readSize(): ResizeSize {
-    const raw = this.#readScopedItem(SIZE_KEY);
+    const raw = this.#readPreference(SIZE_KEY);
     if (raw === null) {
       return {};
     }
@@ -2995,6 +2995,61 @@ export class AgUiChat extends HTMLElement {
       return scoped;
     }
     return sessionStorage.getItem(base);
+  }
+
+  /**
+   * Read a layout preference: where the widget sits, how big it is, which
+   * theme it wears.
+   *
+   * These live in `localStorage` rather than beside the transcript, because a
+   * layout preference is not a conversation. The transcript is deliberately
+   * per-tab -- two tabs are two conversations, and closing the tab ends it --
+   * and everything else inherited that scoping without earning it. A user who
+   * dragged the panel clear of their own UI did it again in the next tab, and
+   * again after every restart.
+   *
+   * Whether the widget is *currently open* stays per-tab with the transcript.
+   * It is a statement about this tab rather than a preference: carrying it
+   * across would pop the panel open on every new tab because it was opened
+   * once, somewhere else.
+   *
+   * Falls back to the session value it used to be written to, so an existing
+   * position survives the upgrade rather than resetting once.
+   */
+  #readPreference(base: string): string | null {
+    try {
+      const stored = localStorage.getItem(this.#storageKey(base));
+      if (stored !== null) {
+        return stored;
+      }
+    } catch {
+      // Fall through to the per-tab copy below.
+    }
+    return this.#readScopedItem(base);
+  }
+
+  /**
+   * Persist a layout preference as durably as this browser allows: to
+   * `localStorage` so it outlives the tab, and to the per-tab store as well.
+   *
+   * The second write is not redundancy for its own sake. A privacy mode can
+   * deny `localStorage` while allowing `sessionStorage`, and losing the
+   * durable copy should degrade to the per-tab behaviour this replaced rather
+   * than to no persistence at all. The read above prefers the durable copy, so
+   * a tab that has both cannot be shadowed by its own stale one.
+   *
+   * Neither write is worth an exception. Losing where the panel sat is not
+   * worth a warning either -- unlike the transcript, which says so once,
+   * because losing that loses the conversation on the next reload.
+   */
+  #writePreference(base: string, value: string): void {
+    const key = this.#storageKey(base);
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Quota, or a store that denies writes.
+    }
+    writeStoredItem(key, value);
   }
 
   /** Reflect the current theme on the toggle: show the destination's glyph. */

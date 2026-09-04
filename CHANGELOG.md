@@ -31,6 +31,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The playground's own config bar was the first consumer: it replaced
   twenty-five lines with one declaration.
 
+### Changed
+
+- **Where the widget sits, how big it is and which theme it wears now outlive
+  the tab.** These went to `sessionStorage` beside the transcript and inherited
+  its lifetime without earning it: the transcript is per-tab on purpose -- two
+  tabs are two conversations -- while a user who dragged the panel clear of
+  their own interface did it again in the next tab, and again after every
+  restart.
+
+  They are written to `localStorage` and to the per-tab store, and read from the
+  durable one first. The second write is not redundancy: a privacy mode can deny
+  `localStorage` while allowing `sessionStorage`, and losing the durable copy
+  should degrade to the previous behaviour rather than to no persistence at all.
+  An existing per-tab value is still honoured, so nothing resets on upgrade.
+
+  **Whether the widget is currently open stays per-tab.** That is a statement
+  about this tab rather than a preference, and carrying it across would pop the
+  panel open in every new tab because it was opened once somewhere else.
+
+- **The page placement no longer collapses.** It is a dedicated route rather
+  than a panel on someone else's page, so there was no "away" for it to go to:
+  collapsing left a strip of application chrome fixed over a route that no
+  longer had an owner, under the one placement that also hides the launcher.
+
+  Removing the control was not enough on its own. The state has three other
+  ways in -- the `collapsed` property, the attribute, and a value restored from
+  per-tab storage that was written under a different placement -- and the
+  storage key is namespaced per instance, not per placement. A tab that
+  collapsed a floating panel and later loaded the same instance as a page would
+  have restored a state with no control and no launcher to undo it. So the
+  property and the restore are gated, switching into the placement releases a
+  collapsed panel, and the stylesheet neutralises the state for the one path
+  that reaches none of those: an attribute written straight onto the element.
+
+  A control removed from the interface is not a state removed from the model.
+
+  The embedded placement is unchanged and still collapses to its header bar,
+  which is an ordinary accordion for a panel that sits in a page's own flow.
+
 ### Fixed
 
 - **The documented way to make a sidebar push content instead of overlaying it
@@ -53,28 +92,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the source, and every declaration involved was already correct on its own. The
   regression test measures rects in a real browser, with the host offset from
   the viewport and the page scrolled.
-
-### Changed
-
-- **The page placement no longer collapses.** It is a dedicated route rather
-  than a panel on someone else's page, so there was no "away" for it to go to:
-  collapsing left a strip of application chrome fixed over a route that no
-  longer had an owner, under the one placement that also hides the launcher.
-
-  Removing the control was not enough on its own. The state has three other
-  ways in -- the `collapsed` property, the attribute, and a value restored from
-  per-tab storage that was written under a different placement -- and the
-  storage key is namespaced per instance, not per placement. A tab that
-  collapsed a floating panel and later loaded the same instance as a page would
-  have restored a state with no control and no launcher to undo it. So the
-  property and the restore are gated, switching into the placement releases a
-  collapsed panel, and the stylesheet neutralises the state for the one path
-  that reaches none of those: an attribute written straight onto the element.
-
-  A control removed from the interface is not a state removed from the model.
-
-  The embedded placement is unchanged and still collapses to its header bar,
-  which is an ordinary accordion for a panel that sits in a page's own flow.
 
 ## [0.34.0] — 2026-09-03
 
