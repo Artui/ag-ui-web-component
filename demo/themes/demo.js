@@ -237,3 +237,19 @@ chat.offerQuoteInPage();
 $("save").addEventListener("click", () => {
   $("banner").classList.add("show");
 });
+
+// The config bar is sticky chrome the widget knows nothing about, and it wraps
+// to two rows at narrow widths, so its height is not a constant the stylesheet
+// could carry. Publish it and let the placement rules subtract it: without
+// this, the fixed placements start at the top of the viewport and the bar sits
+// on the chat's own header -- the widget still works, but its title and
+// controls are behind the thing that is meant to be driving it.
+//
+// A real host with fixed chrome has the same problem and, for now, the same
+// answer: measure your own bar and hand the widget what is left.
+const bar = document.querySelector("header.bar");
+const publishBarHeight = () => {
+  document.documentElement.style.setProperty("--bar-h", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+};
+new ResizeObserver(publishBarHeight).observe(bar);
+publishBarHeight();
