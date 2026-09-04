@@ -33,6 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Four documented placements instead of seven.** `floating`, `sidebar`, `page`
+  and `embedded` are the four shapes that differ structurally: a corner panel, a
+  docked rail, a surface that owns the screen, and a thing in your layout.
+
+  `bottom-left`, `side` and `full` **still parse and still work**, and are no
+  longer documented. Each turned out to be a variant of one of the four rather
+  than a shape of its own: `full` is `page` with `--ag-ui-content-max-width:
+  none`, `bottom-left` is `floating` with a different `--ag-ui-inset`, and `side`
+  is `sidebar` collapsing to the floating launcher instead of an edge rail.
+  Nothing warns and no markup breaks -- `placement` is a public attribute in
+  hand-written HTML with no build step to catch a removed value, so removing one
+  would fail silently and visually. There is simply less to choose between.
+
 - **The corner placements now rest at their launcher on a first visit.** An
   unconfigured widget mounted open, so a visitor's first page load put a 380x560
   panel over the host page's own bottom-right corner, uninvited. Every corner

@@ -191,10 +191,10 @@ another origin, add `credentials="include"` too; see
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
-| `data-start-open` | — | Mount the panel open on a first visit. `floating` and `bottom-left` otherwise rest at their launcher, the way every corner chat does; a stored choice wins over both. The placements that place themselves are unaffected. |
+| `data-start-open` | — | Mount the panel open on a first visit. The corner placements otherwise rest at their launcher, the way every corner chat does; a stored choice wins over both. The placements that place themselves are unaffected. |
 | `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
-| `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` / `embedded`. |
+| `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded`. |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
 `icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
@@ -1365,9 +1365,9 @@ server's text.
 The panel carries a grip on **every edge and every corner**, so it can be
 dragged from whichever side you are already near.
 
-- `placement="full"` / `placement="page"` get **no grips** — a full-bleed layout
+- `placement="page"` gets **no grips** — a full-bleed layout
   is `100vw`/`100vh` by definition, so there is nothing to drag.
-- `placement="sidebar"` / `placement="side"` keep only the two vertical edges;
+- `placement="sidebar"` keeps only the two vertical edges;
   the placement owns the height, so a horizontal edge or a corner would
   advertise a drag that does nothing.
 - Everything else gets all eight.
@@ -2506,7 +2506,7 @@ ag-ui-chat {
 ```
 
 `page` and `full` inset by all four edges; `sidebar` and `side` by three, leaving
-the docked edge free; `floating` and `bottom-left` add them to their own margins.
+the docked edge free; `floating` adds them to its own margins.
 **The heights follow on their own** — that is the point of these rather than
 restating `--ag-ui-inset` per placement, which leaves you to keep
 `--ag-ui-height` and `--ag-ui-max-height` in step by hand and overflows the panel
@@ -2598,9 +2598,17 @@ have to hand-tune the variables:
 
 - `theme` — `light` (default) / `dark` / `auto` (follow the OS) / `code`.
 - `density` — `comfortable` (default) / `compact`.
-- `placement` — `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` /
-  `embedded`. `embedded` drops the fixed positioning and z-index so the widget sits in normal
-  document flow; `page` is a full-screen [centred reading column](#page-placement).
+- `placement` — `floating` (default) / `sidebar` / `page` / `embedded`. `embedded` drops the
+  fixed positioning and z-index so the widget sits in normal document flow; `page` is a
+  full-screen [centred reading column](#page-placement) for a route of its own.
+
+  Four, because those are the four shapes that differ structurally: a corner panel, a docked
+  rail, a surface that owns the screen, and a thing in your layout. Three older values --
+  `bottom-left`, `side` and `full` -- still parse and still work, and are no longer documented:
+  each is a variant of one of the four rather than a shape of its own. `full` is `page` with
+  `--ag-ui-content-max-width: none`, `bottom-left` is `floating` with a different
+  `--ag-ui-inset`, and `side` is `sidebar` that collapses to the floating launcher instead of
+  an edge rail. Nothing warns and nothing breaks; there is simply less to choose between.
 
 **`embedded` fills the box your page gives it, so give it one.** It is the placement app-shell
 layouts reach for, and a grid or flex item defaults to `min-height: auto` — which lets a growing
@@ -2612,7 +2620,7 @@ fix belongs to the containing element, not to the widget:
 ```
 
 ```html
-<ag-ui-chat endpoint="/agent/" theme="dark" density="compact" placement="side"></ag-ui-chat>
+<ag-ui-chat endpoint="/agent/" theme="dark" density="compact" placement="sidebar"></ag-ui-chat>
 ```
 
 See [`src/ui/styles.ts`](src/ui/styles.ts) for the full variable + preset list. The
