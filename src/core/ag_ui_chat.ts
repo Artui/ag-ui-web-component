@@ -20,6 +20,7 @@ import {
   MAX_TOOL_ROUNDS,
   MESSAGE_ACTIONS,
   MESSAGE_ROLE,
+  PASTE_ATTACH_CHARS,
   READ_PAGE_TOOL,
   RUN_FINISHED_EVENT,
   STATE_EVENT,
@@ -1798,7 +1799,7 @@ export class AgUiChat extends HTMLElement {
     this.#fileInput.accept = accept;
     this.#attachButton.hidden = false;
     this.#enableDragAndDrop();
-    this.#enablePaste();
+    this.#enablePaste(tray);
   }
 
   /** The built-in multipart upload handler for `data-attachments-url`, or `null`. */
@@ -2067,6 +2068,65 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * Turn a very long text paste into an attachment instead of a wall of text.
+   *
+   * A composer capped at `40vh` is not where forty thousand characters go: the
+   * user cannot read what they pasted, cannot edit around it, and sends one
+   * enormous turn. As a file it stays whole, the model still receives it, and
+   * the box is left for the question about it.
+   *
+   * Only where the host has configured uploads -- and structurally so, rather
+   * than by a check here: the paste listener is wired inside the attachment
+   * setup, so with no tray there is no listener at all and an ordinary paste is
+   * untouched. Quietly dropping a paste for being long would be far worse than
+   * an awkward composer. The tray is passed rather than read off the field for
+   * the same reason its `onChange` hook is: it can only be called from one that
+   * exists, so taking it as an argument removes a null check no caller can
+   * reach.
+   *
+   * Nothing is lost by removing the chip: the text is still on the clipboard,
+   * so pasting again brings it back. That is why this needs no undo of its own.
+   */
+  #pasteLongTextAsFile(event: ClipboardEvent, clipboard: DataTransfer, tray: AttachmentTray): void {
+    const threshold = this.#pasteAttachThreshold();
+    const text = clipboard.getData("text/plain");
+    if (threshold === null || text.length < threshold) {
+      return;
+    }
+    event.preventDefault();
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    tray.add(new File([text], `pasted-${stamp}.txt`, { type: "text/plain" }));
+  }
+
+  /**
+   * How long a pasted string has to be before it becomes a file, or `null` to
+   * leave every paste in the composer.
+   *
+   * One attribute with three answers rather than three attributes: absent is
+   * the default, `off` refuses, and a number states the threshold. A value that
+   * is neither says so, because a typo silently meaning "off" is the failure
+   * this whole release keeps finding.
+   */
+  #pasteAttachThreshold(): number | null {
+    const raw = this.getAttribute("data-paste-attach");
+    if (raw === null) {
+      return PASTE_ATTACH_CHARS;
+    }
+    if (raw === "off") {
+      return null;
+    }
+    const stated = Number.parseInt(raw, 10);
+    if (Number.isNaN(stated) || stated <= 0) {
+      console.warn(
+        `<ag-ui-chat>: data-paste-attach="${raw}" is neither "off" nor a positive ` +
+          `number of characters, so the default of ${PASTE_ATTACH_CHARS} is used.`,
+      );
+      return PASTE_ATTACH_CHARS;
+    }
+    return stated;
+  }
+
+  /**
    * Accept files pasted into the composer.
    *
    * The whole tray already exists behind this: a paste is one more way to hand
@@ -2079,7 +2139,7 @@ export class AgUiChat extends HTMLElement {
    * clipboard, and swallowing the words someone meant to paste in order to
    * attach a picture they did not is the worse of the two failures.
    */
-  #enablePaste(): void {
+  #enablePaste(tray: AttachmentTray): void {
     this.#chat.addEventListener("paste", (event: ClipboardEvent) => {
       // Nullish rather than a null check: the property is typed as nullable,
       // and an engine that fires a plain Event for a paste leaves it absent
@@ -2090,6 +2150,7 @@ export class AgUiChat extends HTMLElement {
       }
       const files = Array.from(clipboard.files);
       if (files.length === 0) {
+        this.#pasteLongTextAsFile(event, clipboard, tray);
         return;
       }
       if (clipboard.getData("text/plain") === "") {

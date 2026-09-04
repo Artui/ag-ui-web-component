@@ -417,3 +417,14 @@ export const HIGHLIGHT_OVERLAY_Z_INDEX = 2147483001;
  * would leave a strip of transcript narrower than the messages in it.
  */
 export const THREADS_DOCK_MIN_WIDTH = 900;
+
+/**
+ * How many characters a pasted string has to reach before it becomes an
+ * attachment rather than composer text.
+ *
+ * The composer is capped at 40vh, so anything near this is already taller than
+ * the box that holds it: the user cannot read what they pasted or edit around
+ * it. Roughly where the field stops being usable rather than a number with a
+ * meaning of its own -- `data-paste-attach` moves it.
+ */
+export const PASTE_ATTACH_CHARS = 5000;

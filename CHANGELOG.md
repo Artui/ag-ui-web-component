@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A very long paste becomes an attachment rather than a wall of text.** Past
+  5000 characters, and only where uploads are configured -- without somewhere
+  for it to go, quietly dropping a paste for being long is far worse than an
+  awkward composer. The field is capped at `40vh`, so a paste that size is
+  already taller than the box holding it: the reader cannot see what they
+  pasted, cannot edit around it, and sends one enormous turn.
+
+  Nothing is lost by removing the chip, because the text is still on the
+  clipboard -- which is why this needs no undo of its own.
+  `data-paste-attach` takes `off` or a character count.
+
 - **The conversation list filters itself** once there are more than eight
   conversations in it -- below that a search box is a control asking to be used
   on a list you can already read in one glance. It matches the title **and** the
