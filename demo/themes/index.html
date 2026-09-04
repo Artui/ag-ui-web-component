@@ -187,6 +187,16 @@
       ag-ui-chat {
         flex: 0 1 auto;
         max-width: 100%;
+        /* The widget defaults to a z-index near the 32-bit ceiling so it clears
+           whatever a host page stacks. That is right for a real host and wrong
+           for this one: the full-bleed placements are position: fixed at inset 0,
+           so they bury the config bar -- and the control that switches placement
+           back is *in* that bar. Collapsing used to be the only way out, and the
+           page placement is losing its collapse button, so the escape has to be
+           structural. Handing the widget a z-index below the bar's is the
+           host-side lever for exactly this, and a host with its own fixed chrome
+           needs the same line. */
+        --ag-ui-z-index: 5;
       }
       /* When embedded + collapsed, shrink to the header instead of filling the slot. */
       ag-ui-chat[collapsed] {
