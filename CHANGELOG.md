@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A small-viewport layout.** At 600px wide and below, every placement but
+  `embedded` becomes one full-bleed shape: edge to edge, no radius, no shadow,
+  no resize grips. There was previously no width-based behaviour of any kind, so
+  a phone got the desktop's 380x560 floating panel clamped against the screen
+  edges -- and that clamp had already produced one shipped defect, because any
+  viewport under 428px was born against it.
+
+  A phone is not an eighth placement, it is an override that collapses the
+  others onto one of them. `embedded` is exempt: it sits in a box the host sized
+  and placed, and only the host knows whether that column should become the
+  whole screen. The corner placements still rest at their launcher, so a
+  full-bleed panel is something the user opens rather than something they are
+  given.
+
+  The breakpoint is a width rather than a pointer test. A touch laptop is
+  coarse-pointered and wide; a narrow desktop window is fine-pointered and
+  small.
+
 - **Tell the widget which edges of the viewport your own chrome already
   occupies**, with `--ag-ui-viewport-inset-top` / `-right` / `-bottom` / `-left`.
   A fixed placement covers the viewport it is given and knows nothing about your

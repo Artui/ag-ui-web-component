@@ -2493,6 +2493,26 @@ ag-ui-chat {
 }
 ```
 
+### Small viewports
+
+At **600px wide and below** every placement but `embedded` becomes one full-bleed
+shape: edge to edge, no radius, no shadow, no resize grips. A phone is not an
+eighth placement — it is an override that collapses the others onto one of them.
+The host picked a placement for the desktop it was designing, and a 380x560
+panel with a 24px margin is not a smaller version of that decision, it is most
+of the screen with a frame drawn round it.
+
+`embedded` is left alone deliberately: it sits in a box you sized and placed, and
+only you know whether that column should become the whole screen.
+
+The corner placements still rest at their launcher, so a full-bleed panel is
+something the user opens rather than something they are given.
+
+The breakpoint is a width rather than a pointer test, and that is on purpose: a
+touch laptop is coarse-pointered and wide, a narrow desktop window is
+fine-pointered and small. Width decides the layout; the pointer decides which
+controls make sense.
+
 ### Reserving the space your own chrome occupies
 
 A fixed placement covers the viewport it is given, and it does not know about

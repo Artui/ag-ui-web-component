@@ -45,6 +45,13 @@ export default defineConfig({
         test: {
           name: "chromium",
           include: ["tests/browser/**/*.browser.test.ts"],
+          // One file at a time. The viewport belongs to the browser context
+          // rather than to a file, so a test that narrows it to exercise the
+          // small-viewport layout resizes it under every file running beside
+          // it -- which showed up as unrelated layout tests failing in a way
+          // that depended on scheduling. Serial is the only way a stated
+          // viewport means anything here.
+          fileParallelism: false,
           browser: {
             enabled: true,
             // Vitest 4 takes a provider *instance* from its own package rather
@@ -53,6 +60,13 @@ export default defineConfig({
             // that keeps one unified coverage report across both projects.
             provider: playwright(),
             headless: true,
+            // A stated desktop viewport, not the runner's default. The
+            // component now has a small-viewport layout below 600px, and the
+            // default headless window is narrower than that -- so every
+            // placement test silently measured the mobile shape instead of the
+            // one it named. The tests that mean to exercise the breakpoint set
+            // their own size.
+            viewport: { width: 1280, height: 800 },
             instances: [{ browser: "chromium" }],
           },
         },

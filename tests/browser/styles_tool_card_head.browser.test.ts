@@ -19,8 +19,20 @@ import { ToolCallCard } from "../../src/ui/tool_call_card.js";
  * same agreeable answer whether the row wraps, crushes, or overflows.
  */
 
-/** The panel width the defect was measured at: a sidebar, not a phone. */
-const PANEL = "470px";
+/**
+ * The panel width the defect was measured at: a narrow sidebar, not a phone.
+ *
+ * It said 470px until 2026-09-04 and was never measuring one. The browser
+ * project had no stated viewport, so the runner's default window was about
+ * 414px wide, and `max-width: 100%` on an embedded host clamped the panel to
+ * roughly 398px -- the row wrapped because of the window, not because of the
+ * number written here. Giving the project a desktop viewport made the panel
+ * genuinely 470px, where the row has room and does not wrap at all.
+ *
+ * 400px is inside the band that wraps (it holds from 420px down) and is a
+ * width a docked panel really takes.
+ */
+const PANEL = "400px";
 
 function mount(): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
