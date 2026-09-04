@@ -7,6 +7,7 @@ import {
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
   DEFAULT_ATTACHMENT_MAX_BYTES,
+  EDGE_MARGIN,
   FEEDBACK_EVENT,
   ICON_ATTACH,
   ICON_LAUNCHER,
@@ -36,11 +37,20 @@ import {
 import { fillTemplate } from "../skills/fill_template.js";
 import { parseSkills } from "../skills/parse_skills.js";
 import type { Skill } from "../skills/skill.js";
+import {
+  type ChatCorner,
+  type ChatSurfaceReport,
+  createChatSurfaceTools,
+} from "../tools/chat_surface_tools.js";
 import type { ChartRenderer } from "../tools/client_tool_registry.js";
 import { type ClientTool, ClientToolRegistry } from "../tools/client_tool_registry.js";
 import { isDestructive } from "../tools/is_destructive.js";
 import { isNavigates } from "../tools/is_navigates.js";
-import { createPageActionTools, type ResolvePageTarget } from "../tools/page_action_tools.js";
+import {
+  createPageActionTools,
+  PAGE_ACTIONS,
+  type ResolvePageTarget,
+} from "../tools/page_action_tools.js";
 import { createPageMapContext, type PageMap } from "../tools/page_map.js";
 import { createPageStateTools, type PageState } from "../tools/page_state.js";
 import { parseToolCatalog, type ToolCatalogEntry } from "../tools/parse_tool_catalog.js";
@@ -630,7 +640,7 @@ export class AgUiChat extends HTMLElement {
    * Resolve a `scroll_to` / `drag_and_drop` target string to a host-page
    * element (or `null`). Defaults to a CSS-selector lookup; override to map
    * page-map element ids. The page-action tools are opt-in via the
-   * `data-page-actions` attribute (`"scroll"` / `"drag"`).
+   * `data-page-actions` attribute (`"scroll"` / `"drag"` / `"chat"`).
    */
   resolvePageTarget: ResolvePageTarget = (target) => document.querySelector<HTMLElement>(target);
 
@@ -1260,7 +1270,10 @@ export class AgUiChat extends HTMLElement {
         .map((token) => token.trim())
         .filter((token) => token !== ""),
     );
-    return createPageActionTools(enabled, (target) => this.resolvePageTarget(target));
+    return [
+      ...createPageActionTools(enabled, (target) => this.resolvePageTarget(target)),
+      ...(enabled.has(PAGE_ACTIONS.CHAT) ? createChatSurfaceTools(this) : []),
+    ];
   }
 
   /** All built-in (route + page + page-action + ask_user) frontend tools. */
@@ -2305,6 +2318,76 @@ export class AgUiChat extends HTMLElement {
    */
   #collapsible(): boolean {
     return this.getAttribute("placement") !== "page";
+  }
+
+  /**
+   * Describe the panel to whoever is asking -- in practice the agent, through
+   * the opt-in chat-surface tools.
+   *
+   * `movable` folds two separate reasons into the one answer a caller needs:
+   * a placement that places itself owns its position, and a panel that fills
+   * the screen has nowhere to go. Reporting them apart would make every caller
+   * re-derive the same conjunction.
+   */
+  describeSurface(): ChatSurfaceReport {
+    const box = this.getBoundingClientRect();
+    const viewport = this.#viewport();
+    const fullBleed = box.width >= viewport.width - 1 && box.height >= viewport.height - 1;
+    return {
+      placement: this.getAttribute("placement"),
+      collapsed: this.collapsed,
+      collapsible: this.#collapsible(),
+      movable: this.#launcherDraggable() && !fullBleed,
+      fullBleed,
+      box: {
+        left: Math.round(box.left),
+        top: Math.round(box.top),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+      },
+      viewport: { width: Math.round(viewport.width), height: Math.round(viewport.height) },
+    };
+  }
+
+  /**
+   * Send the panel to a corner, and report whether it went.
+   *
+   * A third claimant on the axes a placement and a user drag already share, and
+   * it takes them the same way the drag does rather than inventing a second
+   * mechanism: the same commit path, so the launcher travels with the panel,
+   * the corner it opens from is re-picked, and switching placement hands
+   * everything back. What it must not do is claim a move it did not make --
+   * hence the boolean, and hence {@link describeSurface} existing so a caller
+   * can ask first.
+   */
+  moveTo(corner: ChatCorner): boolean {
+    if (!this.#launcherDraggable()) {
+      return false;
+    }
+    const viewport = this.#viewport();
+    const box = this.getBoundingClientRect();
+    if (box.width >= viewport.width - 1 && box.height >= viewport.height - 1) {
+      return false;
+    }
+    const [edgeY, edgeX] = corner.split("-");
+    const left =
+      edgeX === "left"
+        ? EDGE_MARGIN
+        : Math.max(EDGE_MARGIN, viewport.width - EDGE_MARGIN - box.width);
+    const top =
+      edgeY === "top"
+        ? EDGE_MARGIN
+        : Math.max(EDGE_MARGIN, viewport.height - EDGE_MARGIN - box.height);
+    const host = { left, top, right: left + box.width, bottom: top + box.height };
+    const size = this.#launcher.offsetWidth;
+    this.#placePanelAndLauncher(host, {
+      left: edgeX === "left" ? host.left : host.right - size,
+      top: edgeY === "top" ? host.top : host.bottom - size,
+      width: size,
+      height: size,
+    });
+    this.#storeLauncherPosition();
+    return true;
   }
 
   /** Flip the collapsed state. Bound to the built-in header toggle. */

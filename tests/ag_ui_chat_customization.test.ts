@@ -268,6 +268,21 @@ describe("AgUiChat — UX & customization", () => {
       expect(toolNames(el)).toContain("drag_and_drop");
     });
 
+    it("registers the chat's own controls only when asked for by name", () => {
+      // Off by default like every other page action: a chat that can move
+      // itself is a capability the host grants, not one it has to remember to
+      // take away.
+      expect(toolNames(mount())).not.toContain("move_chat");
+      expect(toolNames(mount({ "data-page-actions": "scroll" }))).not.toContain("move_chat");
+
+      const el = mount({ "data-page-actions": "chat" });
+      expect(toolNames(el)).toEqual(
+        expect.arrayContaining(["read_chat_surface", "move_chat", "minimise_chat", "restore_chat"]),
+      );
+      // ...and the token buys only those, not the page-driving ones beside it.
+      expect(toolNames(el)).not.toContain("scroll_to");
+    });
+
     it("registers only the named subset", () => {
       const el = mount({ "data-page-actions": "scroll" });
       expect(toolNames(el)).toContain("scroll_to");

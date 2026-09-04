@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The agent can move the panel it is speaking from.** Four tools behind a new
+  `chat` token on `data-page-actions`: `read_chat_surface`, `move_chat`,
+  `minimise_chat` and `restore_chat`, plus the `describeSurface()` and
+  `moveTo(corner)` methods behind them.
+
+  This is the affordance nobody else can offer. Every other assistant's chat is
+  a surface of its own, so it has nothing to be in the way *of*; this one is
+  mounted in the page the user is working in.
+
+  **They report what happened, not what was asked.** A panel that fills the
+  screen has nowhere to move to, and a placement that places itself owns its
+  position, so `move_chat` answers `moved: false` with the reason and what would
+  work instead. `read_chat_surface` lets the agent ask before it acts rather
+  than learn through a failure. `moveTo` claims the axes the same way a user
+  drag does -- the launcher travels with the panel, the corner it opens from is
+  re-picked, and switching placement hands everything back.
+
+  None is stamped `x-destructive`: moving a window destroys nothing, and a
+  confirmation card in front of it would be worse than the move.
+
 - **`showHighlightOverlay(el, options)`** -- ring a host-page element from an
   overlay drawn *outside* it, optionally dimming everything else (`scrim`) or
   flowing a gradient round it (`gradient`). Returns a function that removes it.

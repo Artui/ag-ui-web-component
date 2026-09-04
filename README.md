@@ -187,7 +187,7 @@ another origin, add `credentials="include"` too; see
 | `data-quote-selection` | — | **On by default.** `="false"` stops the transcript offering to quote a selection. `quote()` keeps working either way. See [Quoting a selection](#quoting-a-selection). |
 | `data-message-actions` | — | **All on by default.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry"`). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
-| `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
+| `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` / `chat` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
@@ -269,7 +269,8 @@ the `copyCode` / `copied` / `copyFailed` strings.
 
 **Methods**: `registerTool`, `registerPageState`, `registerActivityRenderer`, `setSkills`,
 `sendMessage`, `attachFile`, `appendMessage`, `retryLastTurn`, `quote`, `offerQuoteInPage`,
-`enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `toggleTheme`, `openThreads`,
+`enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `describeSurface`, `moveTo`,
+`toggleTheme`, `openThreads`,
 `openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `reload`, and the deprecated
 `registerStateHook` (renamed to `registerPageState`).
 
@@ -882,6 +883,22 @@ want — so you control the agent's interaction surface:
 - **`drag_and_drop`** — drag the `from` element onto the `to` element (selectors / page-map ids),
   firing the standard HTML5 drag sequence (`dragstart` → `dragenter`/`dragover`/`drop` → `dragend`)
   so the page's own drop handler reacts. Useful for reordering sortable lists.
+- **`chat`** — four tools that let the agent move the panel it is speaking from:
+  `read_chat_surface`, `move_chat`, `minimise_chat`, `restore_chat`.
+
+  This is the one nobody else can offer. Every other assistant's chat is a surface of its own, so
+  there is nothing for it to be in the way *of*; ours is mounted in the page the user is working
+  in, which makes "let me move this aside so you can see the table" something the agent can act on
+  rather than apologise for.
+
+  **They report what happened, not what was asked.** A panel that fills the screen has nowhere to
+  move to, and a placement that places itself owns its position — so `move_chat` answers
+  `moved: false` with the reason and what would work instead, rather than reporting success on a
+  panel that did not budge. `read_chat_surface` is there so the agent can ask before it acts
+  instead of learning through a failure; it is read-only.
+
+  None of them is stamped `x-destructive`. Moving a window destroys nothing, and a confirmation
+  card in front of it would be worse than the move.
 
 **Your drag surface must listen to drag events, and many "modern" ones do not.** `drag_and_drop`
 dispatches the native HTML5 sequence with one shared `DataTransfer`. A surface built on a
@@ -928,6 +945,13 @@ matching JS API:
   server-backed store it stays on the server. Deleting one is the drawer row's own action. A chat
   nothing was ever sent in is the exception — it was never listed, so it is dropped rather than
   left behind.
+- `describeSurface()` — where the panel is and what can be done to it: placement, collapsed,
+  whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
+  the two reasons a move can fail into the one answer a caller needs.
+- `moveTo(corner)` — send the panel to `top-left` / `top-right` / `bottom-left` / `bottom-right`,
+  returning whether it went. It takes the axes the same way a user drag does, so the launcher
+  travels with it and switching placement hands them back. Returns `false` rather than pretending
+  when the placement owns its position or the panel fills the screen.
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
   reflected as the boolean `collapsed` attribute/property and persisted per-tab in
   `sessionStorage`, so it survives a reload.
