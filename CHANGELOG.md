@@ -65,6 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Every scroll container also contains its own overscroll, so reaching the end
   of the transcript no longer scrolls the page behind it.
 
+- **`data-small-viewport="off"`** keeps the desktop layout at every width. Every
+  value the small-viewport override sets is a token a host can re-state; the
+  trigger is a media query, which cannot read one -- so without this the
+  breakpoint was the only part of the placement model a consumer could not reach.
+
 - **A small-viewport layout.** At 600px wide and below, every placement but
   `embedded` becomes one full-bleed shape: edge to edge, no radius, no shadow,
   no resize grips. There was previously no width-based behaviour of any kind, so
@@ -172,6 +177,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is an ordinary accordion for a panel that sits in a page's own flow.
 
 ### Fixed
+
+- **The highlight overlay could not be themed by any host that themes the
+  widget.** It is appended to the document body so it can escape the clipping it
+  exists to avoid, so a `var()` in its own inline style resolved against the
+  *body's* cascade -- a host setting `--ag-ui-accent` or
+  `--ag-ui-highlight-scrim` on `ag-ui-chat` or a wrapper, which is how everything
+  else here is themed, never reached it. Every token is now read from the
+  element being pointed at, which is where the flat ring has always read its
+  accent.
+
+  Its inline styles also beat any rule a host could write, and `::part` does not
+  reach the light DOM, so this was the one surface with no way in at all. The
+  ring width, the gradient's speed and the stacking order are now tokens too
+  (`--ag-ui-highlight-ring-width`, `--ag-ui-highlight-flow-ms`,
+  `--ag-ui-highlight-z-index`), with `ringWidth` and `flowMs` options over them.
 
 - **A panel could be dragged somewhere it could not be rescued from.** The
   clamps that keep it on screen measured a viewport starting at the top-left of

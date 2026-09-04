@@ -95,6 +95,23 @@ describe("small-viewport layout (real browser)", () => {
     expect(el.getBoundingClientRect().height).not.toBeCloseTo(window.innerHeight, 0);
   });
 
+  it("lets a host keep its desktop shape at every width", async () => {
+    // Everything the breakpoint sets is a token a host can re-state, but the
+    // trigger is a media query and a media query cannot read one -- so without
+    // an opt-out this is the only part of the placement model a host cannot
+    // reach.
+    const el = mount("floating");
+    el.setAttribute("data-small-viewport", "off");
+    await settle();
+    const box = el.getBoundingClientRect();
+
+    expect(box.width).not.toBeCloseTo(window.innerWidth, 0);
+    expect(getComputedStyle(panelOf(el)).borderRadius).not.toBe("0px");
+    expect(
+      getComputedStyle(el.shadowRoot?.querySelector(".resize-handle") as HTMLElement).display,
+    ).not.toBe("none");
+  });
+
   it("takes the resize grips away once the panel is the screen", async () => {
     const el = mount("floating");
     await settle();

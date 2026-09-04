@@ -1,5 +1,8 @@
 import { HIGHLIGHT_OVERLAY_Z_INDEX } from "../constants.js";
 
+/** The package accent, used when the host has themed nothing. */
+const ACCENT = "#4f46e5";
+
 /** How the overlay is drawn around the element being pointed at. */
 export interface HighlightOverlayOptions {
   /** Dim everything except the target. Default false. */
@@ -12,16 +15,30 @@ export interface HighlightOverlayOptions {
   readonly padding?: number;
   /** Corner radius of the cut-out and the ring. Default: the target's own. */
   readonly radius?: number;
+  /** Ring thickness. Default 3, or `--ag-ui-highlight-ring-width` on the target. */
+  readonly ringWidth?: number;
+  /** One pass of the gradient. Default 2400, or `--ag-ui-highlight-flow-ms`. */
+  readonly flowMs?: number;
 }
 
-/** Ring thickness. Matches the outline the flat highlight has always drawn. */
-const RING_WIDTH_PX = 3;
+/**
+ * Read a `--ag-ui-*` token from the element being pointed at.
+ *
+ * From the *target*, not from the overlay. The overlay is appended to the
+ * document body so it can escape the clipping this exists to avoid, which also
+ * means a `var()` in its own inline style resolves against the body's cascade --
+ * so a host that themes the widget the documented way, on `ag-ui-chat` or on a
+ * wrapper, would never reach it. The target is on the host's page and inherits
+ * the host's cascade, which is the same reason the flat ring reads its accent
+ * there.
+ */
+function tokenOn(target: HTMLElement, name: string, fallback: string): string {
+  const value = window.getComputedStyle(target).getPropertyValue(name).trim();
+  return value === "" ? fallback : value;
+}
 
 /** Default gap between the target's border box and the ring around it. */
 const DEFAULT_PADDING_PX = 4;
-
-/** One turn of the gradient, in milliseconds. */
-const GRADIENT_PERIOD_MS = 2400;
 
 /**
  * Draw an overlay that points at `target`, and return a function that removes
@@ -65,7 +82,10 @@ export function showHighlightOverlay(
     "position: fixed",
     "inset: 0",
     "pointer-events: none",
-    `z-index: ${HIGHLIGHT_OVERLAY_Z_INDEX}`,
+    // Above the widget's own default, because the overlay's whole job is to
+    // point at something on the page the widget is sitting over. A host whose
+    // chrome stacks higher still can say so.
+    `z-index: ${tokenOn(target, "--ag-ui-highlight-z-index", String(HIGHLIGHT_OVERLAY_Z_INDEX))}`,
   ].join(";");
 
   const scrim = document.createElement("div");
@@ -74,6 +94,11 @@ export function showHighlightOverlay(
     root.append(scrim);
   }
   root.append(ring);
+
+  const ringWidth =
+    options.ringWidth ?? Number.parseFloat(tokenOn(target, "--ag-ui-highlight-ring-width", "3"));
+  const flowMs =
+    options.flowMs ?? Number.parseFloat(tokenOn(target, "--ag-ui-highlight-flow-ms", "2400"));
 
   const paint = (): void => {
     const box = target.getBoundingClientRect();
@@ -95,7 +120,7 @@ export function showHighlightOverlay(
       scrim.style.cssText = [
         "position: absolute",
         "inset: 0",
-        "background: var(--ag-ui-highlight-scrim, rgba(15, 15, 25, 0.45))",
+        `background: ${tokenOn(target, "--ag-ui-highlight-scrim", "rgba(15, 15, 25, 0.45)")}`,
         `clip-path: path(evenodd, '${holePath(left, top, width, height, radius + pad)}')`,
       ].join(";");
     }
@@ -107,9 +132,9 @@ export function showHighlightOverlay(
       `width: ${width}px`,
       `height: ${height}px`,
       `border-radius: ${radius + pad}px`,
-      `border: ${RING_WIDTH_PX}px solid transparent`,
+      `border: ${ringWidth}px solid transparent`,
       "box-sizing: border-box",
-      ringPaint(options),
+      ringPaint(target, options),
     ].join(";");
   };
 
@@ -124,7 +149,7 @@ export function showHighlightOverlay(
   // is still drawn, it simply stops travelling.
   if (options.gradient === true && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     ring.animate([{ backgroundPosition: "100% 0" }, { backgroundPosition: "-100% 0" }], {
-      duration: GRADIENT_PERIOD_MS,
+      duration: flowMs,
       iterations: Number.POSITIVE_INFINITY,
       easing: "linear",
     });
@@ -150,12 +175,16 @@ export function showHighlightOverlay(
  * border, not on it -- the two-layer mask keeps the border box and subtracts
  * the padding box, leaving the frame.
  */
-function ringPaint(options: HighlightOverlayOptions): string {
-  const color = options.color ?? "var(--ag-ui-accent, #4f46e5)";
+function ringPaint(target: HTMLElement, options: HighlightOverlayOptions): string {
+  const color = options.color ?? tokenOn(target, "--ag-ui-accent", ACCENT);
   if (options.gradient !== true) {
     return `border-color: ${color}`;
   }
-  const image = `var(--ag-ui-highlight-gradient, linear-gradient(115deg, transparent 20%, ${color} 50%, transparent 80%))`;
+  const image = tokenOn(
+    target,
+    "--ag-ui-highlight-gradient",
+    `linear-gradient(115deg, transparent 20%, ${color} 50%, transparent 80%)`,
+  );
   const mask = "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)";
   return [
     `background-image: ${image}`,

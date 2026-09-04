@@ -367,7 +367,10 @@ export const STYLES = `
    that decision, it is most of the screen with a frame drawn round it.
 
    The breakpoint is a literal because a custom property cannot be read in a
-   media query. 600px is above every common phone in portrait and below every
+   media query -- which is exactly why there is an opt-out. Everything the block
+   sets is a token a host can re-state, but the *trigger* is unreachable, so a
+   host whose layout wants a different threshold, or none, sets
+   data-small-viewport="off" and keeps its desktop shape at every width. 600px is above every common phone in portrait and below every
    tablet in landscape, and it is a width rather than a pointer test on purpose:
    a touch laptop is coarse-pointered and wide, a narrow desktop window is
    fine-pointered and small, and conflating the two gets both wrong. What the
@@ -378,12 +381,12 @@ export const STYLES = `
    shell it was embedded into -- the host is the only party that knows whether
    its column should become the whole screen. */
 @media (max-width: 600px) {
-  :host([placement="floating"]),
-  :host([placement="bottom-left"]),
-  :host([placement="sidebar"]),
-  :host([placement="side"]),
-  :host(:not([placement])),
-  :host([placement=""]) {
+  :host([placement="floating"]:not([data-small-viewport="off"])),
+  :host([placement="bottom-left"]:not([data-small-viewport="off"])),
+  :host([placement="sidebar"]:not([data-small-viewport="off"])),
+  :host([placement="side"]:not([data-small-viewport="off"])),
+  :host(:not([placement]):not([data-small-viewport="off"])),
+  :host([placement=""]:not([data-small-viewport="off"])) {
     --_inset: var(
       --ag-ui-inset,
       var(--_viewport-inset-top) var(--_viewport-inset-right)
@@ -400,12 +403,12 @@ export const STYLES = `
 
   /* Nothing to resize once the panel is the screen, and the grips would sit
      under the thumbs holding the phone. */
-  :host([placement="floating"]) .resize-handle,
-  :host([placement="bottom-left"]) .resize-handle,
-  :host([placement="sidebar"]) .resize-handle,
-  :host([placement="side"]) .resize-handle,
-  :host(:not([placement])) .resize-handle,
-  :host([placement=""]) .resize-handle {
+  :host([placement="floating"]:not([data-small-viewport="off"])) .resize-handle,
+  :host([placement="bottom-left"]:not([data-small-viewport="off"])) .resize-handle,
+  :host([placement="sidebar"]:not([data-small-viewport="off"])) .resize-handle,
+  :host([placement="side"]:not([data-small-viewport="off"])) .resize-handle,
+  :host(:not([placement]):not([data-small-viewport="off"])) .resize-handle,
+  :host([placement=""]:not([data-small-viewport="off"])) .resize-handle {
     display: none;
   }
 }

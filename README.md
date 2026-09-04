@@ -191,6 +191,7 @@ another origin, add `credentials="include"` too; see
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
+| `data-small-viewport` | — | CSS-only: `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
 | `data-start-open` | — | Mount the panel open on a first visit. The corner placements otherwise rest at their launcher, the way every corner chat does; a stored choice wins over both. The placements that place themselves are unaffected. |
 | `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
@@ -832,8 +833,26 @@ operations a tool handler typically wants:
   control it just finished pointing at. It follows the target on scroll and resize, and under
   reduced motion the gradient is drawn but does not travel.
 
-  Themed with `--ag-ui-highlight-scrim` and `--ag-ui-highlight-gradient`; the ring colour falls
-  back to `--ag-ui-accent` read from the target, like the flat one.
+  **Themed from the element you point at, not from the widget.** The overlay is appended to the
+  document body so it can escape the clipping it exists to avoid, which means a `var()` in its own
+  style would resolve against the body — so every token is read from the *target's* computed style
+  instead, the same place the flat ring reads `--ag-ui-accent`. Set them wherever they inherit to
+  the elements the agent touches, usually `:root`:
+
+  ```css
+  :root {
+    --ag-ui-highlight-scrim: rgba(15, 15, 25, 0.45);
+    --ag-ui-highlight-gradient: linear-gradient(115deg, transparent 20%, #4f46e5 50%, transparent 80%);
+    --ag-ui-highlight-ring-width: 3;    /* unitless; px */
+    --ag-ui-highlight-flow-ms: 2400;    /* one pass of the gradient */
+    --ag-ui-highlight-z-index: 2147483001;
+  }
+  ```
+
+  `ringWidth` and `flowMs` options override the tokens per call; `color`, `padding` and `radius`
+  have no token because they are per-target rather than per-theme. The overlay's own styles are
+  inline and it lives in the light DOM, so neither a stylesheet rule nor `::part` can reach it —
+  these tokens and options are the whole surface, which is why they cover every value it draws.
 - `selectControl(el, value)` / `toggleCheckbox(el, checked)` — animate a `<select>` / checkbox.
 - `setControlValue(el, value)` — set a `<select>` or checkbox without animation, dispatching
   `input`/`change`.
@@ -2553,6 +2572,11 @@ only you know whether that column should become the whole screen.
 
 The corner placements still rest at their launcher, so a full-bleed panel is
 something the user opens rather than something they are given.
+
+**To keep your desktop layout at every width**, set `data-small-viewport="off"`.
+That exists because the *trigger* is the one part of this you cannot reach: every
+value the override sets is a `--ag-ui-*` token you can re-state, but a media
+query cannot read a custom property, so the breakpoint itself is a literal.
 
 The breakpoint is a width rather than a pointer test, and that is on purpose: a
 touch laptop is coarse-pointered and wide, a narrow desktop window is
