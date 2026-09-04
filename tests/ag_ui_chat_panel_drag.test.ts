@@ -189,14 +189,17 @@ describe("dragging the panel by its header", () => {
     expect(launcherAt(el)).toEqual({ left: before.left - 40, top: before.top - 10 });
   });
 
-  it("keeps the panel inside the viewport's margin", () => {
+  it("keeps the panel on screen, and lets it reach the edge", () => {
     const { el, header } = mount({ id: "clamped" });
 
     drag(header, [700, 240], [0, 0]);
 
-    // Held at (24, 24) whatever the pointer asked for, and expressed from the
-    // corner the launcher has ended up nearest.
-    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("auto auto 216px 24px");
+    // Flush to the corner, not held 24px short of it. That gutter is where a
+    // placement rests a panel, not a rule about where a person may drag one --
+    // enforcing it against a drag made the panel feel stuck short of every
+    // edge on all four sides. Staying on screen is the part that matters, and
+    // the zeroes here are that: the panel stops at the viewport, not before it.
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("auto auto 240px 0px");
   });
 
   it("remembers the position for the next mount, per tab", async () => {

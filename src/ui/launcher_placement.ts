@@ -86,6 +86,7 @@ export function launcherPlacement(
   launcher: LauncherBox,
   panel: Extent,
   viewport: ViewportBox,
+  screen: Extent,
   margin: number = EDGE_MARGIN,
 ): LauncherPlacement {
   // Room for a panel pinned to each side of the launcher. A tie goes to the
@@ -117,5 +118,8 @@ export function launcherPlacement(
     margin,
   );
 
-  return { corner, ...placeWidget(host, launcher, corner, viewport) };
+  // The usable box decides where things may rest; the screen is what the
+  // resulting insets are measured from. They are the same only when the host
+  // has reserved nothing.
+  return { corner, ...placeWidget(host, launcher, corner, screen) };
 }

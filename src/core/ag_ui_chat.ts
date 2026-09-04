@@ -75,6 +75,7 @@ import { copyPayload } from "../ui/copy_payload.js";
 import { enableLauncherDrag } from "../ui/launcher_drag.js";
 import {
   type ExpandCorner,
+  type Extent,
   type LauncherBox,
   launcherPlacement,
   type ViewportBox,
@@ -882,8 +883,37 @@ export class AgUiChat extends HTMLElement {
    */
   readonly #onViewportResize = (): void => {
     this.#publishVisualViewport();
+    // Not while a gesture owns the position. Restoring re-applies the *stored*
+    // position, and mid-drag that value is the one from before the drag began
+    // -- so it puts the widget back where it was, the next pointer move puts it
+    // where the finger is, and the two fight for as long as the viewport keeps
+    // changing.
+    //
+    // Which on a phone can be most of the drag: the visual viewport resizes and
+    // scrolls whenever the browser's own chrome collapses, and that is driven
+    // by the gesture in progress. This was not the cause of the jumping that
+    // sent me looking -- that was an inset measured from the wrong box -- so it
+    // is a guard against a fight that had not been observed rather than a fix
+    // for one that had.
+    if (this.#dragging()) {
+      return;
+    }
     this.#restoreLauncherPosition();
   };
+
+  /**
+   * Whether a pointer or key gesture is currently placing the widget.
+   *
+   * Read from the stamp the drag helpers already set, rather than tracked
+   * separately: one source of truth, and it clears on `pointercancel` as well
+   * as `pointerup`, which is the end a touch gesture usually gets.
+   */
+  #dragging(): boolean {
+    return (
+      this.#launcher.hasAttribute("data-dragging") ||
+      this.#root.querySelector(".header[data-dragging]") !== null
+    );
+  }
   /** Mic button mount point (input row); the control mounts on connect when enabled. */
   readonly #voiceSlot: HTMLSpanElement;
   /** Voice-input control; created on connect when transcription is available. */
@@ -2673,6 +2703,22 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * The whole viewport, before anything the host reserved is taken out of it.
+   *
+   * Distinct from {@link #viewport} on purpose, and the two must not be
+   * swapped. The usable box decides where the widget may rest; this is what a
+   * CSS `inset` on a fixed element is measured from, because that is what the
+   * browser measures it from.
+   */
+  #screen(): Extent {
+    const visual = window.visualViewport;
+    return {
+      width: visual?.width ?? window.innerWidth,
+      height: visual?.height ?? window.innerHeight,
+    };
+  }
+
+  /**
    * Publish the measured viewport height so the stylesheet can size a
    * full-bleed panel to what the user can see.
    *
@@ -2766,6 +2812,7 @@ export class AgUiChat extends HTMLElement {
       this.#launcherBox(),
       { width: panel.width, height: panel.height },
       this.#viewport(),
+      this.#screen(),
     );
     this.style.setProperty("--ag-ui-inset", placement.hostInset);
     this.style.setProperty("--ag-ui-launcher-inset", placement.launcherInset);
@@ -2800,9 +2847,9 @@ export class AgUiChat extends HTMLElement {
    * measured from it, and rewriting one of them from a new corner while the
    * other still names the old one would move the launcher for no reason.
    */
-  #movePanel(box: PanelRect): PanelRect {
+  #movePanel(box: PanelRect, from: PanelRect): { held: PanelRect; launcher: LauncherBox | null } {
     if (!this.#launcherDraggable()) {
-      return box;
+      return { held: box, launcher: null };
     }
     // Where the launcher rests, recorded before the first move writes anything.
     // From here on the DOM shows it mid-gesture, so this is the last moment it
@@ -2811,20 +2858,55 @@ export class AgUiChat extends HTMLElement {
       const resting = this.#launcherBox();
       this.#launcherPos = { left: resting.left, top: resting.top };
     }
-    const held = clampPanel(box, this.#viewport());
+    // The launcher as it was when the gesture began. Held for the whole drag:
+    // every move measures from here, so the two halves cannot drift apart.
+    const start = this.#launcherPos;
+    // No gutter on a dragged panel. The 24px margin is where a placement rests
+    // one, not a rule about where a person may put it: enforcing it against a
+    // drag is what made the panel feel stuck short of every edge, on all four
+    // sides at once. Staying inside the box the host left free is the part that
+    // matters, and that is still enforced.
+    const held = clampPanel(box, this.#viewport(), 0);
     const corner = this.#expandCorner ?? this.#anchor;
-    const viewport = this.#viewport();
+    // The usable box decides where the panel may rest, above; the screen is
+    // what these insets are measured from, because that is what the browser
+    // measures a fixed element's inset from. Using the usable box here made a
+    // right or bottom short by whatever the host had reserved, and the panel
+    // jumped by that much the first time a gesture wrote one.
+    const screen = this.#screen();
     this.style.setProperty(
       "--ag-ui-inset",
       [
         corner.y === "top" ? `${Math.round(held.top)}px` : "auto",
-        corner.x === "right" ? `${Math.round(viewport.width - held.right)}px` : "auto",
-        corner.y === "bottom" ? `${Math.round(viewport.height - held.bottom)}px` : "auto",
+        corner.x === "right" ? `${Math.round(screen.width - held.right)}px` : "auto",
+        corner.y === "bottom" ? `${Math.round(screen.height - held.bottom)}px` : "auto",
         corner.x === "left" ? `${Math.round(held.left)}px` : "auto",
       ].join(" "),
     );
     this.#panelPos = { left: held.left, top: held.top };
-    return held;
+
+    // Where the launcher has ended up, derived rather than read. During a
+    // header drag it rides inside the host box with its own inset untouched,
+    // so the DOM shows it moving while `#launcherPos` still holds where it
+    // started -- reading it back mid-gesture returns the stale value, and
+    // adding the panel's travel to that a second time on release is a jump.
+    // Measured from the box the press started on, so a long drag cannot
+    // accumulate the rounding each move writes.
+    const carried = {
+      ...this.#launcherBox(),
+      left: start.left + (held.left - from.left),
+      top: start.top + (held.top - from.top),
+    };
+    // A bubble carried into an edge the host reserved is one nobody can press.
+    // Clamping it live rather than at the end is what makes releasing the drag
+    // change nothing: leaving it until then parked it under a nav bar for the
+    // whole gesture and hopped it out on pointerup.
+    const launcher = { ...carried, ...clampLauncher(carried, this.#viewport()) };
+    this.style.setProperty(
+      "--ag-ui-launcher-inset",
+      placeWidget(held, launcher, corner, this.#screen()).launcherInset,
+    );
+    return { held, launcher };
   }
 
   /**
@@ -2841,22 +2923,14 @@ export class AgUiChat extends HTMLElement {
    * both insets are rewritten from positions that are already decided.
    */
   #commitPanel(box: PanelRect, from: PanelRect): void {
-    const held = this.#movePanel(box);
-    const start = this.#launcherPos;
-    if (!this.#launcherDraggable() || start === null) {
+    // Exactly what the last move applied, rather than the same sum computed
+    // again. Recomputing it is how the two came apart: releasing the drag
+    // moved the bubble by the panel's whole travel a second time.
+    const { held, launcher } = this.#movePanel(box, from);
+    if (launcher === null) {
       return;
     }
-    const carried = {
-      ...this.#launcherBox(),
-      left: start.left + (held.left - from.left),
-      top: start.top + (held.top - from.top),
-    };
-    // The screen is the last word: a bubble dragged past the edge is one nobody
-    // can click, and it is the only way back to a collapsed conversation.
-    this.#placePanelAndLauncher(held, {
-      ...carried,
-      ...clampLauncher(carried, this.#viewport()),
-    });
+    this.#placePanelAndLauncher(held, launcher);
     this.#storeLauncherPosition();
   }
 
@@ -2866,9 +2940,12 @@ export class AgUiChat extends HTMLElement {
    */
   #placePanelAndLauncher(host: PanelRect, launcher: LauncherBox): void {
     const viewport = this.#viewport();
+    const screen = this.#screen();
     const size = { width: host.right - host.left, height: host.bottom - host.top };
-    const { corner } = launcherPlacement(launcher, size, viewport);
-    const insets = placeWidget(host, launcher, corner, viewport);
+    const { corner } = launcherPlacement(launcher, size, viewport, screen);
+    // The screen again, not the usable box: these are CSS insets on a fixed
+    // element and the browser measures them from the real edges.
+    const insets = placeWidget(host, launcher, corner, screen);
     this.style.setProperty("--ag-ui-inset", insets.hostInset);
     this.style.setProperty("--ag-ui-launcher-inset", insets.launcherInset);
     this.#launcherPos = { left: launcher.left, top: launcher.top };
@@ -3022,15 +3099,18 @@ export class AgUiChat extends HTMLElement {
     if (grip.x !== this.#anchor.x && grip.y !== this.#anchor.y) {
       return;
     }
-    const viewport = this.#viewport();
+    // The whole screen, not the usable box: a CSS inset on a fixed element is
+    // measured from the real edges, so expressing a right or bottom against a
+    // box the host has inset comes out short by exactly that inset.
+    const screen = this.#screen();
     const anchor = this.#anchor;
     const side = (value: number): string => `${Math.round(value)}px`;
     this.style.setProperty(
       "--ag-ui-inset",
       [
         anchor.y === "top" ? side(box.top) : "auto",
-        anchor.x === "right" ? side(viewport.width - box.right) : "auto",
-        anchor.y === "bottom" ? side(viewport.height - box.bottom) : "auto",
+        anchor.x === "right" ? side(screen.width - box.right) : "auto",
+        anchor.y === "bottom" ? side(screen.height - box.bottom) : "auto",
         anchor.x === "left" ? side(box.left) : "auto",
       ].join(" "),
     );
@@ -3870,7 +3950,7 @@ export class AgUiChat extends HTMLElement {
     enablePanelDrag(header, {
       enabled: () => !this.collapsed && this.#launcherDraggable(),
       rect: () => this.getBoundingClientRect(),
-      apply: (box) => this.#movePanel(box),
+      apply: (box, from) => this.#movePanel(box, from),
       commit: (box, from) => this.#commitPanel(box, from),
     });
 

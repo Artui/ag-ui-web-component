@@ -106,6 +106,7 @@ export function enableLauncherDrag(launcher: HTMLElement, options: LauncherDragO
     const onUp = (up: PointerEvent): void => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
       if (!dragging) {
         return;
       }
@@ -124,8 +125,16 @@ export function enableLauncherDrag(launcher: HTMLElement, options: LauncherDragO
 
     // Listeners on `window`, not the launcher: a fast drag outruns the pointer
     // and would otherwise strand it mid-move with no pointerup.
+    //
+    // pointercancel matters on touch, where it is routine rather than
+    // exceptional: the browser takes the pointer back for a scroll or a system
+    // gesture and never sends pointerup. Without this the move listeners stay
+    // attached and the drag stamp never clears, which leaves the launcher
+    // following a finger that has stopped and the element believing a gesture
+    // is still in flight.
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   });
 
   // The position this key gesture has applied but not yet persisted. The

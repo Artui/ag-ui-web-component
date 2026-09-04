@@ -19,7 +19,7 @@ describe("launcherPlacement", () => {
     const sized = { width: 366, height: 560 };
     const resting = box(viewport.width - 24 - 56, viewport.height - 24 - 56);
 
-    const placed = launcherPlacement(resting, sized, viewport);
+    const placed = launcherPlacement(resting, sized, viewport, viewport);
 
     expect(placed.corner).toEqual({ x: "right", y: "bottom" });
     expect(placed.hostInset).toBe("auto 24px 24px auto");
@@ -28,21 +28,21 @@ describe("launcherPlacement", () => {
 
   it("opens toward whichever side of the launcher has more room", () => {
     // Top-left corner: everything is down and to the right.
-    expect(launcherPlacement(box(20, 20), panel, desktop).corner).toEqual({
+    expect(launcherPlacement(box(20, 20), panel, desktop, desktop).corner).toEqual({
       x: "left",
       y: "top",
     });
     // Bottom-right corner: everything is up and to the left.
-    expect(launcherPlacement(box(1364, 824), panel, desktop).corner).toEqual({
+    expect(launcherPlacement(box(1364, 824), panel, desktop, desktop).corner).toEqual({
       x: "right",
       y: "bottom",
     });
     // Mixed corners resolve per axis, not as a pair.
-    expect(launcherPlacement(box(1364, 20), panel, desktop).corner).toEqual({
+    expect(launcherPlacement(box(1364, 20), panel, desktop, desktop).corner).toEqual({
       x: "right",
       y: "top",
     });
-    expect(launcherPlacement(box(20, 824), panel, desktop).corner).toEqual({
+    expect(launcherPlacement(box(20, 824), panel, desktop, desktop).corner).toEqual({
       x: "left",
       y: "bottom",
     });
@@ -54,18 +54,18 @@ describe("launcherPlacement", () => {
     // because the room that counts runs from the edge the panel starts at.
     const justRightOfCentre = box(desktop.width / 2 + 10, 400);
 
-    const placed = launcherPlacement(justRightOfCentre, panel, desktop);
+    const placed = launcherPlacement(justRightOfCentre, panel, desktop, desktop);
 
     expect(placed.corner.x).toBe("right");
     // And a hair to the left of centre flips it, so the boundary is where the
     // two rooms are equal rather than at the midpoint of the screen.
-    expect(launcherPlacement(box(desktop.width / 2 - 40, 400), panel, desktop).corner.x).toBe(
-      "left",
-    );
+    expect(
+      launcherPlacement(box(desktop.width / 2 - 40, 400), panel, desktop, desktop).corner.x,
+    ).toBe("left");
   });
 
   it("pins the panel to the launcher's own edge when it fits", () => {
-    const placed = launcherPlacement(box(200, 100), panel, desktop);
+    const placed = launcherPlacement(box(200, 100), panel, desktop, desktop);
 
     // Opening down-right from (200, 100): the host box starts exactly there.
     expect(placed.hostInset).toBe("100px auto auto 200px");
@@ -79,7 +79,7 @@ describe("launcherPlacement", () => {
     const shallow = { left: 0, top: 0, width: 1440, height: 700 };
     const middle = box(600, 320);
 
-    const placed = launcherPlacement(middle, panel, shallow);
+    const placed = launcherPlacement(middle, panel, shallow, shallow);
 
     // Opening downward would run to 320 + 560 = 880, past the 700 viewport, so
     // the box is pulled up to sit on the bottom margin.
@@ -95,7 +95,7 @@ describe("launcherPlacement", () => {
     // one wins, so its left edge sits on the margin rather than hanging off.
     const narrow = { left: 0, top: 0, width: 320, height: 900 };
 
-    const placed = launcherPlacement(box(200, 100), { width: 800, height: 560 }, narrow);
+    const placed = launcherPlacement(box(200, 100), { width: 800, height: 560 }, narrow, narrow);
 
     // This launcher is pinned right, so the clamp reaches the same left edge by
     // pushing the right one past the viewport: 320 + 504 - 800 = 24. A negative
@@ -107,14 +107,36 @@ describe("launcherPlacement", () => {
   });
 
   it("takes a caller's margin over the default gutter", () => {
-    const placed = launcherPlacement(box(0, 0), panel, desktop, 60);
+    const placed = launcherPlacement(box(0, 0), panel, desktop, desktop, 60);
 
     expect(placed.hostInset).toBe("60px auto auto 60px");
   });
 
   it("rounds to whole pixels so a drag cannot accumulate a subpixel drift", () => {
-    const placed = launcherPlacement(box(200.4, 100.6), panel, desktop);
+    const placed = launcherPlacement(box(200.4, 100.6), panel, desktop, desktop);
 
     expect(placed.hostInset).toBe("101px auto auto 200px");
+  });
+
+  it("measures insets from the screen, not from the box the host left free", () => {
+    // The regression this argument exists for. A CSS inset on a fixed element
+    // is measured from the real viewport edges, so expressing a bottom against
+    // a usable box that starts 120px down comes out 120px short -- and it only
+    // shows when the corner flips, because that is the moment the same point
+    // stops being written as a top and starts being written as a bottom.
+    const screen = { width: 1440, height: 900 };
+    const usable = { left: 0, top: 120, width: 1440, height: 780 };
+    const low = box(700, 800);
+
+    const placed = launcherPlacement(low, panel, usable, screen);
+
+    expect(placed.corner.y).toBe("bottom");
+    // The host inset is the one measured from the screen; the launcher's is
+    // relative to the host box it sits in. 900 - 856 = 44 from the real bottom
+    // edge. Against the usable box it would have been 780 - 856, i.e. negative,
+    // and the widget would have leapt off the bottom of the screen the moment
+    // the drag crossed the middle and the corner flipped.
+    const bottom = Number.parseFloat(placed.hostInset.split(" ")[2] ?? "");
+    expect(bottom).toBe(44);
   });
 });

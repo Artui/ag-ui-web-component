@@ -213,6 +213,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dragging the panel or the launcher jumped, and stopped short of every
+  edge.** Reported from a phone and reproduced on a desktop: the widget
+  followed the pointer until it passed roughly the middle of the screen, then
+  leapt by about the height of the host's own header bar -- and it could not be
+  dragged flush to any side.
+
+  Three separate causes, all of them in this release's own new work:
+
+  A CSS `inset` on a fixed element is measured from the **real** viewport
+  edges, and the new `--ag-ui-viewport-inset-*` support had them measured from
+  the box the host left free. Halfway across the screen is where the expand
+  corner flips -- the same point stops being written as a `top` and starts
+  being written as a `bottom` -- so that is where the difference appeared, as a
+  leap of exactly the reserved edge.
+
+  The 24px gutter a placement rests a panel at was being enforced against a
+  drag, which is what made it feel stuck short of every side. Staying on screen
+  is the part that matters, and that is still enforced.
+
+  Releasing the drag moved the launcher again, because the commit recomputed
+  the same sum the last move had already applied. Both now come from one
+  place, so the release changes nothing by construction.
+
+  Also fixed while in there: a `pointercancel` now ends a drag. On touch that
+  is routine rather than exceptional -- the browser takes the pointer back for
+  a scroll or a system gesture and never sends `pointerup` -- and without it the
+  move listeners stayed attached and the widget kept following a finger that
+  had stopped.
+
 - **The highlight overlay could not be themed by any host that themes the
   widget.** It is appended to the document body so it can escape the clipping it
   exists to avoid, so a `var()` in its own inline style resolved against the
