@@ -264,6 +264,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their size, despite it being the only way to reach history, a new chat or the
   collapse.
 
+- **A resized panel and a dragged one disagreed about where the screen ends.**
+  The size cap subtracted a gutter that the drag's own limit did not, so the two
+  named different edges -- and once the size was capped a grip could no longer
+  grow the panel, which left the pull to land on the position instead and took
+  the whole panel down the screen. Pulling the other way stopped a gutter short
+  of an edge a drag could reach, leaving a band you could drag into but not
+  resize into, whose height changed with whatever the host had reserved.
+
+  The gutter belongs in the resting inset, which is what holds an untouched
+  panel clear of the edge; the cap is now simply what the host left free, which
+  is the limit the drag already used.
+
+  **It showed on one axis only, and the arithmetic says why**: the default panel
+  is 560 tall against a cap of the viewport minus 48 -- on an 800px screen with
+  a header reserved, 72px of headroom, so the height hit its cap almost at once.
+  The default width is 380 against a cap near 1230, which is 850px of headroom
+  nothing ever reaches. Same rule on both axes; only the vertical one was ever
+  felt.
+
 - **Resizing had none of the restrictions dragging has.** A grip could be pulled
   past the edges the host reserved, and pulling the *anchored* edge -- the
   bottom, under the default placement -- wrote a negative inset and moved the

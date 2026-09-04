@@ -216,8 +216,26 @@ export const STYLES = `
     auto calc(24px + var(--_viewport-inset-right))
       calc(24px + var(--_viewport-inset-bottom) + var(--_visual-viewport-inset-bottom)) auto
   );
-  --_max-width: var(--ag-ui-max-width, calc(var(--_viewport-width) - 48px));
-  --_max-height: var(--ag-ui-max-height, calc(var(--_viewport-height) - 48px));
+  /* The cap is what the host left free, with no gutter subtracted from it.
+     The gutter belongs in the resting inset above, which is what holds a panel
+     nobody has touched clear of the screen edge; taking it out of the cap as
+     well left the size and the position disagreeing about where the limit is,
+     and a gesture has to land somewhere.
+
+     It showed on one axis only, and the arithmetic says why: the default panel
+     is 560 tall against a cap of the viewport minus 48, which on an 800px
+     screen with a header reserved is 72px of headroom -- so the height reaches
+     its cap almost immediately. The default width is 380 against a cap near
+     1230, which is 850px of headroom nothing ever reaches. Same rule, and only
+     the vertical one was ever felt.
+
+     Once the size is capped a grip cannot grow the panel, so a pull on the
+     anchored edge is written as position instead and the panel travels; and a
+     pull on the free edge stops a whole gutter short of the edge a drag can
+     reach. The bound in #withinViewport is now the only limit, and it is the
+     same one the drag uses. */
+  --_max-width: var(--ag-ui-max-width, var(--_viewport-width));
+  --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
   /* Reading-column width for placement="page" (full-bleed, centred content). */
   --_content-max-width: var(--ag-ui-content-max-width, 820px);
   /* Slim rail the sidebar placement collapses to. Only that placement reads

@@ -139,15 +139,12 @@ describe("dragging tracks the pointer (real browser)", () => {
     const beforeRelease = el.getBoundingClientRect();
     window.dispatchEvent(pointer("pointerup", from.x, from.y - 640));
 
-    // It stops, and never crosses into what the host reserved -- which is the
-    // restriction dragging has and this did not.
-    //
-    // It stops a gutter short rather than flush, because the placement's own
-    // max-height still caps the panel and that cap is measured from a different
-    // box than the size is. Asserted as a range rather than a number so this
-    // says what is guaranteed: inside the reserved edge, and stopped.
+    // It reaches the reserved edge and stops there -- flush, the same place a
+    // drag reaches. Stopping short of it was the cap and the bound disagreeing
+    // about where the limit was, which left a band the panel could be dragged
+    // into but not resized into.
     expect(Math.min(...tops)).toBeGreaterThanOrEqual(RESERVED_TOP_PX - 1);
-    expect(tops.at(-1)).toBeLessThan(RESERVED_TOP_PX + 48);
+    expect(tops.at(-1)).toBeCloseTo(RESERVED_TOP_PX, 0);
     expect(tops.at(-1)).toBe(tops.at(-2));
     // ...and releasing keeps the size the panel actually had, rather than the
     // one the pointer asked for. Within a pixel, because the insets are written
@@ -186,6 +183,37 @@ describe("dragging tracks the pointer (real browser)", () => {
     // ...and the bottom stops at the screen rather than going past it.
     expect(el.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight + 1);
     expect(el.getBoundingClientRect().height).toBeGreaterThan(before.height);
+  });
+
+  it("does not travel when a grip is pulled on a panel that cannot grow", () => {
+    // The other half of the same disagreement, and the one that was reported.
+    // Once the size is capped a grip cannot make the panel bigger, so the pull
+    // has to land somewhere -- and on the anchored edge it landed on the
+    // position, taking the whole panel down the screen. With the cap and the
+    // bound naming the same limit there is no slack left for it to land in.
+    const el = mount(false);
+    const top = part(el, ".resize-handle--top");
+    const from = centre(top);
+    top.dispatchEvent(pointer("pointerdown", from.x, from.y));
+    for (let i = 1; i <= 20; i += 1) {
+      window.dispatchEvent(pointer("pointermove", from.x, from.y - i * 40));
+    }
+    window.dispatchEvent(pointer("pointerup", from.x, from.y - 800));
+
+    // Now at its full height, with nothing left to give.
+    const grown = el.getBoundingClientRect();
+    expect(grown.top).toBeCloseTo(RESERVED_TOP_PX, 0);
+
+    const bottom = part(el, ".resize-handle--bottom");
+    const at = centre(bottom);
+    bottom.dispatchEvent(pointer("pointerdown", at.x, at.y));
+    for (let i = 1; i <= 12; i += 1) {
+      window.dispatchEvent(pointer("pointermove", at.x, at.y + i * 30));
+      expect(Math.abs(el.getBoundingClientRect().top - grown.top)).toBeLessThanOrEqual(1);
+    }
+    window.dispatchEvent(pointer("pointerup", at.x, at.y + 360));
+
+    expect(el.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight + 1);
   });
 
   it("ignores a viewport change while a gesture owns the position", () => {
