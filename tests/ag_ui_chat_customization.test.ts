@@ -18,7 +18,7 @@ function shadow(el: AgUiChat): ShadowRoot {
 /** Mount the element, applying attributes and a pre-connect setup hook. */
 function mount(attrs: Record<string, string> = {}, setup?: (el: AgUiChat) => void): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
-  for (const [key, value] of Object.entries(attrs)) {
+  for (const [key, value] of Object.entries({ "data-start-open": "", ...attrs })) {
     el.setAttribute(key, value);
   }
   setup?.(el);

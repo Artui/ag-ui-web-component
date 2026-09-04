@@ -1562,7 +1562,7 @@ export class AgUiChat extends HTMLElement {
     // namespaced per instance but not per placement, so a tab that collapsed a
     // floating panel and later loaded the same instance as a page would restore
     // a state that placement has no way out of.
-    if (this.#collapsible() && this.#readScopedItem(COLLAPSED_KEY) === "1") {
+    if (this.#collapsible() && this.#startsCollapsed()) {
       this.setAttribute("collapsed", "");
     }
     this.#syncLauncher();
@@ -2248,6 +2248,34 @@ export class AgUiChat extends HTMLElement {
    */
   get unread(): number {
     return this.#unread;
+  }
+
+  /**
+   * Whether to mount collapsed.
+   *
+   * A stored choice always wins -- in either direction, so a user who opened
+   * the panel finds it open. With nothing stored, the corner placements start
+   * collapsed: they are the two that have a launcher, and a launcher is the
+   * resting state of every corner chat in the field. Mounting open put a
+   * 380x560 panel over the host page's own bottom-right corner on a visitor's
+   * first load, uninvited.
+   *
+   * The placements that place themselves are unchanged. A host that docks a
+   * sidebar has already decided the widget belongs on screen, and one that
+   * embeds it in its own layout has given it a box to fill.
+   *
+   * `data-start-open` restores the previous behaviour for a host that wants
+   * the panel up immediately.
+   */
+  #startsCollapsed(): boolean {
+    const stored = this.#readScopedItem(COLLAPSED_KEY);
+    if (stored !== null) {
+      return stored === "1";
+    }
+    return (
+      DRAGGABLE_PLACEMENTS.has(this.getAttribute("placement")) &&
+      !this.hasAttribute("data-start-open")
+    );
   }
 
   /**

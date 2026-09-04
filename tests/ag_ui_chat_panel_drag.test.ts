@@ -30,7 +30,7 @@ function shadow(el: AgUiChat): ShadowRoot {
 function mount(attrs: Record<string, string> = {}): { el: AgUiChat; header: HTMLElement } {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent");
-  for (const [key, value] of Object.entries(attrs)) {
+  for (const [key, value] of Object.entries({ "data-start-open": "", ...attrs })) {
     el.setAttribute(key, value);
   }
   document.body.appendChild(el);

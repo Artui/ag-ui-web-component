@@ -33,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The corner placements now rest at their launcher on a first visit.** An
+  unconfigured widget mounted open, so a visitor's first page load put a 380x560
+  panel over the host page's own bottom-right corner, uninvited. Every corner
+  chat in the field rests closed and treats opening as something the user does.
+
+  A stored choice still wins in both directions, so nobody who opened the panel
+  finds it closed. Only `floating` and `bottom-left` are affected -- the
+  placements that place themselves are unchanged, because a host that docks a
+  sidebar or embeds the widget in its own layout has already decided it belongs
+  on screen. `data-start-open` restores the previous behaviour.
+
+  **This is a visible change for any host that mounts the widget without a
+  placement**, which is the default, and it is the reason for the attribute.
+
 - **Where the widget sits, how big it is and which theme it wears now outlive
   the tab.** These went to `sessionStorage` beside the transcript and inherited
   its lifetime without earning it: the transcript is per-tab on purpose -- two

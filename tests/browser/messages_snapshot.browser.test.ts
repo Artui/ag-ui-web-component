@@ -41,6 +41,7 @@ describe("the history-replaced notice", () => {
 
   it("is rendered and visible when the server replaces the conversation", async () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("data-start-open", "");
     el.setAttribute("endpoint", "/agent/");
     const handle = makeFakeAgent({
       script: (emit) => {
@@ -70,6 +71,7 @@ describe("the history-replaced notice", () => {
 
   it("is absent from an ordinary run", async () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("data-start-open", "");
     el.setAttribute("endpoint", "/agent/");
     const handle = makeFakeAgent({
       script: (emit) => {

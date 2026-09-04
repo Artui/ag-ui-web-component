@@ -27,6 +27,10 @@ function mountWithAgent(
 ): { el: AgUiChat; handle: ReturnType<typeof makeFakeAgent> } {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
+  // The corner placements rest collapsed on a first visit now. These run a
+  // conversation and read the transcript, so they need the panel up -- and the
+  // unread badge only counts what arrives while it is down.
+  el.setAttribute("data-start-open", "");
   const handle = makeFakeAgent({ script });
   el.agentFactory = () => handle.agent;
   if (extra.tools !== undefined) {
@@ -67,8 +71,12 @@ function sendNoWait(el: AgUiChat, text: string): void {
 }
 
 function mount(attrs: Record<string, string> = {}): AgUiChat {
+  // The corner placements now rest collapsed on a first visit, which is what
+  // every corner chat in the field does. These tests are about what the open
+  // panel contains, so they ask for it up; the ones about the resting state
+  // pass their own value.
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
-  for (const [key, value] of Object.entries(attrs)) {
+  for (const [key, value] of Object.entries({ "data-start-open": "", ...attrs })) {
     el.setAttribute(key, value);
   }
   document.body.appendChild(el);

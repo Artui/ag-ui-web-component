@@ -31,6 +31,9 @@ const SPEC: ChartSpec = {
 
 function mount(width: string): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+  // Asks for the panel up: the corner placements now rest collapsed on a
+  // first visit, and these tests are about the open panel.
+  el.setAttribute("data-start-open", "");
   el.setAttribute("endpoint", "/agent");
   el.style.setProperty("--ag-ui-width", width);
   document.body.appendChild(el);

@@ -17,6 +17,9 @@ const settle = (ms = 450): Promise<void> => new Promise((resolve) => setTimeout(
 
 function mount(): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+  // Asks for the panel up: the corner placements now rest collapsed on a
+  // first visit, and these tests are about the open panel.
+  el.setAttribute("data-start-open", "");
   el.setAttribute("endpoint", "/agent");
   document.body.appendChild(el);
   return el;

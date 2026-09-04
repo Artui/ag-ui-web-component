@@ -28,6 +28,9 @@ import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
  */
 
 function mount(attrs: Record<string, string> = {}): AgUiChat {
+  // No default here on purpose. This file is about the resting state and the
+  // motion between the two, so seeding one would be seeding the answer; the
+  // tests that need an open panel ask for it themselves.
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   for (const [name, value] of Object.entries(attrs)) {
     el.setAttribute(name, value);
@@ -77,7 +80,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("morphs the panel out and the launcher in when the widget collapses", () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     settle(part(el, ".chat"));
     settle(part(el, ".launcher"));
 
@@ -88,7 +91,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("leaves the composer clickable under the resting launcher", () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     const send = part(el, ".send");
     const box = send.getBoundingClientRect();
 
@@ -99,7 +102,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("keeps the collapsed panel out of the tab order once it has gone", async () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     el.setCollapsed(true);
     await Promise.all(
       part(el, ".chat")
@@ -114,7 +117,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("sizes the settled launcher to the token, at the widget's own corner", async () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     el.setCollapsed(true);
     const launcher = part(el, ".launcher");
     await Promise.all(launcher.getAnimations().map((a) => a.finished));
@@ -128,7 +131,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("slides the chat-history drawer in from its hidden attribute", () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     settle(part(el, ".drawer-panel"));
 
     el.openThreads();
@@ -138,7 +141,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("keeps the drawer displayed for the whole of its exit", async () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     const drawer = part(el, ".drawer");
     settle(part(el, ".drawer-panel"));
     el.openThreads();
@@ -199,6 +202,35 @@ describe("collapse and slide-over motion (real browser)", () => {
     expect(getComputedStyle(part(el, ".launcher")).visibility).toBe("hidden");
     // ...and the widget still takes clicks, since it is part of the page flow.
     expect(getComputedStyle(el).pointerEvents).toBe("auto");
+  });
+
+  it.each(["floating", "bottom-left", ""])(
+    "rests at the launcher on a first visit, placement %s",
+    async (placement) => {
+      // What every corner chat in the field does. Mounting open put a 380x560
+      // panel over the host page's own corner, uninvited, on a first load.
+      const el = mount(placement === "" ? {} : { placement });
+      expect(el.collapsed).toBe(true);
+    },
+  );
+
+  it.each(["sidebar", "side", "embedded"])(
+    "leaves the %s placement open, since the host placed it deliberately",
+    async (placement) => {
+      const el = mount({ placement });
+      expect(el.collapsed).toBe(false);
+    },
+  );
+
+  it("mounts open when the host asks, and lets a stored choice win", async () => {
+    expect(mount({ "data-start-open": "" }).collapsed).toBe(false);
+
+    // Either direction: a user who opened the panel finds it open, and one who
+    // closed it finds it closed even where the host asked for open.
+    sessionStorage.setItem("ag-ui-chat:collapsed", "1");
+    expect(mount({ "data-start-open": "" }).collapsed).toBe(true);
+    sessionStorage.setItem("ag-ui-chat:collapsed", "0");
+    expect(mount({}).collapsed).toBe(false);
   });
 
   it("refuses to collapse the page placement through any reachable path", async () => {
