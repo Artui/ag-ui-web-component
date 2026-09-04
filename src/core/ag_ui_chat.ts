@@ -864,6 +864,7 @@ export class AgUiChat extends HTMLElement {
    * a field so `removeEventListener` on disconnect gets the same reference.
    */
   readonly #onViewportResize = (): void => {
+    this.#publishVisualViewport();
     this.#restoreLauncherPosition();
   };
   /** Mic button mount point (input row); the control mounts on connect when enabled. */
@@ -1578,6 +1579,12 @@ export class AgUiChat extends HTMLElement {
       this.conversationStore = this.#builtinStore;
     }
     window.addEventListener("resize", this.#onViewportResize);
+    // The visual viewport changes without the window resizing -- a keyboard
+    // opening, a pinch-zoom, the URL bar collapsing -- and `scroll` is what
+    // fires when it is panned rather than resized.
+    window.visualViewport?.addEventListener("resize", this.#onViewportResize);
+    window.visualViewport?.addEventListener("scroll", this.#onViewportResize);
+    this.#publishVisualViewport();
     this.#wireThreadStore();
     this.#wireAttachments();
     this.#wireVoice();
@@ -1651,6 +1658,8 @@ export class AgUiChat extends HTMLElement {
   disconnectedCallback(): void {
     this.#connected = false;
     window.removeEventListener("resize", this.#onViewportResize);
+    window.visualViewport?.removeEventListener("resize", this.#onViewportResize);
+    window.visualViewport?.removeEventListener("scroll", this.#onViewportResize);
     // Give the namespace back. A disconnect is not necessarily a farewell — a
     // DOM move and a framework re-render both look like one — and an element
     // that could not reclaim its own namespace on the way back in would lose
@@ -2480,9 +2489,62 @@ export class AgUiChat extends HTMLElement {
     );
   }
 
-  /** The viewport the launcher and the panel both have to fit inside. */
+  /**
+   * The viewport the launcher and the panel both have to fit inside.
+   *
+   * The *visual* viewport, not the layout one, because they come apart exactly
+   * when this matters. An on-screen keyboard shrinks the visual viewport and
+   * leaves the layout viewport alone, so clamping against `innerHeight` parks
+   * the launcher behind the keyboard and decides which corner to open into
+   * using space that is not on the screen. Pinch-zoom does the same on both
+   * axes.
+   *
+   * Falls back where the API is absent, which keeps this working in the
+   * happy-dom project as well as in an old browser.
+   */
   #viewport(): Extent {
-    return { width: window.innerWidth, height: window.innerHeight };
+    const visual = window.visualViewport;
+    if (visual === null || visual === undefined) {
+      return { width: window.innerWidth, height: window.innerHeight };
+    }
+    return { width: visual.width, height: visual.height };
+  }
+
+  /**
+   * Publish the measured viewport height so the stylesheet can size a
+   * full-bleed panel to what the user can see.
+   *
+   * No CSS length carries this. An on-screen keyboard has no effect on any
+   * viewport-percentage unit, so a panel sized from `100dvh` puts its composer
+   * behind the keyboard being typed into. Written inline, and read through a
+   * token the host's own `--ag-ui-viewport-height` still outranks.
+   *
+   * Removed rather than frozen when the two viewports agree, so a desktop that
+   * never diverges carries no inline override at all and the declared fallback
+   * stays in charge.
+   */
+  #publishVisualViewport(): void {
+    const visual = window.visualViewport;
+    if (visual === null || visual === undefined) {
+      return;
+    }
+    if (Math.abs(visual.height - window.innerHeight) < 1) {
+      this.style.removeProperty("--ag-ui-visual-viewport-height");
+      this.style.removeProperty("--ag-ui-visual-viewport-inset-bottom");
+      return;
+    }
+    this.style.setProperty("--ag-ui-visual-viewport-height", `${Math.round(visual.height)}px`);
+    // What is hidden below the visible area, which is where a keyboard is. A
+    // shorter panel does not help anything anchored to the bottom: a floating
+    // widget is positioned against the layout viewport, so its bottom edge and
+    // the launcher at that corner stay behind the keyboard until this lifts
+    // them. Never negative -- a visual viewport panned up past the layout one
+    // would otherwise pull the panel down off the screen.
+    const hidden = window.innerHeight - visual.height - visual.offsetTop;
+    this.style.setProperty(
+      "--ag-ui-visual-viewport-inset-bottom",
+      `${Math.max(0, Math.round(hidden))}px`,
+    );
   }
 
   /**

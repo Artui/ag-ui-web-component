@@ -167,10 +167,33 @@ export const STYLES = `
      keyboard changes no viewport-percentage length -- not vh, not dvh, not svh
      -- so a full-bleed panel on a phone has to be told the height rather than
      deriving it. The value to publish there is the visual viewport's. */
-  --_viewport-height: var(
-    --ag-ui-viewport-height,
+  --_viewport-height: var(--ag-ui-viewport-height, var(--_visual-viewport-height));
+  /* The measured height of the part of the screen the user can actually see,
+     written by the element from the visual viewport and falling back to the
+     layout viewport where nothing has measured yet.
+
+     This is the on-screen keyboard, and it needs measuring because no CSS
+     length describes it: an on-screen keyboard has no effect on any
+     viewport-percentage unit, so 100vh, 100dvh and 100svh are all the same
+     number with the keyboard up as without it. A full-bleed panel sized from
+     any of them puts its composer behind the keyboard the user is typing into.
+
+     Separate from the token above so a host that states the usable height
+     outright still wins: the element writes this one inline, and an inline
+     value would otherwise outrank the host's own rule. */
+  --_visual-viewport-height: var(
+    --ag-ui-visual-viewport-height,
     calc(100vh - var(--_viewport-inset-top) - var(--_viewport-inset-bottom))
   );
+  /* How much of the layout viewport is hidden below the visible one, measured
+     and written by the element alongside the height above.
+
+     A shorter panel is not enough on its own for anything anchored to the
+     bottom. A floating widget is positioned against the layout viewport, so
+     with a keyboard up its bottom edge -- and the launcher that lives at that
+     corner -- sits behind the keyboard however tall the panel is. This is what
+     lifts it clear. */
+  --_visual-viewport-inset-bottom: var(--ag-ui-visual-viewport-inset-bottom, 0px);
   --_viewport-width: var(
     --ag-ui-viewport-width,
     calc(100vw - var(--_viewport-inset-left) - var(--_viewport-inset-right))
@@ -185,7 +208,8 @@ export const STYLES = `
   --_height: var(--ag-ui-height, 560px);
   --_inset: var(
     --ag-ui-inset,
-    auto calc(24px + var(--_viewport-inset-right)) calc(24px + var(--_viewport-inset-bottom)) auto
+    auto calc(24px + var(--_viewport-inset-right))
+      calc(24px + var(--_viewport-inset-bottom) + var(--_visual-viewport-inset-bottom)) auto
   );
   --_max-width: var(--ag-ui-max-width, calc(var(--_viewport-width) - 48px));
   --_max-height: var(--ag-ui-max-height, calc(var(--_viewport-height) - 48px));
@@ -266,7 +290,8 @@ export const STYLES = `
 :host([placement="bottom-left"]) {
   --_inset: var(
     --ag-ui-inset,
-    auto auto calc(24px + var(--_viewport-inset-bottom)) calc(24px + var(--_viewport-inset-left))
+    auto auto calc(24px + var(--_viewport-inset-bottom) + var(--_visual-viewport-inset-bottom))
+      calc(24px + var(--_viewport-inset-left))
   );
 }
 

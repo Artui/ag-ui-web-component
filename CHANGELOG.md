@@ -99,6 +99,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A panel no longer sizes itself to screen space the on-screen keyboard is
+  covering.** No CSS length describes this: a keyboard has no effect on any
+  viewport-percentage unit, so `100vh`, `100dvh` and `100svh` are the same
+  number with it up as without. A full-bleed panel sized from one of them put
+  its own composer behind the keyboard being typed into.
+
+  The element now tracks `visualViewport` and publishes both the visible height
+  and how much is hidden below it. The height shrinks the panel; the hidden gap
+  lifts anything anchored to the bottom, which a shorter panel does not do on
+  its own -- a floating widget is positioned against the layout viewport, so its
+  bottom edge and the launcher at that corner stayed behind the keyboard
+  whatever height it had. A host's own `--ag-ui-viewport-height` still outranks
+  the measurement, and nothing is written at all while the two viewports agree.
+
+  The same measurement fixes the clamps, which were computing which corner to
+  open into using space that was off the screen.
+
 - **The chat-history list could not be dismissed under the embedded
   placement.** The drawer closes when its backdrop is clicked, which is enough
   wherever a strip of backdrop is showing -- but `embedded` widens the panel to
