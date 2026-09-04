@@ -337,6 +337,25 @@ export const ICON_ATTACH = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="
 /** The voice-input glyph (a microphone on its stand). */
 export const ICON_VOICE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3z"/><path d="M5 11v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v3"/></svg>`;
 
+/**
+ * The theme toggle's two marks, drawn rather than typed.
+ *
+ * They were the emoji `\u{1F319}` and `\u2600\uFE0F`, which is why this one
+ * control never sat right beside the others: an emoji is painted by the
+ * platform's own font, at its own weight and colour, and its ink routinely
+ * exceeds the text metrics it is laid out with -- so it drew outside the box
+ * measured for it and clipped, while every neighbour is a stroked path that
+ * fits its viewBox exactly.
+ *
+ * The moon is drawn as one closed crescent rather than a disc with a second
+ * disc cut out of it, because these are stroked (`fill: none`) and a cut-out
+ * needs a fill to hide anything.
+ */
+export const ICON_MOON = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>`;
+
+/** The other half of the pair; see {@link ICON_MOON}. */
+export const ICON_SUN = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
+
 /** The default launcher mark (a speech bubble), shown when the host slots none. */
 export const ICON_LAUNCHER = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-5 4z"/></svg>`;
 
@@ -381,10 +400,17 @@ export const ICON_FILE_TEXT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidde
 export const CHART_ACTIVITY_TYPE = "chart";
 
 /**
- * The gutter a floating panel keeps from the viewport edge.
+ * The gutter a floating panel *rests* at, before anyone has touched it.
  *
- * It matches the default `--ag-ui-inset`, so an undragged widget resolves to
- * exactly the placement it already had. Changing it moves every clamped panel.
+ * It matches the default `--ag-ui-inset` and the stylesheet's
+ * `--ag-ui-edge-gutter`, so an undragged widget resolves to exactly the
+ * placement it already had, and it is what the size cap subtracts so a resting
+ * panel grown to its limit stops at the far edge rather than one gutter past
+ * it.
+ *
+ * Not a limit on where a *person* may put the widget -- that is
+ * {@link SCREEN_EDGE_MARGIN}, and the two being one number is what made a
+ * dragged panel feel stuck short of every edge on all four sides at once.
  */
 export const EDGE_MARGIN = 24;
 
@@ -397,3 +423,56 @@ export const EDGE_MARGIN = 24;
  * *change*, and setting the same string twice is not one.
  */
 export const ANNOUNCE_CLEAR_MS = 150;
+
+/**
+ * Stacking order for the host-page highlight overlay.
+ *
+ * One above the widget's own default, because the overlay's whole job is to
+ * point at something on the page the widget is sitting over -- a ring drawn
+ * underneath the panel would be hidden by the thing that asked for it. It takes
+ * no pointer events at any point, so being on top costs the page nothing.
+ */
+export const HIGHLIGHT_OVERLAY_Z_INDEX = 2147483001;
+
+/**
+ * The panel width at which the conversation list stops covering the transcript
+ * and docks beside it.
+ *
+ * Wide enough that the list and a readable column both fit: the list asks for
+ * 300px and the reading column is capped at 820px. Below this a docked list
+ * would leave a strip of transcript narrower than the messages in it.
+ */
+export const THREADS_DOCK_MIN_WIDTH = 900;
+
+/**
+ * How many characters a pasted string has to reach before it becomes an
+ * attachment rather than composer text.
+ *
+ * The composer is capped at 40vh, so anything near this is already taller than
+ * the box that holds it: the user cannot read what they pasted or edit around
+ * it. Roughly where the field stops being usable rather than a number with a
+ * meaning of its own -- `data-paste-attach` moves it.
+ */
+export const PASTE_ATTACH_CHARS = 5000;
+
+/**
+ * How close the launcher may be pushed to the edge of the screen.
+ *
+ * Not the panel's 24px gutter, which was rejected here on purpose: a launcher
+ * held that far in refuses the corners people actually drag it to. But zero is
+ * wrong too. The bubble is a circle with a drop shadow, and one sitting flush
+ * against the edge has its shadow cut and its curve running into the boundary,
+ * which reads as clipped whether or not a single pixel is missing -- and on a
+ * screen with rounded corners, or under a scrollbar, it is genuinely clipped.
+ *
+ * Small enough that every corner is still reachable, large enough that the
+ * circle always closes.
+ *
+ * The panel obeys the same bound, for the same reason: it is a rounded box
+ * with the same drop shadow, and there is no account of why a bubble held off
+ * the boundary should sit beside a panel welded to it. Before this was shared
+ * there were four answers to one question -- a drag stopped at 0, a resize at
+ * 0, a restore at 24 and the launcher at 8 -- so a panel dragged flush leapt
+ * 24px inward the next time anything re-placed it.
+ */
+export const SCREEN_EDGE_MARGIN = 8;

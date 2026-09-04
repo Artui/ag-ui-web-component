@@ -28,6 +28,9 @@ import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
  */
 
 function mount(attrs: Record<string, string> = {}): AgUiChat {
+  // No default here on purpose. This file is about the resting state and the
+  // motion between the two, so seeding one would be seeding the answer; the
+  // tests that need an open panel ask for it themselves.
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   for (const [name, value] of Object.entries(attrs)) {
     el.setAttribute(name, value);
@@ -70,10 +73,14 @@ describe("collapse and slide-over motion (real browser)", () => {
   afterEach(() => {
     document.body.innerHTML = "";
     sessionStorage.clear();
+    // Layout preferences are durable on purpose, so the per-tab clear no longer
+    // reaches all of them. Without this a dragged position leaks into the next
+    // test, which reads as a drag that travelled the wrong distance.
+    localStorage.clear();
   });
 
   it("morphs the panel out and the launcher in when the widget collapses", () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     settle(part(el, ".chat"));
     settle(part(el, ".launcher"));
 
@@ -84,7 +91,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("leaves the composer clickable under the resting launcher", () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     const send = part(el, ".send");
     const box = send.getBoundingClientRect();
 
@@ -95,7 +102,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("keeps the collapsed panel out of the tab order once it has gone", async () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     el.setCollapsed(true);
     await Promise.all(
       part(el, ".chat")
@@ -110,7 +117,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("sizes the settled launcher to the token, at the widget's own corner", async () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     el.setCollapsed(true);
     const launcher = part(el, ".launcher");
     await Promise.all(launcher.getAnimations().map((a) => a.finished));
@@ -124,7 +131,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("slides the chat-history drawer in from its hidden attribute", () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     settle(part(el, ".drawer-panel"));
 
     el.openThreads();
@@ -134,7 +141,7 @@ describe("collapse and slide-over motion (real browser)", () => {
   });
 
   it("keeps the drawer displayed for the whole of its exit", async () => {
-    const el = mount();
+    const el = mount({ "data-start-open": "" });
     const drawer = part(el, ".drawer");
     settle(part(el, ".drawer-panel"));
     el.openThreads();
@@ -182,8 +189,8 @@ describe("collapse and slide-over motion (real browser)", () => {
     expect(box.height).toBe(window.innerHeight);
   });
 
-  it.each(["embedded", "page"])("keeps %s collapsing to its header bar", async (placement) => {
-    const el = mount({ placement });
+  it("keeps embedded collapsing to its header bar", async () => {
+    const el = mount({ placement: "embedded" });
     el.setCollapsed(true);
     const chat = part(el, ".chat");
     await Promise.all(chat.getAnimations().map((a) => a.finished));
@@ -195,5 +202,143 @@ describe("collapse and slide-over motion (real browser)", () => {
     expect(getComputedStyle(part(el, ".launcher")).visibility).toBe("hidden");
     // ...and the widget still takes clicks, since it is part of the page flow.
     expect(getComputedStyle(el).pointerEvents).toBe("auto");
+  });
+
+  it.each(["floating", "bottom-left", ""])(
+    "rests at the launcher on a first visit, placement %s",
+    async (placement) => {
+      // What every corner chat in the field does. Mounting open put a 380x560
+      // panel over the host page's own corner, uninvited, on a first load.
+      const el = mount(placement === "" ? {} : { placement });
+      expect(el.collapsed).toBe(true);
+    },
+  );
+
+  it.each(["sidebar", "side", "embedded"])(
+    "leaves the %s placement open, since the host placed it deliberately",
+    async (placement) => {
+      const el = mount({ placement });
+      expect(el.collapsed).toBe(false);
+    },
+  );
+
+  it("mounts open when the host asks, and lets a stored choice win", async () => {
+    expect(mount({ "data-start-open": "" }).collapsed).toBe(false);
+
+    // Either direction: a user who opened the panel finds it open, and one who
+    // closed it finds it closed even where the host asked for open.
+    sessionStorage.setItem("ag-ui-chat:collapsed", "1");
+    expect(mount({ "data-start-open": "" }).collapsed).toBe(true);
+    sessionStorage.setItem("ag-ui-chat:collapsed", "0");
+    expect(mount({}).collapsed).toBe(false);
+  });
+
+  it("keeps the edge rail out of the edges the host reserved", async () => {
+    // The rail said 100vh and pinned its own bottom, so it ran under whatever
+    // chrome the host had reserved -- and its icon lives at the top, which
+    // made the one control that reopens the panel the first thing to
+    // disappear behind a sticky header.
+    const el = mount({ placement: "sidebar" });
+    el.style.setProperty("--ag-ui-viewport-inset-top", "120px");
+    el.setCollapsed(true);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const host = el.getBoundingClientRect();
+    expect(host.top).toBeCloseTo(120, 0);
+    expect(host.bottom).toBeLessThanOrEqual(window.innerHeight + 1);
+
+    const icon = part(el, ".launcher .icon-holder").getBoundingClientRect();
+    expect(icon.top).toBeGreaterThanOrEqual(120);
+  });
+
+  it("says what the rail is, rather than being a coloured stripe", async () => {
+    // A screen-high column carrying one small icon is the widest collapsed
+    // state there is and the one that said least about itself.
+    const el = mount({ placement: "sidebar", "title-text": "Support" });
+    el.setCollapsed(true);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const label = part(el, ".rail-label");
+    expect(label.textContent).toBe("Support");
+    expect(getComputedStyle(label).display).not.toBe("none");
+    expect(getComputedStyle(label).writingMode).toContain("vertical");
+    // The glyph has to sit inside its circle rather than fill it. A glyph in an
+    // icon holder takes the holder's whole box by default, which is right for a
+    // plain holder and wrong the moment it becomes a filled disc -- the mark
+    // then runs edge to edge and reads as a square crammed into a circle. The
+    // proportion is the floating launcher's own, so the two collapsed states
+    // look like the same widget.
+    const circle = part(el, ".launcher .icon-holder").getBoundingClientRect();
+    // Found from the holder rather than by one selector: the mark is a slotted
+    // SVG by default and an img when the host supplies an icon URL, and the
+    // proportion has to hold for both.
+    const holder = part(el, ".launcher .icon-holder");
+    const mark = holder.querySelector("svg, img");
+    if (mark === null) {
+      throw new Error("the rail circle has no mark in it");
+    }
+    const glyph = mark.getBoundingClientRect();
+    expect(glyph.width / circle.width).toBeLessThan(0.6);
+    expect(glyph.width / circle.width).toBeGreaterThan(0.35);
+
+    // The accent is kept for the icon rather than flooding the whole rail: the
+    // rail wears the panel's own surface colour. Compared against the panel
+    // rather than against a token -- `--ag-ui-bg` is only ever read by the
+    // stylesheet and never declared, so `getPropertyValue` returns "" and the
+    // fallback made this a hard-coded assertion that the rail is white,
+    // wearing the shape of one about the theme.
+    const rail = part(el, ".launcher");
+    expect(getComputedStyle(rail).backgroundColor).toBe(
+      getComputedStyle(part(el, ".chat")).backgroundColor,
+    );
+  });
+
+  it("hides the rail caption everywhere the launcher is a bubble", async () => {
+    const el = mount({ placement: "floating" });
+    el.setCollapsed(true);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(getComputedStyle(part(el, ".rail-label")).display).toBe("none");
+  });
+
+  it("refuses to collapse the page placement through any reachable path", async () => {
+    const el = mount({ placement: "page" });
+    // The control is not offered.
+    expect(getComputedStyle(part(el, ".header-btn--collapse")).display).toBe("none");
+    // ...and the state is refused rather than merely unreachable.
+    el.setCollapsed(true);
+    expect(el.collapsed).toBe(false);
+    el.toggleCollapsed();
+    expect(el.collapsed).toBe(false);
+  });
+
+  it("renders a page panel in full even if the attribute is forced on", async () => {
+    // The one path no guard sees: an attribute written straight onto the
+    // element. Without the stylesheet neutralising it, this is the generic
+    // collapse -- panel scaled away, pointer events dropped -- under the single
+    // placement that also hides the launcher, so nothing would remain on screen
+    // and there would be no control left to undo it.
+    const el = mount({ placement: "page" });
+    el.setAttribute("collapsed", "");
+    const chat = part(el, ".chat");
+    await Promise.all(chat.getAnimations().map((a) => a.finished));
+
+    expect(getComputedStyle(chat).visibility).toBe("visible");
+    expect(getComputedStyle(chat).opacity).toBe("1");
+    expect(getComputedStyle(part(el, ".messages")).display).not.toBe("none");
+    expect(getComputedStyle(part(el, ".input-row")).display).not.toBe("none");
+    expect(getComputedStyle(el).pointerEvents).toBe("auto");
+  });
+
+  it("releases a collapsed panel when the placement changes to page", async () => {
+    // Collapsed under a placement that has the state, then moved to one that
+    // does not: the header control disappears with the attribute change, so
+    // holding the state would strand the panel.
+    const el = mount({ placement: "floating" });
+    el.setCollapsed(true);
+    expect(el.collapsed).toBe(true);
+
+    el.setAttribute("placement", "page");
+    expect(el.collapsed).toBe(false);
   });
 });

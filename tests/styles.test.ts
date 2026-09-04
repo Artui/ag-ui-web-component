@@ -43,7 +43,12 @@ describe("STYLES", () => {
   it("keeps the default floating bottom-right 380x560 widget", () => {
     expect(STYLES).toContain("--_width: var(--ag-ui-width, 380px);");
     expect(STYLES).toContain("--_height: var(--ag-ui-height, 560px);");
-    expect(STYLES).toContain("--_inset: var(--ag-ui-inset, auto 24px 24px auto);");
+    // The floating margins are added to whatever edges the host reserved, so
+    // the default is an expression rather than a literal. The gutter itself is
+    // a token because the size cap has to subtract the same one the inset
+    // spends -- stating 24 twice is how those two came apart.
+    expect(STYLES).toContain("--_edge-gutter: var(--ag-ui-edge-gutter, 24px);");
+    expect(STYLES).toContain("auto calc(var(--_edge-gutter) + var(--_viewport-inset-right))");
     expect(STYLES).toContain("--_radius: var(--ag-ui-radius, 12px);");
   });
 
@@ -125,13 +130,28 @@ describe("STYLES", () => {
     expect(STYLES).toContain("visibility: visible;");
   });
 
-  it("keeps the header-bar collapse for the two in-flow placements", () => {
-    // A floating circle would escape an embedded widget's host layout, and a
-    // full-screen page route has no corner to float in.
-    const inFlow = ':host([collapsed]:is([placement="embedded"], [placement="page"]))';
+  it("keeps the header-bar collapse for the one in-flow placement", () => {
+    // A floating circle would escape an embedded widget's host layout, so that
+    // placement hides the body and keeps the bar instead.
+    const inFlow = ':host([collapsed][placement="embedded"])';
     expect(STYLES).toContain(`${inFlow} .skill-chips`);
     expect(STYLES).toContain(`${inFlow} .skill-palette`);
     expect(STYLES).toContain(`${inFlow} .input-row`);
+  });
+
+  it("gives the page placement no collapsed rendering to fall into", () => {
+    // The control is hidden, but an attribute written straight onto the element
+    // never passes through the guards that hide it -- so the placement has to
+    // neutralise the state here, or it would inherit the generic collapse that
+    // scales the panel away, under the one placement that hides the launcher.
+    expect(STYLES).toContain(':host([placement="page"]) .header-btn--collapse');
+    expect(STYLES).toContain(':host([placement="page"][collapsed]) {\n  pointer-events: auto;');
+    expect(STYLES).toContain(':host([placement="page"][collapsed]) .chat');
+    // And it must not have been left in the in-flow list it used to share.
+    // Stated as the shared selector rather than one of its rules: the page
+    // placement still has an .input-row rule of its own for the reading column,
+    // so the loose form of this assertion passes against the wrong thing.
+    expect(STYLES).not.toContain(':is([placement="embedded"], [placement="page"])');
   });
 
   it("slides the sidebar panel out through the edge it docks against", () => {

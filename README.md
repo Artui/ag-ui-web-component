@@ -187,13 +187,19 @@ another origin, add `credentials="include"` too; see
 | `data-quote-selection` | — | **On by default.** `="false"` stops the transcript offering to quote a selection. `quote()` keeps working either way. See [Quoting a selection](#quoting-a-selection). |
 | `data-message-actions` | — | **All on by default.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry"`). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
-| `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
+| `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` / `chat` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
-| `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded` / `page`). Persisted per-tab in `sessionStorage`. |
+| `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
+| `data-dragging` | — | **Written by the element, not by you.** Stamped on whichever handle a gesture is currently using, so the styles can react and so the element knows not to re-place the widget under a drag in progress. Cleared on `pointerup` and on `pointercancel`. |
+| `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
+| `data-small-viewport` | — | CSS-only: `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
+| `data-paste-attach` | — | When to turn a long text paste into an attachment instead of composer text: absent for the 5000-character default, `off` to never, or a positive number of characters. Only acts where `data-attachments-url` (or a custom `uploadHandler`) gives it somewhere to go. |
+| `data-starters` | — | JSON array of prompts offered on an empty transcript, e.g. `'["Summarise this page"]'`. Fallback content for `slot="empty"`, so slotting your own replaces them. Shares the four-prompt and 120-character limits with the suggestion chips a run pushes. Read once at connect. |
+| `data-start-open` | — | Mount the panel open on a first visit. The corner placements otherwise rest at their launcher, the way every corner chat does; a stored choice wins over both. The placements that place themselves are unaffected. |
 | `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
-| `placement` | — | CSS-only: `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` / `embedded`. |
+| `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded`. |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
 `icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
@@ -268,7 +274,8 @@ the `copyCode` / `copied` / `copyFailed` strings.
 
 **Methods**: `registerTool`, `registerPageState`, `registerActivityRenderer`, `setSkills`,
 `sendMessage`, `attachFile`, `appendMessage`, `retryLastTurn`, `quote`, `offerQuoteInPage`,
-`enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `toggleTheme`, `openThreads`,
+`enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `describeSurface`, `moveTo`,
+`toggleTheme`, `openThreads`, `closeThreads`,
 `openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `reload`, and the deprecated
 `registerStateHook` (renamed to `registerPageState`).
 
@@ -812,6 +819,44 @@ operations a tool handler typically wants:
   flash defaults to `flashMs: 0` here: the field is about to be typed into, which is its own
   highlight. Pass `flashMs` (and optionally `color`) to ring it first.
 - `clickElement(el, options)` / `pressButton(el, options)` — scroll to, highlight/press, and click.
+- `showHighlightOverlay(el, options)` — ring an element from an **overlay drawn outside it**, and
+  optionally dim everything else (`scrim`) or flow a gradient round it (`gradient`). Returns a
+  function that removes it. `flash` and `focusWithFlash` take `scrim` and `gradient` too and route
+  through this when either is asked for.
+
+  **Why a second mechanism.** The plain ring is an `outline` on the element, which is deliberate:
+  a `box-shadow` paints outside the border box, so an `overflow: hidden` ancestor sharing the
+  target's box clips the whole ring away while the helper still reports success. But an outline
+  takes a *colour* — there is no `outline-image` — so a gradient cannot be one, and anything else
+  that can be is a property of the target and lands back inside whatever is clipping it. Dimming
+  everything else needs a surface larger than the target, which is the same problem from the other
+  side. So they are one overlay rather than two features.
+
+  **It is inert.** The overlay never takes a pointer event, at the cut-out or anywhere else — a dim
+  that swallows clicks is a modal the user did not open, and `highlightThenClick` has to reach the
+  control it just finished pointing at. It follows the target on scroll and resize, and under
+  reduced motion the gradient is drawn but does not travel.
+
+  **Themed from the element you point at, not from the widget.** The overlay is appended to the
+  document body so it can escape the clipping it exists to avoid, which means a `var()` in its own
+  style would resolve against the body — so every token is read from the *target's* computed style
+  instead, the same place the flat ring reads `--ag-ui-accent`. Set them wherever they inherit to
+  the elements the agent touches, usually `:root`:
+
+  ```css
+  :root {
+    --ag-ui-highlight-scrim: rgba(15, 15, 25, 0.45);
+    --ag-ui-highlight-gradient: linear-gradient(115deg, transparent 20%, #4f46e5 50%, transparent 80%);
+    --ag-ui-highlight-ring-width: 3;    /* unitless; px */
+    --ag-ui-highlight-flow-ms: 2400;    /* one pass of the gradient */
+    --ag-ui-highlight-z-index: 2147483001;
+  }
+  ```
+
+  `ringWidth` and `flowMs` options override the tokens per call; `color`, `padding` and `radius`
+  have no token because they are per-target rather than per-theme. The overlay's own styles are
+  inline and it lives in the light DOM, so neither a stylesheet rule nor `::part` can reach it —
+  these tokens and options are the whole surface, which is why they cover every value it draws.
 - `selectControl(el, value)` / `toggleCheckbox(el, checked)` — animate a `<select>` / checkbox.
 - `setControlValue(el, value)` — set a `<select>` or checkbox without animation, dispatching
   `input`/`change`.
@@ -861,6 +906,22 @@ want — so you control the agent's interaction surface:
 - **`drag_and_drop`** — drag the `from` element onto the `to` element (selectors / page-map ids),
   firing the standard HTML5 drag sequence (`dragstart` → `dragenter`/`dragover`/`drop` → `dragend`)
   so the page's own drop handler reacts. Useful for reordering sortable lists.
+- **`chat`** — four tools that let the agent move the panel it is speaking from:
+  `read_chat_surface`, `move_chat`, `minimise_chat`, `restore_chat`.
+
+  This is the one nobody else can offer. Every other assistant's chat is a surface of its own, so
+  there is nothing for it to be in the way *of*; ours is mounted in the page the user is working
+  in, which makes "let me move this aside so you can see the table" something the agent can act on
+  rather than apologise for.
+
+  **They report what happened, not what was asked.** A panel that fills the screen has nowhere to
+  move to, and a placement that places itself owns its position — so `move_chat` answers
+  `moved: false` with the reason and what would work instead, rather than reporting success on a
+  panel that did not budge. `read_chat_surface` is there so the agent can ask before it acts
+  instead of learning through a failure; it is read-only.
+
+  None of them is stamped `x-destructive`. Moving a window destroys nothing, and a confirmation
+  card in front of it would be worse than the move.
 
 **Your drag surface must listen to drag events, and many "modern" ones do not.** `drag_and_drop`
 dispatches the native HTML5 sequence with one shared `DataTransfer`. A surface built on a
@@ -907,6 +968,13 @@ matching JS API:
   server-backed store it stays on the server. Deleting one is the drawer row's own action. A chat
   nothing was ever sent in is the exception — it was never listed, so it is dropped rather than
   left behind.
+- `describeSurface()` — where the panel is and what can be done to it: placement, collapsed,
+  whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
+  the two reasons a move can fail into the one answer a caller needs.
+- `moveTo(corner)` — send the panel to `top-left` / `top-right` / `bottom-left` / `bottom-right`,
+  returning whether it went. It takes the axes the same way a user drag does, so the launcher
+  travels with it and switching placement hands them back. Returns `false` rather than pretending
+  when the placement owns its position or the panel fills the screen.
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
   reflected as the boolean `collapsed` attribute/property and persisted per-tab in
   `sessionStorage`, so it survives a reload.
@@ -920,6 +988,25 @@ chat.newChat();
 chat.toggleCollapsed();
 chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
 ```
+
+### The composer's own keys
+
+**Enter during a run queues.** A second run cannot start while one is in flight —
+it would orphan the first — so that key used to do nothing at all, silently. What
+is waiting shows above the composer as chips, each of which takes its message
+back when pressed, and the next one is sent when the run settles. Stopping the
+run discards them: sending into a conversation someone has just stopped is the
+opposite of what stopping meant. It is not thrown away, though — a queued
+message has already left the composer, so it goes to the front of the recall
+history below rather than nowhere.
+
+The composer also walks back through what you have already sent, on **Up** and
+**Down** — the shape every shell and every coding agent uses. Only from an empty
+composer and only with the skills palette closed: an arrow inside text is how you
+move the caret, and taking it unconditionally would break editing to add a
+shortcut. Arrowing forward past the newest turn empties the box again, so the way
+out is the key that got you in. The history is this conversation's: starting a
+new chat, switching threads or changing `user-key` clears it with the transcript.
 
 ### Collapsing to the launcher
 
@@ -1364,9 +1451,9 @@ server's text.
 The panel carries a grip on **every edge and every corner**, so it can be
 dragged from whichever side you are already near.
 
-- `placement="full"` / `placement="page"` get **no grips** — a full-bleed layout
+- `placement="page"` gets **no grips** — a full-bleed layout
   is `100vw`/`100vh` by definition, so there is nothing to drag.
-- `placement="sidebar"` / `placement="side"` keep only the two vertical edges;
+- `placement="sidebar"` keeps only the two vertical edges;
   the placement owns the height, so a horizontal edge or a corner would
   advertise a drag that does nothing.
 - Everything else gets all eight.
@@ -2313,6 +2400,12 @@ re-export point. Internal modules import from leaf paths.
 | `isNavigates(parameters)` | function | Read the `x-navigates` flag. |
 | `createPageActionTools(enabled, resolveTarget)` | function | Build the opt-in `scroll_to` / `drag_and_drop` tools. |
 | `PAGE_ACTIONS` | const | The page-action opt-in tokens (`scroll` / `drag`). |
+| `createChatSurfaceTools(surface)` | function | Build the opt-in `read_chat_surface` / `move_chat` / `minimise_chat` / `restore_chat` tools, which let the agent move the panel it is speaking from. |
+| `ChatSurface` | type | The narrow port those tools drive — `describeSurface` / `moveTo` / `setCollapsed`. The element satisfies it. |
+| `ChatSurfaceReport` | type | What `describeSurface()` answers: placement, collapsed, collapsible, movable, draggable, fullBleed, and the panel's box against the viewport it sits in. |
+| `ChatCorner` | type | `"top-left"` / `"top-right"` / `"bottom-left"` / `"bottom-right"` — the argument to `moveTo`. |
+| `CHAT_CORNERS` | const | Those four, as a list. |
+| `isChatCorner(value)` | function | Whether a string names one of them. |
 | `ResolvePageTarget` | type | `(target) => HTMLElement \| null` — the page-target resolver. |
 | `X_DESTRUCTIVE_KEY` / `X_NAVIGATES_KEY` | const | The JSON-Schema extension keys. |
 | `parseToolCatalog(data)` | function | Parse a fetched `data-tools-url` catalog into a `Record<string, ToolCatalogEntry>` — whole entries, not bare summaries, so a caller can reach `description` too. Malformed input yields an empty map rather than throwing. |
@@ -2413,6 +2506,8 @@ re-export point. Internal modules import from leaf paths.
 | `asQuote(text)` | function | Shape text as a markdown blockquote with a blank line after it. |
 | `MAX_QUOTE_CHARS` | const | The cap a quotation is truncated to (500). |
 | `typeInto` / `highlightThenClick` / `pressThenClick` / `selectOption` / `toggleControl` / `scrollIntoCenterView` / `flash` / `focusWithFlash` / `prefersReducedMotion` | function | Animation primitives. |
+| `showHighlightOverlay` | function | Ring a host-page element from an overlay drawn outside it, optionally dimming everything else or flowing a gradient round it. Returns a function that removes it. |
+| `HighlightOverlayOptions` | type | Options for `showHighlightOverlay`. |
 | `fillField` / `clickElement` / `pressButton` / `selectControl` / `setControlValue` / `toggleCheckbox` | function | DOM-driver primitives. |
 | `setNativeValue` / `setNativeChecked` | function | Set a control via its native prototype setter (React-controlled inputs). |
 | `TypeOptions` / `HighlightClickOptions` / `PressOptions` / `SelectOptions` / `ToggleOptions` / `FlashOptions` / `ScrollOptions` / `FillFieldOptions` / `TextLikeElement` | type | Primitive option shapes. |
@@ -2478,6 +2573,8 @@ ag-ui-chat {
   --ag-ui-bg: #ffffff;
   --ag-ui-fg: #1a1a2e;
   --ag-ui-radius: 12px;
+  --ag-ui-header-btn-size: 30px;  /* the header's controls; 44px on touch */
+  --ag-ui-header-gap: 4px;
 
   /* What is drawn on top of the accent and danger fills. Change these with
      the fills: a pale accent leaves white-on-pale everywhere they are used. */
@@ -2491,6 +2588,117 @@ ag-ui-chat {
   --ag-ui-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
 }
 ```
+
+### Small viewports
+
+At **600px wide and below** every placement but `embedded` becomes one full-bleed
+shape: edge to edge, no radius, no shadow, no resize grips. A phone is not an
+eighth placement — it is an override that collapses the others onto one of them.
+The host picked a placement for the desktop it was designing, and a 380x560
+panel with a 24px margin is not a smaller version of that decision, it is most
+of the screen with a frame drawn round it.
+
+`embedded` is left alone deliberately: it sits in a box you sized and placed, and
+only you know whether that column should become the whole screen.
+
+The corner placements still rest at their launcher, so a full-bleed panel is
+something the user opens rather than something they are given.
+
+### The conversation list on a full page
+
+On `placement="page"`, once the panel is at least **900px** wide, the chat-history
+list **docks beside the transcript** instead of covering it — no backdrop, no
+focus trap, and `role="region"` rather than a modal dialog. Covering the
+conversation to show the list of conversations hides the thing you are trying to
+get back to, and a dedicated route is the one surface with width to spare.
+
+Narrower than that, or under any other placement, it stays the slide-over it was:
+a few hundred pixels of panel with a list docked into it leaves a column of
+transcript narrower than the messages in it. Width alone is not the test — an app
+shell can hand `embedded` a page-sized box, and that box is still a column of
+somebody's layout.
+
+`--ag-ui-threads-rail-width` sets the docked width (default 280px). While it is
+docked the host carries `data-threads-docked`, so your own CSS can react.
+
+The list also grows a filter once there are eight or more conversations in it
+— above that a search box is worth having, below it it is a control asking to be
+used on a list you can already read in one glance. It matches the title **and**
+the preview, because the title is often the model's one-line summary and the
+phrase you remember is as likely to be inside the conversation as on it, and it
+filters what the drawer already holds rather than going back to the server for a
+list that is already in memory.
+
+**To keep your desktop layout at every width**, set `data-small-viewport="off"`.
+That exists because the *trigger* is the one part of this you cannot reach: every
+value the override sets is a `--ag-ui-*` token you can re-state, but a media
+query cannot read a custom property, so the breakpoint itself is a literal.
+
+The breakpoint is a width rather than a pointer test, and that is on purpose: a
+touch laptop is coarse-pointered and wide, a narrow desktop window is
+fine-pointered and small. Width decides the layout; the pointer decides which
+controls make sense.
+
+### Reserving the space your own chrome occupies
+
+A fixed placement covers the viewport it is given, and it does not know about
+your sticky header. Tell it which edges are already spent and every placement
+does its own arithmetic:
+
+```css
+ag-ui-chat {
+  --ag-ui-viewport-inset-top: 64px;    /* your nav bar */
+}
+```
+
+`page` and `full` inset by all four edges; `sidebar` and `side` by three, leaving
+the docked edge free; `floating` adds them to its own margins.
+**The heights follow on their own** — that is the point of these rather than
+restating `--ag-ui-inset` per placement, which leaves you to keep
+`--ag-ui-height` and `--ag-ui-max-height` in step by hand and overflows the panel
+off the bottom of the screen the one time you forget.
+
+Four longhands rather than one shorthand because a custom property is a token
+stream and CSS cannot index one; the height arithmetic needs the vertical pair on
+its own. Any CSS length works — `px`, `rem`, `env(safe-area-inset-*)`, or a
+`calc()` combining them; the widget reads the resolved value rather than the text
+you wrote, so the number it clamps against is the one the stylesheet uses:
+
+```css
+ag-ui-chat {
+  --ag-ui-viewport-inset-top: env(safe-area-inset-top);
+  --ag-ui-viewport-inset-bottom: env(safe-area-inset-bottom);
+}
+```
+
+If your chrome changes height — a bar that wraps at narrow widths — measure it
+and publish the value, since no CSS length tracks it:
+
+```js
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty("--bar-h", `${bar.offsetHeight}px`);
+}).observe(bar);
+```
+
+```css
+ag-ui-chat { --ag-ui-viewport-inset-top: var(--bar-h, 0px); }
+```
+
+`--ag-ui-edge-gutter` (default `24px`) is the gap a resting `floating` panel
+keeps between itself and that box. The size cap subtracts the same one, so a
+panel grown to its limit reaches the far edge of the usable box and no further —
+set it to `0` for a panel flush against the corner.
+
+`--ag-ui-keyboard-inset` overrides the lift an on-screen keyboard earns. The
+widget measures the hidden band and publishes it as
+`--ag-ui-visual-viewport-inset-bottom`; state this one instead to outrank that
+measurement, or set it to `0px` to opt out of the lift entirely.
+
+`--ag-ui-viewport-height` and `--ag-ui-viewport-width` state the usable box
+outright, for the case where no viewport-percentage length describes it. An
+on-screen keyboard is the one that matters: it changes neither `vh` nor `dvh` nor
+`svh` on any current mobile browser, so a full-bleed panel has to be told the
+visual viewport's height rather than deriving it.
 
 Marks are variables too, so one vocabulary covers a re-theme rather than
 leaving half the transcript in the built-in set: `--ag-ui-tool-icon-done` /
@@ -2548,9 +2756,17 @@ have to hand-tune the variables:
 
 - `theme` — `light` (default) / `dark` / `auto` (follow the OS) / `code`.
 - `density` — `comfortable` (default) / `compact`.
-- `placement` — `floating` (default) / `bottom-left` / `side` / `sidebar` / `full` / `page` /
-  `embedded`. `embedded` drops the fixed positioning and z-index so the widget sits in normal
-  document flow; `page` is a full-screen [centred reading column](#page-placement).
+- `placement` — `floating` (default) / `sidebar` / `page` / `embedded`. `embedded` drops the
+  fixed positioning and z-index so the widget sits in normal document flow; `page` is a
+  full-screen [centred reading column](#page-placement) for a route of its own.
+
+  Four, because those are the four shapes that differ structurally: a corner panel, a docked
+  rail, a surface that owns the screen, and a thing in your layout. Three older values --
+  `bottom-left`, `side` and `full` -- still parse and still work, and are no longer documented:
+  each is a variant of one of the four rather than a shape of its own. `full` is `page` with
+  `--ag-ui-content-max-width: none`, `bottom-left` is `floating` with a different
+  `--ag-ui-inset`, and `side` is `sidebar` that collapses to the floating launcher instead of
+  an edge rail. Nothing warns and nothing breaks; there is simply less to choose between.
 
 **`embedded` fills the box your page gives it, so give it one.** It is the placement app-shell
 layouts reach for, and a grid or flex item defaults to `min-height: auto` — which lets a growing
@@ -2562,13 +2778,15 @@ fix belongs to the containing element, not to the widget:
 ```
 
 ```html
-<ag-ui-chat endpoint="/agent/" theme="dark" density="compact" placement="side"></ag-ui-chat>
+<ag-ui-chat endpoint="/agent/" theme="dark" density="compact" placement="sidebar"></ag-ui-chat>
 ```
 
 See [`src/ui/styles.ts`](src/ui/styles.ts) for the full variable + preset list. The
 [`demo/`](demo/) live playground (`node demo/mock-server.mjs`) flips theme, density, placement,
 text-animation, tool-display, and the answer well live from a single page, and demos the
 streamed thoughts region, the mic, and the header theme toggle.
+
+It binds every interface and prints the addresses this machine can be reached on, so you can open the playground on a phone — which is the only way to see the small-viewport layout with a real on-screen keyboard rather than a resized desktop window. `HOST=127.0.0.1` keeps it to this machine.
 
 ### Parts and slots
 
@@ -2592,12 +2810,13 @@ component sets, so a new one cannot ship undocumented.
 | --- | --- |
 | Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `pending`, `stopped`, `jump-latest`, and one per resize grip: `resize-handle` plus `resize-handle-top`, `resize-handle-bottom`, `resize-handle-left`, `resize-handle-right`, `resize-handle-top-left`, `resize-handle-top-right`, `resize-handle-bottom-left`, `resize-handle-bottom-right` |
 | Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `collapse-button`, `theme-toggle` |
-| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge` |
+| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
 | Follow-up suggestions | `suggestions`, `suggestion-chip` |
 | Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`), and the icon holder inside each: `message-action-icon` (plus `message-action-icon-retry`, `message-action-icon-copy`, `message-action-icon-up`, `message-action-icon-down`) |
-| Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-icon`, `run-notice-text` |
+| Queued messages | `queued`, `queued-chip` |
+| Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`, `run-notice-surface`), `run-notice-icon`, `run-notice-text`, `run-notice-undo` |
 | Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent` |
 | Delegated sub-agents | `subagent`, `subagent-row`, `subagent-icon`, `subagent-status`, `subagent-steps`, `subagent-step`, `subagent-step-icon`, `subagent-step-name` |
 | Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`, `confirm-always`) |
@@ -2606,7 +2825,7 @@ component sets, so a new one cannot ship undocumented.
 | Composer | `composer`, `composer-surface`, `composer-tools`, `input`, `send`, `attach-button`, `voice-button` |
 | Attachments | `attachment-tray`, `attachment-chips` (the read-only chips on sent bubbles), and the shared chip parts `attachment-chip`, `attachment-chip-icon`, `attachment-chip-name`, `attachment-chip-size`, `attachment-chip-bar`, `attachment-chip-bar-fill`, `attachment-chip-retry`, `attachment-chip-remove` |
 | Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the missing-placeholder hint) |
-| Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
+| Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-close`, `drawer-filter`, `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
 | Charts | `chart-block`, `chart-title`, `chart-legend` |
 | Checkpoints panel | `checkpoints`, `checkpoints-header`, `checkpoints-title`, `checkpoints-list`, `checkpoints-empty`, `checkpoint-row`, `checkpoint-label`, `checkpoint-time`, `checkpoint-id`, `checkpoint-branch`, `checkpoint-action` (plus `checkpoint-resume`, `checkpoint-fork`) |
 

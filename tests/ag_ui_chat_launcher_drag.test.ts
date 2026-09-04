@@ -36,7 +36,7 @@ function shadow(el: AgUiChat): ShadowRoot {
 function mount(attrs: Record<string, string> = {}): { el: AgUiChat; launcher: HTMLElement } {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent");
-  for (const [key, value] of Object.entries(attrs)) {
+  for (const [key, value] of Object.entries({ "data-start-open": "", ...attrs })) {
     el.setAttribute(key, value);
   }
   document.body.appendChild(el);
@@ -184,11 +184,13 @@ describe("dragging the collapsed launcher", () => {
     // Clamped to (944, 744), hard against the corner, so it opens up and left.
     expect(el.getAttribute("data-expand-corner")).toBe("bottom-right");
     // The panel still keeps its margin from the viewport edge...
-    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("auto 24px 24px auto");
-    // ...which leaves the launcher sitting 24px outside its own host box, on
-    // both axes. Nothing clips it there, and that is what lets a launcher be
-    // flush to the corner while the panel it opens is not.
-    expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe("auto -24px -24px auto");
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("auto 8px 8px auto");
+    // ...and the launcher needs no offset inside it, because the two now stop
+    // on the same line. It used to sit 16px outside its own host box: the
+    // launcher was held 8px off the screen edge and the panel a full resting
+    // gutter off it, so a bubble and the panel it opens came to rest on two
+    // different lines for no reason either of them could state.
+    expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe("auto 0px 0px auto");
   });
 
   it("hands the position back to a placement that owns it", () => {
@@ -323,9 +325,12 @@ describe("dragging the collapsed launcher", () => {
     window.dispatchEvent(pointer("pointermove", 1000, 800));
     window.dispatchEvent(pointer("pointerup", 1000, 800));
 
-    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("auto 0px 0px auto");
+    // The screen-edge bound, which a grip stops at exactly as a drag does.
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("auto 8px 8px auto");
+    // 1000 - 56 - 8 and 800 - 56 - 8: the launcher travelled with the pinned
+    // corner and stopped where the corner did, on the same bound.
     expect(sessionStorage.getItem("ag-ui-chat:launcher:resized-br")).toBe(
-      JSON.stringify({ left: 944, top: 744 }),
+      JSON.stringify({ left: 936, top: 736 }),
     );
   });
 

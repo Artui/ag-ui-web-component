@@ -20,18 +20,26 @@ export interface WidgetInsets {
  * moves nothing, and the launcher may sit outside its own host box. Nothing
  * clips it there, and that is what lets a launcher be flush to a screen corner
  * while the panel it opens keeps its margin.
+ *
+ * `screen` is the **whole** viewport, not the part a host has left free. These
+ * are CSS `inset` values on a fixed element, and the browser measures those
+ * from the real edges -- so a `bottom` expressed against a box inset from the
+ * top comes out short by exactly that inset. It only shows when the corner
+ * flips mid-drag, because that is when the same point stops being expressed
+ * from `top` and starts being expressed from `bottom`: the widget then leaps by
+ * the reserved edge, which is a jump the gesture cannot explain.
  */
 export function placeWidget(
   host: PanelRect,
   launcher: LauncherBox,
   corner: ExpandCorner,
-  viewport: Extent,
+  screen: Extent,
 ): WidgetInsets {
   return {
     hostInset: inset({
       top: corner.y === "top" ? host.top : null,
-      right: corner.x === "right" ? viewport.width - host.right : null,
-      bottom: corner.y === "bottom" ? viewport.height - host.bottom : null,
+      right: corner.x === "right" ? screen.width - host.right : null,
+      bottom: corner.y === "bottom" ? screen.height - host.bottom : null,
       left: corner.x === "left" ? host.left : null,
     }),
     launcherInset: inset({

@@ -31,12 +31,17 @@ async function flush(): Promise<void> {
 describe("the history-replaced notice", () => {
   beforeEach(() => {
     sessionStorage.clear();
+    // Layout preferences are durable on purpose, so the per-tab clear no longer
+    // reaches all of them. Without this a dragged position leaks into the next
+    // test, which reads as a drag that travelled the wrong distance.
+    localStorage.clear();
     document.body.innerHTML = "";
     defineAgUiChat();
   });
 
   it("is rendered and visible when the server replaces the conversation", async () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("data-start-open", "");
     el.setAttribute("endpoint", "/agent/");
     const handle = makeFakeAgent({
       script: (emit) => {
@@ -66,6 +71,7 @@ describe("the history-replaced notice", () => {
 
   it("is absent from an ordinary run", async () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("data-start-open", "");
     el.setAttribute("endpoint", "/agent/");
     const handle = makeFakeAgent({
       script: (emit) => {

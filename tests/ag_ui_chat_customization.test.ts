@@ -18,7 +18,7 @@ function shadow(el: AgUiChat): ShadowRoot {
 /** Mount the element, applying attributes and a pre-connect setup hook. */
 function mount(attrs: Record<string, string> = {}, setup?: (el: AgUiChat) => void): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
-  for (const [key, value] of Object.entries(attrs)) {
+  for (const [key, value] of Object.entries({ "data-start-open": "", ...attrs })) {
     el.setAttribute(key, value);
   }
   setup?.(el);
@@ -268,6 +268,21 @@ describe("AgUiChat — UX & customization", () => {
       expect(toolNames(el)).toContain("drag_and_drop");
     });
 
+    it("registers the chat's own controls only when asked for by name", () => {
+      // Off by default like every other page action: a chat that can move
+      // itself is a capability the host grants, not one it has to remember to
+      // take away.
+      expect(toolNames(mount())).not.toContain("move_chat");
+      expect(toolNames(mount({ "data-page-actions": "scroll" }))).not.toContain("move_chat");
+
+      const el = mount({ "data-page-actions": "chat" });
+      expect(toolNames(el)).toEqual(
+        expect.arrayContaining(["read_chat_surface", "move_chat", "minimise_chat", "restore_chat"]),
+      );
+      // ...and the token buys only those, not the page-driving ones beside it.
+      expect(toolNames(el)).not.toContain("scroll_to");
+    });
+
     it("registers only the named subset", () => {
       const el = mount({ "data-page-actions": "scroll" });
       expect(toolNames(el)).toContain("scroll_to");
@@ -436,12 +451,15 @@ describe("AgUiChat — UX & customization", () => {
       const el = mount({ "data-theme-toggle": "" });
       const toggle = shadow(el).querySelector<HTMLButtonElement>(".header-btn--theme");
       expect(toggle?.getAttribute("part")).toBe("header-button theme-toggle");
-      expect(toggle?.textContent).toBe("🌙"); // light → offer dark
+      // A drawn path now, not a typed emoji: an emoji is painted by the
+      // platform's own font and its ink runs outside the box measured for it,
+      // which is why this one control never sat right beside the others.
+      expect(toggle?.querySelector("svg")).not.toBeNull(); // light -> offer dark
 
       toggle?.click();
       expect(el.getAttribute("theme")).toBe("dark");
       expect(sessionStorage.getItem("ag-ui-chat:theme")).toBe("dark");
-      expect(toggle?.textContent).toBe("☀️"); // dark → offer light
+      expect(toggle?.querySelector("svg")).not.toBeNull(); // dark -> offer light
 
       toggle?.click();
       expect(el.getAttribute("theme")).toBe("light");

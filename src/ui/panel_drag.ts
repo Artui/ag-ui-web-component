@@ -99,6 +99,7 @@ export function enablePanelDrag(handle: HTMLElement, options: PanelDragOptions):
     const onUp = (up: PointerEvent): void => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
       if (!dragging) {
         return;
       }
@@ -113,6 +114,9 @@ export function enablePanelDrag(handle: HTMLElement, options: PanelDragOptions):
     // and would otherwise strand the panel mid-move with no pointerup.
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    // Routine on touch rather than exceptional: the browser takes the pointer
+    // back for a scroll or a system gesture and never sends pointerup.
+    window.addEventListener("pointercancel", onUp);
   });
 }
 

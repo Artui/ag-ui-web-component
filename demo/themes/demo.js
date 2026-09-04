@@ -9,6 +9,7 @@ import {
   fillField,
   pressButton,
   selectControl,
+  showHighlightOverlay,
   toggleCheckbox,
   X_DESTRUCTIVE_KEY,
 } from "/bundle.js";
@@ -218,13 +219,19 @@ $("cfg-ping").addEventListener("click", () => {
   void chat.sendMessage("/ping");
 });
 
-// A dragged size persists per tab, which is confusing when you are flipping
-// placements to compare handles.
+// A dragged size outlives the tab now, which is confusing when you are
+// flipping placements to compare handles.
+//
+// The key is namespaced by the element's id, not by its endpoint: the widget
+// claims `chat` because that is what this one is called. And it is removed
+// from both stores, because a layout preference is written to both -- clearing
+// only the durable copy leaves the per-tab mirror to win the next read.
 $("cfg-reset-size").addEventListener("click", () => {
   chat.style.removeProperty("--ag-ui-width");
   chat.style.removeProperty("--ag-ui-height");
-  sessionStorage.removeItem("ag-ui-chat:size:/agent/");
-  sessionStorage.removeItem("ag-ui-chat:size");
+  const key = `ag-ui-chat:size:${chat.id}`;
+  localStorage.removeItem(key);
+  sessionStorage.removeItem(key);
 });
 
 // Extend the transcript's select-then-quote gesture to the whole page, so the
@@ -236,4 +243,32 @@ chat.offerQuoteInPage();
 
 $("save").addEventListener("click", () => {
   $("banner").classList.add("show");
+});
+
+// The config bar is sticky chrome the widget knows nothing about, and it wraps
+// to two rows at narrow widths, so its height is not a constant the stylesheet
+// could carry. Publish it and let the placement rules subtract it: without
+// this, the fixed placements start at the top of the viewport and the bar sits
+// on the chat's own header -- the widget still works, but its title and
+// controls are behind the thing that is meant to be driving it.
+//
+// A real host with fixed chrome has the same problem and, for now, the same
+// answer: measure your own bar and hand the widget what is left.
+const bar = document.querySelector("header.bar");
+const publishBarHeight = () => {
+  document.documentElement.style.setProperty("--bar-h", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+};
+new ResizeObserver(publishBarHeight).observe(bar);
+publishBarHeight();
+
+// The overlay highlight, which is the one affordance you cannot judge from a
+// test: whether a dimmed page with a hole in it reads as "look here" or as a
+// modal nobody opened. Inert, so the form underneath stays usable while it is
+// up -- try typing into the title field without dismissing it.
+$("cfg-spotlight").addEventListener("click", () => {
+  const dismiss = showHighlightOverlay(document.querySelector(".card"), {
+    scrim: true,
+    gradient: true,
+  });
+  setTimeout(dismiss, 4000);
 });

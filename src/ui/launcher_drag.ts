@@ -1,5 +1,5 @@
 import { clampLauncher } from "./clamp_launcher.js";
-import type { Extent, LauncherBox } from "./launcher_placement.js";
+import type { LauncherBox, ViewportBox } from "./launcher_placement.js";
 
 /** What the drag needs from its host to do its job. */
 export interface LauncherDragOptions {
@@ -12,7 +12,7 @@ export interface LauncherDragOptions {
   /** The launcher's current box, in viewport coordinates. */
   readonly rect: () => LauncherBox;
   /** The viewport the launcher has to stay inside. */
-  readonly viewport: () => Extent;
+  readonly viewport: () => ViewportBox;
   /** Put the launcher's top-left at this point. Called per pointer move. */
   readonly apply: (left: number, top: number) => void;
   /**
@@ -106,6 +106,7 @@ export function enableLauncherDrag(launcher: HTMLElement, options: LauncherDragO
     const onUp = (up: PointerEvent): void => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
       if (!dragging) {
         return;
       }
@@ -124,8 +125,16 @@ export function enableLauncherDrag(launcher: HTMLElement, options: LauncherDragO
 
     // Listeners on `window`, not the launcher: a fast drag outruns the pointer
     // and would otherwise strand it mid-move with no pointerup.
+    //
+    // pointercancel matters on touch, where it is routine rather than
+    // exceptional: the browser takes the pointer back for a scroll or a system
+    // gesture and never sends pointerup. Without this the move listeners stay
+    // attached and the drag stamp never clears, which leaves the launcher
+    // following a finger that has stopped and the element believing a gesture
+    // is still in flight.
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   });
 
   // The position this key gesture has applied but not yet persisted. The

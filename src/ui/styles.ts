@@ -48,6 +48,11 @@ export const STYLES = `
   /* Message action row: the control box and the mark inside it. The box has a
      floor of 24px so it stays a reliable target at every density. */
   --_action-size: var(--ag-ui-action-size, 28px);
+  /* The header's own controls. Sized rather than left to their contents: a row
+     of buttons each as wide as the glyph inside it comes out uneven, and uneven
+     buttons two pixels apart read as one smudge rather than five controls. */
+  --_header-btn-size: var(--ag-ui-header-btn-size, 30px);
+  --_header-gap: var(--ag-ui-header-gap, 4px);
   --_action-icon-size: var(--ag-ui-action-icon-size, 15px);
   --_tooltip-bg: var(--ag-ui-tooltip-bg, #1f2430);
   --_tooltip-fg: var(--ag-ui-tooltip-fg, #f5f6fa);
@@ -142,6 +147,68 @@ export const STYLES = `
   --_msg-pad: var(--ag-ui-msg-pad, 8px 12px);
   --_msg-radius: var(--ag-ui-msg-radius, 14px);
 
+  /* Edges of the viewport the host has already spent, and that a fixed
+     placement must therefore stay out of: a sticky nav bar, a docked toolbar,
+     a device's safe area. Four longhands rather than one shorthand because a
+     custom property is a token stream and CSS cannot index one -- the height
+     arithmetic below needs the vertical pair on its own.
+
+     Every fixed placement derives from these, and the heights subtract them in
+     one place. A host that reserved its chrome by restating --ag-ui-inset per
+     placement had to keep --ag-ui-height in step by hand, and forgetting it
+     overflowed the panel past the bottom of the screen with nothing to say so.
+
+     These take env(safe-area-inset-*) verbatim, which is what a full-bleed
+     placement wants on a device with a notch. */
+  --_viewport-inset-top: var(--ag-ui-viewport-inset-top, 0px);
+  --_viewport-inset-right: var(--ag-ui-viewport-inset-right, 0px);
+  --_viewport-inset-bottom: var(--ag-ui-viewport-inset-bottom, 0px);
+  --_viewport-inset-left: var(--ag-ui-viewport-inset-left, 0px);
+  /* What is left of the viewport once the host's chrome is taken out, on both
+     axes, so a placement never composes this itself and no host can subtract
+     an edge from the position and forget it in the height.
+
+     Settable in their own right, and that is not only convention: an on-screen
+     keyboard changes no viewport-percentage length -- not vh, not dvh, not svh
+     -- so a full-bleed panel on a phone has to be told the height rather than
+     deriving it. The value to publish there is the visual viewport's. */
+  --_viewport-height: var(--ag-ui-viewport-height, var(--_visual-viewport-height));
+  /* The measured height of the part of the screen the user can actually see,
+     written by the element from the visual viewport and falling back to the
+     layout viewport where nothing has measured yet.
+
+     This is the on-screen keyboard, and it needs measuring because no CSS
+     length describes it: an on-screen keyboard has no effect on any
+     viewport-percentage unit, so 100vh, 100dvh and 100svh are all the same
+     number with the keyboard up as without it. A full-bleed panel sized from
+     any of them puts its composer behind the keyboard the user is typing into.
+
+     Separate from the token above so a host that states the usable height
+     outright still wins: the element writes this one inline, and an inline
+     value would otherwise outrank the host's own rule. */
+  --_visual-viewport-height: var(
+    --ag-ui-visual-viewport-height,
+    calc(100vh - var(--_viewport-inset-top) - var(--_viewport-inset-bottom))
+  );
+  /* How much of the layout viewport is hidden below the visible one, measured
+     and written by the element alongside the height above.
+
+     A shorter panel is not enough on its own for anything anchored to the
+     bottom. A floating widget is positioned against the layout viewport, so
+     with a keyboard up its bottom edge -- and the launcher that lives at that
+     corner -- sits behind the keyboard however tall the panel is. This is what
+     lifts it clear. */
+  /* Two tokens, for the same reason the height above has two: the element
+     writes the measurement inline, and a host that states its own value needs
+     a knob that outranks that write rather than one the next write replaces.
+     A host wanting no keyboard lift at all sets --ag-ui-keyboard-inset: 0px. */
+  --_keyboard-inset: var(--ag-ui-keyboard-inset, var(--_visual-viewport-inset-bottom));
+  --_visual-viewport-inset-bottom: var(--ag-ui-visual-viewport-inset-bottom, 0px);
+  --_viewport-width: var(
+    --ag-ui-viewport-width,
+    calc(100vw - var(--_viewport-inset-left) - var(--_viewport-inset-right))
+  );
+
   /* Layout — override from outside to dock the widget anywhere.
      Set --ag-ui-position: static (and place this element in your own
      grid/flex layout) to embed it in the page flow instead of floating. */
@@ -149,14 +216,49 @@ export const STYLES = `
   --_z-index: var(--ag-ui-z-index, 2147483000);
   --_width: var(--ag-ui-width, 380px);
   --_height: var(--ag-ui-height, 560px);
-  --_inset: var(--ag-ui-inset, auto 24px 24px auto);
-  --_max-width: var(--ag-ui-max-width, calc(100vw - 48px));
-  --_max-height: var(--ag-ui-max-height, calc(100vh - 48px));
+  /* The gutter a resting floating panel keeps between itself and the edge of
+     the box the host left free. One number, because the inset below spends it
+     and the cap beneath has to know it was spent. */
+  --_edge-gutter: var(--ag-ui-edge-gutter, 24px);
+  --_inset: var(
+    --ag-ui-inset,
+    auto calc(var(--_edge-gutter) + var(--_viewport-inset-right))
+      calc(var(--_edge-gutter) + var(--_viewport-inset-bottom) + var(--_keyboard-inset)) auto
+  );
+  /* The cap is what the host left free, less the *one* gutter the inset above
+     spends on the anchored edge -- not two, and not none.
+
+     Two was the first answer and it was felt on one axis only. The arithmetic
+     says why: the default panel is 560 tall against a cap of the viewport
+     minus 48, which on an 800px screen with a header reserved is 72px of
+     headroom, so the height reaches its cap almost immediately; the default
+     width is 380 against a cap near 1230, which is 850px nothing ever reaches.
+     Once the size is capped a grip cannot grow the panel, so a pull on the
+     anchored edge is written as position instead and the panel travels, and a
+     pull on the free edge stops a whole gutter short of an edge a drag can
+     reach.
+
+     None was the correction, and it overshot: the panel is anchored bottom-
+     right with a gutter already spent there, so a cap of the full usable
+     height puts the far edge exactly one gutter outside it. On an 800px screen
+     with nothing reserved that is a top of -24 -- the header, and every
+     control in it, off the top of the window. Reserve a 120px header and it
+     sits inside that instead, which is the one thing the reservation exists to
+     prevent.
+
+     One is the fixed point of both complaints. A resting panel grown to the
+     cap runs from the usable near edge to its gutter on the far one, so the
+     near edge is reachable by a resize exactly as it is by a drag, and neither
+     can put any part of the panel outside the box. */
+  --_max-width: var(--ag-ui-max-width, calc(var(--_viewport-width) - var(--_edge-gutter)));
+  --_max-height: var(--ag-ui-max-height, calc(var(--_viewport-height) - var(--_edge-gutter)));
   /* Reading-column width for placement="page" (full-bleed, centred content). */
   --_content-max-width: var(--ag-ui-content-max-width, 820px);
   /* Slim rail the sidebar placement collapses to. Only that placement reads
      it, but it is declared here so every alias has a default in one place. */
   --_rail-width: var(--ag-ui-rail-width, 52px);
+  /* Width of the docked conversation list on a full-page chat. */
+  --_threads-rail-width: var(--ag-ui-threads-rail-width, 280px);
 
   position: var(--_position);
   inset: var(--_inset);
@@ -227,23 +329,30 @@ export const STYLES = `
 
 /* ── Placement presets ──────────────────────────────────────────────────── */
 :host([placement="bottom-left"]) {
-  --_inset: var(--ag-ui-inset, auto auto 24px 24px);
+  --_inset: var(
+    --ag-ui-inset,
+    auto auto calc(var(--_edge-gutter) + var(--_viewport-inset-bottom) + var(--_keyboard-inset))
+      calc(var(--_edge-gutter) + var(--_viewport-inset-left))
+  );
 }
 
 :host([placement="side"]) {
-  --_inset: var(--ag-ui-inset, 0 0 0 auto);
+  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
   --_width: var(--ag-ui-width, 420px);
-  --_height: var(--ag-ui-height, 100vh);
-  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_height: var(--ag-ui-height, var(--_viewport-height));
+  --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
   --_radius: var(--ag-ui-radius, 0);
 }
 
 :host([placement="full"]) {
-  --_inset: var(--ag-ui-inset, 0);
-  --_width: var(--ag-ui-width, 100vw);
-  --_height: var(--ag-ui-height, 100vh);
-  --_max-width: var(--ag-ui-max-width, 100vw);
-  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_inset: var(
+    --ag-ui-inset,
+    var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)
+  );
+  --_width: var(--ag-ui-width, var(--_viewport-width));
+  --_height: var(--ag-ui-height, var(--_viewport-height));
+  --_max-width: var(--ag-ui-max-width, var(--_viewport-width));
+  --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
   --_radius: var(--ag-ui-radius, 0);
 }
 
@@ -253,11 +362,14 @@ export const STYLES = `
    composer rather than a per-row wrapper, so user pills still right-align and
    the assistant well spans the column. */
 :host([placement="page"]) {
-  --_inset: var(--ag-ui-inset, 0);
-  --_width: var(--ag-ui-width, 100vw);
-  --_height: var(--ag-ui-height, 100vh);
-  --_max-width: var(--ag-ui-max-width, 100vw);
-  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_inset: var(
+    --ag-ui-inset,
+    var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)
+  );
+  --_width: var(--ag-ui-width, var(--_viewport-width));
+  --_height: var(--ag-ui-height, var(--_viewport-height));
+  --_max-width: var(--ag-ui-max-width, var(--_viewport-width));
+  --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
   --_radius: var(--ag-ui-radius, 0);
 }
 
@@ -288,28 +400,100 @@ export const STYLES = `
   max-width: 100%;
 }
 
+/* Small viewports: one shape, reached from whichever placement the host chose.
+
+   A phone is not an eighth placement, it is an override that collapses the
+   others onto one of them. The host picked a placement for the desktop it was
+   designing; a 380x560 panel with a 24px margin is not a smaller version of
+   that decision, it is most of the screen with a frame drawn round it.
+
+   The breakpoint is a literal because a custom property cannot be read in a
+   media query -- which is exactly why there is an opt-out. Everything the block
+   sets is a token a host can re-state, but the *trigger* is unreachable, so a
+   host whose layout wants a different threshold, or none, sets
+   data-small-viewport="off" and keeps its desktop shape at every width. 600px is above every common phone in portrait and below every
+   tablet in landscape, and it is a width rather than a pointer test on purpose:
+   a touch laptop is coarse-pointered and wide, a narrow desktop window is
+   fine-pointered and small, and conflating the two gets both wrong. What the
+   pointer decides is which controls make sense, further down.
+
+   Two placements are left alone. "page" is already this shape. "embedded" sits
+   in a box the host sized and placed, and taking that over would break the app
+   shell it was embedded into -- the host is the only party that knows whether
+   its column should become the whole screen. */
+@media (max-width: 600px) {
+  :host([placement="floating"]:not([data-small-viewport="off"])),
+  :host([placement="bottom-left"]:not([data-small-viewport="off"])),
+  :host([placement="sidebar"]:not([data-small-viewport="off"])),
+  :host([placement="side"]:not([data-small-viewport="off"])),
+  :host(:not([placement]):not([data-small-viewport="off"])),
+  :host([placement=""]:not([data-small-viewport="off"])) {
+    --_inset: var(
+      --ag-ui-inset,
+      var(--_viewport-inset-top) var(--_viewport-inset-right)
+        calc(var(--_viewport-inset-bottom) + var(--_keyboard-inset))
+        var(--_viewport-inset-left)
+    );
+    --_width: var(--ag-ui-width, var(--_viewport-width));
+    --_height: var(--ag-ui-height, var(--_viewport-height));
+    --_max-width: var(--ag-ui-max-width, var(--_viewport-width));
+    --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
+    --_radius: var(--ag-ui-radius, 0);
+    --_shadow: var(--ag-ui-shadow, none);
+  }
+
+  /* Nothing to resize once the panel is the screen, and the grips would sit
+     under the thumbs holding the phone. */
+  :host([placement="floating"]:not([data-small-viewport="off"])) .resize-handle,
+  :host([placement="bottom-left"]:not([data-small-viewport="off"])) .resize-handle,
+  :host([placement="sidebar"]:not([data-small-viewport="off"])) .resize-handle,
+  :host([placement="side"]:not([data-small-viewport="off"])) .resize-handle,
+  :host(:not([placement]):not([data-small-viewport="off"])) .resize-handle,
+  :host([placement=""]:not([data-small-viewport="off"])) .resize-handle {
+    display: none;
+  }
+}
+
 /* Sidebar: a full-height docked panel that slides open/closed and
    collapses to a slim icon rail (not the floating launcher). Docked right by
    default; data-side="left" docks it left. Overlay by default — set
    --ag-ui-position: static (and place this element in your own layout) for a
    host-managed push instead. */
 :host([placement="sidebar"]) {
-  --_inset: var(--ag-ui-inset, 0 0 0 auto);
+  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
   --_width: var(--ag-ui-width, 420px);
-  --_height: var(--ag-ui-height, 100vh);
-  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_height: var(--ag-ui-height, var(--_viewport-height));
+  --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
   --_radius: var(--ag-ui-radius, 0);
   transition: width var(--_motion) var(--_ease);
 }
 
 :host([placement="sidebar"][data-side="left"]) {
-  --_inset: var(--ag-ui-inset, 0 auto 0 0);
+  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) auto var(--_viewport-inset-bottom) var(--_viewport-inset-left));
 }
 
 /* The docked panel is pinned to the edge it docks against rather than filling
    the host as a flex child. Collapsing shrinks the host to the rail width, and
    a flex child would be squashed to 52px on the way out instead of sliding out
    at full width. */
+/* The panel is taken out of flow so the collapse can slide it out at full
+   width; see the note above. That makes the host its containing block, and the
+   host is only one by accident: it is position: fixed by default. A host that
+   takes the documented route to a pushed layout instead of an overlay sets
+   --ag-ui-position: static, and a static element establishes nothing -- so the
+   panel resolved against the initial containing block, landed at the document
+   origin, and scrolled away with the page. Docked left it pinned to the
+   document's left edge rather than the host's.
+
+   It looked correct wherever it was first tried, because a full-height column
+   at the top of an unscrolled document is exactly where those two answers
+   coincide. Containment makes the host a containing block whatever its
+   position, so the panel stays in the box the host was given. It is a no-op in
+   the default case, which is already positioned. */
+:host([placement="sidebar"]) {
+  contain: layout;
+}
+
 :host([placement="sidebar"]) .chat {
   position: absolute;
   inset: 0 0 0 auto;
@@ -325,11 +509,15 @@ export const STYLES = `
 /* Collapsed sidebar: shrink the host to the rail width and slide the panel out
    through the edge it docks against. Higher specificity than the generic
    collapse rules, so it wins regardless of source order. */
+/* The rail is the full height of what the host left, not of the screen. It
+   said 100vh and pinned its own bottom, which put it under any chrome the host
+   had reserved -- and the icon lives at the top of the rail, so the one control
+   that reopens the panel was the first thing to disappear behind a sticky
+   header. */
 :host([placement="sidebar"][collapsed]) {
   width: var(--_rail-width);
-  height: 100vh;
-  max-height: 100vh;
-  bottom: 0;
+  height: var(--_viewport-height);
+  max-height: var(--_viewport-height);
   pointer-events: auto;
 }
 
@@ -445,17 +633,83 @@ export const STYLES = `
 
 /* The sidebar collapses to an edge rail instead: full height, square, flush
    against the dock. It slides in with the panel rather than popping. */
+/* The edge rail. It reads as the docked edge of a panel rather than a coloured
+   stripe: the surface the panel is made of, a border on the side it docks
+   against, and the accent kept for the icon -- a full-height slab of accent is
+   the loudest thing on the page and says the least about itself.
+
+   Content sits at the top rather than centred, because a control floating in
+   the middle of a screen-high column has nothing to belong to. */
 :host([placement="sidebar"][collapsed]) .launcher {
   inset: 0;
   width: auto;
   height: auto;
-  align-items: flex-start;
-  padding-top: 16px;
-  border: 1px solid var(--_border);
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding-top: 14px;
+  border: 0;
+  border-inline-start: 1px solid var(--_border);
   border-radius: 0;
+  background: var(--_bg);
+  color: var(--_fg);
+  box-shadow: none;
+  transform: none;
+}
+
+:host([placement="sidebar"][data-side="left"][collapsed]) .launcher {
+  border-inline-start: 0;
+  border-inline-end: 1px solid var(--_border);
+}
+
+/* The icon keeps the accent, so there is one obvious thing to press.
+
+   The glyph is sized here rather than left to fill the holder. A glyph in an
+   icon holder takes the holder's whole box by default, which is right where the
+   holder is only a box and wrong the moment it becomes a filled circle: the
+   mark then runs edge to edge and reads as a square crammed into a disc. The
+   proportion is the floating launcher's own -- a 26px glyph in a 56px bubble --
+   so the two collapsed states look like the same widget. */
+:host([placement="sidebar"][collapsed]) .launcher .icon-holder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
   background: var(--_header-bg);
   color: var(--_header-fg);
-  box-shadow: none;
+}
+
+:host([placement="sidebar"][collapsed]) .launcher .icon-holder .glyph,
+:host([placement="sidebar"][collapsed]) .launcher .icon-holder .icon-img {
+  width: 16px;
+  height: 16px;
+}
+
+/* Written down the rail, which is the only direction it fits. Reading upward
+   is the convention for a right-hand edge and matches how a docked panel's
+   label is set everywhere it appears. */
+.rail-label {
+  display: none;
+}
+
+:host([placement="sidebar"][collapsed]) .rail-label {
+  display: block;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  max-height: calc(100% - 96px);
+  overflow: hidden;
+  font-size: 0.9em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+:host([placement="sidebar"][data-side="left"][collapsed]) .rail-label {
+  writing-mode: vertical-rl;
   transform: none;
 }
 
@@ -569,17 +823,24 @@ export const STYLES = `
 
 .header-controls {
   display: flex;
-  gap: 2px;
+  gap: var(--_header-gap);
   flex: none;
 }
 
 .header-btn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--_header-btn-size);
+  height: var(--_header-btn-size);
   border: none;
   background: transparent;
   color: inherit;
   font: inherit;
   line-height: 1;
-  padding: 4px 7px;
+  padding: 0;
   border-radius: 6px;
   cursor: pointer;
   opacity: 0.85;
@@ -601,9 +862,9 @@ export const STYLES = `
    Nothing paints there once the panel is gone, so the box only has to stop
    swallowing clicks: pointer events go to none and the launcher takes them.
 
-   Two placements collapse differently: "sidebar" slides to its rail (below),
-   while "embedded" and "page" keep the header bar, having no corner for a
-   floating circle that would escape the host's layout. */
+   Two placements do not use it: "sidebar" slides to its rail (below), and
+   "embedded" keeps its header bar, having no corner for a floating circle that
+   would escape the host's layout. "page" has no collapsed state at all. */
 :host([collapsed]) {
   pointer-events: none;
   /* A collapsed host has to be allowed to shrink, and in the layout hosts
@@ -665,35 +926,105 @@ export const STYLES = `
   transform-origin: bottom right;
 }
 
-/* The two in-flow placements keep the original collapse: hide the body, let
-   the host shrink to the header bar. */
-:host([collapsed]:is([placement="embedded"], [placement="page"])) {
+/* The in-flow placement keeps the original collapse: hide the body, let the
+   host shrink to the header bar. */
+:host([collapsed][placement="embedded"]) {
   height: auto;
   max-height: none;
   pointer-events: auto;
 }
 
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .chat {
+:host([collapsed][placement="embedded"]) .chat {
   opacity: 1;
   transform: none;
   visibility: visible;
 }
 
-/* These two keep the header bar, so the launcher must stay out of the way: an
+/* It keeps the header bar, so the launcher must stay out of the way: an
    embedded host is position: static, which would let an absolutely-positioned
    circle escape the layout and land against whatever the page positions. */
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .launcher {
+:host([collapsed][placement="embedded"]) .launcher {
   visibility: hidden;
   opacity: 0;
 }
 
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .messages-wrap,
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .messages,
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .input-row,
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .skill-chips,
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .skill-palette,
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .skill-hint {
+:host([collapsed][placement="embedded"]) .messages-wrap,
+:host([collapsed][placement="embedded"]) .messages,
+:host([collapsed][placement="embedded"]) .input-row,
+:host([collapsed][placement="embedded"]) .skill-chips,
+:host([collapsed][placement="embedded"]) .skill-palette,
+:host([collapsed][placement="embedded"]) .skill-hint {
   display: none;
+}
+
+/* A docked conversation list: beside the transcript rather than over it.
+
+   A full-page chat is the one surface with width to spare, and covering the
+   conversation to show the list of conversations is the wrong trade there --
+   it hides the thing you are trying to get back to. Everywhere else the panel
+   is a few hundred pixels wide and a docked list would leave a column of
+   transcript narrower than the messages in it, so this is the only placement
+   that gets it.
+
+   The transcript is moved by padding on the shell rather than by making the
+   list a flex sibling: the drawer is the last child of the panel, and no
+   selector reaches backwards from it to the rows that have to shift. That is
+   also why the state is stamped on the host. */
+:host([data-threads-docked]) .drawer {
+  /* Not a scrim: the page behind it is still the user's to work in. */
+  pointer-events: none;
+}
+
+:host([data-threads-docked]) .drawer-backdrop {
+  display: none;
+}
+
+:host([data-threads-docked]) .drawer-panel {
+  width: var(--_threads-rail-width);
+  pointer-events: auto;
+  border-inline-end: 1px solid var(--_border);
+  box-shadow: none;
+}
+
+:host([data-threads-docked]) .messages,
+:host([data-threads-docked]) .input-row,
+:host([data-threads-docked]) .skill-chips,
+:host([data-threads-docked]) .attachment-tray {
+  padding-inline-start: calc(
+    var(--_threads-rail-width) + max(var(--_pad), (100% - var(--_content-max-width)) / 2)
+  );
+}
+
+:host([data-threads-docked]) .header {
+  padding-inline-start: calc(var(--_threads-rail-width) + var(--_pad));
+}
+
+/* The page placement has no collapsed state, so it offers no control for one.
+   A dedicated route has no "away" to go to: shrinking it left a strip of
+   application chrome fixed over a route that no longer had an owner, and this
+   is the one placement where the launcher that would bring it back is hidden.
+
+   Hiding the control is only half of it. The state has another way in -- the
+   attribute can be written straight onto the element, and a value stored under
+   a different placement is restored on connect -- and the JS guards that catch
+   those cannot see an attribute set directly. So the placement neutralises the
+   state here as well: with the collapse rules above no longer naming "page", an
+   unguarded collapsed attribute would otherwise fall through to the generic
+   rule that scales the panel away and drops pointer events, leaving nothing on
+   screen and no launcher to press. */
+:host([placement="page"]) .header-btn--collapse {
+  display: none;
+}
+
+:host([placement="page"][collapsed]) {
+  pointer-events: auto;
+  align-self: auto;
+}
+
+:host([placement="page"][collapsed]) .chat {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
 }
 
 /* Jump-to-latest: shown only once the reader has scrolled away *and* missed
@@ -783,6 +1114,28 @@ export const STYLES = `
 
    The 1px box with clip-path, rather than width/height 0, is the shape that
    survives: a zero-sized element is dropped from the tree by some engines. */
+/* A used-value reader for the four viewport-inset tokens, and the only
+   reliable one. getComputedStyle().getPropertyValue() on an unregistered
+   custom property hands back the substituted token stream, not a length: it
+   returns "4rem" verbatim, and "calc(56px + env(safe-area-inset-top))" as
+   "calc(56px + 0px)" -- which parses as NaN and takes the whole inset with it.
+   Padding is a real property, so the same tokens come back resolved to px.
+
+   visibility rather than display: none, because a box that generates no
+   layout has no used values to read. Zero-sized, absolutely positioned and
+   inert, so it costs nothing but the read. */
+.viewport-probe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
+  padding: var(--_viewport-inset-top) var(--_viewport-inset-right)
+    var(--_viewport-inset-bottom) var(--_viewport-inset-left);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -798,6 +1151,8 @@ export const STYLES = `
 .messages {
   flex: 1;
   overflow-y: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   /* The browser's own scroll anchoring competes with the scroller for the same
      job and wins unpredictably -- it can hold the view still exactly when we
      want to follow. Turned off so following is decided in one place. Safari
@@ -950,6 +1305,8 @@ export const STYLES = `
 .message--assistant pre {
   padding: 8px 10px;
   overflow: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   background: var(--_bg);
   border: 1px solid var(--_border);
   border-radius: 6px;
@@ -1128,6 +1485,8 @@ export const STYLES = `
   border-left: 2px solid var(--_border);
   max-height: 220px;
   overflow: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
@@ -1318,6 +1677,8 @@ export const STYLES = `
   padding: 6px 8px;
   max-height: 160px;
   overflow: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   background: var(--_bg);
   border: 1px solid var(--_border);
   border-radius: 6px;
@@ -1812,6 +2173,8 @@ export const STYLES = `
   resize: none;
   max-height: var(--_composer-max-height);
   overflow-y: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   padding: 6px 4px 2px;
   background: transparent;
   border: none;
@@ -2096,6 +2459,30 @@ export const STYLES = `
   opacity: 0.75;
 }
 
+/* The one control a notice may carry. Quiet, because it reports something
+   already done rather than asking for a decision. */
+.run-notice-undo {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--_border);
+  border-radius: var(--_radius);
+  background: var(--_bg);
+  color: var(--_accent);
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.run-notice-undo:hover:not(:disabled) {
+  background: var(--_hover);
+}
+
+.run-notice-undo:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .run-notice-text {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -2240,6 +2627,8 @@ export const STYLES = `
   padding: 8px 10px;
   max-height: 140px;
   overflow: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   font-size: 12px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   background: var(--_assistant-bg);
@@ -2425,6 +2814,43 @@ export const STYLES = `
 @media (hover: none) {
   .message-action::after {
     content: none;
+  }
+}
+
+/* Touch. Separate from the width breakpoint above on purpose: width decides
+   the layout, the pointer decides which controls make sense, and a touch
+   laptop is coarse-pointered and wide while a narrow desktop window is
+   fine-pointered and small. */
+@media (pointer: coarse) {
+  /* A 6px edge strip is not a control, it is a trap that eats a scroll. The
+     corners are 14px, still under the 24px floor a target is meant to clear,
+     and the panel has other ways to be resized on a device that has a pointer
+     precise enough to grab one. */
+  .resize-handle {
+    display: none;
+  }
+
+  /* Platform guidance is 44pt on iOS and 48dp on Android. These sit at 28-30px,
+     which clears the WCAG minimum and misses both. */
+  :host {
+    --_action-size: var(--ag-ui-action-size, 44px);
+    --_tool-btn-size: var(--ag-ui-tool-btn-size, 44px);
+    --_send-size: var(--ag-ui-send-size, 44px);
+    /* Missed the first time these were raised, which left the header -- the
+       widget's primary controls, and the only way to reach history, a new chat
+       or the collapse -- at half the size of everything beside it. */
+    --_header-btn-size: var(--ag-ui-header-btn-size, 44px);
+    --_header-gap: var(--ag-ui-header-gap, 6px);
+  }
+
+  /* iOS Safari zooms the page when a control under 16px takes focus, which
+     drags the whole fixed panel with it and leaves the user pinching back out
+     of a chat they only wanted to type into. The composer inherits the widget
+     font, which is 14px by default and 13px at compact density, so it has to
+     say 16 outright -- and only ever upward, so a host that has deliberately
+     set something larger keeps it. */
+  .input {
+    font-size: max(16px, var(--_font-size));
   }
 }
 
@@ -2616,6 +3042,8 @@ export const STYLES = `
   flex-direction: column;
   max-height: 220px;
   overflow: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   background: var(--_bg);
   border: 1px solid var(--_border);
   border-radius: 8px;
@@ -2704,6 +3132,8 @@ export const STYLES = `
   box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
   max-height: 60%;
   overflow-y: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   transform-origin: top center;
   transition:
     opacity var(--_motion) var(--_ease),
@@ -2879,10 +3309,20 @@ export const STYLES = `
 }
 
 .drawer-title {
+  /* Takes the slack so the two controls group at the trailing edge. With
+     space-between and three items the middle one floats, which reads as the
+     title and the close button being a pair with New chat wedged between
+     them. Truncates rather than pushing them off the row. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
 }
 
 .drawer-new {
+  flex: 0 0 auto;
   border: 1px solid var(--_border);
   border-radius: var(--_radius);
   background: var(--_bg);
@@ -2893,10 +3333,63 @@ export const STYLES = `
   cursor: pointer;
 }
 
+/* Narrows the list. Sits under the header rather than in it: the header's two
+   controls act on the conversation, and a field that filters what is below it
+   belongs with what it filters. */
+/* What is waiting for the run to finish. Above the composer, beside the
+   attachment tray, because both are things already handed over and not yet
+   sent. Each chip is a button: pressing it takes that message back. */
+.queued {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--_space);
+  padding: 0 var(--_pad) var(--_space);
+}
+
+.queued-chip {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 4px 10px;
+  border: 1px dashed var(--_border);
+  border-radius: var(--_msg-radius);
+  background: var(--_bg);
+  color: var(--_muted);
+  font: inherit;
+  font-size: 0.9em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.queued-chip:hover {
+  border-style: solid;
+  color: var(--_fg);
+}
+
+.drawer-filter {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: calc(100% - var(--_pad) * 2);
+  margin: var(--_space) var(--_pad) 0;
+  padding: 6px 10px;
+  border: 1px solid var(--_border);
+  border-radius: var(--_radius);
+  background: var(--_input-bg);
+  color: var(--_fg);
+  font: inherit;
+  font-size: 0.9em;
+}
+
+.drawer-filter::placeholder {
+  color: var(--_muted);
+}
+
 .drawer-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
 }
 
 .drawer-empty {
@@ -3015,6 +3508,31 @@ export const STYLES = `
    floating slide-over. */
 :host([placement="embedded"]) .drawer-backdrop {
   background: none;
+}
+
+/* The way back out of the list. It sits beside New chat, which is the control
+   it must not be mistaken for: one returns you to the conversation you were
+   reading, the other replaces it. */
+.drawer-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.drawer-close:hover {
+  background: var(--_hover);
 }
 
 :host([placement="embedded"]) .drawer-panel {

@@ -13,6 +13,8 @@ export type ResolvePageTarget = (target: string) => HTMLElement | null;
 export const PAGE_ACTIONS = {
   SCROLL: "scroll",
   DRAG: "drag",
+  /** The widget's own position: see `createChatSurfaceTools`. */
+  CHAT: "chat",
 } as const;
 
 /**

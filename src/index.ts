@@ -107,8 +107,20 @@ export {
   setControlValue,
   toggleCheckbox,
 } from "./dom/dom_driver.js";
+export {
+  type HighlightOverlayOptions,
+  showHighlightOverlay,
+} from "./dom/highlight_overlay.js";
 export { setNativeChecked, setNativeValue } from "./dom/native_setter.js";
 export type { Skill } from "./skills/skill.js";
+export {
+  CHAT_CORNERS,
+  type ChatCorner,
+  type ChatSurface,
+  type ChatSurfaceReport,
+  createChatSurfaceTools,
+  isChatCorner,
+} from "./tools/chat_surface_tools.js";
 export { type ClientTool, ClientToolRegistry } from "./tools/client_tool_registry.js";
 export { isDestructive } from "./tools/is_destructive.js";
 export { isNavigates } from "./tools/is_navigates.js";

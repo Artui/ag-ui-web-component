@@ -7,6 +7,503 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Enter during a run queues instead of doing nothing.** A second run cannot
+  start while one is in flight -- it would orphan the first, which is
+  unabortable, and the second's settle sweep would corrupt the first's still
+  pending tool cards -- so that key did nothing at all, silently, and the text
+  sat in the box.
+
+  What is waiting now shows above the composer as chips, each of which takes its
+  message back when pressed, and the next is sent when the run settles. Stopping
+  the run discards them: sending into a conversation someone has just stopped is
+  the opposite of what stopping meant. Not sending it is not the same as
+  destroying it, though -- a queued message has already left the composer, so
+  it goes to the front of the arrow-key recall history rather than nowhere.
+  Text only -- an attachment is settled state the tray already holds, and the
+  composer has no second copy of it.
+
+- **A very long paste becomes an attachment rather than a wall of text.** At
+  5000 characters, and only where uploads are configured -- without somewhere
+  for it to go, quietly dropping a paste for being long is far worse than an
+  awkward composer. The field is capped at `40vh`, so a paste that size is
+  already taller than the box holding it: the reader cannot see what they
+  pasted, cannot edit around it, and sends one enormous turn.
+
+  Nothing is lost by removing the chip, because the text is still on the
+  clipboard -- which is why this needs no undo of its own.
+  `data-paste-attach` takes `off` or a character count.
+
+- **The conversation list filters itself** once there are eight or more
+  conversations in it -- below that a search box is a control asking to be used
+  on a list you can already read in one glance. It matches the title **and** the
+  preview, because the title is often the model's one-line summary and the
+  phrase you remember is as likely to be inside the conversation as on it, and
+  it filters what the drawer already holds rather than going back to the server
+  for a list that is already in memory. A filter that matches nothing says so,
+  rather than reusing the sentence for having no conversations at all.
+
+- **`data-starters` offers prompts on an empty transcript.** A JSON array of
+  strings, drawn as chips that send themselves. Different from the suggestion
+  chips a run pushes, which are follow-ups to something already said -- these
+  answer the blank page, and they are the host's rather than the model's,
+  because only the host knows what its page is for. They are fallback content
+  for `slot="empty"`, so slotting your own replaces them entirely, and they
+  share the four-prompt and 120-character limits with the pushed chips.
+
+- **Up and Down walk back through what you have already sent**, from an empty
+  composer with the skills palette closed. The shape every shell and every
+  coding agent uses; the conditions are what make it safe, because an arrow
+  inside text is how you move the caret. Arrowing forward past the newest turn
+  empties the box again, so the way out is the key that got you in, and typing
+  hands the composer back so the next walk starts from the newest turn.
+
+- **On a full page, the conversation list docks beside the transcript instead of
+  covering it.** From 900px of panel width under `placement="page"`: no
+  backdrop, no focus trap, and `role="region"` rather than a modal dialog, with
+  the transcript shifted over rather than hidden. Covering the conversation to
+  show the list of conversations hides the thing you are trying to get back to,
+  and a dedicated route is the one surface with width to spare.
+
+  Narrower than that, or under any other placement, it stays the slide-over it
+  was -- a few hundred pixels of panel with a list docked into it leaves a column
+  of transcript narrower than the messages in it. Width alone is not the test:
+  an app shell can hand `embedded` a page-sized box, and that box is still a
+  column of somebody's layout.
+
+  `--ag-ui-threads-rail-width` sets the docked width; the host carries
+  `data-threads-docked` while it is showing. `closeThreads()` joins
+  `openThreads()`.
+
+- **The agent can move the panel it is speaking from.** Four tools behind a new
+  `chat` token on `data-page-actions`: `read_chat_surface`, `move_chat`,
+  `minimise_chat` and `restore_chat`, plus the `describeSurface()` and
+  `moveTo(corner)` methods behind them.
+
+  This is the affordance nobody else can offer. Every other assistant's chat is
+  a surface of its own, so it has nothing to be in the way *of*; this one is
+  mounted in the page the user is working in.
+
+  **They report what happened, not what was asked.** A panel that fills the
+  screen has nowhere to move to, and a placement that places itself owns its
+  position, so `move_chat` answers `moved: false` with the reason and what would
+  work instead. `read_chat_surface` lets the agent ask before it acts rather
+  than learn through a failure. `moveTo` claims the axes the same way a user
+  drag does -- the launcher travels with the panel, the corner it opens from is
+  re-picked, and switching placement hands everything back.
+
+  None is stamped `x-destructive`: moving a window destroys nothing, and a
+  confirmation card in front of it would be worse than the move. **What it gets
+  instead is a notice and an undo.** A panel that rearranges itself
+  mid-conversation has to be both visible and reversible, so `move_chat` and
+  `minimise_chat` write a run notice with an Undo beside it that puts the panel
+  back exactly where it was -- inset, launcher inset and the corner it opens
+  from, which are one decision rather than three. A host calling `moveTo` or
+  `setCollapsed` itself gets no notice: it is arranging its own page and does
+  not need telling what it just did.
+
+  Run notices may now carry that one control, and only ever an undo. Anything
+  the user has to *decide* is a confirmation card; a notice reports something
+  already done.
+
+- **`showHighlightOverlay(el, options)`** -- ring a host-page element from an
+  overlay drawn *outside* it, optionally dimming everything else (`scrim`) or
+  flowing a gradient round it (`gradient`). Returns a function that removes it.
+  `flash` and `focusWithFlash` accept both and route through it when either is
+  asked for; the plain outline is unchanged and still the default.
+
+  These are one mechanism rather than two features, and the reason is the same
+  in both directions. The flat ring is an `outline` on the element deliberately,
+  because a `box-shadow` is clipped away by any `overflow: hidden` ancestor
+  sharing the target's box while the helper still reports success -- but an
+  outline takes a *colour*, there is no `outline-image`, and anything else that
+  can carry a gradient is a property of the target and lands back inside
+  whatever is clipping it. Dimming everything else needs a surface larger than
+  the target, which is the same problem from the other side.
+
+  **It is inert.** The overlay takes no pointer event at the cut-out or anywhere
+  else: a dim that swallows clicks is a modal the user did not open, and
+  `highlightThenClick` has to reach the control it just pointed at. It follows
+  the target on scroll and resize, and under reduced motion the gradient is
+  still drawn but stops travelling. Themed with `--ag-ui-highlight-scrim` and
+  `--ag-ui-highlight-gradient`.
+
+- **Touch affordances, decided by the pointer rather than the width.** The eight
+  resize grips are hidden -- a 6px edge strip is not a control, it is a trap that
+  eats a scroll -- and the action, tool and send buttons go to 44px, which is
+  what iOS and Android ask for and what 28-30px missed.
+
+  The composer states at least 16px. iOS Safari zooms the page when a control
+  under that takes focus, which drags the whole fixed panel with it and leaves
+  the user pinching back out of a chat they only wanted to type into; the
+  composer inherits the widget font, which is 14px by default and 13px at
+  compact density.
+
+  Every scroll container also contains its own overscroll, so reaching the end
+  of the transcript no longer scrolls the page behind it.
+
+- **`data-small-viewport="off"`** keeps the desktop layout at every width. Every
+  value the small-viewport override sets is a token a host can re-state; the
+  trigger is a media query, which cannot read one -- so without this the
+  breakpoint was the only part of the placement model a consumer could not reach.
+
+- **A small-viewport layout.** At 600px wide and below, every placement but
+  `embedded` becomes one full-bleed shape: edge to edge, no radius, no shadow,
+  no resize grips. There was previously no width-based behaviour of any kind, so
+  a phone got the desktop's 380x560 floating panel clamped against the screen
+  edges -- and that clamp had already produced one shipped defect, because any
+  viewport under 428px was born against it.
+
+  A phone is not an eighth placement, it is an override that collapses the
+  others onto one of them. `embedded` is exempt: it sits in a box the host sized
+  and placed, and only the host knows whether that column should become the
+  whole screen. The corner placements still rest at their launcher, so a
+  full-bleed panel is something the user opens rather than something they are
+  given.
+
+  The breakpoint is a width rather than a pointer test. A touch laptop is
+  coarse-pointered and wide; a narrow desktop window is fine-pointered and
+  small.
+
+- **Tell the widget which edges of the viewport your own chrome already
+  occupies**, with `--ag-ui-viewport-inset-top` / `-right` / `-bottom` / `-left`.
+  A fixed placement covers the viewport it is given and knows nothing about your
+  sticky header, so it came down on top of it.
+
+  Reserving that space was already possible and was the wrong shape of work:
+  `--ag-ui-inset` is one four-value shorthand and every placement has a different
+  default, so a host restated it per placement family and then kept
+  `--ag-ui-height` and `--ag-ui-max-height` in step by hand. Forgetting the
+  height half overflowed the panel off the bottom of the screen with nothing to
+  say so. Now `page` and `full` inset by all four edges, `sidebar` and `side` by
+  three, `floating` and `bottom-left` add them to their own margins, and every
+  height follows centrally.
+
+  They take `env(safe-area-inset-*)` verbatim. `--ag-ui-viewport-height` and
+  `--ag-ui-viewport-width` state the usable box outright for the case no
+  viewport-percentage length describes -- an on-screen keyboard changes neither
+  `vh` nor `dvh` nor `svh`, so a full-bleed panel on a phone has to be told.
+
+  The playground's own config bar was the first consumer: it replaced
+  twenty-five lines with one declaration.
+
+### Changed
+
+- **Four documented placements instead of seven.** `floating`, `sidebar`, `page`
+  and `embedded` are the four shapes that differ structurally: a corner panel, a
+  docked rail, a surface that owns the screen, and a thing in your layout.
+
+  `bottom-left`, `side` and `full` **still parse and still work**, and are no
+  longer documented. Each turned out to be a variant of one of the four rather
+  than a shape of its own: `full` is `page` with `--ag-ui-content-max-width:
+  none`, `bottom-left` is `floating` with a different `--ag-ui-inset`, and `side`
+  is `sidebar` collapsing to the floating launcher instead of an edge rail.
+  Nothing warns and no markup breaks -- `placement` is a public attribute in
+  hand-written HTML with no build step to catch a removed value, so removing one
+  would fail silently and visually. There is simply less to choose between.
+
+- **The corner placements now rest at their launcher on a first visit.** An
+  unconfigured widget mounted open, so a visitor's first page load put a 380x560
+  panel over the host page's own bottom-right corner, uninvited. Every corner
+  chat in the field rests closed and treats opening as something the user does.
+
+  A stored choice still wins in both directions, so nobody who opened the panel
+  finds it closed. Only `floating` and `bottom-left` are affected -- the
+  placements that place themselves are unchanged, because a host that docks a
+  sidebar or embeds the widget in its own layout has already decided it belongs
+  on screen. `data-start-open` restores the previous behaviour.
+
+  **This is a visible change for any host that mounts the widget without a
+  placement**, which is the default, and it is the reason for the attribute.
+
+- **Where the widget sits, how big it is and which theme it wears now outlive
+  the tab.** These went to `sessionStorage` beside the transcript and inherited
+  its lifetime without earning it: the transcript is per-tab on purpose -- two
+  tabs are two conversations -- while a user who dragged the panel clear of
+  their own interface did it again in the next tab, and again after every
+  restart.
+
+  They are written to `localStorage` and to the per-tab store, and read from the
+  durable one first. The second write is not redundancy: a privacy mode can deny
+  `localStorage` while allowing `sessionStorage`, and losing the durable copy
+  should degrade to the previous behaviour rather than to no persistence at all.
+  An existing per-tab value is still honoured, so nothing resets on upgrade.
+
+  **Whether the widget is currently open stays per-tab.** That is a statement
+  about this tab rather than a preference, and carrying it across would pop the
+  panel open in every new tab because it was opened once somewhere else.
+
+- **The page placement no longer collapses.** It is a dedicated route rather
+  than a panel on someone else's page, so there was no "away" for it to go to:
+  collapsing left a strip of application chrome fixed over a route that no
+  longer had an owner, under the one placement that also hides the launcher.
+
+  Removing the control was not enough on its own. The state has three other
+  ways in -- the `collapsed` property, the attribute, and a value restored from
+  per-tab storage that was written under a different placement -- and the
+  storage key is namespaced per instance, not per placement. A tab that
+  collapsed a floating panel and later loaded the same instance as a page would
+  have restored a state with no control and no launcher to undo it. So the
+  property and the restore are gated, switching into the placement releases a
+  collapsed panel, and the stylesheet neutralises the state for the one path
+  that reaches none of those: an attribute written straight onto the element.
+
+  A control removed from the interface is not a state removed from the model.
+
+  The embedded placement is unchanged and still collapses to its header bar,
+  which is an ordinary accordion for a panel that sits in a page's own flow.
+
+- **`--ag-ui-edge-gutter` and `--ag-ui-keyboard-inset`.** The first is the gap a
+  resting floating panel keeps from the box the host left free, and the size cap
+  now subtracts the same one rather than restating it. The second overrides the
+  lift an on-screen keyboard earns: the widget publishes what it measured, and a
+  host that states this outranks it -- the two-token shape the measured viewport
+  height already had, and the inset half was missing.
+
+- **`createChatSurfaceTools` and its types are exported.** `moveTo` and
+  `describeSurface` are public methods, so a TypeScript consumer could call them
+  and had nowhere to import `ChatCorner` or `ChatSurfaceReport` from. The report
+  also gained `draggable`, and an origin on its `viewport`, so an agent reasoning
+  about the room beside the panel is not mixing two coordinate frames.
+
+### Fixed
+
+- **One screen-edge bound, instead of four answers to one question.** A drag
+  stopped the panel at 0, a resize at 0, a restore at the 24px resting gutter,
+  and the launcher at 8 -- so a panel dragged flush leapt a whole gutter inward
+  the next time anything re-placed it (a resize, an expand, a reload), and a
+  bubble held clear of the boundary sat beside a panel welded to it. Every
+  gesture now stops on the same line, 8px in, which is the bound the launcher
+  already had and it has it for the same reason: a rounded box with a drop
+  shadow sitting on the boundary has its shadow cut and its curve running into
+  the edge, and on a rounded screen or under a scrollbar it is genuinely
+  clipped. The 24px gutter keeps its own job -- where an untouched panel
+  *rests*, and what the size cap subtracts -- and is no longer a limit on where
+  a person may put one.
+
+- **A floating panel grown to its cap sat outside the screen.** The cap was the
+  whole usable box while the resting inset had already spent a gutter on the
+  anchored corner, so the far edge landed exactly one gutter outside it -- a top
+  of -24 on an ordinary window, taking the header and every control in it off
+  the screen. With a reserved header it sat inside that instead, which is the
+  one thing reserving it is meant to prevent.
+
+- **The corner a panel opened from ignored the edges a host had reserved.** The
+  probe compared the room on each side using the usable box's extents as though
+  it started at the origin, while the launcher's coordinates were the screen's
+  -- understating the room one way and overstating it the other by the same
+  reserved inset, which is enough to invert the choice rather than shade it. The
+  agent's own `moveTo` had the matching bug, and sent the panel under the very
+  chrome the reservation exists to keep it out of.
+
+- **The reserved edges are read as lengths.** They were parsed out of the custom
+  property directly, which returns the token stream rather than a value: a host
+  stating `4rem` reserved four pixels, and one stating
+  `calc(56px + env(safe-area-inset-top))` -- the natural spelling of what the
+  token's own documentation recommends -- reserved `NaN`, which made every clamp
+  `NaN` and dropped the panel to its static position.
+
+- **A stated position is measured from the layout viewport.** It was written
+  against the visual one, which is the box the widget is *clamped* into rather
+  than the box CSS resolves a fixed element's inset against. The two come apart
+  exactly when it matters: with a keyboard open, a panel the clamp had just held
+  inside the visible band was written back out behind the keyboard.
+
+- **Undoing an agent's move erased the position it had stored.** The undo put
+  the panel back and then wrote the moved position to storage again, because the
+  helper it called returns early when there is nothing to store. The panel
+  returned and the next resize or reload sent it back to the corner the user had
+  just rejected -- and since that store now outlives the tab, so did the move.
+
+- **The composer's history is cleared with the conversation.** Starting a new
+  chat, switching threads or changing `user-key` wiped the transcript and left
+  every turn the previous principal had typed one ArrowUp away in the composer.
+
+- **A conversation filter that hides itself stops filtering.** A list that fell
+  below the threshold while a query matched nothing showed "no conversations
+  match that" over conversations that were right there, with no control left on
+  screen to clear -- and reopening the drawer did not help, only a new one would.
+
+- **`move_chat` checks the corner it was given.** `required` in a schema is
+  advisory; a corner that is not one matched none of the edge tests, sent the
+  panel bottom-right, and was reported as a success for the corner asked for.
+
+- **The agent's minimise offers no undo.** The notice is written into the
+  transcript and the collapse it describes is what hides the transcript, so the
+  control could only be reached from a state where it had nothing left to do.
+
+- **A docked conversation list re-decides on a resize.** Docking is a width
+  decision taken only on the way in, so a window narrowed with the list open
+  kept a rail sized for the wide layout, with no focus trap and no backdrop.
+
+- **The theme toggle is drawn rather than typed.** It was the moon and sun
+  emoji, and an emoji is painted by the platform's own font at its own weight
+  and colour, with ink that routinely runs outside the box laid out for it -- so
+  it clipped, and it was the one gold glyph in a row of white strokes. It is an
+  SVG path like every neighbour now.
+
+- **The launcher keeps a little clear of the screen edge.** Flush against the
+  boundary, a circle with a drop shadow reads as clipped whether or not a pixel
+  is missing -- and on a rounded display, or under a scrollbar, it is. Not the
+  panel's 24px gutter, which is deliberately refused here because it would put
+  the corners people drag to out of reach; the margin is given up entirely on a
+  viewport too small to hold it.
+
+- **The header's controls were sized by their contents**, so each came out as
+  wide as the glyph inside it -- five buttons of four different widths, four
+  pixels apart, with the theme toggle (the one emoji among the line icons) the
+  widest and looking like it had run into its neighbour. They are square and
+  equal now, from `--ag-ui-header-btn-size`, spaced by `--ag-ui-header-gap`.
+
+  Both go to 44px on a coarse pointer, which the earlier touch pass missed --
+  it raised the message, tool and send controls and left the header at half
+  their size, despite it being the only way to reach history, a new chat or the
+  collapse.
+
+- **A resized panel and a dragged one disagreed about where the screen ends.**
+  The size cap subtracted a gutter that the drag's own limit did not, so the two
+  named different edges -- and once the size was capped a grip could no longer
+  grow the panel, which left the pull to land on the position instead and took
+  the whole panel down the screen. Pulling the other way stopped a gutter short
+  of an edge a drag could reach, leaving a band you could drag into but not
+  resize into, whose height changed with whatever the host had reserved.
+
+  The gutter belongs in the resting inset, which is what holds an untouched
+  panel clear of the edge; the cap is now simply what the host left free, which
+  is the limit the drag already used.
+
+  **It showed on one axis only, and the arithmetic says why**: the default panel
+  is 560 tall against a cap of the viewport minus 48 -- on an 800px screen with
+  a header reserved, 72px of headroom, so the height hit its cap almost at once.
+  The default width is 380 against a cap near 1230, which is 850px of headroom
+  nothing ever reaches. Same rule on both axes; only the vertical one was ever
+  felt.
+
+- **Resizing had none of the restrictions dragging has.** A grip could be pulled
+  past the edges the host reserved, and pulling the *anchored* edge -- the
+  bottom, under the default placement -- wrote a negative inset and moved the
+  whole panel down the screen instead of growing it. Each edge is now bounded to
+  what the host left free: the gesture carries on and the panel simply stops.
+
+  A resize also persisted the size the pointer asked for rather than the one the
+  panel got, so the next mount restored a size it never had -- the same
+  disagreement between apply and commit that made the header drag jump.
+
+- **Dragging the panel or the launcher jumped, and stopped short of every
+  edge.** Reported from a phone and reproduced on a desktop: the widget
+  followed the pointer until it passed roughly the middle of the screen, then
+  leapt by about the height of the host's own header bar -- and it could not be
+  dragged flush to any side.
+
+  Three separate causes, all of them in this release's own new work:
+
+  A CSS `inset` on a fixed element is measured from the **real** viewport
+  edges, and the new `--ag-ui-viewport-inset-*` support had them measured from
+  the box the host left free. Halfway across the screen is where the expand
+  corner flips -- the same point stops being written as a `top` and starts
+  being written as a `bottom` -- so that is where the difference appeared, as a
+  leap of exactly the reserved edge.
+
+  The 24px gutter a placement rests a panel at was being enforced against a
+  drag, which is what made it feel stuck short of every side. Staying on screen
+  is the part that matters, and that is still enforced.
+
+  Releasing the drag moved the launcher again, because the commit recomputed
+  the same sum the last move had already applied. Both now come from one
+  place, so the release changes nothing by construction.
+
+  Also fixed while in there: a `pointercancel` now ends a drag. On touch that
+  is routine rather than exceptional -- the browser takes the pointer back for
+  a scroll or a system gesture and never sends `pointerup` -- and without it the
+  move listeners stayed attached and the widget kept following a finger that
+  had stopped.
+
+- **The highlight overlay could not be themed by any host that themes the
+  widget.** It is appended to the document body so it can escape the clipping it
+  exists to avoid, so a `var()` in its own inline style resolved against the
+  *body's* cascade -- a host setting `--ag-ui-accent` or
+  `--ag-ui-highlight-scrim` on `ag-ui-chat` or a wrapper, which is how everything
+  else here is themed, never reached it. Every token is now read from the
+  element being pointed at, which is where the flat ring has always read its
+  accent.
+
+  Its inline styles also beat any rule a host could write, and `::part` does not
+  reach the light DOM, so this was the one surface with no way in at all. The
+  ring width, the gradient's speed and the stacking order are now tokens too
+  (`--ag-ui-highlight-ring-width`, `--ag-ui-highlight-flow-ms`,
+  `--ag-ui-highlight-z-index`), with `ringWidth` and `flowMs` options over them.
+
+- **A panel could be dragged somewhere it could not be rescued from.** The
+  clamps that keep it on screen measured a viewport starting at the top-left of
+  the display, so a panel dragged upward settled happily underneath a host's
+  sticky header -- and collapsing it, the one thing a user tries, replaced an
+  unreachable panel with an unreachable launcher. They now clamp against the
+  box the host actually left, reserved edges included.
+
+- **The sidebar's edge rail ran under reserved chrome, and looked like a
+  stripe.** It asked for `100vh` and pinned its own bottom, so it ignored those
+  same reserved edges -- and the icon lives at the top of the rail, which made
+  the one control that reopens the panel the first thing to disappear behind a
+  header.
+
+  It has also been redesigned. A screen-high slab of accent carrying one small
+  icon is the widest collapsed state the widget has and the one that said least
+  about itself; it now reads as the docked edge of a panel -- the surface the
+  panel is made of, a border on the side it docks against, the accent kept for
+  the icon, and the widget's own title set down the rail as a caption
+  (`rail-label` part).
+
+- **A panel no longer sizes itself to screen space the on-screen keyboard is
+  covering.** No CSS length describes this: a keyboard has no effect on any
+  viewport-percentage unit, so `100vh`, `100dvh` and `100svh` are the same
+  number with it up as without. A full-bleed panel sized from one of them put
+  its own composer behind the keyboard being typed into.
+
+  The element now tracks `visualViewport` and publishes both the visible height
+  and how much is hidden below it. The height shrinks the panel; the hidden gap
+  lifts anything anchored to the bottom, which a shorter panel does not do on
+  its own -- a floating widget is positioned against the layout viewport, so its
+  bottom edge and the launcher at that corner stayed behind the keyboard
+  whatever height it had. A host's own `--ag-ui-viewport-height` still outranks
+  the measurement, and nothing is written at all while the two viewports agree.
+
+  The same measurement fixes the clamps, which were computing which corner to
+  open into using space that was off the screen.
+
+- **The chat-history list could not be dismissed under the embedded
+  placement.** The drawer closes when its backdrop is clicked, which is enough
+  wherever a strip of backdrop is showing -- but `embedded` widens the panel to
+  the full width of the host's box on purpose, so there was none left to hit.
+  What remained was Escape, which is invisible, picking a row, and New chat,
+  which replaces the conversation you opened the list to get back to.
+
+  The drawer header now carries a close control, exposed as the `drawer-close`
+  part. It is a third control in a row built for two, so it was measured at the
+  narrow end: at a 220px panel nothing overflows and every control stays inside
+  it. The title takes the slack and truncates rather than pushing them out.
+
+- **The documented way to make a sidebar push content instead of overlaying it
+  did not work.** Setting `--ag-ui-position: static` and placing the element in
+  your own layout is what the README offers, and it put the panel at the
+  document origin rather than in the box you gave it -- measured 1631px above
+  its own host on a scrolled page, and pinned to the document's left edge rather
+  than the host's when docked left.
+
+  The panel is taken out of flow so the collapse can slide it out at full width,
+  which needs the host to be a containing block. The host was one only by
+  accident, because it is `position: fixed` by default; a static element
+  establishes nothing, so the panel resolved against the initial containing
+  block instead. The sidebar host now contains its own layout whatever its
+  position, which is a no-op in the default overlay case.
+
+  It looked correct wherever it was first tried: a full-height column at the top
+  of an unscrolled document is exactly where the two answers coincide. The
+  stylesheet's own tests could not see it either -- they match strings against
+  the source, and every declaration involved was already correct on its own. The
+  regression test measures rects in a real browser, with the host offset from
+  the viewport and the page scrolled.
+
 ## [0.34.0] — 2026-09-03
 
 ### Added

@@ -26,6 +26,11 @@ const MIN_TARGET = 24;
 function mountBar(): { el: AgUiChat; buttons: HTMLButtonElement[] } {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent");
+  // Open, because the corner placements now rest collapsed on a first visit
+  // and a collapsed panel is scaled to 0.94 with visibility:hidden. Every
+  // measurement below would come back 6% short of what a user sees, which is
+  // small enough to keep passing while the real target shrank underneath it.
+  el.setAttribute("data-start-open", "");
   document.body.appendChild(el);
   const root = el.shadowRoot as ShadowRoot;
   // A finished bubble, inside the shadow root so the component's own styles

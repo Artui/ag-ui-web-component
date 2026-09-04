@@ -2,6 +2,14 @@ import type { ThreadMeta } from "../core/conversation_store.js";
 import { type RelativeTimeFormatter, relativeTime } from "./relative_time.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
+/**
+ * How many conversations there have to be before the filter appears.
+ *
+ * A search box above a list you can already read in one glance is a control
+ * asking to be used on nothing.
+ */
+export const FILTER_FROM = 8;
+
 /** Actions the host ({@link AgUiChat}) wires to the drawer's rows. */
 export interface ThreadDrawerCallbacks {
   /** A row was picked — load that thread and make it active. */
@@ -12,6 +20,15 @@ export interface ThreadDrawerCallbacks {
   readonly onRename: (threadId: string, title: string) => void;
   /** A row was deleted (after the inline confirm). */
   readonly onDelete: (threadId: string) => void;
+  /**
+   * The list opened or closed.
+   *
+   * There are five ways out of it -- the close control, the backdrop, Escape,
+   * picking a row and starting a new chat -- and only two of them go through
+   * the host. A docked list moves the transcript over, so the host has to know
+   * about all five or the transcript stays shifted around nothing.
+   */
+  readonly onVisibility?: (open: boolean) => void;
 }
 
 /**
@@ -39,6 +56,24 @@ export class ThreadDrawer {
   #strings: UiStrings;
   #threads: readonly ThreadMeta[] = [];
   #activeId = "";
+  /** Dismisses the list without starting a new conversation. */
+  #closeButton: HTMLButtonElement;
+  /** Narrows the list. Only rendered once there is enough of a list to narrow. */
+  #filter: HTMLInputElement;
+  /** The current filter text, lowercased once rather than per row. */
+  #query = "";
+  /**
+   * Whether the list covers the conversation, or sits beside it.
+   *
+   * Everything a dialog implies follows from this and nothing else does: the
+   * modal role, the focus trap, and taking focus on open. A list docked beside
+   * a full-page conversation is a region of that page -- telling assistive
+   * technology to ignore the rest of the document while it is showing would be
+   * a lie, and stealing focus into it would interrupt someone mid-sentence to
+   * announce a list they can already see.
+   */
+  #modal = true;
+
   /** The element focused before the drawer opened, restored on close. */
   #lastFocused: HTMLElement | null = null;
 
@@ -81,13 +116,41 @@ export class ThreadDrawer {
       this.close();
       this.#callbacks.onNew();
     });
-    header.append(this.#heading, this.#newButton);
+    // An explicit way back. The backdrop closes on click, which is enough
+    // wherever a strip of it is showing -- but the embedded placement widens
+    // the panel to the full width of the host's box, so there is no backdrop
+    // left to hit and the only exits were Escape, picking a row, or starting a
+    // new conversation. The first is invisible and the last is destructive of
+    // the thing you were looking at.
+    this.#closeButton = document.createElement("button");
+    this.#closeButton.type = "button";
+    this.#closeButton.className = "drawer-close";
+    this.#closeButton.setAttribute("part", "drawer-close");
+    this.#closeButton.title = strings.closeHistory;
+    this.#closeButton.setAttribute("aria-label", strings.closeHistory);
+    this.#closeButton.append(document.createTextNode("\u00d7"));
+    this.#closeButton.addEventListener("click", () => this.close());
+    header.append(this.#heading, this.#newButton, this.#closeButton);
+
+    // Hidden until the list is long enough to be worth narrowing. A search box
+    // above four conversations is a control asking to be used on something
+    // already entirely visible.
+    this.#filter = document.createElement("input");
+    this.#filter.type = "search";
+    this.#filter.className = "drawer-filter";
+    this.#filter.setAttribute("part", "drawer-filter");
+    this.#filter.placeholder = strings.searchConversations;
+    this.#filter.setAttribute("aria-label", strings.searchConversations);
+    this.#filter.addEventListener("input", () => {
+      this.#query = this.#filter.value.trim().toLowerCase();
+      this.#renderList();
+    });
 
     this.#list = document.createElement("div");
     this.#list.className = "drawer-list";
     this.#list.setAttribute("part", "drawer-list");
 
-    this.#panel.append(header, this.#list);
+    this.#panel.append(header, this.#filter, this.#list);
     this.element.append(backdrop, this.#panel);
   }
 
@@ -116,7 +179,26 @@ export class ThreadDrawer {
     this.#panel.setAttribute("aria-label", strings.chatHistory);
     this.#heading.textContent = strings.chats;
     this.#newButton.textContent = strings.newChat;
+    this.#closeButton.title = strings.closeHistory;
+    this.#closeButton.setAttribute("aria-label", strings.closeHistory);
+    this.#filter.placeholder = strings.searchConversations;
+    this.#filter.setAttribute("aria-label", strings.searchConversations);
     this.#renderList();
+  }
+
+  /**
+   * Whether the list is a dialog over the conversation or a rail beside it.
+   * The host decides, because only the placement knows whether there is room.
+   */
+  setModal(modal: boolean): void {
+    this.#modal = modal;
+    if (modal) {
+      this.#panel.setAttribute("role", "dialog");
+      this.#panel.setAttribute("aria-modal", "true");
+    } else {
+      this.#panel.setAttribute("role", "region");
+      this.#panel.removeAttribute("aria-modal");
+    }
   }
 
   isOpen(): boolean {
@@ -131,7 +213,10 @@ export class ThreadDrawer {
     // the panel (its first control) so keyboard users land inside the dialog.
     this.#lastFocused = this.#activeElement() as HTMLElement | null;
     this.element.hidden = false;
-    this.#newButton.focus();
+    if (this.#modal) {
+      this.#newButton.focus();
+    }
+    this.#callbacks.onVisibility?.(true);
   }
 
   close(): void {
@@ -139,8 +224,13 @@ export class ThreadDrawer {
       return;
     }
     this.element.hidden = true;
-    this.#lastFocused?.focus();
+    // Only if it was taken. Restoring focus that was never moved would pull it
+    // back from wherever the user has since put it.
+    if (this.#modal) {
+      this.#lastFocused?.focus();
+    }
     this.#lastFocused = null;
+    this.#callbacks.onVisibility?.(false);
   }
 
   toggle(): void {
@@ -163,7 +253,11 @@ export class ThreadDrawer {
       this.close();
       return;
     }
-    if (event.key !== "Tab") {
+    // Escape still closes a docked rail -- it is a way out, not a modal
+    // convention -- but nothing beyond this point applies to one. Tabbing out
+    // of a list that sits beside the conversation should reach the
+    // conversation, which is the whole difference.
+    if (event.key !== "Tab" || !this.#modal) {
       return;
     }
     const focusables = Array.from(
@@ -190,17 +284,53 @@ export class ThreadDrawer {
 
   #renderList(): void {
     this.#list.replaceChildren();
-    if (this.#threads.length === 0) {
+    const hideFilter = this.#threads.length < FILTER_FROM;
+    this.#filter.hidden = hideFilter;
+    // Cleared as it goes, or the query outlives the control that set it: a
+    // list that drops below the threshold while a query matches nothing shows
+    // "no conversations match that" over conversations that are right there,
+    // with nothing left on screen to clear. Reopening does not help either --
+    // only a new drawer would.
+    if (hideFilter && this.#query !== "") {
+      this.#filter.value = "";
+      this.#query = "";
+    }
+    const shown = this.#matching();
+    if (shown.length === 0) {
       const empty = document.createElement("div");
       empty.className = "drawer-empty";
       empty.setAttribute("part", "drawer-empty");
-      empty.textContent = this.#strings.noConversations;
+      // Two different situations wearing one sentence would be a small lie:
+      // "no conversations yet" reads as data loss when what happened is that a
+      // filter matched nothing.
+      empty.textContent =
+        this.#threads.length === 0 ? this.#strings.noConversations : this.#strings.noMatches;
       this.#list.appendChild(empty);
       return;
     }
-    for (const meta of this.#threads) {
+    for (const meta of shown) {
       this.#list.appendChild(this.#renderRow(meta));
     }
+  }
+
+  /**
+   * The rows the filter leaves.
+   *
+   * Title and preview both, because the title is often the model's summary of
+   * a conversation and the thing being looked for is as likely to be a phrase
+   * from inside it. Client-side over what the drawer already holds: the server
+   * index is fetched whole, so a query would be a round trip to filter a list
+   * already in memory.
+   */
+  #matching(): readonly ThreadMeta[] {
+    if (this.#query === "") {
+      return this.#threads;
+    }
+    return this.#threads.filter(
+      (meta) =>
+        meta.title.toLowerCase().includes(this.#query) ||
+        meta.preview.toLowerCase().includes(this.#query),
+    );
   }
 
   #renderRow(meta: ThreadMeta): HTMLDivElement {

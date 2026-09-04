@@ -17,6 +17,9 @@ const settle = (ms = 450): Promise<void> => new Promise((resolve) => setTimeout(
 
 function mount(): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+  // Asks for the panel up: the corner placements now rest collapsed on a
+  // first visit, and these tests are about the open panel.
+  el.setAttribute("data-start-open", "");
   el.setAttribute("endpoint", "/agent");
   document.body.appendChild(el);
   return el;
@@ -56,6 +59,10 @@ beforeEach(() => {
   // shares one -- so without this each drag would start where the last one
   // finished and the panel would walk into the margin.
   sessionStorage.clear();
+  // Layout preferences are durable on purpose, so the per-tab clear no longer
+  // reaches all of them. Without this a dragged position leaks into the next
+  // test, which reads as a drag that travelled the wrong distance.
+  localStorage.clear();
 });
 
 afterEach(() => {

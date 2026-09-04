@@ -7,25 +7,31 @@ import {
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
   DEFAULT_ATTACHMENT_MAX_BYTES,
+  EDGE_MARGIN,
   FEEDBACK_EVENT,
   ICON_ATTACH,
   ICON_LAUNCHER,
+  ICON_MOON,
   ICON_RETRY,
   ICON_SEND,
   ICON_STOP,
+  ICON_SUN,
   INVALIDATE_CUSTOM_NAME,
   INVALIDATE_EVENT,
   LOAD_CAPABILITY_TOOL,
   MAX_TOOL_ROUNDS,
   MESSAGE_ACTIONS,
   MESSAGE_ROLE,
+  PASTE_ATTACH_CHARS,
   READ_PAGE_TOOL,
   RUN_FINISHED_EVENT,
+  SCREEN_EDGE_MARGIN,
   STATE_EVENT,
   SUBAGENT_CUSTOM_NAME,
   SUBAGENT_PHASE,
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
+  THREADS_DOCK_MIN_WIDTH,
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
@@ -36,11 +42,20 @@ import {
 import { fillTemplate } from "../skills/fill_template.js";
 import { parseSkills } from "../skills/parse_skills.js";
 import type { Skill } from "../skills/skill.js";
+import {
+  type ChatCorner,
+  type ChatSurfaceReport,
+  createChatSurfaceTools,
+} from "../tools/chat_surface_tools.js";
 import type { ChartRenderer } from "../tools/client_tool_registry.js";
 import { type ClientTool, ClientToolRegistry } from "../tools/client_tool_registry.js";
 import { isDestructive } from "../tools/is_destructive.js";
 import { isNavigates } from "../tools/is_navigates.js";
-import { createPageActionTools, type ResolvePageTarget } from "../tools/page_action_tools.js";
+import {
+  createPageActionTools,
+  PAGE_ACTIONS,
+  type ResolvePageTarget,
+} from "../tools/page_action_tools.js";
 import { createPageMapContext, type PageMap } from "../tools/page_map.js";
 import { createPageStateTools, type PageState } from "../tools/page_state.js";
 import { parseToolCatalog, type ToolCatalogEntry } from "../tools/parse_tool_catalog.js";
@@ -67,6 +82,7 @@ import {
   type Extent,
   type LauncherBox,
   launcherPlacement,
+  type ViewportBox,
 } from "../ui/launcher_placement.js";
 import {
   attachMessageActions,
@@ -630,7 +646,7 @@ export class AgUiChat extends HTMLElement {
    * Resolve a `scroll_to` / `drag_and_drop` target string to a host-page
    * element (or `null`). Defaults to a CSS-selector lookup; override to map
    * page-map element ids. The page-action tools are opt-in via the
-   * `data-page-actions` attribute (`"scroll"` / `"drag"`).
+   * `data-page-actions` attribute (`"scroll"` / `"drag"` / `"chat"`).
    */
   resolvePageTarget: ResolvePageTarget = (target) => document.querySelector<HTMLElement>(target);
 
@@ -755,6 +771,12 @@ export class AgUiChat extends HTMLElement {
   readonly #root: ShadowRoot;
   /** Screen-reader-only status region -- see {@link AgUiChat.#announce}. */
   readonly #announcer = document.createElement("div");
+  /**
+   * A zero-sized box carrying the host's viewport insets as padding, so they
+   * can be read back as used pixel lengths. See the `.viewport-probe` rule for
+   * why a custom property cannot be read directly.
+   */
+  readonly #viewportProbe = document.createElement("div");
   /** Return-to-foot affordance, shown only once something has been missed. */
   readonly #jumpButton = document.createElement("button");
   /**
@@ -816,6 +838,8 @@ export class AgUiChat extends HTMLElement {
   readonly #launcher: HTMLButtonElement;
   /** The launcher's unread badge; hidden at zero, and when the host opts out. */
   readonly #badge: HTMLSpanElement;
+  /** The rail's vertical caption. Rendered only by the sidebar's edge rail. */
+  readonly #railLabel: HTMLSpanElement = document.createElement("span");
   // Answers that finished while the widget was collapsed. Expanding clears it.
   #unread = 0;
   /** Empty-state region at the top of the message list; hidden once anything renders. */
@@ -829,6 +853,14 @@ export class AgUiChat extends HTMLElement {
    * position -- see #applyLauncherPlacement for what that costs the host.
    */
   #launcherPos: { readonly left: number; readonly top: number } | null = null;
+  /** What the user has sent this session, newest first, for arrow-key recall. */
+  readonly #sentDrafts: string[] = [];
+  /** Typed while a run was in flight, oldest first; sent when it settles. */
+  readonly #queued: string[] = [];
+  /** The row those show up in, above the composer. */
+  readonly #queuedRow: HTMLDivElement = document.createElement("div");
+  /** How far back the composer has been walked; null while the user is typing. */
+  #recallIndex: number | null = null;
 
   /**
    * Where the user dragged the *panel*, in viewport coordinates, or null while
@@ -864,8 +896,78 @@ export class AgUiChat extends HTMLElement {
    * a field so `removeEventListener` on disconnect gets the same reference.
    */
   readonly #onViewportResize = (): void => {
+    this.#publishVisualViewport();
+    // Not while a gesture owns the position. Restoring re-applies the *stored*
+    // position, and mid-drag that value is the one from before the drag began
+    // -- so it puts the widget back where it was, the next pointer move puts it
+    // where the finger is, and the two fight for as long as the viewport keeps
+    // changing.
+    //
+    // Which on a phone can be most of the drag: the visual viewport resizes and
+    // scrolls whenever the browser's own chrome collapses, and that is driven
+    // by the gesture in progress. This was not the cause of the jumping that
+    // sent me looking -- that was an inset measured from the wrong box -- so it
+    // is a guard against a fight that had not been observed rather than a fix
+    // for one that had.
+    if (this.#dragging()) {
+      return;
+    }
     this.#restoreLauncherPosition();
+    // Docking is decided by width, so a resize can cross the threshold with
+    // the drawer already open. Without this the rail keeps a narrow
+    // transcript's width, the focus trap stays off, and the backdrop that
+    // would dismiss it is still display:none. Only while it is open: the two
+    // are re-decided on the way in, and a closed drawer has no layout to fix.
+    if (this.#drawer.isOpen()) {
+      this.#drawer.setModal(!this.#threadsDock());
+      this.#syncThreadsState();
+    }
   };
+
+  /**
+   * Hold a resized box inside the part of the screen the host left free.
+   *
+   * Each edge on its own, unlike the drag's clamp: a drag moves a box of fixed
+   * size, so pushing it back in is right, while a resize is anchored on the
+   * opposite edge and pushing it back would move the edge the user is not
+   * touching. Bounding each edge instead leaves the grip stopped at the limit
+   * -- the gesture keeps going and the panel simply stops growing, which is
+   * what dragging already does.
+   *
+   * The minimum size is the grip's own concern and is applied before this, so
+   * a panel that cannot fit the space is left at its minimum and overflowing
+   * rather than collapsed to nothing.
+   */
+  #withinViewport(box: PanelRect): PanelRect {
+    const viewport = this.#viewport();
+    // The same bound a drag stops at, so a grip pulled to the edge and a panel
+    // dragged to it come to rest on the same line. The inner Math.max/min pair
+    // keeps an already-inverted box from turning inside out.
+    const left = viewport.left + SCREEN_EDGE_MARGIN;
+    const top = viewport.top + SCREEN_EDGE_MARGIN;
+    const right = viewport.left + viewport.width - SCREEN_EDGE_MARGIN;
+    const bottom = viewport.top + viewport.height - SCREEN_EDGE_MARGIN;
+    return {
+      left: Math.min(Math.max(box.left, left), box.right),
+      top: Math.min(Math.max(box.top, top), box.bottom),
+      right: Math.max(Math.min(box.right, right), box.left),
+      bottom: Math.max(Math.min(box.bottom, bottom), box.top),
+    };
+  }
+
+  /**
+   * Whether a pointer or key gesture is currently placing the widget.
+   *
+   * Read from the stamp the drag helpers already set, rather than tracked
+   * separately: one source of truth, and it clears on `pointercancel` as well
+   * as `pointerup`, which is the end a touch gesture usually gets.
+   */
+  #dragging(): boolean {
+    return (
+      this.#launcher.hasAttribute("data-dragging") ||
+      this.#root.querySelector(".header[data-dragging]") !== null
+    );
+  }
   /** Mic button mount point (input row); the control mounts on connect when enabled. */
   readonly #voiceSlot: HTMLSpanElement;
   /** Voice-input control; created on connect when transcription is available. */
@@ -1000,6 +1102,9 @@ export class AgUiChat extends HTMLElement {
       onDelete: (threadId) => {
         this.#deleteThread(threadId);
       },
+      onVisibility: () => {
+        this.#syncThreadsState();
+      },
     });
     this.#checkpoints = new CheckpointMenu((runId, verb) => {
       void this.#continueRun(runId, verb);
@@ -1105,6 +1210,13 @@ export class AgUiChat extends HTMLElement {
       // Position is owned the same way a size is: a placement that places
       // itself takes back a launcher the user had dragged somewhere else.
       this.#releaseLauncherPosition();
+      // Switching into a placement with no collapsed state has to release it,
+      // not just stop offering it: the control is gone from the header the
+      // moment the attribute changes, so a panel collapsed under the previous
+      // placement would have no way back.
+      if (!this.#collapsible() && this.collapsed) {
+        this.setCollapsed(false);
+      }
       // Placement also moves the panel, so the edges its layout holds still
       // change with it. Deferred a frame so the new rules have applied.
       requestAnimationFrame(() => this.#syncResizeAnchor());
@@ -1114,6 +1226,7 @@ export class AgUiChat extends HTMLElement {
       // `#strings` is the resolved table once connected, the English defaults
       // before then.
       this.#title.textContent = value ?? this.#strings.title;
+      this.#railLabel.textContent = this.#title.textContent;
       return;
     }
     if (name === "user-key") {
@@ -1252,7 +1365,10 @@ export class AgUiChat extends HTMLElement {
         .map((token) => token.trim())
         .filter((token) => token !== ""),
     );
-    return createPageActionTools(enabled, (target) => this.resolvePageTarget(target));
+    return [
+      ...createPageActionTools(enabled, (target) => this.resolvePageTarget(target)),
+      ...(enabled.has(PAGE_ACTIONS.CHAT) ? createChatSurfaceTools(this) : []),
+    ];
   }
 
   /** All built-in (route + page + page-action + ask_user) frontend tools. */
@@ -1543,7 +1659,7 @@ export class AgUiChat extends HTMLElement {
     // Restore a theme the built-in toggle persisted last visit (opt-in only, so
     // it never overrides a host that drives `theme` itself).
     if (this.getAttribute("data-theme-toggle") !== null) {
-      const saved = this.#readScopedItem(THEME_KEY);
+      const saved = this.#readPreference(THEME_KEY);
       if (saved !== null) {
         this.setAttribute("theme", saved);
       }
@@ -1551,7 +1667,11 @@ export class AgUiChat extends HTMLElement {
     this.#render();
     this.#drawer.setStrings(this.#strings);
     this.#checkpoints.setStrings(this.#strings);
-    if (this.#readScopedItem(COLLAPSED_KEY) === "1") {
+    // Gated on the placement, not just on the stored value: the key is
+    // namespaced per instance but not per placement, so a tab that collapsed a
+    // floating panel and later loaded the same instance as a page would restore
+    // a state that placement has no way out of.
+    if (this.#collapsible() && this.#startsCollapsed()) {
       this.setAttribute("collapsed", "");
     }
     this.#syncLauncher();
@@ -1567,6 +1687,12 @@ export class AgUiChat extends HTMLElement {
       this.conversationStore = this.#builtinStore;
     }
     window.addEventListener("resize", this.#onViewportResize);
+    // The visual viewport changes without the window resizing -- a keyboard
+    // opening, a pinch-zoom, the URL bar collapsing -- and `scroll` is what
+    // fires when it is panned rather than resized.
+    window.visualViewport?.addEventListener("resize", this.#onViewportResize);
+    window.visualViewport?.addEventListener("scroll", this.#onViewportResize);
+    this.#publishVisualViewport();
     this.#wireThreadStore();
     this.#wireAttachments();
     this.#wireVoice();
@@ -1640,6 +1766,8 @@ export class AgUiChat extends HTMLElement {
   disconnectedCallback(): void {
     this.#connected = false;
     window.removeEventListener("resize", this.#onViewportResize);
+    window.visualViewport?.removeEventListener("resize", this.#onViewportResize);
+    window.visualViewport?.removeEventListener("scroll", this.#onViewportResize);
     // Give the namespace back. A disconnect is not necessarily a farewell — a
     // DOM move and a framework re-render both look like one — and an element
     // that could not reclaim its own namespace on the way back in would lose
@@ -1724,7 +1852,7 @@ export class AgUiChat extends HTMLElement {
     this.#fileInput.accept = accept;
     this.#attachButton.hidden = false;
     this.#enableDragAndDrop();
-    this.#enablePaste();
+    this.#enablePaste(tray);
   }
 
   /** The built-in multipart upload handler for `data-attachments-url`, or `null`. */
@@ -1993,6 +2121,65 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * Turn a very long text paste into an attachment instead of a wall of text.
+   *
+   * A composer capped at `40vh` is not where forty thousand characters go: the
+   * user cannot read what they pasted, cannot edit around it, and sends one
+   * enormous turn. As a file it stays whole, the model still receives it, and
+   * the box is left for the question about it.
+   *
+   * Only where the host has configured uploads -- and structurally so, rather
+   * than by a check here: the paste listener is wired inside the attachment
+   * setup, so with no tray there is no listener at all and an ordinary paste is
+   * untouched. Quietly dropping a paste for being long would be far worse than
+   * an awkward composer. The tray is passed rather than read off the field for
+   * the same reason its `onChange` hook is: it can only be called from one that
+   * exists, so taking it as an argument removes a null check no caller can
+   * reach.
+   *
+   * Nothing is lost by removing the chip: the text is still on the clipboard,
+   * so pasting again brings it back. That is why this needs no undo of its own.
+   */
+  #pasteLongTextAsFile(event: ClipboardEvent, clipboard: DataTransfer, tray: AttachmentTray): void {
+    const threshold = this.#pasteAttachThreshold();
+    const text = clipboard.getData("text/plain");
+    if (threshold === null || text.length < threshold) {
+      return;
+    }
+    event.preventDefault();
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    tray.add(new File([text], `pasted-${stamp}.txt`, { type: "text/plain" }));
+  }
+
+  /**
+   * How long a pasted string has to be before it becomes a file, or `null` to
+   * leave every paste in the composer.
+   *
+   * One attribute with three answers rather than three attributes: absent is
+   * the default, `off` refuses, and a number states the threshold. A value that
+   * is neither says so, because a typo silently meaning "off" is the failure
+   * this whole release keeps finding.
+   */
+  #pasteAttachThreshold(): number | null {
+    const raw = this.getAttribute("data-paste-attach");
+    if (raw === null) {
+      return PASTE_ATTACH_CHARS;
+    }
+    if (raw === "off") {
+      return null;
+    }
+    const stated = Number.parseInt(raw, 10);
+    if (Number.isNaN(stated) || stated <= 0) {
+      console.warn(
+        `<ag-ui-chat>: data-paste-attach="${raw}" is neither "off" nor a positive ` +
+          `number of characters, so the default of ${PASTE_ATTACH_CHARS} is used.`,
+      );
+      return PASTE_ATTACH_CHARS;
+    }
+    return stated;
+  }
+
+  /**
    * Accept files pasted into the composer.
    *
    * The whole tray already exists behind this: a paste is one more way to hand
@@ -2005,7 +2192,7 @@ export class AgUiChat extends HTMLElement {
    * clipboard, and swallowing the words someone meant to paste in order to
    * attach a picture they did not is the worse of the two failures.
    */
-  #enablePaste(): void {
+  #enablePaste(tray: AttachmentTray): void {
     this.#chat.addEventListener("paste", (event: ClipboardEvent) => {
       // Nullish rather than a null check: the property is typed as nullable,
       // and an engine that fires a plain Event for a paste leaves it absent
@@ -2016,6 +2203,7 @@ export class AgUiChat extends HTMLElement {
       }
       const files = Array.from(clipboard.files);
       if (files.length === 0) {
+        this.#pasteLongTextAsFile(event, clipboard, tray);
         return;
       }
       if (clipboard.getData("text/plain") === "") {
@@ -2201,7 +2389,27 @@ export class AgUiChat extends HTMLElement {
    * per-tab, and emit a {@link TOGGLE_EVENT} so a host can mirror the state in
    * its own chrome.
    */
-  setCollapsed(collapsed: boolean): void {
+  setCollapsed(collapsed: boolean, options: { readonly announce?: boolean } = {}): void {
+    if (collapsed && !this.#collapsible()) {
+      return;
+    }
+    // Announced before the state changes, so the notice is written into a
+    // transcript the user can still see -- and only when the agent did it,
+    // rather than when the user pressed the control themselves.
+    //
+    // Collapsing only. Expanding announces nothing because the panel arriving
+    // is the announcement, and a notice about something visibly happening is
+    // noise; there is also nothing to undo that the collapse control does not
+    // already do.
+    if (options.announce === true && collapsed && !this.collapsed) {
+      // No undo beside this one. The notice is written into the transcript and
+      // the transcript is then hidden by the very collapse it describes, so
+      // the only way to read it is to expand the panel -- which is what the
+      // undo would have done. By the time the button can be seen it has
+      // nothing left to do, and a control that is always a no-op is worse than
+      // no control. Same reasoning as the expand case just below.
+      this.#announceSurfaceChange(this.#strings.chatMinimised, null);
+    }
     if (!collapsed) {
       // Re-decide which way to open before opening: the viewport may have
       // changed since the launcher was dropped, and this corner is what the
@@ -2236,6 +2444,194 @@ export class AgUiChat extends HTMLElement {
     return this.#unread;
   }
 
+  /**
+   * Whether to mount collapsed.
+   *
+   * A stored choice always wins -- in either direction, so a user who opened
+   * the panel finds it open. With nothing stored, the corner placements start
+   * collapsed: they are the two that have a launcher, and a launcher is the
+   * resting state of every corner chat in the field. Mounting open put a
+   * 380x560 panel over the host page's own bottom-right corner on a visitor's
+   * first load, uninvited.
+   *
+   * The placements that place themselves are unchanged. A host that docks a
+   * sidebar has already decided the widget belongs on screen, and one that
+   * embeds it in its own layout has given it a box to fill.
+   *
+   * `data-start-open` restores the previous behaviour for a host that wants
+   * the panel up immediately.
+   */
+  #startsCollapsed(): boolean {
+    const stored = this.#readScopedItem(COLLAPSED_KEY);
+    if (stored !== null) {
+      return stored === "1";
+    }
+    return (
+      DRAGGABLE_PLACEMENTS.has(this.getAttribute("placement")) &&
+      !this.hasAttribute("data-start-open")
+    );
+  }
+
+  /**
+   * Whether this placement has a collapsed state at all.
+   *
+   * `page` does not. It is a dedicated route rather than a panel sitting on
+   * someone else's page, so there is no "away" for it to go to: collapsing it
+   * left a strip of application chrome fixed over a route that no longer had an
+   * owner. It is also the placement that hides the launcher, so the usual way
+   * back does not exist here.
+   *
+   * The header hides its collapse control under this placement, but a control
+   * removed from the UI is not a state removed from the model -- the property,
+   * the attribute and a value restored from storage all still reach it. This is
+   * what the reachable paths are gated on; the stylesheet covers the one path
+   * that never passes through here, an attribute written straight onto the
+   * element.
+   */
+  #collapsible(): boolean {
+    return this.getAttribute("placement") !== "page";
+  }
+
+  /**
+   * Describe the panel to whoever is asking -- in practice the agent, through
+   * the opt-in chat-surface tools.
+   *
+   * `movable` folds two separate reasons into the one answer a caller needs:
+   * a placement that places itself owns its position, and a panel that fills
+   * the screen has nowhere to go. Reporting them apart would make every caller
+   * re-derive the same conjunction.
+   */
+  describeSurface(): ChatSurfaceReport {
+    const box = this.getBoundingClientRect();
+    const viewport = this.#viewport();
+    const fullBleed = box.width >= viewport.width - 1 && box.height >= viewport.height - 1;
+    return {
+      placement: this.getAttribute("placement"),
+      collapsed: this.collapsed,
+      collapsible: this.#collapsible(),
+      movable: this.#launcherDraggable() && !fullBleed,
+      draggable: this.#launcherDraggable(),
+      fullBleed,
+      box: {
+        left: Math.round(box.left),
+        top: Math.round(box.top),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+      },
+      viewport: {
+        left: Math.round(viewport.left),
+        top: Math.round(viewport.top),
+        width: Math.round(viewport.width),
+        height: Math.round(viewport.height),
+      },
+    };
+  }
+
+  /**
+   * Send the panel to a corner, and report whether it went.
+   *
+   * A third claimant on the axes a placement and a user drag already share, and
+   * it takes them the same way the drag does rather than inventing a second
+   * mechanism: the same commit path, so the launcher travels with the panel,
+   * the corner it opens from is re-picked, and switching placement hands
+   * everything back. What it must not do is claim a move it did not make --
+   * hence the boolean, and hence {@link describeSurface} existing so a caller
+   * can ask first.
+   */
+  moveTo(corner: ChatCorner, options: { readonly announce?: boolean } = {}): boolean {
+    if (!this.#launcherDraggable()) {
+      return false;
+    }
+    const restore = options.announce === true ? this.#captureGeometry() : null;
+    const viewport = this.#viewport();
+    const box = this.getBoundingClientRect();
+    if (box.width >= viewport.width - 1 && box.height >= viewport.height - 1) {
+      return false;
+    }
+    const [edgeY, edgeX] = corner.split("-");
+    // Every term is an absolute screen coordinate, because that is what the
+    // clamps and the insets both speak. The usable box carries an origin, so
+    // its near edge is `viewport.left`, not zero, and its far edge is
+    // `viewport.left + viewport.width` -- a margin applied to the extents
+    // alone would send the agent's own move under the chrome the host
+    // reserved, which is the failure the usable box exists to prevent.
+    const nearX = viewport.left + EDGE_MARGIN;
+    const nearY = viewport.top + EDGE_MARGIN;
+    const left =
+      edgeX === "left"
+        ? nearX
+        : Math.max(nearX, viewport.left + viewport.width - EDGE_MARGIN - box.width);
+    const top =
+      edgeY === "top"
+        ? nearY
+        : Math.max(nearY, viewport.top + viewport.height - EDGE_MARGIN - box.height);
+    const host = { left, top, right: left + box.width, bottom: top + box.height };
+    // Both axes measured, rather than one read twice: a host can restyle the
+    // launcher as a pill, and squaring it here would put it off the corner.
+    const launcherWidth = this.#launcher.offsetWidth;
+    const launcherHeight = this.#launcher.offsetHeight;
+    this.#placePanelAndLauncher(host, {
+      left: edgeX === "left" ? host.left : host.right - launcherWidth,
+      top: edgeY === "top" ? host.top : host.bottom - launcherHeight,
+      width: launcherWidth,
+      height: launcherHeight,
+    });
+    this.#storeLauncherPosition();
+    if (restore !== null) {
+      this.#announceSurfaceChange(this.#strings.chatMoved, restore);
+    }
+    return true;
+  }
+
+  /**
+   * Snapshot the panel's stated position, and return a function that puts it
+   * back.
+   *
+   * Both insets and the expand corner, because they are one decision: the
+   * corner is what the panel grows from, so restoring a position without it
+   * puts the box back and animates it out of the wrong side. Absent values are
+   * captured as absent and removed on the way back, rather than written as
+   * empty strings that would outrank the placement.
+   */
+  #captureGeometry(): () => void {
+    const inset = this.style.getPropertyValue("--ag-ui-inset");
+    const launcherInset = this.style.getPropertyValue("--ag-ui-launcher-inset");
+    const corner = this.getAttribute("data-expand-corner");
+    const launcherPos = this.#launcherPos;
+    const panelPos = this.#panelPos;
+    const expandCorner = this.#expandCorner;
+    return () => {
+      const put = (name: string, value: string): void => {
+        if (value === "") {
+          this.style.removeProperty(name);
+        } else {
+          this.style.setProperty(name, value);
+        }
+      };
+      put("--ag-ui-inset", inset);
+      put("--ag-ui-launcher-inset", launcherInset);
+      if (corner === null) {
+        this.removeAttribute("data-expand-corner");
+      } else {
+        this.setAttribute("data-expand-corner", corner);
+      }
+      this.#launcherPos = launcherPos;
+      this.#panelPos = panelPos;
+      this.#expandCorner = expandCorner;
+      // Erased rather than rewritten when there was nothing to go back to.
+      // #storeLauncherPosition returns early for a null position, which would
+      // leave the move this is undoing sitting in storage -- and since that
+      // store outlives the tab, the next resize or reload would quietly put
+      // the panel back in the corner the user had just rejected.
+      if (launcherPos === null) {
+        this.#clearPreference(LAUNCHER_KEY);
+      } else {
+        this.#storeLauncherPosition();
+      }
+      this.#syncResizeAnchor();
+    };
+  }
+
   /** Flip the collapsed state. Bound to the built-in header toggle. */
   toggleCollapsed(): void {
     this.setCollapsed(!this.collapsed);
@@ -2250,7 +2646,7 @@ export class AgUiChat extends HTMLElement {
   toggleTheme(): void {
     const next = this.getAttribute("theme") === "dark" ? "light" : "dark";
     this.setAttribute("theme", next);
-    writeStoredItem(this.#storageKey(THEME_KEY), next);
+    this.#writePreference(THEME_KEY, next);
     this.#syncThemeGlyph();
   }
 
@@ -2381,6 +2777,13 @@ export class AgUiChat extends HTMLElement {
     if (axis === "none") {
       return;
     }
+    // The placement's max-width and max-height are left alone, which means a
+    // grip pushed against the edge the placement is *not* anchored to stops one
+    // gutter short of the screen. Moving the cap with the size fixes that and
+    // shifts several resting sizes by a pixel or two, because the cap and the
+    // size are not measured from the same box -- not worth the churn for a
+    // symmetry nobody has asked for. The limit that matters, staying inside
+    // what the host left free, is enforced above.
     if (size.width !== undefined) {
       this.style.setProperty("--ag-ui-width", `${size.width}px`);
     }
@@ -2418,9 +2821,113 @@ export class AgUiChat extends HTMLElement {
     );
   }
 
-  /** The viewport the launcher and the panel both have to fit inside. */
-  #viewport(): Extent {
-    return { width: window.innerWidth, height: window.innerHeight };
+  /**
+   * The viewport the launcher and the panel both have to fit inside.
+   *
+   * The *visual* viewport, not the layout one, because they come apart exactly
+   * when this matters. An on-screen keyboard shrinks the visual viewport and
+   * leaves the layout viewport alone, so clamping against `innerHeight` parks
+   * the launcher behind the keyboard and decides which corner to open into
+   * using space that is not on the screen. Pinch-zoom does the same on both
+   * axes.
+   *
+   * Falls back where the API is absent, which keeps this working in the
+   * happy-dom project as well as in an old browser.
+   */
+  #viewport(): ViewportBox {
+    const visual = window.visualViewport;
+    const width = visual?.width ?? window.innerWidth;
+    const height = visual?.height ?? window.innerHeight;
+    // And minus whatever the host reserved for its own chrome. Without this a
+    // panel is clamped against the whole screen and settles happily underneath
+    // a sticky header, where it cannot be reached -- and where collapsing it,
+    // the one thing a user tries, hides it completely rather than rescuing it.
+    // Read as padding off the probe, not as custom properties off this
+    // element. `getPropertyValue` on an unregistered custom property returns
+    // the token stream rather than a length, so a host stating `4rem` reserves
+    // four pixels here and sixty-four in the stylesheet, and one stating
+    // `calc(56px + env(safe-area-inset-top))` -- which is the natural spelling
+    // of what the token's own documentation recommends -- parses as NaN and
+    // takes the panel's whole inset down with it.
+    const style = getComputedStyle(this.#viewportProbe);
+    const edge = (name: string): number => {
+      const value = Number.parseFloat(style.getPropertyValue(name));
+      // A detached or not-yet-rendered probe resolves to nothing at all, and
+      // reserving NaN is worse than reserving zero in every case.
+      return Number.isFinite(value) ? value : 0;
+    };
+    const left = edge("padding-left");
+    const top = edge("padding-top");
+    return {
+      left,
+      top,
+      width: Math.max(0, width - left - edge("padding-right")),
+      height: Math.max(0, height - top - edge("padding-bottom")),
+    };
+  }
+
+  /**
+   * The whole viewport, before anything the host reserved is taken out of it.
+   *
+   * Distinct from {@link #viewport} on purpose, and the two must not be
+   * swapped. The usable box decides where the widget may rest; this is what a
+   * CSS `inset` on a fixed element is measured from, because that is what the
+   * browser measures it from.
+   */
+  #screen(): Extent {
+    // The *layout* viewport, and `clientWidth`/`clientHeight` rather than
+    // `innerWidth`/`innerHeight`, because those two disagree by the width of a
+    // classic scrollbar and it is the smaller one a fixed element is laid out
+    // against. Reading the visual viewport here would be the same mistake one
+    // level up as clamping against the whole screen was one level down: a
+    // keyboard shrinks the visual viewport without moving the box CSS measures
+    // an inset from, so a panel the clamp had just held inside the visible
+    // band would be written back out behind the keyboard.
+    //
+    // The zero checks are for a detached or not-yet-laid-out document, where
+    // `clientWidth` is 0 and no viewport ever is.
+    const root = document.documentElement;
+    return {
+      width: root.clientWidth || window.innerWidth,
+      height: root.clientHeight || window.innerHeight,
+    };
+  }
+
+  /**
+   * Publish the measured viewport height so the stylesheet can size a
+   * full-bleed panel to what the user can see.
+   *
+   * No CSS length carries this. An on-screen keyboard has no effect on any
+   * viewport-percentage unit, so a panel sized from `100dvh` puts its composer
+   * behind the keyboard being typed into. Written inline, and read through a
+   * token the host's own `--ag-ui-viewport-height` still outranks.
+   *
+   * Removed rather than frozen when the two viewports agree, so a desktop that
+   * never diverges carries no inline override at all and the declared fallback
+   * stays in charge.
+   */
+  #publishVisualViewport(): void {
+    const visual = window.visualViewport;
+    if (visual === null || visual === undefined) {
+      return;
+    }
+    if (Math.abs(visual.height - window.innerHeight) < 1) {
+      this.style.removeProperty("--ag-ui-visual-viewport-height");
+      this.style.removeProperty("--ag-ui-visual-viewport-inset-bottom");
+      return;
+    }
+    this.style.setProperty("--ag-ui-visual-viewport-height", `${Math.round(visual.height)}px`);
+    // What is hidden below the visible area, which is where a keyboard is. A
+    // shorter panel does not help anything anchored to the bottom: a floating
+    // widget is positioned against the layout viewport, so its bottom edge and
+    // the launcher at that corner stay behind the keyboard until this lifts
+    // them. Never negative -- a visual viewport panned up past the layout one
+    // would otherwise pull the panel down off the screen.
+    const hidden = window.innerHeight - visual.height - visual.offsetTop;
+    this.style.setProperty(
+      "--ag-ui-visual-viewport-inset-bottom",
+      `${Math.max(0, Math.round(hidden))}px`,
+    );
   }
 
   /**
@@ -2480,6 +2987,7 @@ export class AgUiChat extends HTMLElement {
       this.#launcherBox(),
       { width: panel.width, height: panel.height },
       this.#viewport(),
+      this.#screen(),
     );
     this.style.setProperty("--ag-ui-inset", placement.hostInset);
     this.style.setProperty("--ag-ui-launcher-inset", placement.launcherInset);
@@ -2514,9 +3022,9 @@ export class AgUiChat extends HTMLElement {
    * measured from it, and rewriting one of them from a new corner while the
    * other still names the old one would move the launcher for no reason.
    */
-  #movePanel(box: PanelRect): PanelRect {
+  #movePanel(box: PanelRect, from: PanelRect): { held: PanelRect; launcher: LauncherBox | null } {
     if (!this.#launcherDraggable()) {
-      return box;
+      return { held: box, launcher: null };
     }
     // Where the launcher rests, recorded before the first move writes anything.
     // From here on the DOM shows it mid-gesture, so this is the last moment it
@@ -2525,20 +3033,58 @@ export class AgUiChat extends HTMLElement {
       const resting = this.#launcherBox();
       this.#launcherPos = { left: resting.left, top: resting.top };
     }
-    const held = clampPanel(box, this.#viewport());
+    // The launcher as it was when the gesture began. Held for the whole drag:
+    // every move measures from here, so the two halves cannot drift apart.
+    const start = this.#launcherPos;
+    // The screen-edge bound, not the resting gutter. The 24px margin is where
+    // a placement rests one, not a rule about where a person may put it, and
+    // enforcing it against a drag is what made the panel feel stuck short of
+    // every edge on all four sides at once. Zero was the correction and it
+    // went too far the other way: it welded the panel to the boundary while
+    // the launcher -- same shadow, same rounded edge -- was held 8px off it,
+    // and it disagreed with the restore below, so a panel dragged flush leapt
+    // inward the next time the viewport changed.
+    const held = clampPanel(box, this.#viewport(), SCREEN_EDGE_MARGIN);
     const corner = this.#expandCorner ?? this.#anchor;
-    const viewport = this.#viewport();
+    // The usable box decides where the panel may rest, above; the screen is
+    // what these insets are measured from, because that is what the browser
+    // measures a fixed element's inset from. Using the usable box here made a
+    // right or bottom short by whatever the host had reserved, and the panel
+    // jumped by that much the first time a gesture wrote one.
+    const screen = this.#screen();
     this.style.setProperty(
       "--ag-ui-inset",
       [
         corner.y === "top" ? `${Math.round(held.top)}px` : "auto",
-        corner.x === "right" ? `${Math.round(viewport.width - held.right)}px` : "auto",
-        corner.y === "bottom" ? `${Math.round(viewport.height - held.bottom)}px` : "auto",
+        corner.x === "right" ? `${Math.round(screen.width - held.right)}px` : "auto",
+        corner.y === "bottom" ? `${Math.round(screen.height - held.bottom)}px` : "auto",
         corner.x === "left" ? `${Math.round(held.left)}px` : "auto",
       ].join(" "),
     );
     this.#panelPos = { left: held.left, top: held.top };
-    return held;
+
+    // Where the launcher has ended up, derived rather than read. During a
+    // header drag it rides inside the host box with its own inset untouched,
+    // so the DOM shows it moving while `#launcherPos` still holds where it
+    // started -- reading it back mid-gesture returns the stale value, and
+    // adding the panel's travel to that a second time on release is a jump.
+    // Measured from the box the press started on, so a long drag cannot
+    // accumulate the rounding each move writes.
+    const carried = {
+      ...this.#launcherBox(),
+      left: start.left + (held.left - from.left),
+      top: start.top + (held.top - from.top),
+    };
+    // A bubble carried into an edge the host reserved is one nobody can press.
+    // Clamping it live rather than at the end is what makes releasing the drag
+    // change nothing: leaving it until then parked it under a nav bar for the
+    // whole gesture and hopped it out on pointerup.
+    const launcher = { ...carried, ...clampLauncher(carried, this.#viewport()) };
+    this.style.setProperty(
+      "--ag-ui-launcher-inset",
+      placeWidget(held, launcher, corner, this.#screen()).launcherInset,
+    );
+    return { held, launcher };
   }
 
   /**
@@ -2555,22 +3101,14 @@ export class AgUiChat extends HTMLElement {
    * both insets are rewritten from positions that are already decided.
    */
   #commitPanel(box: PanelRect, from: PanelRect): void {
-    const held = this.#movePanel(box);
-    const start = this.#launcherPos;
-    if (!this.#launcherDraggable() || start === null) {
+    // Exactly what the last move applied, rather than the same sum computed
+    // again. Recomputing it is how the two came apart: releasing the drag
+    // moved the bubble by the panel's whole travel a second time.
+    const { held, launcher } = this.#movePanel(box, from);
+    if (launcher === null) {
       return;
     }
-    const carried = {
-      ...this.#launcherBox(),
-      left: start.left + (held.left - from.left),
-      top: start.top + (held.top - from.top),
-    };
-    // The screen is the last word: a bubble dragged past the edge is one nobody
-    // can click, and it is the only way back to a collapsed conversation.
-    this.#placePanelAndLauncher(held, {
-      ...carried,
-      ...clampLauncher(carried, this.#viewport()),
-    });
+    this.#placePanelAndLauncher(held, launcher);
     this.#storeLauncherPosition();
   }
 
@@ -2580,9 +3118,12 @@ export class AgUiChat extends HTMLElement {
    */
   #placePanelAndLauncher(host: PanelRect, launcher: LauncherBox): void {
     const viewport = this.#viewport();
+    const screen = this.#screen();
     const size = { width: host.right - host.left, height: host.bottom - host.top };
-    const { corner } = launcherPlacement(launcher, size, viewport);
-    const insets = placeWidget(host, launcher, corner, viewport);
+    const { corner } = launcherPlacement(launcher, size, viewport, screen);
+    // The screen again, not the usable box: these are CSS insets on a fixed
+    // element and the browser measures them from the real edges.
+    const insets = placeWidget(host, launcher, corner, screen);
     this.style.setProperty("--ag-ui-inset", insets.hostInset);
     this.style.setProperty("--ag-ui-launcher-inset", insets.launcherInset);
     this.#launcherPos = { left: launcher.left, top: launcher.top };
@@ -2605,9 +3146,14 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     const rect = this.getBoundingClientRect();
+    // The same bound the drag itself used. Taking the default here instead is
+    // what made a panel dragged to an edge jump a whole resting gutter inward
+    // on the next resize, reload or expand -- re-placing a position the user
+    // had stated, against a limit they had never been shown.
     const held = clampPanel(
       { left: at.left, top: at.top, right: at.left + rect.width, bottom: at.top + rect.height },
       this.#viewport(),
+      SCREEN_EDGE_MARGIN,
     );
     const launcher = this.#launcherBox();
     const carried = {
@@ -2636,8 +3182,8 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     const panel = this.#panelPos;
-    writeStoredItem(
-      this.#storageKey(LAUNCHER_KEY),
+    this.#writePreference(
+      LAUNCHER_KEY,
       JSON.stringify(panel === null ? position : { ...position, panel }),
     );
   }
@@ -2675,7 +3221,7 @@ export class AgUiChat extends HTMLElement {
     readonly top: number;
     readonly panel?: { readonly left: number; readonly top: number };
   } | null {
-    const raw = this.#readScopedItem(LAUNCHER_KEY);
+    const raw = this.#readPreference(LAUNCHER_KEY);
     if (raw === null) {
       return null;
     }
@@ -2731,20 +3277,24 @@ export class AgUiChat extends HTMLElement {
    * host positioning the panel with its own rule keeps that rule until someone
    * drags the edge it was holding.
    */
-  #applyResize(grip: ResizeGrip, box: PanelRect): void {
+  #applyResize(grip: ResizeGrip, box: PanelRect): PanelRect {
+    box = this.#withinViewport(box);
     this.#applySize({ width: box.right - box.left, height: box.bottom - box.top });
     if (grip.x !== this.#anchor.x && grip.y !== this.#anchor.y) {
-      return;
+      return box;
     }
-    const viewport = this.#viewport();
+    // The whole screen, not the usable box: a CSS inset on a fixed element is
+    // measured from the real edges, so expressing a right or bottom against a
+    // box the host has inset comes out short by exactly that inset.
+    const screen = this.#screen();
     const anchor = this.#anchor;
     const side = (value: number): string => `${Math.round(value)}px`;
     this.style.setProperty(
       "--ag-ui-inset",
       [
         anchor.y === "top" ? side(box.top) : "auto",
-        anchor.x === "right" ? side(viewport.width - box.right) : "auto",
-        anchor.y === "bottom" ? side(viewport.height - box.bottom) : "auto",
+        anchor.x === "right" ? side(screen.width - box.right) : "auto",
+        anchor.y === "bottom" ? side(screen.height - box.bottom) : "auto",
         anchor.x === "left" ? side(box.left) : "auto",
       ].join(" "),
     );
@@ -2763,12 +3313,17 @@ export class AgUiChat extends HTMLElement {
     if (this.#panelPos !== null) {
       this.#panelPos = { left: box.left, top: box.top };
     }
+    return box;
   }
 
   /** Finish a resize: keep the box, remember it, and re-read the pinned edges. */
   #commitResize(grip: ResizeGrip, box: PanelRect): void {
-    this.#applyResize(grip, box);
-    this.#persistSize({ width: box.right - box.left, height: box.bottom - box.top });
+    // The bounded box, not the one the pointer asked for. Persisting the raw
+    // one would store a size the panel never had and restore it on the next
+    // mount, which is the same disagreement between apply and commit that made
+    // the header drag jump on release.
+    const held = this.#applyResize(grip, box);
+    this.#persistSize({ width: held.right - held.left, height: held.bottom - held.top });
     this.#storeLauncherPosition();
     // Re-stamp after the drag: a host whose layout changed underneath us would
     // otherwise keep the tab-reachable grip in the old corner, which reads as
@@ -2802,12 +3357,12 @@ export class AgUiChat extends HTMLElement {
   /** Persist a dragged size per tab, alongside the collapsed/theme preferences. */
   #persistSize(size: ResizeSize): void {
     const stored = { ...this.#readSize(), ...size };
-    writeStoredItem(this.#storageKey(SIZE_KEY), JSON.stringify(stored));
+    this.#writePreference(SIZE_KEY, JSON.stringify(stored));
   }
 
   /** The persisted size for this instance, or an empty record. */
   #readSize(): ResizeSize {
-    const raw = this.#readScopedItem(SIZE_KEY);
+    const raw = this.#readPreference(SIZE_KEY);
     if (raw === null) {
       return {};
     }
@@ -2963,10 +3518,91 @@ export class AgUiChat extends HTMLElement {
     return sessionStorage.getItem(base);
   }
 
+  /**
+   * Read a layout preference: where the widget sits, how big it is, which
+   * theme it wears.
+   *
+   * These live in `localStorage` rather than beside the transcript, because a
+   * layout preference is not a conversation. The transcript is deliberately
+   * per-tab -- two tabs are two conversations, and closing the tab ends it --
+   * and everything else inherited that scoping without earning it. A user who
+   * dragged the panel clear of their own UI did it again in the next tab, and
+   * again after every restart.
+   *
+   * Whether the widget is *currently open* stays per-tab with the transcript.
+   * It is a statement about this tab rather than a preference: carrying it
+   * across would pop the panel open on every new tab because it was opened
+   * once, somewhere else.
+   *
+   * Falls back to the session value it used to be written to, so an existing
+   * position survives the upgrade rather than resetting once.
+   */
+  #readPreference(base: string): string | null {
+    try {
+      const stored = localStorage.getItem(this.#storageKey(base));
+      if (stored !== null) {
+        return stored;
+      }
+    } catch {
+      // Fall through to the per-tab copy below.
+    }
+    return this.#readScopedItem(base);
+  }
+
+  /**
+   * Persist a layout preference as durably as this browser allows: to
+   * `localStorage` so it outlives the tab, and to the per-tab store as well.
+   *
+   * The second write is not redundancy for its own sake. A privacy mode can
+   * deny `localStorage` while allowing `sessionStorage`, and losing the
+   * durable copy should degrade to the per-tab behaviour this replaced rather
+   * than to no persistence at all. The read above prefers the durable copy, so
+   * a tab that has both cannot be shadowed by its own stale one.
+   *
+   * Neither write is worth an exception. Losing where the panel sat is not
+   * worth a warning either -- unlike the transcript, which says so once,
+   * because losing that loses the conversation on the next reload.
+   */
+  #writePreference(base: string, value: string): void {
+    const key = this.#storageKey(base);
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Quota, or a store that denies writes.
+    }
+    writeStoredItem(key, value);
+  }
+
+  /**
+   * Drop a layout preference from both stores.
+   *
+   * The mirror of {@link AgUiChat.#writePreference}, and it has to clear both
+   * for the same reason that writes both: leaving either copy behind means the
+   * value comes back on the next read.
+   */
+  #clearPreference(base: string): void {
+    const key = this.#storageKey(base);
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // A store that denies access; the per-tab copy below still goes.
+    }
+    try {
+      sessionStorage.removeItem(key);
+    } catch {
+      // Nothing left to do: the value was never persisted in the first place.
+    }
+  }
+
   /** Reflect the current theme on the toggle: show the destination's glyph. */
   #syncThemeGlyph(): void {
     const dark = this.getAttribute("theme") === "dark";
-    this.#themeToggle.textContent = dark ? "☀️" : "🌙";
+    // Replaced wholesale rather than toggling a class: the two marks are
+    // different paths, not one path in two states, and the slot has to keep
+    // working so a host can still supply its own.
+    this.#themeToggle.replaceChildren(
+      this.#iconElement("theme", "theme-icon", dark ? ICON_SUN : ICON_MOON, null),
+    );
   }
 
   /**
@@ -2985,7 +3621,42 @@ export class AgUiChat extends HTMLElement {
     // open *underneath* a popover still floating over it.
     this.#checkpoints.close();
     void this.#refreshDrawer();
+    this.#drawer.setModal(!this.#threadsDock());
     this.#drawer.open();
+    this.#syncThreadsState();
+  }
+
+  /**
+   * Whether the conversation list docks beside the transcript rather than
+   * covering it.
+   *
+   * Only the full-page placement, and only where there is room. A dedicated
+   * route is the one surface with width to spare -- everywhere else the panel
+   * is a few hundred pixels wide, and a list docked into that leaves a column
+   * of transcript too narrow to read. The width is the panel's own rather than
+   * the window's, because an embedded host can give a full-page-sized box to
+   * something that is not a page.
+   */
+  #threadsDock(): boolean {
+    return (
+      this.getAttribute("placement") === "page" &&
+      this.getBoundingClientRect().width >= THREADS_DOCK_MIN_WIDTH
+    );
+  }
+
+  /**
+   * Stamp whether the list is showing, and how.
+   *
+   * On the host rather than inside the shell because the transcript has to move
+   * over for a docked list, and the drawer is the last child of the panel -- CSS
+   * cannot select backwards from it to the rows it needs to shift.
+   */
+  #syncThreadsState(): void {
+    if (this.#drawer.isOpen() && this.#threadsDock()) {
+      this.setAttribute("data-threads-docked", "");
+    } else {
+      this.removeAttribute("data-threads-docked");
+    }
   }
 
   /**
@@ -3000,6 +3671,17 @@ export class AgUiChat extends HTMLElement {
     this.#drawer.close();
     void this.#refreshCheckpoints();
     this.#checkpoints.open();
+  }
+
+  /**
+   * Close the conversation list, if it is open.
+   *
+   * No state sync here: the drawer reports every close through `onVisibility`,
+   * including the four that never reach this method, and doing it twice would
+   * be a second place to keep right.
+   */
+  closeThreads(): void {
+    this.#drawer.close();
   }
 
   /** Close the checkpoints panel, if it is open. */
@@ -3050,6 +3732,13 @@ export class AgUiChat extends HTMLElement {
     this.#client = null;
     this.#clearTranscript();
     this.#initialMessages = [];
+    // The composer's own history goes with the conversation it was typed
+    // into. The path that makes this more than tidiness is the `user-key`
+    // rescope, which purges storage and wipes the transcript precisely so the
+    // previous principal's words are not visible to the next one -- and would
+    // otherwise leave every one of them a single ArrowUp away.
+    this.#sentDrafts.length = 0;
+    this.#recallIndex = null;
   }
 
   /**
@@ -3483,7 +4172,7 @@ export class AgUiChat extends HTMLElement {
     enablePanelDrag(header, {
       enabled: () => !this.collapsed && this.#launcherDraggable(),
       rect: () => this.getBoundingClientRect(),
-      apply: (box) => this.#movePanel(box),
+      apply: (box, from) => this.#movePanel(box, from),
       commit: (box, from) => this.#commitPanel(box, from),
     });
 
@@ -3557,7 +4246,19 @@ export class AgUiChat extends HTMLElement {
     this.#emptyWrap.setAttribute("part", "empty");
     const emptySlot = document.createElement("slot");
     emptySlot.name = "empty";
+    // Fallback content, so a host that slots its own gets exactly that and
+    // nothing of ours: the starters live *inside* the slot rather than beside
+    // it, which is the difference between an offer and an imposition.
+    const starters = this.#starterChips();
+    if (starters !== null) {
+      emptySlot.append(starters);
+    }
     this.#emptyWrap.append(emptySlot);
+    this.#queuedRow.className = "queued";
+    this.#queuedRow.setAttribute("part", "queued");
+    this.#queuedRow.setAttribute("role", "group");
+    this.#queuedRow.setAttribute("aria-label", this.#strings.queued);
+    this.#queuedRow.hidden = true;
     this.#messages.append(this.#emptyWrap);
 
     const inputRow = document.createElement("div");
@@ -3652,6 +4353,7 @@ export class AgUiChat extends HTMLElement {
       this.#skillsMenu.palette,
       this.#skillsMenu.chips,
       this.#skillHint,
+      this.#queuedRow,
       this.#attachSlot,
       inputRow,
       footer,
@@ -3691,8 +4393,18 @@ export class AgUiChat extends HTMLElement {
     // decoration to a screen reader rather than a second, context-free number.
     this.#badge.setAttribute("aria-hidden", "true");
     this.#badge.hidden = true;
+    // Only the edge rail shows this. A full-height column carrying one small
+    // icon reads as a coloured stripe rather than a way back into a
+    // conversation -- it is the widest collapsed state there is and the one
+    // that says least about itself. Written here and hidden in CSS everywhere
+    // else, because the launcher is one element shaped by placement.
+    this.#railLabel.className = "rail-label";
+    this.#railLabel.setAttribute("part", "rail-label");
+    this.#railLabel.setAttribute("aria-hidden", "true");
+    this.#railLabel.textContent = this.getAttribute("title-text") ?? this.#strings.title;
     this.#launcher.append(
       this.#iconElement("launcher", "launcher-icon", ICON_LAUNCHER, this.#launcherIconUrl()),
+      this.#railLabel,
       this.#badge,
     );
     this.#launcher.addEventListener("click", () => this.setCollapsed(false));
@@ -3727,7 +4439,9 @@ export class AgUiChat extends HTMLElement {
     }
     this.#focusableGrip();
     this.#adoptStyles();
-    this.#root.append(this.#announcer, this.#chat, this.#launcher);
+    this.#viewportProbe.className = "viewport-probe";
+    this.#viewportProbe.setAttribute("aria-hidden", "true");
+    this.#root.append(this.#viewportProbe, this.#announcer, this.#chat, this.#launcher);
   }
 
   /**
@@ -3926,6 +4640,39 @@ export class AgUiChat extends HTMLElement {
   }
 
   /** Hide the empty-state region once the message list holds anything else. */
+  /**
+   * The prompts offered on an empty transcript, from `data-starters`.
+   *
+   * Different from the suggestion chips a run pushes, which are follow-ups to
+   * something already said. These answer the blank-page question instead, and
+   * they are the host's rather than the model's -- only the host knows what its
+   * page is for. Shares the renderer, the count and the length limit, because
+   * two rows of prompt chips that behaved differently would be the harder
+   * thing to explain.
+   *
+   * Read once at connect: it is content for a state the widget is in before
+   * anything happens, and a host that wants it to change has `slot="empty"`.
+   */
+  #starterChips(): HTMLElement | null {
+    const raw = this.getAttribute("data-starters");
+    if (raw === null) {
+      return null;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      console.warn(
+        "<ag-ui-chat>: data-starters is not valid JSON, so no starters are shown. " +
+          "It takes an array of strings, e.g. data-starters='[\"Summarise this page\"]'.",
+      );
+      return null;
+    }
+    return renderSuggestionChips({ prompts: parsed }, this.#strings, (prompt) => {
+      void this.sendMessage(prompt);
+    });
+  }
+
   #updateEmptyState(): void {
     this.#emptyWrap.hidden = this.#messages.childElementCount > 1;
   }
@@ -3935,6 +4682,10 @@ export class AgUiChat extends HTMLElement {
     this.#skillsMenu.onInput(this.#input.value);
     this.#skillHint.hidden = true;
     this.#autoGrow();
+    // Typing puts the composer back in the user's hands: the next ArrowUp
+    // starts from the newest turn again rather than continuing a walk through
+    // history the user has since edited.
+    this.#recallIndex = null;
   }
 
   #onKeydown(event: KeyboardEvent): void {
@@ -3953,7 +4704,51 @@ export class AgUiChat extends HTMLElement {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void this.#submit();
+      return;
     }
+    this.#recallHistory(event);
+  }
+
+  /**
+   * Walk back through what the user has already sent, on the arrow keys.
+   *
+   * Only from an empty composer, and only with the palette closed -- which the
+   * caller has already established, since the palette consumes arrows while it
+   * is open. Both conditions matter: arrows inside text are how you move the
+   * caret, and taking them would break editing to add a shortcut.
+   *
+   * The drafts are the user's own turns in this conversation, newest first,
+   * which is what every shell and every coding agent means by this. Arrowing
+   * forward past the newest empties the composer again rather than sticking on
+   * it, so the way out is the same key that got you in.
+   */
+  #recallHistory(event: KeyboardEvent): void {
+    const back = event.key === "ArrowUp";
+    if ((!back && event.key !== "ArrowDown") || this.#skillsMenu.isOpen()) {
+      return;
+    }
+    const drafts = this.#sentDrafts;
+    if (drafts.length === 0) {
+      return;
+    }
+    // An empty composer is the only safe entry: anything typed is the user's,
+    // and replacing it with a past turn would lose it without asking.
+    if (this.#recallIndex === null && (!back || this.#input.value !== "")) {
+      return;
+    }
+    const next = this.#recallIndex === null ? 0 : this.#recallIndex + (back ? 1 : -1);
+    if (next >= drafts.length) {
+      return;
+    }
+    event.preventDefault();
+    this.#recallIndex = next < 0 ? null : next;
+    // Asserted rather than defaulted: `next` was bounded on both sides two
+    // lines up, so a fallback here would be a branch no test can reach
+    // honestly -- and an unreachable default is worse than an assertion,
+    // because it looks like a case somebody thought about.
+    this.#input.value = next < 0 ? "" : (drafts[next] as string);
+    this.#input.setSelectionRange(this.#input.value.length, this.#input.value.length);
+    this.#autoGrow();
   }
 
   /**
@@ -3963,6 +4758,26 @@ export class AgUiChat extends HTMLElement {
    * observes the disconnect).
    */
   #cancelRun(): void {
+    // Stopping discards what was waiting. Sending messages into a conversation
+    // the user has just stopped is the opposite of what stopping meant, and it
+    // would arrive after they had already turned away.
+    //
+    // Not sending it is not the same as destroying it, though. A queued
+    // message left the composer the moment it was queued, so dropping it here
+    // would take a paragraph the user typed and leave it nowhere -- not on
+    // screen, not in the composer, not recallable. It goes to the front of the
+    // recall history instead, so ArrowUp gets it back. In queue order, which
+    // puts the one typed last first.
+    //
+    // This path is also reached from `disconnectedCallback`, where a DOM move
+    // and a framework re-render both look like a farewell and neither is one.
+    for (const text of this.#queued) {
+      if (this.#sentDrafts[0] !== text) {
+        this.#sentDrafts.unshift(text);
+      }
+    }
+    this.#queued.length = 0;
+    this.#renderQueued();
     this.#confirmAbort?.abort();
     this.#client?.cancel();
   }
@@ -3975,11 +4790,56 @@ export class AgUiChat extends HTMLElement {
    * that it carries no text.
    */
   #setRunning(running: boolean): void {
+    const settled = this.#running && !running;
     this.#running = running;
     const label = running ? this.#strings.stop : this.#strings.send;
     this.#send.title = label;
     this.#send.setAttribute("aria-label", label);
     this.#send.dataset["state"] = running ? "running" : "idle";
+    if (settled) {
+      this.#flushQueued();
+    }
+  }
+
+  /**
+   * Send the next message that was typed while the run was going.
+   *
+   * One at a time, through the same path as anything else: each queued turn
+   * starts a run of its own, and the next is sent when *that* one settles. Any
+   * other shape would be a second sender racing the guard above.
+   */
+  #flushQueued(): void {
+    const next = this.#queued.shift();
+    this.#renderQueued();
+    if (next !== undefined) {
+      void this.sendMessage(next);
+    }
+  }
+
+  /**
+   * Draw what is waiting, as chips that can be taken back.
+   *
+   * Visible and removable, because a message the user typed and cannot see is
+   * a message they will type again -- and one they changed their mind about
+   * has to be retractable before it is sent on their behalf.
+   */
+  #renderQueued(): void {
+    this.#queuedRow.replaceChildren();
+    this.#queuedRow.hidden = this.#queued.length === 0;
+    for (const [index, text] of this.#queued.entries()) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "queued-chip";
+      chip.setAttribute("part", "queued-chip");
+      chip.textContent = text;
+      chip.title = this.#strings.removeQueued.replace("{text}", text);
+      chip.setAttribute("aria-label", chip.title);
+      chip.addEventListener("click", () => {
+        this.#queued.splice(index, 1);
+        this.#renderQueued();
+      });
+      this.#queuedRow.appendChild(chip);
+    }
   }
 
   /**
@@ -4001,15 +4861,37 @@ export class AgUiChat extends HTMLElement {
     // Enter has no such guard; without this it would start a second concurrent
     // SSE run that orphans the first (unabortable) and lets the second run's
     // settle sweep corrupt the first's still-pending tool cards.
-    if (this.#running) {
-      return;
-    }
     const content = this.#input.value.trim();
     const attachments = this.#attachTray?.readyRefs() ?? [];
     // Allow an attachments-only message (no typed text), but nothing empty.
     if (content === "" && attachments.length === 0) {
       return;
     }
+    // A second run cannot start while one is in flight: it would orphan the
+    // first, which is unabortable, and the second's settle sweep would corrupt
+    // the first's still-pending tool cards. That is why this was a dead key --
+    // Enter during a run did nothing at all, silently.
+    //
+    // Queueing keeps the guard and gives the key something to do. Text only:
+    // an attachment is settled state the tray is holding and the composer has
+    // no second copy of, so parking it here would mean deciding what happens
+    // when the user then removes the chip.
+    if (this.#running) {
+      if (content !== "") {
+        this.#queued.push(content);
+        this.#renderQueued();
+        this.#input.value = "";
+        this.#autoGrow();
+      }
+      return;
+    }
+    // Recorded before the box is cleared, newest first, so the arrow keys walk
+    // back through it. A repeat of the last one is not a second entry: the
+    // point is to reach what was said, not how often.
+    if (content !== "" && this.#sentDrafts[0] !== content) {
+      this.#sentDrafts.unshift(content);
+    }
+    this.#recallIndex = null;
     this.#input.value = "";
     this.#autoGrow();
     // A file still uploading does not ride along — `readyRefs()` returns only
@@ -5042,10 +5924,38 @@ export class AgUiChat extends HTMLElement {
     return true;
   }
 
-  #appendNotice(icon: string, text: string, kind: string): void {
-    this.#ensureGroup().appendChild(renderRunNotice(icon, text, kind));
+  /**
+   * An inline notice about something the run did.
+   *
+   * `undo` is offered only where the agent rearranged the user's own window --
+   * see {@link renderRunNotice} for why a notice may carry that one control and
+   * nothing else.
+   */
+  #appendNotice(
+    icon: string,
+    text: string,
+    kind: string,
+    undo?: { readonly label: string; readonly onActivate: () => void },
+  ): void {
+    this.#ensureGroup().appendChild(renderRunNotice(icon, text, kind, undo));
     this.#updateEmptyState();
     this.#scroller.follow();
+  }
+
+  /**
+   * Say that the agent rearranged the user's window, and offer the way back.
+   *
+   * Only on the agent's path. A host calling {@link moveTo} is arranging its
+   * own page and does not need telling what it just did; an agent doing it
+   * mid-conversation is the case where a panel appears to move on its own.
+   */
+  #announceSurfaceChange(text: string, undo: (() => void) | null): void {
+    this.#appendNotice(
+      "⤢",
+      text,
+      "surface",
+      undo === null ? undefined : { label: this.#strings.undo, onActivate: undo },
+    );
   }
 
   /**

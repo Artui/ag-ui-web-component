@@ -198,6 +198,10 @@ defineAgUiChat();
 beforeEach(() => {
   document.body.replaceChildren();
   sessionStorage.clear();
+  // Layout preferences are durable on purpose, so the per-tab clear no longer
+  // reaches all of them. Without this a dragged position leaks into the next
+  // test, which reads as a drag that travelled the wrong distance.
+  localStorage.clear();
 });
 
 describe("the recorded corpus", () => {
