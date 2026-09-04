@@ -142,6 +142,40 @@ export const STYLES = `
   --_msg-pad: var(--ag-ui-msg-pad, 8px 12px);
   --_msg-radius: var(--ag-ui-msg-radius, 14px);
 
+  /* Edges of the viewport the host has already spent, and that a fixed
+     placement must therefore stay out of: a sticky nav bar, a docked toolbar,
+     a device's safe area. Four longhands rather than one shorthand because a
+     custom property is a token stream and CSS cannot index one -- the height
+     arithmetic below needs the vertical pair on its own.
+
+     Every fixed placement derives from these, and the heights subtract them in
+     one place. A host that reserved its chrome by restating --ag-ui-inset per
+     placement had to keep --ag-ui-height in step by hand, and forgetting it
+     overflowed the panel past the bottom of the screen with nothing to say so.
+
+     These take env(safe-area-inset-*) verbatim, which is what a full-bleed
+     placement wants on a device with a notch. */
+  --_viewport-inset-top: var(--ag-ui-viewport-inset-top, 0px);
+  --_viewport-inset-right: var(--ag-ui-viewport-inset-right, 0px);
+  --_viewport-inset-bottom: var(--ag-ui-viewport-inset-bottom, 0px);
+  --_viewport-inset-left: var(--ag-ui-viewport-inset-left, 0px);
+  /* What is left of the viewport once the host's chrome is taken out, on both
+     axes, so a placement never composes this itself and no host can subtract
+     an edge from the position and forget it in the height.
+
+     Settable in their own right, and that is not only convention: an on-screen
+     keyboard changes no viewport-percentage length -- not vh, not dvh, not svh
+     -- so a full-bleed panel on a phone has to be told the height rather than
+     deriving it. The value to publish there is the visual viewport's. */
+  --_viewport-height: var(
+    --ag-ui-viewport-height,
+    calc(100vh - var(--_viewport-inset-top) - var(--_viewport-inset-bottom))
+  );
+  --_viewport-width: var(
+    --ag-ui-viewport-width,
+    calc(100vw - var(--_viewport-inset-left) - var(--_viewport-inset-right))
+  );
+
   /* Layout — override from outside to dock the widget anywhere.
      Set --ag-ui-position: static (and place this element in your own
      grid/flex layout) to embed it in the page flow instead of floating. */
@@ -149,9 +183,12 @@ export const STYLES = `
   --_z-index: var(--ag-ui-z-index, 2147483000);
   --_width: var(--ag-ui-width, 380px);
   --_height: var(--ag-ui-height, 560px);
-  --_inset: var(--ag-ui-inset, auto 24px 24px auto);
-  --_max-width: var(--ag-ui-max-width, calc(100vw - 48px));
-  --_max-height: var(--ag-ui-max-height, calc(100vh - 48px));
+  --_inset: var(
+    --ag-ui-inset,
+    auto calc(24px + var(--_viewport-inset-right)) calc(24px + var(--_viewport-inset-bottom)) auto
+  );
+  --_max-width: var(--ag-ui-max-width, calc(var(--_viewport-width) - 48px));
+  --_max-height: var(--ag-ui-max-height, calc(var(--_viewport-height) - 48px));
   /* Reading-column width for placement="page" (full-bleed, centred content). */
   --_content-max-width: var(--ag-ui-content-max-width, 820px);
   /* Slim rail the sidebar placement collapses to. Only that placement reads
@@ -227,23 +264,29 @@ export const STYLES = `
 
 /* ── Placement presets ──────────────────────────────────────────────────── */
 :host([placement="bottom-left"]) {
-  --_inset: var(--ag-ui-inset, auto auto 24px 24px);
+  --_inset: var(
+    --ag-ui-inset,
+    auto auto calc(24px + var(--_viewport-inset-bottom)) calc(24px + var(--_viewport-inset-left))
+  );
 }
 
 :host([placement="side"]) {
-  --_inset: var(--ag-ui-inset, 0 0 0 auto);
+  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
   --_width: var(--ag-ui-width, 420px);
-  --_height: var(--ag-ui-height, 100vh);
-  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_height: var(--ag-ui-height, var(--_viewport-height));
+  --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
   --_radius: var(--ag-ui-radius, 0);
 }
 
 :host([placement="full"]) {
-  --_inset: var(--ag-ui-inset, 0);
-  --_width: var(--ag-ui-width, 100vw);
-  --_height: var(--ag-ui-height, 100vh);
-  --_max-width: var(--ag-ui-max-width, 100vw);
-  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_inset: var(
+    --ag-ui-inset,
+    var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)
+  );
+  --_width: var(--ag-ui-width, var(--_viewport-width));
+  --_height: var(--ag-ui-height, var(--_viewport-height));
+  --_max-width: var(--ag-ui-max-width, var(--_viewport-width));
+  --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
   --_radius: var(--ag-ui-radius, 0);
 }
 
@@ -253,11 +296,14 @@ export const STYLES = `
    composer rather than a per-row wrapper, so user pills still right-align and
    the assistant well spans the column. */
 :host([placement="page"]) {
-  --_inset: var(--ag-ui-inset, 0);
-  --_width: var(--ag-ui-width, 100vw);
-  --_height: var(--ag-ui-height, 100vh);
-  --_max-width: var(--ag-ui-max-width, 100vw);
-  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_inset: var(
+    --ag-ui-inset,
+    var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)
+  );
+  --_width: var(--ag-ui-width, var(--_viewport-width));
+  --_height: var(--ag-ui-height, var(--_viewport-height));
+  --_max-width: var(--ag-ui-max-width, var(--_viewport-width));
+  --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
   --_radius: var(--ag-ui-radius, 0);
 }
 
@@ -294,16 +340,16 @@ export const STYLES = `
    --ag-ui-position: static (and place this element in your own layout) for a
    host-managed push instead. */
 :host([placement="sidebar"]) {
-  --_inset: var(--ag-ui-inset, 0 0 0 auto);
+  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
   --_width: var(--ag-ui-width, 420px);
-  --_height: var(--ag-ui-height, 100vh);
-  --_max-height: var(--ag-ui-max-height, 100vh);
+  --_height: var(--ag-ui-height, var(--_viewport-height));
+  --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
   --_radius: var(--ag-ui-radius, 0);
   transition: width var(--_motion) var(--_ease);
 }
 
 :host([placement="sidebar"][data-side="left"]) {
-  --_inset: var(--ag-ui-inset, 0 auto 0 0);
+  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) auto var(--_viewport-inset-bottom) var(--_viewport-inset-left));
 }
 
 /* The docked panel is pinned to the edge it docks against rather than filling

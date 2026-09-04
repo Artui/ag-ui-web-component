@@ -203,30 +203,17 @@
       }
 
       /* The bar is sticky chrome the widget does not know about, so the demo
-         hands back the height it occupies. Without this the fixed placements
-         start at the top of the viewport and the bar sits on the chat's own
-         header -- the widget is reachable but its title and controls are not.
+         reserves the height it occupies and every placement stays out of it.
+         One declaration: the placements do their own arithmetic, including
+         keeping their heights in step, which is the whole point of the token.
 
-         --ag-ui-inset is one four-value shorthand and every placement has its
-         own default, so each family restates its own rather than sharing one
-         override. The bottom-anchored pair need no top offset at all; they only
-         need to stop growing tall enough to reach up behind the bar. */
-      ag-ui-chat[placement="page"],
-      ag-ui-chat[placement="full"] {
-        --ag-ui-inset: var(--bar-h, 0px) 0 0 0;
-        --ag-ui-height: calc(100vh - var(--bar-h, 0px));
-        --ag-ui-max-height: calc(100vh - var(--bar-h, 0px));
-      }
-      ag-ui-chat[placement="side"],
-      ag-ui-chat[placement="sidebar"] {
-        --ag-ui-inset: var(--bar-h, 0px) 0 0 auto;
-        --ag-ui-height: calc(100vh - var(--bar-h, 0px));
-        --ag-ui-max-height: calc(100vh - var(--bar-h, 0px));
-      }
-      ag-ui-chat[placement="floating"],
-      ag-ui-chat[placement="bottom-left"],
-      ag-ui-chat:not([placement]) {
-        --ag-ui-max-height: calc(100vh - var(--bar-h, 0px) - 48px);
+         This replaced a per-placement-family restatement of --ag-ui-inset with
+         --ag-ui-height and --ag-ui-max-height maintained alongside it by hand.
+         That version worked and was the argument for building this: if the
+         reference host needs twenty-five lines to coexist with its own nav bar,
+         so does every other host with one. */
+      ag-ui-chat {
+        --ag-ui-viewport-inset-top: var(--bar-h, 0px);
       }
       /* When embedded + collapsed, shrink to the header instead of filling the slot. */
       ag-ui-chat[collapsed] {

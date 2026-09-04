@@ -2492,6 +2492,55 @@ ag-ui-chat {
 }
 ```
 
+### Reserving the space your own chrome occupies
+
+A fixed placement covers the viewport it is given, and it does not know about
+your sticky header. Tell it which edges are already spent and every placement
+does its own arithmetic:
+
+```css
+ag-ui-chat {
+  --ag-ui-viewport-inset-top: 64px;    /* your nav bar */
+}
+```
+
+`page` and `full` inset by all four edges; `sidebar` and `side` by three, leaving
+the docked edge free; `floating` and `bottom-left` add them to their own margins.
+**The heights follow on their own** — that is the point of these rather than
+restating `--ag-ui-inset` per placement, which leaves you to keep
+`--ag-ui-height` and `--ag-ui-max-height` in step by hand and overflows the panel
+off the bottom of the screen the one time you forget.
+
+Four longhands rather than one shorthand because a custom property is a token
+stream and CSS cannot index one; the height arithmetic needs the vertical pair on
+its own. They take `env(safe-area-inset-*)` verbatim:
+
+```css
+ag-ui-chat {
+  --ag-ui-viewport-inset-top: env(safe-area-inset-top);
+  --ag-ui-viewport-inset-bottom: env(safe-area-inset-bottom);
+}
+```
+
+If your chrome changes height — a bar that wraps at narrow widths — measure it
+and publish the value, since no CSS length tracks it:
+
+```js
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty("--bar-h", `${bar.offsetHeight}px`);
+}).observe(bar);
+```
+
+```css
+ag-ui-chat { --ag-ui-viewport-inset-top: var(--bar-h, 0px); }
+```
+
+`--ag-ui-viewport-height` and `--ag-ui-viewport-width` state the usable box
+outright, for the case where no viewport-percentage length describes it. An
+on-screen keyboard is the one that matters: it changes neither `vh` nor `dvh` nor
+`svh` on any current mobile browser, so a full-bleed panel has to be told the
+visual viewport's height rather than deriving it.
+
 Marks are variables too, so one vocabulary covers a re-theme rather than
 leaving half the transcript in the built-in set: `--ag-ui-tool-icon-done` /
 `-error` / `-declined` for tool status, and `--ag-ui-disclosure-collapsed` /

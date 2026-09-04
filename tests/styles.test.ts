@@ -43,7 +43,9 @@ describe("STYLES", () => {
   it("keeps the default floating bottom-right 380x560 widget", () => {
     expect(STYLES).toContain("--_width: var(--ag-ui-width, 380px);");
     expect(STYLES).toContain("--_height: var(--ag-ui-height, 560px);");
-    expect(STYLES).toContain("--_inset: var(--ag-ui-inset, auto 24px 24px auto);");
+    // The floating margins are added to whatever edges the host reserved, so
+    // the default is an expression rather than a literal.
+    expect(STYLES).toContain("auto calc(24px + var(--_viewport-inset-right))");
     expect(STYLES).toContain("--_radius: var(--ag-ui-radius, 12px);");
   });
 

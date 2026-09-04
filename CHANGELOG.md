@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tell the widget which edges of the viewport your own chrome already
+  occupies**, with `--ag-ui-viewport-inset-top` / `-right` / `-bottom` / `-left`.
+  A fixed placement covers the viewport it is given and knows nothing about your
+  sticky header, so it came down on top of it.
+
+  Reserving that space was already possible and was the wrong shape of work:
+  `--ag-ui-inset` is one four-value shorthand and every placement has a different
+  default, so a host restated it per placement family and then kept
+  `--ag-ui-height` and `--ag-ui-max-height` in step by hand. Forgetting the
+  height half overflowed the panel off the bottom of the screen with nothing to
+  say so. Now `page` and `full` inset by all four edges, `sidebar` and `side` by
+  three, `floating` and `bottom-left` add them to their own margins, and every
+  height follows centrally.
+
+  They take `env(safe-area-inset-*)` verbatim. `--ag-ui-viewport-height` and
+  `--ag-ui-viewport-width` state the usable box outright for the case no
+  viewport-percentage length describes -- an on-screen keyboard changes neither
+  `vh` nor `dvh` nor `svh`, so a full-bleed panel on a phone has to be told.
+
+  The playground's own config bar was the first consumer: it replaced
+  twenty-five lines with one declaration.
+
 ### Fixed
 
 - **The documented way to make a sidebar push content instead of overlaying it
