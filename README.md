@@ -972,6 +972,13 @@ matching JS API:
   returning whether it went. It takes the axes the same way a user drag does, so the launcher
   travels with it and switching placement hands them back. Returns `false` rather than pretending
   when the placement owns its position or the panel fills the screen.
+The composer also walks back through what you have already sent, on **Up** and
+**Down** — the shape every shell and every coding agent uses. Only from an empty
+composer and only with the skills palette closed: an arrow inside text is how you
+move the caret, and taking it unconditionally would break editing to add a
+shortcut. Arrowing forward past the newest turn empties the box again, so the way
+out is the key that got you in.
+
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
   reflected as the boolean `collapsed` attribute/property and persisted per-tab in
   `sessionStorage`, so it survives a reload.

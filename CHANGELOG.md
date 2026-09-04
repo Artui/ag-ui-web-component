@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Up and Down walk back through what you have already sent**, from an empty
+  composer with the skills palette closed. The shape every shell and every
+  coding agent uses; the conditions are what make it safe, because an arrow
+  inside text is how you move the caret. Arrowing forward past the newest turn
+  empties the box again, so the way out is the key that got you in, and typing
+  hands the composer back so the next walk starts from the newest turn.
+
 - **On a full page, the conversation list docks beside the transcript instead of
   covering it.** From 900px of panel width under `placement="page"`: no
   backdrop, no focus trap, and `role="region"` rather than a modal dialog, with

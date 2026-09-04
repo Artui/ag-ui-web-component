@@ -842,6 +842,10 @@ export class AgUiChat extends HTMLElement {
    * position -- see #applyLauncherPlacement for what that costs the host.
    */
   #launcherPos: { readonly left: number; readonly top: number } | null = null;
+  /** What the user has sent this session, newest first, for arrow-key recall. */
+  readonly #sentDrafts: string[] = [];
+  /** How far back the composer has been walked; null while the user is typing. */
+  #recallIndex: number | null = null;
 
   /**
    * Where the user dragged the *panel*, in viewport coordinates, or null while
@@ -4328,6 +4332,10 @@ export class AgUiChat extends HTMLElement {
     this.#skillsMenu.onInput(this.#input.value);
     this.#skillHint.hidden = true;
     this.#autoGrow();
+    // Typing puts the composer back in the user's hands: the next ArrowUp
+    // starts from the newest turn again rather than continuing a walk through
+    // history the user has since edited.
+    this.#recallIndex = null;
   }
 
   #onKeydown(event: KeyboardEvent): void {
@@ -4346,7 +4354,51 @@ export class AgUiChat extends HTMLElement {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void this.#submit();
+      return;
     }
+    this.#recallHistory(event);
+  }
+
+  /**
+   * Walk back through what the user has already sent, on the arrow keys.
+   *
+   * Only from an empty composer, and only with the palette closed -- which the
+   * caller has already established, since the palette consumes arrows while it
+   * is open. Both conditions matter: arrows inside text are how you move the
+   * caret, and taking them would break editing to add a shortcut.
+   *
+   * The drafts are the user's own turns in this conversation, newest first,
+   * which is what every shell and every coding agent means by this. Arrowing
+   * forward past the newest empties the composer again rather than sticking on
+   * it, so the way out is the same key that got you in.
+   */
+  #recallHistory(event: KeyboardEvent): void {
+    const back = event.key === "ArrowUp";
+    if ((!back && event.key !== "ArrowDown") || this.#skillsMenu.isOpen()) {
+      return;
+    }
+    const drafts = this.#sentDrafts;
+    if (drafts.length === 0) {
+      return;
+    }
+    // An empty composer is the only safe entry: anything typed is the user's,
+    // and replacing it with a past turn would lose it without asking.
+    if (this.#recallIndex === null && (!back || this.#input.value !== "")) {
+      return;
+    }
+    const next = this.#recallIndex === null ? 0 : this.#recallIndex + (back ? 1 : -1);
+    if (next >= drafts.length) {
+      return;
+    }
+    event.preventDefault();
+    this.#recallIndex = next < 0 ? null : next;
+    // Asserted rather than defaulted: `next` was bounded on both sides two
+    // lines up, so a fallback here would be a branch no test can reach
+    // honestly -- and an unreachable default is worse than an assertion,
+    // because it looks like a case somebody thought about.
+    this.#input.value = next < 0 ? "" : (drafts[next] as string);
+    this.#input.setSelectionRange(this.#input.value.length, this.#input.value.length);
+    this.#autoGrow();
   }
 
   /**
@@ -4403,6 +4455,13 @@ export class AgUiChat extends HTMLElement {
     if (content === "" && attachments.length === 0) {
       return;
     }
+    // Recorded before the box is cleared, newest first, so the arrow keys walk
+    // back through it. A repeat of the last one is not a second entry: the
+    // point is to reach what was said, not how often.
+    if (content !== "" && this.#sentDrafts[0] !== content) {
+      this.#sentDrafts.unshift(content);
+    }
+    this.#recallIndex = null;
     this.#input.value = "";
     this.#autoGrow();
     // A file still uploading does not ride along — `readyRefs()` returns only
