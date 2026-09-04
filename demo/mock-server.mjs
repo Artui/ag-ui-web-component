@@ -23,7 +23,11 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
 const PORT = Number(process.env.PORT ?? 5173);
-const HOST = process.env.HOST ?? "0.0.0.0";
+// The unspecified IPv6 address, which on a dual-stack host also accepts IPv4 --
+// so this reaches the local network and `http://[::1]:5173` still answers.
+// Plain "0.0.0.0" is IPv4-only and quietly drops the IPv6 loopback, which is
+// what `localhost` resolves to first on most machines.
+const HOST = process.env.HOST ?? "::";
 
 const HTML = "text/html; charset=utf-8";
 // The playground: a single page that flips every option live (see
@@ -578,7 +582,9 @@ function networkUrls() {
 
 server.listen(PORT, HOST, () => {
   process.stdout.write(`ag-ui-web-component demo: http://localhost:${PORT}\n`);
-  if (HOST === "0.0.0.0") {
+  // Any wildcard bind reaches the LAN, so the addresses are worth printing for
+  // both spellings rather than only the one this file happens to default to.
+  if (HOST === "::" || HOST === "0.0.0.0") {
     for (const url of networkUrls()) {
       process.stdout.write(`  on this network: ${url}\n`);
     }

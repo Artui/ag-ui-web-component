@@ -18,10 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   What is waiting now shows above the composer as chips, each of which takes its
   message back when pressed, and the next is sent when the run settles. Stopping
   the run discards them: sending into a conversation someone has just stopped is
-  the opposite of what stopping meant. Text only -- an attachment is settled
-  state the tray already holds, and the composer has no second copy of it.
+  the opposite of what stopping meant. Not sending it is not the same as
+  destroying it, though -- a queued message has already left the composer, so
+  it goes to the front of the arrow-key recall history rather than nowhere.
+  Text only -- an attachment is settled state the tray already holds, and the
+  composer has no second copy of it.
 
-- **A very long paste becomes an attachment rather than a wall of text.** Past
+- **A very long paste becomes an attachment rather than a wall of text.** At
   5000 characters, and only where uploads are configured -- without somewhere
   for it to go, quietly dropping a paste for being long is far worse than an
   awkward composer. The field is capped at `40vh`, so a paste that size is
@@ -32,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clipboard -- which is why this needs no undo of its own.
   `data-paste-attach` takes `off` or a character count.
 
-- **The conversation list filters itself** once there are more than eight
+- **The conversation list filters itself** once there are eight or more
   conversations in it -- below that a search box is a control asking to be used
   on a list you can already read in one glance. It matches the title **and** the
   preview, because the title is often the model's one-line summary and the
@@ -251,7 +254,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The embedded placement is unchanged and still collapses to its header bar,
   which is an ordinary accordion for a panel that sits in a page's own flow.
 
+- **`--ag-ui-edge-gutter` and `--ag-ui-keyboard-inset`.** The first is the gap a
+  resting floating panel keeps from the box the host left free, and the size cap
+  now subtracts the same one rather than restating it. The second overrides the
+  lift an on-screen keyboard earns: the widget publishes what it measured, and a
+  host that states this outranks it -- the two-token shape the measured viewport
+  height already had, and the inset half was missing.
+
+- **`createChatSurfaceTools` and its types are exported.** `moveTo` and
+  `describeSurface` are public methods, so a TypeScript consumer could call them
+  and had nowhere to import `ChatCorner` or `ChatSurfaceReport` from. The report
+  also gained `draggable`, and an origin on its `viewport`, so an agent reasoning
+  about the room beside the panel is not mixing two coordinate frames.
+
 ### Fixed
+
+- **A floating panel grown to its cap sat outside the screen.** The cap was the
+  whole usable box while the resting inset had already spent a gutter on the
+  anchored corner, so the far edge landed exactly one gutter outside it -- a top
+  of -24 on an ordinary window, taking the header and every control in it off
+  the screen. With a reserved header it sat inside that instead, which is the
+  one thing reserving it is meant to prevent.
+
+- **The corner a panel opened from ignored the edges a host had reserved.** The
+  probe compared the room on each side using the usable box's extents as though
+  it started at the origin, while the launcher's coordinates were the screen's
+  -- understating the room one way and overstating it the other by the same
+  reserved inset, which is enough to invert the choice rather than shade it. The
+  agent's own `moveTo` had the matching bug, and sent the panel under the very
+  chrome the reservation exists to keep it out of.
+
+- **The reserved edges are read as lengths.** They were parsed out of the custom
+  property directly, which returns the token stream rather than a value: a host
+  stating `4rem` reserved four pixels, and one stating
+  `calc(56px + env(safe-area-inset-top))` -- the natural spelling of what the
+  token's own documentation recommends -- reserved `NaN`, which made every clamp
+  `NaN` and dropped the panel to its static position.
+
+- **A stated position is measured from the layout viewport.** It was written
+  against the visual one, which is the box the widget is *clamped* into rather
+  than the box CSS resolves a fixed element's inset against. The two come apart
+  exactly when it matters: with a keyboard open, a panel the clamp had just held
+  inside the visible band was written back out behind the keyboard.
+
+- **Undoing an agent's move erased the position it had stored.** The undo put
+  the panel back and then wrote the moved position to storage again, because the
+  helper it called returns early when there is nothing to store. The panel
+  returned and the next resize or reload sent it back to the corner the user had
+  just rejected -- and since that store now outlives the tab, so did the move.
+
+- **The composer's history is cleared with the conversation.** Starting a new
+  chat, switching threads or changing `user-key` wiped the transcript and left
+  every turn the previous principal had typed one ArrowUp away in the composer.
+
+- **A conversation filter that hides itself stops filtering.** A list that fell
+  below the threshold while a query matched nothing showed "no conversations
+  match that" over conversations that were right there, with no control left on
+  screen to clear -- and reopening the drawer did not help, only a new one would.
+
+- **`move_chat` checks the corner it was given.** `required` in a schema is
+  advisory; a corner that is not one matched none of the edge tests, sent the
+  panel bottom-right, and was reported as a success for the corner asked for.
+
+- **The agent's minimise offers no undo.** The notice is written into the
+  transcript and the collapse it describes is what hides the transcript, so the
+  control could only be reached from a state where it had nothing left to do.
+
+- **A docked conversation list re-decides on a resize.** Docking is a width
+  decision taken only on the way in, so a window narrowed with the list open
+  kept a rail sized for the wide layout, with no focus trap and no backdrop.
 
 - **The theme toggle is drawn rather than typed.** It was the moon and sun
   emoji, and an emoji is painted by the platform's own font at its own weight

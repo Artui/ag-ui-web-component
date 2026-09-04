@@ -183,22 +183,35 @@
       /* `flex: 1` would stretch the panel to the slot and silently outrank the
          width the resize handle writes, which reads as a broken component
          rather than a host stylesheet winning. Let the element keep its own
-         size and cap it to the slot instead. */
-      ag-ui-chat {
+         size and cap it to the slot instead.
+
+         Scoped to the placement that is actually in the flow. A document rule
+         naming the element beats the component's own :host rule, so leaving
+         this unscoped replaced the widget's viewport cap with a percentage of
+         the initial containing block for every placement -- and a fixed panel
+         anchored 24px off the right edge then hangs 24px off the left one. */
+      ag-ui-chat[placement="embedded"] {
         flex: 0 1 auto;
         max-width: 100%;
-        /* The widget defaults to a z-index near the 32-bit ceiling so it clears
-           whatever a host page stacks. That is right for a real host and wrong
-           for this one: the full-bleed placements are position: fixed at inset 0,
-           so they buried the config bar -- and the control that switches
-           placement back is in that bar. Collapsing used to be the only way out,
-           and the page placement no longer has a collapse button, so the escape
-           has to be structural.
+      }
 
-           This is the backstop rather than the mechanism: the bar reserves its
-           own height below, so nothing should be overlapping in the first place.
-           Keeping the widget under the bar means a mis-measurement shows as the
-           bar covering a strip of chat, not as a playground with no way out. */
+      /* The widget defaults to a z-index near the 32-bit ceiling so it clears
+         whatever a host page stacks. That is right for a real host and wrong
+         for this one: the full-bleed placements are position: fixed at inset 0,
+         so they buried the config bar -- and the control that switches
+         placement back is in that bar. Collapsing used to be the only way out,
+         and the page placement no longer has a collapse button, so the escape
+         has to be structural.
+
+         This is the backstop rather than the mechanism: the bar reserves its
+         own height below, so nothing should be overlapping in the first place.
+         Keeping the widget under the bar means a mis-measurement shows as the
+         bar covering a strip of chat, not as a playground with no way out.
+
+         Every placement, unlike the cap above: this is the escape hatch, and
+         the placements that need it are the ones it must not be scoped away
+         from. */
+      ag-ui-chat {
         --ag-ui-z-index: 5;
       }
 
@@ -244,10 +257,21 @@
       <label
         >Placement
         <select id="cfg-placement">
-          <option value="floating">floating</option>
-          <option value="sidebar">sidebar (rail)</option>
-          <option value="page">page (centred column)</option>
-          <option value="embedded">embedded</option>
+          <optgroup label="documented">
+            <option value="floating">floating</option>
+            <option value="sidebar">sidebar (rail)</option>
+            <option value="page">page (centred column)</option>
+            <option value="embedded">embedded</option>
+          </optgroup>
+          <!-- Still parsed, still styled, still tested -- just not in the
+               README's four. This is the only place they can be looked at, so
+               dropping them from the harness would leave the three placements
+               with the least documentation also the only ones nobody sees. -->
+          <optgroup label="supported, undocumented">
+            <option value="bottom-left">bottom-left</option>
+            <option value="side">side</option>
+            <option value="full">full</option>
+          </optgroup>
         </select>
       </label>
       <label
