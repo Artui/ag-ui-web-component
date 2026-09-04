@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **On a full page, the conversation list docks beside the transcript instead of
+  covering it.** From 900px of panel width under `placement="page"`: no
+  backdrop, no focus trap, and `role="region"` rather than a modal dialog, with
+  the transcript shifted over rather than hidden. Covering the conversation to
+  show the list of conversations hides the thing you are trying to get back to,
+  and a dedicated route is the one surface with width to spare.
+
+  Narrower than that, or under any other placement, it stays the slide-over it
+  was -- a few hundred pixels of panel with a list docked into it leaves a column
+  of transcript narrower than the messages in it. Width alone is not the test:
+  an app shell can hand `embedded` a page-sized box, and that box is still a
+  column of somebody's layout.
+
+  `--ag-ui-threads-rail-width` sets the docked width; the host carries
+  `data-threads-docked` while it is showing. `closeThreads()` joins
+  `openThreads()`.
+
 - **The agent can move the panel it is speaking from.** Four tools behind a new
   `chat` token on `data-page-actions`: `read_chat_surface`, `move_chat`,
   `minimise_chat` and `restore_chat`, plus the `describeSurface()` and

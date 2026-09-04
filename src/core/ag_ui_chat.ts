@@ -27,6 +27,7 @@ import {
   SUBAGENT_PHASE,
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
+  THREADS_DOCK_MIN_WIDTH,
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
@@ -1012,6 +1013,9 @@ export class AgUiChat extends HTMLElement {
       },
       onDelete: (threadId) => {
         this.#deleteThread(threadId);
+      },
+      onVisibility: () => {
+        this.#syncThreadsState();
       },
     });
     this.#checkpoints = new CheckpointMenu((runId, verb) => {
@@ -3318,7 +3322,42 @@ export class AgUiChat extends HTMLElement {
     // open *underneath* a popover still floating over it.
     this.#checkpoints.close();
     void this.#refreshDrawer();
+    this.#drawer.setModal(!this.#threadsDock());
     this.#drawer.open();
+    this.#syncThreadsState();
+  }
+
+  /**
+   * Whether the conversation list docks beside the transcript rather than
+   * covering it.
+   *
+   * Only the full-page placement, and only where there is room. A dedicated
+   * route is the one surface with width to spare -- everywhere else the panel
+   * is a few hundred pixels wide, and a list docked into that leaves a column
+   * of transcript too narrow to read. The width is the panel's own rather than
+   * the window's, because an embedded host can give a full-page-sized box to
+   * something that is not a page.
+   */
+  #threadsDock(): boolean {
+    return (
+      this.getAttribute("placement") === "page" &&
+      this.getBoundingClientRect().width >= THREADS_DOCK_MIN_WIDTH
+    );
+  }
+
+  /**
+   * Stamp whether the list is showing, and how.
+   *
+   * On the host rather than inside the shell because the transcript has to move
+   * over for a docked list, and the drawer is the last child of the panel -- CSS
+   * cannot select backwards from it to the rows it needs to shift.
+   */
+  #syncThreadsState(): void {
+    if (this.#drawer.isOpen() && this.#threadsDock()) {
+      this.setAttribute("data-threads-docked", "");
+    } else {
+      this.removeAttribute("data-threads-docked");
+    }
   }
 
   /**
@@ -3333,6 +3372,17 @@ export class AgUiChat extends HTMLElement {
     this.#drawer.close();
     void this.#refreshCheckpoints();
     this.#checkpoints.open();
+  }
+
+  /**
+   * Close the conversation list, if it is open.
+   *
+   * No state sync here: the drawer reports every close through `onVisibility`,
+   * including the four that never reach this method, and doing it twice would
+   * be a second place to keep right.
+   */
+  closeThreads(): void {
+    this.#drawer.close();
   }
 
   /** Close the checkpoints panel, if it is open. */

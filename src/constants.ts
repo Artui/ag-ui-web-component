@@ -407,3 +407,13 @@ export const ANNOUNCE_CLEAR_MS = 150;
  * no pointer events at any point, so being on top costs the page nothing.
  */
 export const HIGHLIGHT_OVERLAY_Z_INDEX = 2147483001;
+
+/**
+ * The panel width at which the conversation list stops covering the transcript
+ * and docks beside it.
+ *
+ * Wide enough that the list and a readable column both fit: the list asks for
+ * 300px and the reading column is capped at 820px. Below this a docked list
+ * would leave a strip of transcript narrower than the messages in it.
+ */
+export const THREADS_DOCK_MIN_WIDTH = 900;

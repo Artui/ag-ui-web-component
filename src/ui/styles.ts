@@ -218,6 +218,8 @@ export const STYLES = `
   /* Slim rail the sidebar placement collapses to. Only that placement reads
      it, but it is declared here so every alias has a default in one place. */
   --_rail-width: var(--ag-ui-rail-width, 52px);
+  /* Width of the docked conversation list on a full-page chat. */
+  --_threads-rail-width: var(--ag-ui-threads-rail-width, 280px);
 
   position: var(--_position);
   inset: var(--_inset);
@@ -907,6 +909,48 @@ export const STYLES = `
 :host([collapsed][placement="embedded"]) .skill-palette,
 :host([collapsed][placement="embedded"]) .skill-hint {
   display: none;
+}
+
+/* A docked conversation list: beside the transcript rather than over it.
+
+   A full-page chat is the one surface with width to spare, and covering the
+   conversation to show the list of conversations is the wrong trade there --
+   it hides the thing you are trying to get back to. Everywhere else the panel
+   is a few hundred pixels wide and a docked list would leave a column of
+   transcript narrower than the messages in it, so this is the only placement
+   that gets it.
+
+   The transcript is moved by padding on the shell rather than by making the
+   list a flex sibling: the drawer is the last child of the panel, and no
+   selector reaches backwards from it to the rows that have to shift. That is
+   also why the state is stamped on the host. */
+:host([data-threads-docked]) .drawer {
+  /* Not a scrim: the page behind it is still the user's to work in. */
+  pointer-events: none;
+}
+
+:host([data-threads-docked]) .drawer-backdrop {
+  display: none;
+}
+
+:host([data-threads-docked]) .drawer-panel {
+  width: var(--_threads-rail-width);
+  pointer-events: auto;
+  border-inline-end: 1px solid var(--_border);
+  box-shadow: none;
+}
+
+:host([data-threads-docked]) .messages,
+:host([data-threads-docked]) .input-row,
+:host([data-threads-docked]) .skill-chips,
+:host([data-threads-docked]) .attachment-tray {
+  padding-inline-start: calc(
+    var(--_threads-rail-width) + max(var(--_pad), (100% - var(--_content-max-width)) / 2)
+  );
+}
+
+:host([data-threads-docked]) .header {
+  padding-inline-start: calc(var(--_threads-rail-width) + var(--_pad));
 }
 
 /* The page placement has no collapsed state, so it offers no control for one.

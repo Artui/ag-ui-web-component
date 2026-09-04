@@ -12,6 +12,15 @@ export interface ThreadDrawerCallbacks {
   readonly onRename: (threadId: string, title: string) => void;
   /** A row was deleted (after the inline confirm). */
   readonly onDelete: (threadId: string) => void;
+  /**
+   * The list opened or closed.
+   *
+   * There are five ways out of it -- the close control, the backdrop, Escape,
+   * picking a row and starting a new chat -- and only two of them go through
+   * the host. A docked list moves the transcript over, so the host has to know
+   * about all five or the transcript stays shifted around nothing.
+   */
+  readonly onVisibility?: (open: boolean) => void;
 }
 
 /**
@@ -41,6 +50,17 @@ export class ThreadDrawer {
   #activeId = "";
   /** Dismisses the list without starting a new conversation. */
   #closeButton: HTMLButtonElement;
+  /**
+   * Whether the list covers the conversation, or sits beside it.
+   *
+   * Everything a dialog implies follows from this and nothing else does: the
+   * modal role, the focus trap, and taking focus on open. A list docked beside
+   * a full-page conversation is a region of that page -- telling assistive
+   * technology to ignore the rest of the document while it is showing would be
+   * a lie, and stealing focus into it would interrupt someone mid-sentence to
+   * announce a list they can already see.
+   */
+  #modal = true;
 
   /** The element focused before the drawer opened, restored on close. */
   #lastFocused: HTMLElement | null = null;
@@ -138,6 +158,21 @@ export class ThreadDrawer {
     this.#renderList();
   }
 
+  /**
+   * Whether the list is a dialog over the conversation or a rail beside it.
+   * The host decides, because only the placement knows whether there is room.
+   */
+  setModal(modal: boolean): void {
+    this.#modal = modal;
+    if (modal) {
+      this.#panel.setAttribute("role", "dialog");
+      this.#panel.setAttribute("aria-modal", "true");
+    } else {
+      this.#panel.setAttribute("role", "region");
+      this.#panel.removeAttribute("aria-modal");
+    }
+  }
+
   isOpen(): boolean {
     return !this.element.hidden;
   }
@@ -150,7 +185,10 @@ export class ThreadDrawer {
     // the panel (its first control) so keyboard users land inside the dialog.
     this.#lastFocused = this.#activeElement() as HTMLElement | null;
     this.element.hidden = false;
-    this.#newButton.focus();
+    if (this.#modal) {
+      this.#newButton.focus();
+    }
+    this.#callbacks.onVisibility?.(true);
   }
 
   close(): void {
@@ -158,8 +196,13 @@ export class ThreadDrawer {
       return;
     }
     this.element.hidden = true;
-    this.#lastFocused?.focus();
+    // Only if it was taken. Restoring focus that was never moved would pull it
+    // back from wherever the user has since put it.
+    if (this.#modal) {
+      this.#lastFocused?.focus();
+    }
     this.#lastFocused = null;
+    this.#callbacks.onVisibility?.(false);
   }
 
   toggle(): void {
@@ -182,7 +225,11 @@ export class ThreadDrawer {
       this.close();
       return;
     }
-    if (event.key !== "Tab") {
+    // Escape still closes a docked rail -- it is a way out, not a modal
+    // convention -- but nothing beyond this point applies to one. Tabbing out
+    // of a list that sits beside the conversation should reach the
+    // conversation, which is the whole difference.
+    if (event.key !== "Tab" || !this.#modal) {
       return;
     }
     const focusables = Array.from(

@@ -272,7 +272,7 @@ the `copyCode` / `copied` / `copyFailed` strings.
 **Methods**: `registerTool`, `registerPageState`, `registerActivityRenderer`, `setSkills`,
 `sendMessage`, `attachFile`, `appendMessage`, `retryLastTurn`, `quote`, `offerQuoteInPage`,
 `enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `describeSurface`, `moveTo`,
-`toggleTheme`, `openThreads`,
+`toggleTheme`, `openThreads`, `closeThreads`,
 `openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `reload`, and the deprecated
 `registerStateHook` (renamed to `registerPageState`).
 
@@ -2573,6 +2573,23 @@ only you know whether that column should become the whole screen.
 
 The corner placements still rest at their launcher, so a full-bleed panel is
 something the user opens rather than something they are given.
+
+### The conversation list on a full page
+
+On `placement="page"`, once the panel is at least **900px** wide, the chat-history
+list **docks beside the transcript** instead of covering it — no backdrop, no
+focus trap, and `role="region"` rather than a modal dialog. Covering the
+conversation to show the list of conversations hides the thing you are trying to
+get back to, and a dedicated route is the one surface with width to spare.
+
+Narrower than that, or under any other placement, it stays the slide-over it was:
+a few hundred pixels of panel with a list docked into it leaves a column of
+transcript narrower than the messages in it. Width alone is not the test — an app
+shell can hand `embedded` a page-sized box, and that box is still a column of
+somebody's layout.
+
+`--ag-ui-threads-rail-width` sets the docked width (default 280px). While it is
+docked the host carries `data-threads-docked`, so your own CSS can react.
 
 **To keep your desktop layout at every width**, set `data-small-viewport="off"`.
 That exists because the *trigger* is the one part of this you cannot reach: every
