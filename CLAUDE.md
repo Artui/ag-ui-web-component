@@ -205,6 +205,19 @@ The flip side is useful: happy-dom is an accurate stand-in for a browser in a
 privacy mode that denies the durable store, so the degraded path gets exercised
 by the bulk of the suite for free.
 
+**But CI is not this machine.** Node's own web storage is a global on the
+versions CI runs, so under happy-dom there `localStorage` *works* -- and anything
+the widget persists outlives the test that wrote it, because a teardown clearing
+`sessionStorage` alone does not reach it. That is a suite green locally and red
+on CI, which is the worst shape a leak can take. Both projects therefore clear
+both stores in a setup file (`tests/setup_storage.ts`,
+`tests/browser/setup_browser_state.ts`), guarded, since under happy-dom the
+methods are missing rather than throwing.
+
+**To reproduce a CI-only storage failure here, install an in-memory
+`localStorage` in a setup file that runs first.** Doing that reproduced the exact
+assertions CI reported, which is how the fix was confirmed rather than assumed.
+
 Note also that the Chromium project shares one page context across a file, so a
 durable write outlives the test that made it. Anything clearing `sessionStorage`
 between tests has to clear `localStorage` too, or a stored position leaks into

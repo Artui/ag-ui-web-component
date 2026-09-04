@@ -39,6 +39,10 @@ export default defineConfig({
           environment: "happy-dom",
           include: ["tests/**/*.test.ts"],
           exclude: ["tests/browser/**"],
+          // Both stores are cleared per test. See the file: localStorage does
+          // not exist under happy-dom here but does on CI, so preference
+          // writes leaked between tests there and nowhere else.
+          setupFiles: ["tests/setup_storage.ts"],
         },
       },
       {
