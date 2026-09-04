@@ -1,0 +1,198 @@
+import { HIGHLIGHT_OVERLAY_Z_INDEX } from "../constants.js";
+
+/** How the overlay is drawn around the element being pointed at. */
+export interface HighlightOverlayOptions {
+  /** Dim everything except the target. Default false. */
+  readonly scrim?: boolean;
+  /** Draw the ring as a moving gradient rather than a flat colour. Default false. */
+  readonly gradient?: boolean;
+  /** Ring colour, and the flat fallback for the gradient. */
+  readonly color?: string;
+  /** Gap between the target's box and the ring. Default 4. */
+  readonly padding?: number;
+  /** Corner radius of the cut-out and the ring. Default: the target's own. */
+  readonly radius?: number;
+}
+
+/** Ring thickness. Matches the outline the flat highlight has always drawn. */
+const RING_WIDTH_PX = 3;
+
+/** Default gap between the target's border box and the ring around it. */
+const DEFAULT_PADDING_PX = 4;
+
+/** One turn of the gradient, in milliseconds. */
+const GRADIENT_PERIOD_MS = 2400;
+
+/**
+ * Draw an overlay that points at `target`, and return a function that removes
+ * it.
+ *
+ * **Why an overlay rather than a style on the target.** The flat highlight
+ * writes an `outline` onto the element itself, and that is deliberate: a
+ * `box-shadow` paints outside the border box, so any `overflow: hidden`
+ * ancestor sharing the target's box -- a card, a table cell -- clips the whole
+ * ring away while the helper still reports success. But an outline takes a
+ * *colour*. There is no `outline-image`, so a gradient ring cannot be one, and
+ * every alternative that can be a gradient is a property of the target and
+ * lands back inside whatever is clipping it.
+ *
+ * Dimming everything else wants the same thing from the other direction: a
+ * surface larger than the target, which cannot be a property of the target. So
+ * the scrim and the gradient are one mechanism rather than two features, and
+ * both escape the clipping the outline was chosen to avoid, because nothing
+ * here is a descendant of the element being pointed at.
+ *
+ * **It is inert.** The overlay never takes a pointer event, at the cut-out or
+ * anywhere else. A dim that swallows clicks is a modal the user did not open,
+ * and the driver's own point-then-click helper has to reach the control it just
+ * finished pointing at.
+ *
+ * **It follows.** The cut-out is recomputed on scroll and resize, because a
+ * highlight that stays where the target used to be is worse than none: it
+ * points confidently at the wrong thing.
+ */
+export function showHighlightOverlay(
+  target: HTMLElement,
+  options: HighlightOverlayOptions = {},
+): () => void {
+  const root = document.createElement("div");
+  root.setAttribute("data-ag-ui-highlight", "");
+  // aria-hidden because the ring is decoration: the announcement that this
+  // element matters is the agent's message, and a screen reader reaching a
+  // second, contentless copy of it learns nothing.
+  root.setAttribute("aria-hidden", "true");
+  root.style.cssText = [
+    "position: fixed",
+    "inset: 0",
+    "pointer-events: none",
+    `z-index: ${HIGHLIGHT_OVERLAY_Z_INDEX}`,
+  ].join(";");
+
+  const scrim = document.createElement("div");
+  const ring = document.createElement("div");
+  if (options.scrim === true) {
+    root.append(scrim);
+  }
+  root.append(ring);
+
+  const paint = (): void => {
+    const box = target.getBoundingClientRect();
+    const pad = options.padding ?? DEFAULT_PADDING_PX;
+    // No fallback for an unparseable radius: getComputedStyle on an element in
+    // the document always resolves this, and the overlay is only ever shown for
+    // one the driver has already found. A guard here would be a branch no test
+    // can reach honestly.
+    const radius = options.radius ?? Number.parseFloat(getComputedStyle(target).borderRadius);
+    const left = box.left - pad;
+    const top = box.top - pad;
+    const width = box.width + pad * 2;
+    const height = box.height + pad * 2;
+
+    if (options.scrim === true) {
+      // A hole rather than four rectangles: one element, and it stays a hole
+      // through a radius. The outer ring runs clockwise and the inner one
+      // anticlockwise, which is what makes evenodd treat the inside as outside.
+      scrim.style.cssText = [
+        "position: absolute",
+        "inset: 0",
+        "background: var(--ag-ui-highlight-scrim, rgba(15, 15, 25, 0.45))",
+        `clip-path: path(evenodd, '${holePath(left, top, width, height, radius + pad)}')`,
+      ].join(";");
+    }
+
+    ring.style.cssText = [
+      "position: absolute",
+      `left: ${left}px`,
+      `top: ${top}px`,
+      `width: ${width}px`,
+      `height: ${height}px`,
+      `border-radius: ${radius + pad}px`,
+      `border: ${RING_WIDTH_PX}px solid transparent`,
+      "box-sizing: border-box",
+      ringPaint(options),
+    ].join(";");
+  };
+
+  paint();
+  // Animated from script rather than a CSS keyframe, because the overlay lives
+  // in the host's document and not in the shadow tree: a keyframe would mean
+  // injecting a rule into someone else's stylesheet and remembering whether it
+  // had already been injected, which is module-level state this package does
+  // not keep.
+  //
+  // Reduced motion asks for no animation, not for no feedback -- the gradient
+  // is still drawn, it simply stops travelling.
+  if (options.gradient === true && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    ring.animate([{ backgroundPosition: "100% 0" }, { backgroundPosition: "-100% 0" }], {
+      duration: GRADIENT_PERIOD_MS,
+      iterations: Number.POSITIVE_INFINITY,
+      easing: "linear",
+    });
+  }
+  // Capture, so a scroll inside any container reaches this and not just one on
+  // the document. Passive: this only reads geometry and paints.
+  const listen = { capture: true, passive: true } as const;
+  window.addEventListener("scroll", paint, listen);
+  window.addEventListener("resize", paint, listen);
+  document.body.appendChild(root);
+
+  return () => {
+    window.removeEventListener("scroll", paint, listen);
+    window.removeEventListener("resize", paint, listen);
+    root.remove();
+  };
+}
+
+/**
+ * The ring's paint: a flat border, or a gradient masked to the border box.
+ *
+ * A gradient border needs the mask because a background paints inside the
+ * border, not on it -- the two-layer mask keeps the border box and subtracts
+ * the padding box, leaving the frame.
+ */
+function ringPaint(options: HighlightOverlayOptions): string {
+  const color = options.color ?? "var(--ag-ui-accent, #4f46e5)";
+  if (options.gradient !== true) {
+    return `border-color: ${color}`;
+  }
+  const image = `var(--ag-ui-highlight-gradient, linear-gradient(115deg, transparent 20%, ${color} 50%, transparent 80%))`;
+  const mask = "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)";
+  return [
+    `background-image: ${image}`,
+    "background-origin: border-box",
+    "background-size: 300% 100%",
+    `-webkit-mask: ${mask}`,
+    `mask: ${mask}`,
+    "-webkit-mask-composite: xor",
+    "mask-composite: exclude",
+    "background-position: 50% 0",
+  ].join(";");
+}
+
+/**
+ * A viewport-sized rectangle with a rounded rectangle cut out of it, as an SVG
+ * path for `clip-path: path(evenodd, ...)`.
+ *
+ * Written in absolute commands and closed explicitly, because a `clip-path`
+ * that fails to parse is not an error anywhere -- the declaration is dropped
+ * and the scrim silently covers the target it was meant to reveal.
+ */
+function holePath(x: number, y: number, width: number, height: number, radius: number): string {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  const right = x + width;
+  const bottom = y + height;
+  const outer = `M 0 0 H ${window.innerWidth} V ${window.innerHeight} H 0 Z`;
+  const hole = [
+    `M ${x + r} ${y}`,
+    `H ${right - r}`,
+    `A ${r} ${r} 0 0 1 ${right} ${y + r}`,
+    `V ${bottom - r}`,
+    `A ${r} ${r} 0 0 1 ${right - r} ${bottom}`,
+    `H ${x + r}`,
+    `A ${r} ${r} 0 0 1 ${x} ${bottom - r}`,
+    `V ${y + r}`,
+    `A ${r} ${r} 0 0 1 ${x + r} ${y}`,
+    "Z",
+  ].join(" ");
+  return `${outer} ${hole}`;
+}

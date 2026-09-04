@@ -397,3 +397,13 @@ export const EDGE_MARGIN = 24;
  * *change*, and setting the same string twice is not one.
  */
 export const ANNOUNCE_CLEAR_MS = 150;
+
+/**
+ * Stacking order for the host-page highlight overlay.
+ *
+ * One above the widget's own default, because the overlay's whole job is to
+ * point at something on the page the widget is sitting over -- a ring drawn
+ * underneath the panel would be hidden by the thing that asked for it. It takes
+ * no pointer events at any point, so being on top costs the page nothing.
+ */
+export const HIGHLIGHT_OVERLAY_Z_INDEX = 2147483001;

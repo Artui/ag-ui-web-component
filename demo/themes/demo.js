@@ -9,6 +9,7 @@ import {
   fillField,
   pressButton,
   selectControl,
+  showHighlightOverlay,
   toggleCheckbox,
   X_DESTRUCTIVE_KEY,
 } from "/bundle.js";
@@ -253,3 +254,15 @@ const publishBarHeight = () => {
 };
 new ResizeObserver(publishBarHeight).observe(bar);
 publishBarHeight();
+
+// The overlay highlight, which is the one affordance you cannot judge from a
+// test: whether a dimmed page with a hole in it reads as "look here" or as a
+// modal nobody opened. Inert, so the form underneath stays usable while it is
+// up -- try typing into the title field without dismissing it.
+$("cfg-spotlight").addEventListener("click", () => {
+  const dismiss = showHighlightOverlay(document.querySelector(".card"), {
+    scrim: true,
+    gradient: true,
+  });
+  setTimeout(dismiss, 4000);
+});

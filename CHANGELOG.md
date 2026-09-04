@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`showHighlightOverlay(el, options)`** -- ring a host-page element from an
+  overlay drawn *outside* it, optionally dimming everything else (`scrim`) or
+  flowing a gradient round it (`gradient`). Returns a function that removes it.
+  `flash` and `focusWithFlash` accept both and route through it when either is
+  asked for; the plain outline is unchanged and still the default.
+
+  These are one mechanism rather than two features, and the reason is the same
+  in both directions. The flat ring is an `outline` on the element deliberately,
+  because a `box-shadow` is clipped away by any `overflow: hidden` ancestor
+  sharing the target's box while the helper still reports success -- but an
+  outline takes a *colour*, there is no `outline-image`, and anything else that
+  can carry a gradient is a property of the target and lands back inside
+  whatever is clipping it. Dimming everything else needs a surface larger than
+  the target, which is the same problem from the other side.
+
+  **It is inert.** The overlay takes no pointer event at the cut-out or anywhere
+  else: a dim that swallows clicks is a modal the user did not open, and
+  `highlightThenClick` has to reach the control it just pointed at. It follows
+  the target on scroll and resize, and under reduced motion the gradient is
+  still drawn but stops travelling. Themed with `--ag-ui-highlight-scrim` and
+  `--ag-ui-highlight-gradient`.
+
 - **Touch affordances, decided by the pointer rather than the width.** The eight
   resize grips are hidden -- a 6px edge strip is not a control, it is a trap that
   eats a scroll -- and the action, tool and send buttons go to 44px, which is

@@ -6,6 +6,7 @@
  * Each is configurable; pass small/zero durations in tests (or use fake timers).
  */
 
+import { showHighlightOverlay } from "./highlight_overlay.js";
 import { setNativeChecked, setNativeValue } from "./native_setter.js";
 
 /** Ring colour when the host page has not themed `--ag-ui-accent`. */
@@ -181,6 +182,20 @@ export interface FlashOptions {
   /** Ring colour. Defaults to the target's `--ag-ui-accent`, else the package accent. */
   color?: string;
   /**
+   * Dim everything except the target.
+   *
+   * Switches the ring from an outline on the element to an overlay drawn
+   * outside it -- see {@link showHighlightOverlay} for why those are the same
+   * decision. The overlay never takes a pointer event, so a scrim here does
+   * not stop the page being used, or the driver clicking what it just pointed
+   * at.
+   */
+  scrim?: boolean;
+  /** Draw the ring as a moving gradient. Also an overlay, for the same reason. */
+  gradient?: boolean;
+  /** Gap between the target's box and an overlay ring. Default 4. */
+  ringPadding?: number;
+  /**
    * Move keyboard focus to the element as well. Defaults to false for
    * {@link flash} and true for {@link focusWithFlash}.
    */
@@ -199,6 +214,21 @@ async function flashRing(
   }
   const flashMs = options.flashMs ?? FLASH_MS;
   if (flashMs <= 0) {
+    return;
+  }
+  // A scrim or a gradient cannot be an outline on the element -- an outline
+  // takes a colour, and anything that can be a gradient is a property of the
+  // target and so is clipped by whatever is clipping the target. Both are the
+  // same overlay, so asking for either takes that path.
+  if (options.scrim === true || options.gradient === true) {
+    const dismiss = showHighlightOverlay(el, {
+      scrim: options.scrim === true,
+      gradient: options.gradient === true,
+      ...(options.color === undefined ? {} : { color: options.color }),
+      ...(options.ringPadding === undefined ? {} : { padding: options.ringPadding }),
+    });
+    await delay(flashMs);
+    dismiss();
     return;
   }
   const previousOutline = el.style.outline;

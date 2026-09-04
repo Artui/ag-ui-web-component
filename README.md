@@ -813,6 +813,26 @@ operations a tool handler typically wants:
   flash defaults to `flashMs: 0` here: the field is about to be typed into, which is its own
   highlight. Pass `flashMs` (and optionally `color`) to ring it first.
 - `clickElement(el, options)` / `pressButton(el, options)` — scroll to, highlight/press, and click.
+- `showHighlightOverlay(el, options)` — ring an element from an **overlay drawn outside it**, and
+  optionally dim everything else (`scrim`) or flow a gradient round it (`gradient`). Returns a
+  function that removes it. `flash` and `focusWithFlash` take `scrim` and `gradient` too and route
+  through this when either is asked for.
+
+  **Why a second mechanism.** The plain ring is an `outline` on the element, which is deliberate:
+  a `box-shadow` paints outside the border box, so an `overflow: hidden` ancestor sharing the
+  target's box clips the whole ring away while the helper still reports success. But an outline
+  takes a *colour* — there is no `outline-image` — so a gradient cannot be one, and anything else
+  that can be is a property of the target and lands back inside whatever is clipping it. Dimming
+  everything else needs a surface larger than the target, which is the same problem from the other
+  side. So they are one overlay rather than two features.
+
+  **It is inert.** The overlay never takes a pointer event, at the cut-out or anywhere else — a dim
+  that swallows clicks is a modal the user did not open, and `highlightThenClick` has to reach the
+  control it just finished pointing at. It follows the target on scroll and resize, and under
+  reduced motion the gradient is drawn but does not travel.
+
+  Themed with `--ag-ui-highlight-scrim` and `--ag-ui-highlight-gradient`; the ring colour falls
+  back to `--ag-ui-accent` read from the target, like the flat one.
 - `selectControl(el, value)` / `toggleCheckbox(el, checked)` — animate a `<select>` / checkbox.
 - `setControlValue(el, value)` — set a `<select>` or checkbox without animation, dispatching
   `input`/`change`.
@@ -2414,6 +2434,8 @@ re-export point. Internal modules import from leaf paths.
 | `asQuote(text)` | function | Shape text as a markdown blockquote with a blank line after it. |
 | `MAX_QUOTE_CHARS` | const | The cap a quotation is truncated to (500). |
 | `typeInto` / `highlightThenClick` / `pressThenClick` / `selectOption` / `toggleControl` / `scrollIntoCenterView` / `flash` / `focusWithFlash` / `prefersReducedMotion` | function | Animation primitives. |
+| `showHighlightOverlay` | function | Ring a host-page element from an overlay drawn outside it, optionally dimming everything else or flowing a gradient round it. Returns a function that removes it. |
+| `HighlightOverlayOptions` | type | Options for `showHighlightOverlay`. |
 | `fillField` / `clickElement` / `pressButton` / `selectControl` / `setControlValue` / `toggleCheckbox` | function | DOM-driver primitives. |
 | `setNativeValue` / `setNativeChecked` | function | Set a control via its native prototype setter (React-controlled inputs). |
 | `TypeOptions` / `HighlightClickOptions` / `PressOptions` / `SelectOptions` / `ToggleOptions` / `FlashOptions` / `ScrollOptions` / `FillFieldOptions` / `TextLikeElement` | type | Primitive option shapes. |
