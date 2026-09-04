@@ -17,6 +17,10 @@ export interface UiStrings {
   chatHistory: string;
   /** Dismiss the chat-history list and return to the conversation. */
   closeHistory: string;
+  /** Placeholder in the conversation-list filter. */
+  searchConversations: string;
+  /** Shown when a filter matches nothing, unlike having no conversations. */
+  noMatches: string;
   /** Notice text when the agent moved its own panel out of the way. */
   chatMoved: string;
   /** Notice text when the agent collapsed its own panel. */
@@ -294,6 +298,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   title: "Assistant",
   chatHistory: "Chat history",
   closeHistory: "Close history",
+  searchConversations: "Search conversations",
+  noMatches: "No conversations match that.",
   chatMoved: "Moved this panel out of the way",
   chatMinimised: "Minimised this panel",
   undo: "Undo",

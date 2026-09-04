@@ -3260,6 +3260,27 @@ export const STYLES = `
   cursor: pointer;
 }
 
+/* Narrows the list. Sits under the header rather than in it: the header's two
+   controls act on the conversation, and a field that filters what is below it
+   belongs with what it filters. */
+.drawer-filter {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: calc(100% - var(--_pad) * 2);
+  margin: var(--_space) var(--_pad) 0;
+  padding: 6px 10px;
+  border: 1px solid var(--_border);
+  border-radius: var(--_radius);
+  background: var(--_input-bg);
+  color: var(--_fg);
+  font: inherit;
+  font-size: 0.9em;
+}
+
+.drawer-filter::placeholder {
+  color: var(--_muted);
+}
+
 .drawer-list {
   flex: 1;
   min-height: 0;

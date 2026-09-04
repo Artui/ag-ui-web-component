@@ -2,6 +2,14 @@ import type { ThreadMeta } from "../core/conversation_store.js";
 import { type RelativeTimeFormatter, relativeTime } from "./relative_time.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
+/**
+ * How many conversations there have to be before the filter appears.
+ *
+ * A search box above a list you can already read in one glance is a control
+ * asking to be used on nothing.
+ */
+const FILTER_FROM = 8;
+
 /** Actions the host ({@link AgUiChat}) wires to the drawer's rows. */
 export interface ThreadDrawerCallbacks {
   /** A row was picked — load that thread and make it active. */
@@ -50,6 +58,10 @@ export class ThreadDrawer {
   #activeId = "";
   /** Dismisses the list without starting a new conversation. */
   #closeButton: HTMLButtonElement;
+  /** Narrows the list. Only rendered once there is enough of a list to narrow. */
+  #filter: HTMLInputElement;
+  /** The current filter text, lowercased once rather than per row. */
+  #query = "";
   /**
    * Whether the list covers the conversation, or sits beside it.
    *
@@ -120,11 +132,25 @@ export class ThreadDrawer {
     this.#closeButton.addEventListener("click", () => this.close());
     header.append(this.#heading, this.#newButton, this.#closeButton);
 
+    // Hidden until the list is long enough to be worth narrowing. A search box
+    // above four conversations is a control asking to be used on something
+    // already entirely visible.
+    this.#filter = document.createElement("input");
+    this.#filter.type = "search";
+    this.#filter.className = "drawer-filter";
+    this.#filter.setAttribute("part", "drawer-filter");
+    this.#filter.placeholder = strings.searchConversations;
+    this.#filter.setAttribute("aria-label", strings.searchConversations);
+    this.#filter.addEventListener("input", () => {
+      this.#query = this.#filter.value.trim().toLowerCase();
+      this.#renderList();
+    });
+
     this.#list = document.createElement("div");
     this.#list.className = "drawer-list";
     this.#list.setAttribute("part", "drawer-list");
 
-    this.#panel.append(header, this.#list);
+    this.#panel.append(header, this.#filter, this.#list);
     this.element.append(backdrop, this.#panel);
   }
 
@@ -155,6 +181,8 @@ export class ThreadDrawer {
     this.#newButton.textContent = strings.newChat;
     this.#closeButton.title = strings.closeHistory;
     this.#closeButton.setAttribute("aria-label", strings.closeHistory);
+    this.#filter.placeholder = strings.searchConversations;
+    this.#filter.setAttribute("aria-label", strings.searchConversations);
     this.#renderList();
   }
 
@@ -256,17 +284,43 @@ export class ThreadDrawer {
 
   #renderList(): void {
     this.#list.replaceChildren();
-    if (this.#threads.length === 0) {
+    this.#filter.hidden = this.#threads.length < FILTER_FROM;
+    const shown = this.#matching();
+    if (shown.length === 0) {
       const empty = document.createElement("div");
       empty.className = "drawer-empty";
       empty.setAttribute("part", "drawer-empty");
-      empty.textContent = this.#strings.noConversations;
+      // Two different situations wearing one sentence would be a small lie:
+      // "no conversations yet" reads as data loss when what happened is that a
+      // filter matched nothing.
+      empty.textContent =
+        this.#threads.length === 0 ? this.#strings.noConversations : this.#strings.noMatches;
       this.#list.appendChild(empty);
       return;
     }
-    for (const meta of this.#threads) {
+    for (const meta of shown) {
       this.#list.appendChild(this.#renderRow(meta));
     }
+  }
+
+  /**
+   * The rows the filter leaves.
+   *
+   * Title and preview both, because the title is often the model's summary of
+   * a conversation and the thing being looked for is as likely to be a phrase
+   * from inside it. Client-side over what the drawer already holds: the server
+   * index is fetched whole, so a query would be a round trip to filter a list
+   * already in memory.
+   */
+  #matching(): readonly ThreadMeta[] {
+    if (this.#query === "") {
+      return this.#threads;
+    }
+    return this.#threads.filter(
+      (meta) =>
+        meta.title.toLowerCase().includes(this.#query) ||
+        meta.preview.toLowerCase().includes(this.#query),
+    );
   }
 
   #renderRow(meta: ThreadMeta): HTMLDivElement {

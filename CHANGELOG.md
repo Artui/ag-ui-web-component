@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The conversation list filters itself** once there are more than eight
+  conversations in it -- below that a search box is a control asking to be used
+  on a list you can already read in one glance. It matches the title **and** the
+  preview, because the title is often the model's one-line summary and the
+  phrase you remember is as likely to be inside the conversation as on it, and
+  it filters what the drawer already holds rather than going back to the server
+  for a list that is already in memory. A filter that matches nothing says so,
+  rather than reusing the sentence for having no conversations at all.
+
+- **`data-starters` offers prompts on an empty transcript.** A JSON array of
+  strings, drawn as chips that send themselves. Different from the suggestion
+  chips a run pushes, which are follow-ups to something already said -- these
+  answer the blank page, and they are the host's rather than the model's,
+  because only the host knows what its page is for. They are fallback content
+  for `slot="empty"`, so slotting your own replaces them entirely, and they
+  share the four-prompt and 120-character limits with the pushed chips.
+
 - **Up and Down walk back through what you have already sent**, from an empty
   composer with the skills palette closed. The shape every shell and every
   coding agent uses; the conditions are what make it safe, because an arrow

@@ -4024,6 +4024,13 @@ export class AgUiChat extends HTMLElement {
     this.#emptyWrap.setAttribute("part", "empty");
     const emptySlot = document.createElement("slot");
     emptySlot.name = "empty";
+    // Fallback content, so a host that slots its own gets exactly that and
+    // nothing of ours: the starters live *inside* the slot rather than beside
+    // it, which is the difference between an offer and an imposition.
+    const starters = this.#starterChips();
+    if (starters !== null) {
+      emptySlot.append(starters);
+    }
     this.#emptyWrap.append(emptySlot);
     this.#messages.append(this.#emptyWrap);
 
@@ -4403,6 +4410,39 @@ export class AgUiChat extends HTMLElement {
   }
 
   /** Hide the empty-state region once the message list holds anything else. */
+  /**
+   * The prompts offered on an empty transcript, from `data-starters`.
+   *
+   * Different from the suggestion chips a run pushes, which are follow-ups to
+   * something already said. These answer the blank-page question instead, and
+   * they are the host's rather than the model's -- only the host knows what its
+   * page is for. Shares the renderer, the count and the length limit, because
+   * two rows of prompt chips that behaved differently would be the harder
+   * thing to explain.
+   *
+   * Read once at connect: it is content for a state the widget is in before
+   * anything happens, and a host that wants it to change has `slot="empty"`.
+   */
+  #starterChips(): HTMLElement | null {
+    const raw = this.getAttribute("data-starters");
+    if (raw === null) {
+      return null;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      console.warn(
+        "<ag-ui-chat>: data-starters is not valid JSON, so no starters are shown. " +
+          "It takes an array of strings, e.g. data-starters='[\"Summarise this page\"]'.",
+      );
+      return null;
+    }
+    return renderSuggestionChips({ prompts: parsed }, this.#strings, (prompt) => {
+      void this.sendMessage(prompt);
+    });
+  }
+
   #updateEmptyState(): void {
     this.#emptyWrap.hidden = this.#messages.childElementCount > 1;
   }
