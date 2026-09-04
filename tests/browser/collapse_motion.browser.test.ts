@@ -182,8 +182,8 @@ describe("collapse and slide-over motion (real browser)", () => {
     expect(box.height).toBe(window.innerHeight);
   });
 
-  it.each(["embedded", "page"])("keeps %s collapsing to its header bar", async (placement) => {
-    const el = mount({ placement });
+  it("keeps embedded collapsing to its header bar", async () => {
+    const el = mount({ placement: "embedded" });
     el.setCollapsed(true);
     const chat = part(el, ".chat");
     await Promise.all(chat.getAnimations().map((a) => a.finished));
@@ -195,5 +195,46 @@ describe("collapse and slide-over motion (real browser)", () => {
     expect(getComputedStyle(part(el, ".launcher")).visibility).toBe("hidden");
     // ...and the widget still takes clicks, since it is part of the page flow.
     expect(getComputedStyle(el).pointerEvents).toBe("auto");
+  });
+
+  it("refuses to collapse the page placement through any reachable path", async () => {
+    const el = mount({ placement: "page" });
+    // The control is not offered.
+    expect(getComputedStyle(part(el, ".header-btn--collapse")).display).toBe("none");
+    // ...and the state is refused rather than merely unreachable.
+    el.setCollapsed(true);
+    expect(el.collapsed).toBe(false);
+    el.toggleCollapsed();
+    expect(el.collapsed).toBe(false);
+  });
+
+  it("renders a page panel in full even if the attribute is forced on", async () => {
+    // The one path no guard sees: an attribute written straight onto the
+    // element. Without the stylesheet neutralising it, this is the generic
+    // collapse -- panel scaled away, pointer events dropped -- under the single
+    // placement that also hides the launcher, so nothing would remain on screen
+    // and there would be no control left to undo it.
+    const el = mount({ placement: "page" });
+    el.setAttribute("collapsed", "");
+    const chat = part(el, ".chat");
+    await Promise.all(chat.getAnimations().map((a) => a.finished));
+
+    expect(getComputedStyle(chat).visibility).toBe("visible");
+    expect(getComputedStyle(chat).opacity).toBe("1");
+    expect(getComputedStyle(part(el, ".messages")).display).not.toBe("none");
+    expect(getComputedStyle(part(el, ".input-row")).display).not.toBe("none");
+    expect(getComputedStyle(el).pointerEvents).toBe("auto");
+  });
+
+  it("releases a collapsed panel when the placement changes to page", async () => {
+    // Collapsed under a placement that has the state, then moved to one that
+    // does not: the header control disappears with the attribute change, so
+    // holding the state would strand the panel.
+    const el = mount({ placement: "floating" });
+    el.setCollapsed(true);
+    expect(el.collapsed).toBe(true);
+
+    el.setAttribute("placement", "page");
+    expect(el.collapsed).toBe(false);
   });
 });

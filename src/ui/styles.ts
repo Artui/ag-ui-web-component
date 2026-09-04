@@ -601,9 +601,9 @@ export const STYLES = `
    Nothing paints there once the panel is gone, so the box only has to stop
    swallowing clicks: pointer events go to none and the launcher takes them.
 
-   Two placements collapse differently: "sidebar" slides to its rail (below),
-   while "embedded" and "page" keep the header bar, having no corner for a
-   floating circle that would escape the host's layout. */
+   Two placements do not use it: "sidebar" slides to its rail (below), and
+   "embedded" keeps its header bar, having no corner for a floating circle that
+   would escape the host's layout. "page" has no collapsed state at all. */
 :host([collapsed]) {
   pointer-events: none;
   /* A collapsed host has to be allowed to shrink, and in the layout hosts
@@ -665,35 +665,63 @@ export const STYLES = `
   transform-origin: bottom right;
 }
 
-/* The two in-flow placements keep the original collapse: hide the body, let
-   the host shrink to the header bar. */
-:host([collapsed]:is([placement="embedded"], [placement="page"])) {
+/* The in-flow placement keeps the original collapse: hide the body, let the
+   host shrink to the header bar. */
+:host([collapsed][placement="embedded"]) {
   height: auto;
   max-height: none;
   pointer-events: auto;
 }
 
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .chat {
+:host([collapsed][placement="embedded"]) .chat {
   opacity: 1;
   transform: none;
   visibility: visible;
 }
 
-/* These two keep the header bar, so the launcher must stay out of the way: an
+/* It keeps the header bar, so the launcher must stay out of the way: an
    embedded host is position: static, which would let an absolutely-positioned
    circle escape the layout and land against whatever the page positions. */
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .launcher {
+:host([collapsed][placement="embedded"]) .launcher {
   visibility: hidden;
   opacity: 0;
 }
 
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .messages-wrap,
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .messages,
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .input-row,
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .skill-chips,
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .skill-palette,
-:host([collapsed]:is([placement="embedded"], [placement="page"])) .skill-hint {
+:host([collapsed][placement="embedded"]) .messages-wrap,
+:host([collapsed][placement="embedded"]) .messages,
+:host([collapsed][placement="embedded"]) .input-row,
+:host([collapsed][placement="embedded"]) .skill-chips,
+:host([collapsed][placement="embedded"]) .skill-palette,
+:host([collapsed][placement="embedded"]) .skill-hint {
   display: none;
+}
+
+/* The page placement has no collapsed state, so it offers no control for one.
+   A dedicated route has no "away" to go to: shrinking it left a strip of
+   application chrome fixed over a route that no longer had an owner, and this
+   is the one placement where the launcher that would bring it back is hidden.
+
+   Hiding the control is only half of it. The state has another way in -- the
+   attribute can be written straight onto the element, and a value stored under
+   a different placement is restored on connect -- and the JS guards that catch
+   those cannot see an attribute set directly. So the placement neutralises the
+   state here as well: with the collapse rules above no longer naming "page", an
+   unguarded collapsed attribute would otherwise fall through to the generic
+   rule that scales the panel away and drops pointer events, leaving nothing on
+   screen and no launcher to press. */
+:host([placement="page"]) .header-btn--collapse {
+  display: none;
+}
+
+:host([placement="page"][collapsed]) {
+  pointer-events: auto;
+  align-self: auto;
+}
+
+:host([placement="page"][collapsed]) .chat {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
 }
 
 /* Jump-to-latest: shown only once the reader has scrolled away *and* missed

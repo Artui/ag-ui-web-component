@@ -1105,6 +1105,13 @@ export class AgUiChat extends HTMLElement {
       // Position is owned the same way a size is: a placement that places
       // itself takes back a launcher the user had dragged somewhere else.
       this.#releaseLauncherPosition();
+      // Switching into a placement with no collapsed state has to release it,
+      // not just stop offering it: the control is gone from the header the
+      // moment the attribute changes, so a panel collapsed under the previous
+      // placement would have no way back.
+      if (!this.#collapsible() && this.collapsed) {
+        this.setCollapsed(false);
+      }
       // Placement also moves the panel, so the edges its layout holds still
       // change with it. Deferred a frame so the new rules have applied.
       requestAnimationFrame(() => this.#syncResizeAnchor());
@@ -1551,7 +1558,11 @@ export class AgUiChat extends HTMLElement {
     this.#render();
     this.#drawer.setStrings(this.#strings);
     this.#checkpoints.setStrings(this.#strings);
-    if (this.#readScopedItem(COLLAPSED_KEY) === "1") {
+    // Gated on the placement, not just on the stored value: the key is
+    // namespaced per instance but not per placement, so a tab that collapsed a
+    // floating panel and later loaded the same instance as a page would restore
+    // a state that placement has no way out of.
+    if (this.#collapsible() && this.#readScopedItem(COLLAPSED_KEY) === "1") {
       this.setAttribute("collapsed", "");
     }
     this.#syncLauncher();
@@ -2202,6 +2213,9 @@ export class AgUiChat extends HTMLElement {
    * its own chrome.
    */
   setCollapsed(collapsed: boolean): void {
+    if (collapsed && !this.#collapsible()) {
+      return;
+    }
     if (!collapsed) {
       // Re-decide which way to open before opening: the viewport may have
       // changed since the launcher was dropped, and this corner is what the
@@ -2234,6 +2248,26 @@ export class AgUiChat extends HTMLElement {
    */
   get unread(): number {
     return this.#unread;
+  }
+
+  /**
+   * Whether this placement has a collapsed state at all.
+   *
+   * `page` does not. It is a dedicated route rather than a panel sitting on
+   * someone else's page, so there is no "away" for it to go to: collapsing it
+   * left a strip of application chrome fixed over a route that no longer had an
+   * owner. It is also the placement that hides the launcher, so the usual way
+   * back does not exist here.
+   *
+   * The header hides its collapse control under this placement, but a control
+   * removed from the UI is not a state removed from the model -- the property,
+   * the attribute and a value restored from storage all still reach it. This is
+   * what the reachable paths are gated on; the stylesheet covers the one path
+   * that never passes through here, an attribute written straight onto the
+   * element.
+   */
+  #collapsible(): boolean {
+    return this.getAttribute("placement") !== "page";
   }
 
   /** Flip the collapsed state. Bound to the built-in header toggle. */

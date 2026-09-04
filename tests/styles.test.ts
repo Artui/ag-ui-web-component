@@ -125,13 +125,28 @@ describe("STYLES", () => {
     expect(STYLES).toContain("visibility: visible;");
   });
 
-  it("keeps the header-bar collapse for the two in-flow placements", () => {
-    // A floating circle would escape an embedded widget's host layout, and a
-    // full-screen page route has no corner to float in.
-    const inFlow = ':host([collapsed]:is([placement="embedded"], [placement="page"]))';
+  it("keeps the header-bar collapse for the one in-flow placement", () => {
+    // A floating circle would escape an embedded widget's host layout, so that
+    // placement hides the body and keeps the bar instead.
+    const inFlow = ':host([collapsed][placement="embedded"])';
     expect(STYLES).toContain(`${inFlow} .skill-chips`);
     expect(STYLES).toContain(`${inFlow} .skill-palette`);
     expect(STYLES).toContain(`${inFlow} .input-row`);
+  });
+
+  it("gives the page placement no collapsed rendering to fall into", () => {
+    // The control is hidden, but an attribute written straight onto the element
+    // never passes through the guards that hide it -- so the placement has to
+    // neutralise the state here, or it would inherit the generic collapse that
+    // scales the panel away, under the one placement that hides the launcher.
+    expect(STYLES).toContain(':host([placement="page"]) .header-btn--collapse');
+    expect(STYLES).toContain(':host([placement="page"][collapsed]) {\n  pointer-events: auto;');
+    expect(STYLES).toContain(':host([placement="page"][collapsed]) .chat');
+    // And it must not have been left in the in-flow list it used to share.
+    // Stated as the shared selector rather than one of its rules: the page
+    // placement still has an .input-row rule of its own for the reading column,
+    // so the loose form of this assertion passes against the wrong thing.
+    expect(STYLES).not.toContain(':is([placement="embedded"], [placement="page"])');
   });
 
   it("slides the sidebar panel out through the edge it docks against", () => {
