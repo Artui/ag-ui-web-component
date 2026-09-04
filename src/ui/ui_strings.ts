@@ -19,6 +19,10 @@ export interface UiStrings {
   closeHistory: string;
   /** Placeholder in the conversation-list filter. */
   searchConversations: string;
+  /** Names the row of messages waiting for the run to finish. */
+  queued: string;
+  /** Drops one waiting message. `{text}` is the message. */
+  removeQueued: string;
   /** Shown when a filter matches nothing, unlike having no conversations. */
   noMatches: string;
   /** Notice text when the agent moved its own panel out of the way. */
@@ -299,6 +303,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   chatHistory: "Chat history",
   closeHistory: "Close history",
   searchConversations: "Search conversations",
+  queued: "Waiting to send",
+  removeQueued: 'Do not send "{text}"',
   noMatches: "No conversations match that.",
   chatMoved: "Moved this panel out of the way",
   chatMinimised: "Minimised this panel",

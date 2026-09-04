@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Enter during a run queues instead of doing nothing.** A second run cannot
+  start while one is in flight -- it would orphan the first, which is
+  unabortable, and the second's settle sweep would corrupt the first's still
+  pending tool cards -- so that key did nothing at all, silently, and the text
+  sat in the box.
+
+  What is waiting now shows above the composer as chips, each of which takes its
+  message back when pressed, and the next is sent when the run settles. Stopping
+  the run discards them: sending into a conversation someone has just stopped is
+  the opposite of what stopping meant. Text only -- an attachment is settled
+  state the tray already holds, and the composer has no second copy of it.
+
 - **A very long paste becomes an attachment rather than a wall of text.** Past
   5000 characters, and only where uploads are configured -- without somewhere
   for it to go, quietly dropping a paste for being long is far worse than an

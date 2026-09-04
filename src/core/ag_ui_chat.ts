@@ -846,6 +846,10 @@ export class AgUiChat extends HTMLElement {
   #launcherPos: { readonly left: number; readonly top: number } | null = null;
   /** What the user has sent this session, newest first, for arrow-key recall. */
   readonly #sentDrafts: string[] = [];
+  /** Typed while a run was in flight, oldest first; sent when it settles. */
+  readonly #queued: string[] = [];
+  /** The row those show up in, above the composer. */
+  readonly #queuedRow: HTMLDivElement = document.createElement("div");
   /** How far back the composer has been walked; null while the user is typing. */
   #recallIndex: number | null = null;
 
@@ -4093,6 +4097,11 @@ export class AgUiChat extends HTMLElement {
       emptySlot.append(starters);
     }
     this.#emptyWrap.append(emptySlot);
+    this.#queuedRow.className = "queued";
+    this.#queuedRow.setAttribute("part", "queued");
+    this.#queuedRow.setAttribute("role", "group");
+    this.#queuedRow.setAttribute("aria-label", this.#strings.queued);
+    this.#queuedRow.hidden = true;
     this.#messages.append(this.#emptyWrap);
 
     const inputRow = document.createElement("div");
@@ -4187,6 +4196,7 @@ export class AgUiChat extends HTMLElement {
       this.#skillsMenu.palette,
       this.#skillsMenu.chips,
       this.#skillHint,
+      this.#queuedRow,
       this.#attachSlot,
       inputRow,
       footer,
@@ -4589,6 +4599,11 @@ export class AgUiChat extends HTMLElement {
    * observes the disconnect).
    */
   #cancelRun(): void {
+    // Stopping discards what was waiting. Sending messages into a conversation
+    // the user has just stopped is the opposite of what stopping meant, and it
+    // would arrive after they had already turned away.
+    this.#queued.length = 0;
+    this.#renderQueued();
     this.#confirmAbort?.abort();
     this.#client?.cancel();
   }
@@ -4601,11 +4616,56 @@ export class AgUiChat extends HTMLElement {
    * that it carries no text.
    */
   #setRunning(running: boolean): void {
+    const settled = this.#running && !running;
     this.#running = running;
     const label = running ? this.#strings.stop : this.#strings.send;
     this.#send.title = label;
     this.#send.setAttribute("aria-label", label);
     this.#send.dataset["state"] = running ? "running" : "idle";
+    if (settled) {
+      this.#flushQueued();
+    }
+  }
+
+  /**
+   * Send the next message that was typed while the run was going.
+   *
+   * One at a time, through the same path as anything else: each queued turn
+   * starts a run of its own, and the next is sent when *that* one settles. Any
+   * other shape would be a second sender racing the guard above.
+   */
+  #flushQueued(): void {
+    const next = this.#queued.shift();
+    this.#renderQueued();
+    if (next !== undefined) {
+      void this.sendMessage(next);
+    }
+  }
+
+  /**
+   * Draw what is waiting, as chips that can be taken back.
+   *
+   * Visible and removable, because a message the user typed and cannot see is
+   * a message they will type again -- and one they changed their mind about
+   * has to be retractable before it is sent on their behalf.
+   */
+  #renderQueued(): void {
+    this.#queuedRow.replaceChildren();
+    this.#queuedRow.hidden = this.#queued.length === 0;
+    for (const [index, text] of this.#queued.entries()) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "queued-chip";
+      chip.setAttribute("part", "queued-chip");
+      chip.textContent = text;
+      chip.title = this.#strings.removeQueued.replace("{text}", text);
+      chip.setAttribute("aria-label", chip.title);
+      chip.addEventListener("click", () => {
+        this.#queued.splice(index, 1);
+        this.#renderQueued();
+      });
+      this.#queuedRow.appendChild(chip);
+    }
   }
 
   /**
@@ -4627,13 +4687,28 @@ export class AgUiChat extends HTMLElement {
     // Enter has no such guard; without this it would start a second concurrent
     // SSE run that orphans the first (unabortable) and lets the second run's
     // settle sweep corrupt the first's still-pending tool cards.
-    if (this.#running) {
-      return;
-    }
     const content = this.#input.value.trim();
     const attachments = this.#attachTray?.readyRefs() ?? [];
     // Allow an attachments-only message (no typed text), but nothing empty.
     if (content === "" && attachments.length === 0) {
+      return;
+    }
+    // A second run cannot start while one is in flight: it would orphan the
+    // first, which is unabortable, and the second's settle sweep would corrupt
+    // the first's still-pending tool cards. That is why this was a dead key --
+    // Enter during a run did nothing at all, silently.
+    //
+    // Queueing keeps the guard and gives the key something to do. Text only:
+    // an attachment is settled state the tray is holding and the composer has
+    // no second copy of, so parking it here would mean deciding what happens
+    // when the user then removes the chip.
+    if (this.#running) {
+      if (content !== "") {
+        this.#queued.push(content);
+        this.#renderQueued();
+        this.#input.value = "";
+        this.#autoGrow();
+      }
       return;
     }
     // Recorded before the box is cleared, newest first, so the arrow keys walk

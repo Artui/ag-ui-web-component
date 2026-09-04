@@ -3263,6 +3263,36 @@ export const STYLES = `
 /* Narrows the list. Sits under the header rather than in it: the header's two
    controls act on the conversation, and a field that filters what is below it
    belongs with what it filters. */
+/* What is waiting for the run to finish. Above the composer, beside the
+   attachment tray, because both are things already handed over and not yet
+   sent. Each chip is a button: pressing it takes that message back. */
+.queued {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--_space);
+  padding: 0 var(--_pad) var(--_space);
+}
+
+.queued-chip {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 4px 10px;
+  border: 1px dashed var(--_border);
+  border-radius: var(--_msg-radius);
+  background: var(--_bg);
+  color: var(--_muted);
+  font: inherit;
+  font-size: 0.9em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.queued-chip:hover {
+  border-style: solid;
+  color: var(--_fg);
+}
+
 .drawer-filter {
   flex: 0 0 auto;
   box-sizing: border-box;

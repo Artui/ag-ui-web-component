@@ -2762,7 +2762,7 @@ describe("AgUiChat — answer group", () => {
   });
 
   describe("client hardening", () => {
-    it("ignores a submit while a run is in flight", async () => {
+    it("starts no second run while one is in flight", async () => {
       let runs = 0;
       let release: () => void = () => {};
       const el = document.createElement(ELEMENT_TAG) as AgUiChat;
@@ -2785,14 +2785,16 @@ describe("AgUiChat — answer group", () => {
       await flush();
       expect(runs).toBe(1); // first run is in flight
 
-      // A second Enter while running hits #submit's guard: no second run, and
-      // the input is left untouched (the guard returns before clearing it).
+      // A second Enter while running hits the same guard: still one run. What
+      // the key does *instead* changed -- it used to leave the text in the box
+      // and do nothing at all, and now the message is queued and sent when the
+      // run settles -- but the guard this test is named for is the part that
+      // must not move, because a second concurrent run orphans the first.
       const input = inputOf(el);
       input.value = "second";
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
       await flush();
       expect(runs).toBe(1);
-      expect(input.value).toBe("second");
 
       release();
       await flush();
