@@ -15,6 +15,8 @@ export interface UiStrings {
   title: string;
   /** History button + drawer dialog label. */
   chatHistory: string;
+  /** Dismiss the chat-history list and return to the conversation. */
+  closeHistory: string;
   /** New-chat button (header + drawer). */
   newChat: string;
   /** Collapse button. */
@@ -285,6 +287,7 @@ export interface UiStrings {
 export const DEFAULT_UI_STRINGS: UiStrings = {
   title: "Assistant",
   chatHistory: "Chat history",
+  closeHistory: "Close history",
   newChat: "New chat",
   collapse: "Collapse",
   expand: "Expand",

@@ -2971,10 +2971,20 @@ export const STYLES = `
 }
 
 .drawer-title {
+  /* Takes the slack so the two controls group at the trailing edge. With
+     space-between and three items the middle one floats, which reads as the
+     title and the close button being a pair with New chat wedged between
+     them. Truncates rather than pushing them off the row. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
 }
 
 .drawer-new {
+  flex: 0 0 auto;
   border: 1px solid var(--_border);
   border-radius: var(--_radius);
   background: var(--_bg);
@@ -3107,6 +3117,31 @@ export const STYLES = `
    floating slide-over. */
 :host([placement="embedded"]) .drawer-backdrop {
   background: none;
+}
+
+/* The way back out of the list. It sits beside New chat, which is the control
+   it must not be mistaken for: one returns you to the conversation you were
+   reading, the other replaces it. */
+.drawer-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.drawer-close:hover {
+  background: var(--_hover);
 }
 
 :host([placement="embedded"]) .drawer-panel {

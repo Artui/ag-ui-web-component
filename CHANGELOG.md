@@ -86,6 +86,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The chat-history list could not be dismissed under the embedded
+  placement.** The drawer closes when its backdrop is clicked, which is enough
+  wherever a strip of backdrop is showing -- but `embedded` widens the panel to
+  the full width of the host's box on purpose, so there was none left to hit.
+  What remained was Escape, which is invisible, picking a row, and New chat,
+  which replaces the conversation you opened the list to get back to.
+
+  The drawer header now carries a close control, exposed as the `drawer-close`
+  part. It is a third control in a row built for two, so it was measured at the
+  narrow end: at a 220px panel nothing overflows and every control stays inside
+  it. The title takes the slack and truncates rather than pushing them out.
+
 - **The documented way to make a sidebar push content instead of overlaying it
   did not work.** Setting `--ag-ui-position: static` and placing the element in
   your own layout is what the README offers, and it put the panel at the

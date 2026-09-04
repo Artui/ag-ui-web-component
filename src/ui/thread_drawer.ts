@@ -39,6 +39,9 @@ export class ThreadDrawer {
   #strings: UiStrings;
   #threads: readonly ThreadMeta[] = [];
   #activeId = "";
+  /** Dismisses the list without starting a new conversation. */
+  #closeButton: HTMLButtonElement;
+
   /** The element focused before the drawer opened, restored on close. */
   #lastFocused: HTMLElement | null = null;
 
@@ -81,7 +84,21 @@ export class ThreadDrawer {
       this.close();
       this.#callbacks.onNew();
     });
-    header.append(this.#heading, this.#newButton);
+    // An explicit way back. The backdrop closes on click, which is enough
+    // wherever a strip of it is showing -- but the embedded placement widens
+    // the panel to the full width of the host's box, so there is no backdrop
+    // left to hit and the only exits were Escape, picking a row, or starting a
+    // new conversation. The first is invisible and the last is destructive of
+    // the thing you were looking at.
+    this.#closeButton = document.createElement("button");
+    this.#closeButton.type = "button";
+    this.#closeButton.className = "drawer-close";
+    this.#closeButton.setAttribute("part", "drawer-close");
+    this.#closeButton.title = strings.closeHistory;
+    this.#closeButton.setAttribute("aria-label", strings.closeHistory);
+    this.#closeButton.append(document.createTextNode("\u00d7"));
+    this.#closeButton.addEventListener("click", () => this.close());
+    header.append(this.#heading, this.#newButton, this.#closeButton);
 
     this.#list = document.createElement("div");
     this.#list.className = "drawer-list";
@@ -116,6 +133,8 @@ export class ThreadDrawer {
     this.#panel.setAttribute("aria-label", strings.chatHistory);
     this.#heading.textContent = strings.chats;
     this.#newButton.textContent = strings.newChat;
+    this.#closeButton.title = strings.closeHistory;
+    this.#closeButton.setAttribute("aria-label", strings.closeHistory);
     this.#renderList();
   }
 
