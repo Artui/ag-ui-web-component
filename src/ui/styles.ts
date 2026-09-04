@@ -619,16 +619,29 @@ export const STYLES = `
   border-inline-end: 1px solid var(--_border);
 }
 
-/* The icon keeps the accent, so there is one obvious thing to press. */
+/* The icon keeps the accent, so there is one obvious thing to press.
+
+   The glyph is sized here rather than left to fill the holder. A glyph in an
+   icon holder takes the holder's whole box by default, which is right where the
+   holder is only a box and wrong the moment it becomes a filled circle: the
+   mark then runs edge to edge and reads as a square crammed into a disc. The
+   proportion is the floating launcher's own -- a 26px glyph in a 56px bubble --
+   so the two collapsed states look like the same widget. */
 :host([placement="sidebar"][collapsed]) .launcher .icon-holder {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: var(--_header-bg);
   color: var(--_header-fg);
+}
+
+:host([placement="sidebar"][collapsed]) .launcher .icon-holder .glyph,
+:host([placement="sidebar"][collapsed]) .launcher .icon-holder .icon-img {
+  width: 16px;
+  height: 16px;
 }
 
 /* Written down the rail, which is the only direction it fits. Reading upward

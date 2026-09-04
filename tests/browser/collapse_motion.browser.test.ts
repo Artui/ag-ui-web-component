@@ -262,6 +262,25 @@ describe("collapse and slide-over motion (real browser)", () => {
     expect(label.textContent).toBe("Support");
     expect(getComputedStyle(label).display).not.toBe("none");
     expect(getComputedStyle(label).writingMode).toContain("vertical");
+    // The glyph has to sit inside its circle rather than fill it. A glyph in an
+    // icon holder takes the holder's whole box by default, which is right for a
+    // plain holder and wrong the moment it becomes a filled disc -- the mark
+    // then runs edge to edge and reads as a square crammed into a circle. The
+    // proportion is the floating launcher's own, so the two collapsed states
+    // look like the same widget.
+    const circle = part(el, ".launcher .icon-holder").getBoundingClientRect();
+    // Found from the holder rather than by one selector: the mark is a slotted
+    // SVG by default and an img when the host supplies an icon URL, and the
+    // proportion has to hold for both.
+    const holder = part(el, ".launcher .icon-holder");
+    const mark = holder.querySelector("svg, img");
+    if (mark === null) {
+      throw new Error("the rail circle has no mark in it");
+    }
+    const glyph = mark.getBoundingClientRect();
+    expect(glyph.width / circle.width).toBeLessThan(0.6);
+    expect(glyph.width / circle.width).toBeGreaterThan(0.35);
+
     // The accent is kept for the icon rather than flooding the whole rail.
     const rail = part(el, ".launcher");
     expect(getComputedStyle(rail).backgroundColor).toBe(
