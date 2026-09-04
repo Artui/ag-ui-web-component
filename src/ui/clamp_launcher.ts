@@ -1,4 +1,4 @@
-import type { Extent, LauncherBox } from "./launcher_placement.js";
+import type { LauncherBox, ViewportBox } from "./launcher_placement.js";
 
 /**
  * Keep a launcher fully on screen.
@@ -11,10 +11,16 @@ import type { Extent, LauncherBox } from "./launcher_placement.js";
  */
 export function clampLauncher(
   launcher: LauncherBox,
-  viewport: Extent,
+  viewport: ViewportBox,
 ): { readonly left: number; readonly top: number } {
   return {
-    left: Math.max(0, Math.min(launcher.left, viewport.width - launcher.width)),
-    top: Math.max(0, Math.min(launcher.top, viewport.height - launcher.height)),
+    left: Math.max(
+      viewport.left,
+      Math.min(launcher.left, viewport.left + viewport.width - launcher.width),
+    ),
+    top: Math.max(
+      viewport.top,
+      Math.min(launcher.top, viewport.top + viewport.height - launcher.height),
+    ),
   };
 }

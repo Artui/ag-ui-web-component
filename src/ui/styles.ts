@@ -465,11 +465,15 @@ export const STYLES = `
 /* Collapsed sidebar: shrink the host to the rail width and slide the panel out
    through the edge it docks against. Higher specificity than the generic
    collapse rules, so it wins regardless of source order. */
+/* The rail is the full height of what the host left, not of the screen. It
+   said 100vh and pinned its own bottom, which put it under any chrome the host
+   had reserved -- and the icon lives at the top of the rail, so the one control
+   that reopens the panel was the first thing to disappear behind a sticky
+   header. */
 :host([placement="sidebar"][collapsed]) {
   width: var(--_rail-width);
-  height: 100vh;
-  max-height: 100vh;
-  bottom: 0;
+  height: var(--_viewport-height);
+  max-height: var(--_viewport-height);
   pointer-events: auto;
 }
 
@@ -585,17 +589,70 @@ export const STYLES = `
 
 /* The sidebar collapses to an edge rail instead: full height, square, flush
    against the dock. It slides in with the panel rather than popping. */
+/* The edge rail. It reads as the docked edge of a panel rather than a coloured
+   stripe: the surface the panel is made of, a border on the side it docks
+   against, and the accent kept for the icon -- a full-height slab of accent is
+   the loudest thing on the page and says the least about itself.
+
+   Content sits at the top rather than centred, because a control floating in
+   the middle of a screen-high column has nothing to belong to. */
 :host([placement="sidebar"][collapsed]) .launcher {
   inset: 0;
   width: auto;
   height: auto;
-  align-items: flex-start;
-  padding-top: 16px;
-  border: 1px solid var(--_border);
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding-top: 14px;
+  border: 0;
+  border-inline-start: 1px solid var(--_border);
   border-radius: 0;
+  background: var(--_bg);
+  color: var(--_fg);
+  box-shadow: none;
+  transform: none;
+}
+
+:host([placement="sidebar"][data-side="left"][collapsed]) .launcher {
+  border-inline-start: 0;
+  border-inline-end: 1px solid var(--_border);
+}
+
+/* The icon keeps the accent, so there is one obvious thing to press. */
+:host([placement="sidebar"][collapsed]) .launcher .icon-holder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   background: var(--_header-bg);
   color: var(--_header-fg);
-  box-shadow: none;
+}
+
+/* Written down the rail, which is the only direction it fits. Reading upward
+   is the convention for a right-hand edge and matches how a docked panel's
+   label is set everywhere it appears. */
+.rail-label {
+  display: none;
+}
+
+:host([placement="sidebar"][collapsed]) .rail-label {
+  display: block;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  max-height: calc(100% - 96px);
+  overflow: hidden;
+  font-size: 0.9em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+:host([placement="sidebar"][data-side="left"][collapsed]) .rail-label {
+  writing-mode: vertical-rl;
   transform: none;
 }
 

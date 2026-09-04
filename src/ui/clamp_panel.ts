@@ -1,5 +1,5 @@
 import { EDGE_MARGIN } from "../constants.js";
-import type { Extent } from "./launcher_placement.js";
+import type { ViewportBox } from "./launcher_placement.js";
 import type { PanelRect } from "./resize_handle.js";
 
 /**
@@ -13,12 +13,18 @@ import type { PanelRect } from "./resize_handle.js";
  */
 export function clampPanel(
   host: PanelRect,
-  viewport: Extent,
+  viewport: ViewportBox,
   margin: number = EDGE_MARGIN,
 ): PanelRect {
   const width = host.right - host.left;
   const height = host.bottom - host.top;
-  const left = Math.max(margin, Math.min(host.left, viewport.width - margin - width));
-  const top = Math.max(margin, Math.min(host.top, viewport.height - margin - height));
+  const left = Math.max(
+    viewport.left + margin,
+    Math.min(host.left, viewport.left + viewport.width - margin - width),
+  );
+  const top = Math.max(
+    viewport.top + margin,
+    Math.min(host.top, viewport.top + viewport.height - margin - height),
+  );
   return { left, top, right: left + width, bottom: top + height };
 }

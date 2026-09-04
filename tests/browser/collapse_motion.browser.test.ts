@@ -233,6 +233,50 @@ describe("collapse and slide-over motion (real browser)", () => {
     expect(mount({}).collapsed).toBe(false);
   });
 
+  it("keeps the edge rail out of the edges the host reserved", async () => {
+    // The rail said 100vh and pinned its own bottom, so it ran under whatever
+    // chrome the host had reserved -- and its icon lives at the top, which
+    // made the one control that reopens the panel the first thing to
+    // disappear behind a sticky header.
+    const el = mount({ placement: "sidebar" });
+    el.style.setProperty("--ag-ui-viewport-inset-top", "120px");
+    el.setCollapsed(true);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const host = el.getBoundingClientRect();
+    expect(host.top).toBeCloseTo(120, 0);
+    expect(host.bottom).toBeLessThanOrEqual(window.innerHeight + 1);
+
+    const icon = part(el, ".launcher .icon-holder").getBoundingClientRect();
+    expect(icon.top).toBeGreaterThanOrEqual(120);
+  });
+
+  it("says what the rail is, rather than being a coloured stripe", async () => {
+    // A screen-high column carrying one small icon is the widest collapsed
+    // state there is and the one that said least about itself.
+    const el = mount({ placement: "sidebar", "title-text": "Support" });
+    el.setCollapsed(true);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const label = part(el, ".rail-label");
+    expect(label.textContent).toBe("Support");
+    expect(getComputedStyle(label).display).not.toBe("none");
+    expect(getComputedStyle(label).writingMode).toContain("vertical");
+    // The accent is kept for the icon rather than flooding the whole rail.
+    const rail = part(el, ".launcher");
+    expect(getComputedStyle(rail).backgroundColor).toBe(
+      getComputedStyle(el).getPropertyValue("--ag-ui-bg").trim() || "rgb(255, 255, 255)",
+    );
+  });
+
+  it("hides the rail caption everywhere the launcher is a bubble", async () => {
+    const el = mount({ placement: "floating" });
+    el.setCollapsed(true);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(getComputedStyle(part(el, ".rail-label")).display).toBe("none");
+  });
+
   it("refuses to collapse the page placement through any reachable path", async () => {
     const el = mount({ placement: "page" });
     // The control is not offered.

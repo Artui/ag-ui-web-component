@@ -4,7 +4,10 @@ import { launcherPlacement } from "../src/ui/launcher_placement.js";
 /** A 56px launcher, the component's default size. */
 const box = (left: number, top: number, size = 56) => ({ left, top, width: size, height: size });
 const panel = { width: 380, height: 560 };
-const desktop = { width: 1440, height: 900 };
+// A screen with an origin: the clamps take a box rather than a size now, because
+// a host can reserve the edges its own chrome occupies and a widget clamped
+// against the whole screen parks itself underneath one.
+const desktop = { left: 0, top: 0, width: 1440, height: 900 };
 
 describe("launcherPlacement", () => {
   it("reproduces the resting layout exactly for an undragged launcher", () => {
@@ -12,7 +15,7 @@ describe("launcherPlacement", () => {
     // host box's bottom-right corner. Feeding this function where that puts the
     // launcher has to hand back the same two values, or simply mounting the
     // widget would shift it.
-    const viewport = { width: 414, height: 896 };
+    const viewport = { left: 0, top: 0, width: 414, height: 896 };
     const sized = { width: 366, height: 560 };
     const resting = box(viewport.width - 24 - 56, viewport.height - 24 - 56);
 
@@ -73,7 +76,7 @@ describe("launcherPlacement", () => {
   it("holds the panel inside the viewport and leaves the launcher where it was", () => {
     // Dragged to the vertical middle of a short viewport: 560px of panel fits
     // neither above nor below, so the winning corner still overflows.
-    const shallow = { width: 1440, height: 700 };
+    const shallow = { left: 0, top: 0, width: 1440, height: 700 };
     const middle = box(600, 320);
 
     const placed = launcherPlacement(middle, panel, shallow);
@@ -90,7 +93,7 @@ describe("launcherPlacement", () => {
   it("holds a clamped panel against the near margin rather than off-screen", () => {
     // A panel wider than the viewport can satisfy neither bound, and the lower
     // one wins, so its left edge sits on the margin rather than hanging off.
-    const narrow = { width: 320, height: 900 };
+    const narrow = { left: 0, top: 0, width: 320, height: 900 };
 
     const placed = launcherPlacement(box(200, 100), { width: 800, height: 560 }, narrow);
 

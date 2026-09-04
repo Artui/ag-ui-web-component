@@ -10,6 +10,20 @@ export interface LauncherBox {
   readonly height: number;
 }
 
+/**
+ * The part of the screen a widget may rest in: a width and height, and the
+ * corner they start from.
+ *
+ * The origin is not always zero. A host can reserve the edges its own chrome
+ * occupies, and a panel clamped against a viewport that starts at the top-left
+ * of the screen will happily park itself underneath a sticky header -- where it
+ * cannot be reached, and where collapsing it only hides it further.
+ */
+export interface ViewportBox extends Extent {
+  readonly left: number;
+  readonly top: number;
+}
+
 /** A width/height pair, in CSS pixels. */
 export interface Extent {
   readonly width: number;
@@ -71,7 +85,7 @@ export interface LauncherPlacement {
 export function launcherPlacement(
   launcher: LauncherBox,
   panel: Extent,
-  viewport: Extent,
+  viewport: ViewportBox,
   margin: number = EDGE_MARGIN,
 ): LauncherPlacement {
   // Room for a panel pinned to each side of the launcher. A tie goes to the

@@ -173,6 +173,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A panel could be dragged somewhere it could not be rescued from.** The
+  clamps that keep it on screen measured a viewport starting at the top-left of
+  the display, so a panel dragged upward settled happily underneath a host's
+  sticky header -- and collapsing it, the one thing a user tries, replaced an
+  unreachable panel with an unreachable launcher. They now clamp against the
+  box the host actually left, reserved edges included.
+
+- **The sidebar's edge rail ran under reserved chrome, and looked like a
+  stripe.** It asked for `100vh` and pinned its own bottom, so it ignored those
+  same reserved edges -- and the icon lives at the top of the rail, which made
+  the one control that reopens the panel the first thing to disappear behind a
+  header.
+
+  It has also been redesigned. A screen-high slab of accent carrying one small
+  icon is the widest collapsed state the widget has and the one that said least
+  about itself; it now reads as the docked edge of a panel -- the surface the
+  panel is made of, a border on the side it docks against, the accent kept for
+  the icon, and the widget's own title set down the rail as a caption
+  (`rail-label` part).
+
 - **A panel no longer sizes itself to screen space the on-screen keyboard is
   covering.** No CSS length describes this: a keyboard has no effect on any
   viewport-percentage unit, so `100vh`, `100dvh` and `100svh` are the same

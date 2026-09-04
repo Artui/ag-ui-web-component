@@ -5,7 +5,10 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-const VIEWPORT = { width: 1000, height: 800 };
+// A screen with an origin: the clamps take a box rather than a size now, because
+// a host can reserve the edges its own chrome occupies and a widget clamped
+// against the whole screen parks itself underneath one.
+const VIEWPORT = { left: 0, top: 0, width: 1000, height: 800 };
 /** A 56px launcher resting at the bottom-right, where the CSS puts it. */
 const START = { left: 920, top: 720, width: 56, height: 56 };
 

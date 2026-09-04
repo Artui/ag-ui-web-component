@@ -1,5 +1,5 @@
 import { clampLauncher } from "./clamp_launcher.js";
-import type { Extent, LauncherBox } from "./launcher_placement.js";
+import type { LauncherBox, ViewportBox } from "./launcher_placement.js";
 
 /** What the drag needs from its host to do its job. */
 export interface LauncherDragOptions {
@@ -12,7 +12,7 @@ export interface LauncherDragOptions {
   /** The launcher's current box, in viewport coordinates. */
   readonly rect: () => LauncherBox;
   /** The viewport the launcher has to stay inside. */
-  readonly viewport: () => Extent;
+  readonly viewport: () => ViewportBox;
   /** Put the launcher's top-left at this point. Called per pointer move. */
   readonly apply: (left: number, top: number) => void;
   /**

@@ -74,9 +74,9 @@ import { copyPayload } from "../ui/copy_payload.js";
 import { enableLauncherDrag } from "../ui/launcher_drag.js";
 import {
   type ExpandCorner,
-  type Extent,
   type LauncherBox,
   launcherPlacement,
+  type ViewportBox,
 } from "../ui/launcher_placement.js";
 import {
   attachMessageActions,
@@ -826,6 +826,8 @@ export class AgUiChat extends HTMLElement {
   readonly #launcher: HTMLButtonElement;
   /** The launcher's unread badge; hidden at zero, and when the host opts out. */
   readonly #badge: HTMLSpanElement;
+  /** The rail's vertical caption. Rendered only by the sidebar's edge rail. */
+  readonly #railLabel: HTMLSpanElement = document.createElement("span");
   // Answers that finished while the widget was collapsed. Expanding clears it.
   #unread = 0;
   /** Empty-state region at the top of the message list; hidden once anything renders. */
@@ -1132,6 +1134,7 @@ export class AgUiChat extends HTMLElement {
       // `#strings` is the resolved table once connected, the English defaults
       // before then.
       this.#title.textContent = value ?? this.#strings.title;
+      this.#railLabel.textContent = this.#title.textContent;
       return;
     }
     if (name === "user-key") {
@@ -2585,12 +2588,25 @@ export class AgUiChat extends HTMLElement {
    * Falls back where the API is absent, which keeps this working in the
    * happy-dom project as well as in an old browser.
    */
-  #viewport(): Extent {
+  #viewport(): ViewportBox {
     const visual = window.visualViewport;
-    if (visual === null || visual === undefined) {
-      return { width: window.innerWidth, height: window.innerHeight };
-    }
-    return { width: visual.width, height: visual.height };
+    const width = visual?.width ?? window.innerWidth;
+    const height = visual?.height ?? window.innerHeight;
+    // And minus whatever the host reserved for its own chrome. Without this a
+    // panel is clamped against the whole screen and settles happily underneath
+    // a sticky header, where it cannot be reached -- and where collapsing it,
+    // the one thing a user tries, hides it completely rather than rescuing it.
+    // Read from the resolved aliases so the default of zero costs nothing.
+    const style = getComputedStyle(this);
+    const edge = (name: string): number => Number.parseFloat(style.getPropertyValue(name));
+    const left = edge("--_viewport-inset-left");
+    const top = edge("--_viewport-inset-top");
+    return {
+      left,
+      top,
+      width: Math.max(0, width - left - edge("--_viewport-inset-right")),
+      height: Math.max(0, height - top - edge("--_viewport-inset-bottom")),
+    };
   }
 
   /**
@@ -3953,8 +3969,18 @@ export class AgUiChat extends HTMLElement {
     // decoration to a screen reader rather than a second, context-free number.
     this.#badge.setAttribute("aria-hidden", "true");
     this.#badge.hidden = true;
+    // Only the edge rail shows this. A full-height column carrying one small
+    // icon reads as a coloured stripe rather than a way back into a
+    // conversation -- it is the widest collapsed state there is and the one
+    // that says least about itself. Written here and hidden in CSS everywhere
+    // else, because the launcher is one element shaped by placement.
+    this.#railLabel.className = "rail-label";
+    this.#railLabel.setAttribute("part", "rail-label");
+    this.#railLabel.setAttribute("aria-hidden", "true");
+    this.#railLabel.textContent = this.getAttribute("title-text") ?? this.#strings.title;
     this.#launcher.append(
       this.#iconElement("launcher", "launcher-icon", ICON_LAUNCHER, this.#launcherIconUrl()),
+      this.#railLabel,
       this.#badge,
     );
     this.#launcher.addEventListener("click", () => this.setCollapsed(false));
