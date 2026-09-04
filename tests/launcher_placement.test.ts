@@ -118,6 +118,30 @@ describe("launcherPlacement", () => {
     expect(placed.hostInset).toBe("101px auto auto 200px");
   });
 
+  it("picks the corner against the usable box's own edges, not its extents", () => {
+    // The room on each side has to be measured from the edges the launcher is
+    // actually between. The extents have already had the host's reserved edges
+    // taken out of them while the launcher's coordinates are still the
+    // screen's, so reading `viewport.height` as if the box started at zero
+    // understates the room below by the reserved top and overstates the room
+    // above it by the same amount -- a 2x error pointing the wrong way, which
+    // is enough to invert the choice rather than merely shade it.
+    const screen = { width: 1440, height: 800 };
+    const usable = { left: 0, top: 100, width: 1440, height: 700 };
+    // Above the usable box's own middle (100 + 350 = 450), so a panel opens
+    // downward into 420px of room rather than upward into 280px.
+    const launcher = box(600, 380);
+
+    expect(launcherPlacement(launcher, panel, usable, screen).corner.y).toBe("top");
+
+    // And the same on x, where a reserved left rail makes the mistake visible
+    // as a panel opening back across the rail it was pushed out of.
+    const rail = { left: 300, top: 0, width: 1140, height: 900 };
+    // 40px right of the rail's inner edge: nearly all the room is to the
+    // right, so the panel is pinned left and runs rightward.
+    expect(launcherPlacement(box(340, 400), panel, rail, screen).corner.x).toBe("left");
+  });
+
   it("measures insets from the screen, not from the box the host left free", () => {
     // The regression this argument exists for. A CSS inset on a fixed element
     // is measured from the real viewport edges, so expressing a bottom against

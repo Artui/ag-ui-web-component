@@ -770,6 +770,12 @@ export class AgUiChat extends HTMLElement {
   readonly #root: ShadowRoot;
   /** Screen-reader-only status region -- see {@link AgUiChat.#announce}. */
   readonly #announcer = document.createElement("div");
+  /**
+   * A zero-sized box carrying the host's viewport insets as padding, so they
+   * can be read back as used pixel lengths. See the `.viewport-probe` rule for
+   * why a custom property cannot be read directly.
+   */
+  readonly #viewportProbe = document.createElement("div");
   /** Return-to-foot affordance, shown only once something has been missed. */
   readonly #jumpButton = document.createElement("button");
   /**
@@ -906,6 +912,15 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     this.#restoreLauncherPosition();
+    // Docking is decided by width, so a resize can cross the threshold with
+    // the drawer already open. Without this the rail keeps a narrow
+    // transcript's width, the focus trap stays off, and the backdrop that
+    // would dismiss it is still display:none. Only while it is open: the two
+    // are re-decided on the way in, and a closed drawer has no layout to fix.
+    if (this.#drawer.isOpen()) {
+      this.#drawer.setModal(!this.#threadsDock());
+      this.#syncThreadsState();
+    }
   };
 
   /**
@@ -2381,7 +2396,13 @@ export class AgUiChat extends HTMLElement {
     // noise; there is also nothing to undo that the collapse control does not
     // already do.
     if (options.announce === true && collapsed && !this.collapsed) {
-      this.#announceSurfaceChange(this.#strings.chatMinimised, () => this.setCollapsed(false));
+      // No undo beside this one. The notice is written into the transcript and
+      // the transcript is then hidden by the very collapse it describes, so
+      // the only way to read it is to expand the panel -- which is what the
+      // undo would have done. By the time the button can be seen it has
+      // nothing left to do, and a control that is always a no-op is worse than
+      // no control. Same reasoning as the expand case just below.
+      this.#announceSurfaceChange(this.#strings.chatMinimised, null);
     }
     if (!collapsed) {
       // Re-decide which way to open before opening: the viewport may have
@@ -2483,6 +2504,7 @@ export class AgUiChat extends HTMLElement {
       collapsed: this.collapsed,
       collapsible: this.#collapsible(),
       movable: this.#launcherDraggable() && !fullBleed,
+      draggable: this.#launcherDraggable(),
       fullBleed,
       box: {
         left: Math.round(box.left),
@@ -2490,7 +2512,12 @@ export class AgUiChat extends HTMLElement {
         width: Math.round(box.width),
         height: Math.round(box.height),
       },
-      viewport: { width: Math.round(viewport.width), height: Math.round(viewport.height) },
+      viewport: {
+        left: Math.round(viewport.left),
+        top: Math.round(viewport.top),
+        width: Math.round(viewport.width),
+        height: Math.round(viewport.height),
+      },
     };
   }
 
@@ -2516,21 +2543,32 @@ export class AgUiChat extends HTMLElement {
       return false;
     }
     const [edgeY, edgeX] = corner.split("-");
+    // Every term is an absolute screen coordinate, because that is what the
+    // clamps and the insets both speak. The usable box carries an origin, so
+    // its near edge is `viewport.left`, not zero, and its far edge is
+    // `viewport.left + viewport.width` -- a margin applied to the extents
+    // alone would send the agent's own move under the chrome the host
+    // reserved, which is the failure the usable box exists to prevent.
+    const nearX = viewport.left + EDGE_MARGIN;
+    const nearY = viewport.top + EDGE_MARGIN;
     const left =
       edgeX === "left"
-        ? EDGE_MARGIN
-        : Math.max(EDGE_MARGIN, viewport.width - EDGE_MARGIN - box.width);
+        ? nearX
+        : Math.max(nearX, viewport.left + viewport.width - EDGE_MARGIN - box.width);
     const top =
       edgeY === "top"
-        ? EDGE_MARGIN
-        : Math.max(EDGE_MARGIN, viewport.height - EDGE_MARGIN - box.height);
+        ? nearY
+        : Math.max(nearY, viewport.top + viewport.height - EDGE_MARGIN - box.height);
     const host = { left, top, right: left + box.width, bottom: top + box.height };
-    const size = this.#launcher.offsetWidth;
+    // Both axes measured, rather than one read twice: a host can restyle the
+    // launcher as a pill, and squaring it here would put it off the corner.
+    const launcherWidth = this.#launcher.offsetWidth;
+    const launcherHeight = this.#launcher.offsetHeight;
     this.#placePanelAndLauncher(host, {
-      left: edgeX === "left" ? host.left : host.right - size,
-      top: edgeY === "top" ? host.top : host.bottom - size,
-      width: size,
-      height: size,
+      left: edgeX === "left" ? host.left : host.right - launcherWidth,
+      top: edgeY === "top" ? host.top : host.bottom - launcherHeight,
+      width: launcherWidth,
+      height: launcherHeight,
     });
     this.#storeLauncherPosition();
     if (restore !== null) {
@@ -2574,7 +2612,16 @@ export class AgUiChat extends HTMLElement {
       this.#launcherPos = launcherPos;
       this.#panelPos = panelPos;
       this.#expandCorner = expandCorner;
-      this.#storeLauncherPosition();
+      // Erased rather than rewritten when there was nothing to go back to.
+      // #storeLauncherPosition returns early for a null position, which would
+      // leave the move this is undoing sitting in storage -- and since that
+      // store outlives the tab, the next resize or reload would quietly put
+      // the panel back in the corner the user had just rejected.
+      if (launcherPos === null) {
+        this.#clearPreference(LAUNCHER_KEY);
+      } else {
+        this.#storeLauncherPosition();
+      }
       this.#syncResizeAnchor();
     };
   }
@@ -2789,16 +2836,27 @@ export class AgUiChat extends HTMLElement {
     // panel is clamped against the whole screen and settles happily underneath
     // a sticky header, where it cannot be reached -- and where collapsing it,
     // the one thing a user tries, hides it completely rather than rescuing it.
-    // Read from the resolved aliases so the default of zero costs nothing.
-    const style = getComputedStyle(this);
-    const edge = (name: string): number => Number.parseFloat(style.getPropertyValue(name));
-    const left = edge("--_viewport-inset-left");
-    const top = edge("--_viewport-inset-top");
+    // Read as padding off the probe, not as custom properties off this
+    // element. `getPropertyValue` on an unregistered custom property returns
+    // the token stream rather than a length, so a host stating `4rem` reserves
+    // four pixels here and sixty-four in the stylesheet, and one stating
+    // `calc(56px + env(safe-area-inset-top))` -- which is the natural spelling
+    // of what the token's own documentation recommends -- parses as NaN and
+    // takes the panel's whole inset down with it.
+    const style = getComputedStyle(this.#viewportProbe);
+    const edge = (name: string): number => {
+      const value = Number.parseFloat(style.getPropertyValue(name));
+      // A detached or not-yet-rendered probe resolves to nothing at all, and
+      // reserving NaN is worse than reserving zero in every case.
+      return Number.isFinite(value) ? value : 0;
+    };
+    const left = edge("padding-left");
+    const top = edge("padding-top");
     return {
       left,
       top,
-      width: Math.max(0, width - left - edge("--_viewport-inset-right")),
-      height: Math.max(0, height - top - edge("--_viewport-inset-bottom")),
+      width: Math.max(0, width - left - edge("padding-right")),
+      height: Math.max(0, height - top - edge("padding-bottom")),
     };
   }
 
@@ -2811,10 +2869,21 @@ export class AgUiChat extends HTMLElement {
    * browser measures it from.
    */
   #screen(): Extent {
-    const visual = window.visualViewport;
+    // The *layout* viewport, and `clientWidth`/`clientHeight` rather than
+    // `innerWidth`/`innerHeight`, because those two disagree by the width of a
+    // classic scrollbar and it is the smaller one a fixed element is laid out
+    // against. Reading the visual viewport here would be the same mistake one
+    // level up as clamping against the whole screen was one level down: a
+    // keyboard shrinks the visual viewport without moving the box CSS measures
+    // an inset from, so a panel the clamp had just held inside the visible
+    // band would be written back out behind the keyboard.
+    //
+    // The zero checks are for a detached or not-yet-laid-out document, where
+    // `clientWidth` is 0 and no viewport ever is.
+    const root = document.documentElement;
     return {
-      width: visual?.width ?? window.innerWidth,
-      height: visual?.height ?? window.innerHeight,
+      width: root.clientWidth || window.innerWidth,
+      height: root.clientHeight || window.innerHeight,
     };
   }
 
@@ -3490,6 +3559,27 @@ export class AgUiChat extends HTMLElement {
     writeStoredItem(key, value);
   }
 
+  /**
+   * Drop a layout preference from both stores.
+   *
+   * The mirror of {@link AgUiChat.#writePreference}, and it has to clear both
+   * for the same reason that writes both: leaving either copy behind means the
+   * value comes back on the next read.
+   */
+  #clearPreference(base: string): void {
+    const key = this.#storageKey(base);
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // A store that denies access; the per-tab copy below still goes.
+    }
+    try {
+      sessionStorage.removeItem(key);
+    } catch {
+      // Nothing left to do: the value was never persisted in the first place.
+    }
+  }
+
   /** Reflect the current theme on the toggle: show the destination's glyph. */
   #syncThemeGlyph(): void {
     const dark = this.getAttribute("theme") === "dark";
@@ -3628,6 +3718,13 @@ export class AgUiChat extends HTMLElement {
     this.#client = null;
     this.#clearTranscript();
     this.#initialMessages = [];
+    // The composer's own history goes with the conversation it was typed
+    // into. The path that makes this more than tidiness is the `user-key`
+    // rescope, which purges storage and wipes the transcript precisely so the
+    // previous principal's words are not visible to the next one -- and would
+    // otherwise leave every one of them a single ArrowUp away.
+    this.#sentDrafts.length = 0;
+    this.#recallIndex = null;
   }
 
   /**
@@ -4328,7 +4425,9 @@ export class AgUiChat extends HTMLElement {
     }
     this.#focusableGrip();
     this.#adoptStyles();
-    this.#root.append(this.#announcer, this.#chat, this.#launcher);
+    this.#viewportProbe.className = "viewport-probe";
+    this.#viewportProbe.setAttribute("aria-hidden", "true");
+    this.#root.append(this.#viewportProbe, this.#announcer, this.#chat, this.#launcher);
   }
 
   /**
@@ -4648,6 +4747,21 @@ export class AgUiChat extends HTMLElement {
     // Stopping discards what was waiting. Sending messages into a conversation
     // the user has just stopped is the opposite of what stopping meant, and it
     // would arrive after they had already turned away.
+    //
+    // Not sending it is not the same as destroying it, though. A queued
+    // message left the composer the moment it was queued, so dropping it here
+    // would take a paragraph the user typed and leave it nowhere -- not on
+    // screen, not in the composer, not recallable. It goes to the front of the
+    // recall history instead, so ArrowUp gets it back. In queue order, which
+    // puts the one typed last first.
+    //
+    // This path is also reached from `disconnectedCallback`, where a DOM move
+    // and a framework re-render both look like a farewell and neither is one.
+    for (const text of this.#queued) {
+      if (this.#sentDrafts[0] !== text) {
+        this.#sentDrafts.unshift(text);
+      }
+    }
     this.#queued.length = 0;
     this.#renderQueued();
     this.#confirmAbort?.abort();
@@ -5821,8 +5935,13 @@ export class AgUiChat extends HTMLElement {
    * own page and does not need telling what it just did; an agent doing it
    * mid-conversation is the case where a panel appears to move on its own.
    */
-  #announceSurfaceChange(text: string, undo: () => void): void {
-    this.#appendNotice("⤢", text, "surface", { label: this.#strings.undo, onActivate: undo });
+  #announceSurfaceChange(text: string, undo: (() => void) | null): void {
+    this.#appendNotice(
+      "⤢",
+      text,
+      "surface",
+      undo === null ? undefined : { label: this.#strings.undo, onActivate: undo },
+    );
   }
 
   /**

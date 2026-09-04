@@ -44,8 +44,11 @@ describe("STYLES", () => {
     expect(STYLES).toContain("--_width: var(--ag-ui-width, 380px);");
     expect(STYLES).toContain("--_height: var(--ag-ui-height, 560px);");
     // The floating margins are added to whatever edges the host reserved, so
-    // the default is an expression rather than a literal.
-    expect(STYLES).toContain("auto calc(24px + var(--_viewport-inset-right))");
+    // the default is an expression rather than a literal. The gutter itself is
+    // a token because the size cap has to subtract the same one the inset
+    // spends -- stating 24 twice is how those two came apart.
+    expect(STYLES).toContain("--_edge-gutter: var(--ag-ui-edge-gutter, 24px);");
+    expect(STYLES).toContain("auto calc(var(--_edge-gutter) + var(--_viewport-inset-right))");
     expect(STYLES).toContain("--_radius: var(--ag-ui-radius, 12px);");
   });
 

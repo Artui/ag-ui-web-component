@@ -198,6 +198,11 @@ export const STYLES = `
      with a keyboard up its bottom edge -- and the launcher that lives at that
      corner -- sits behind the keyboard however tall the panel is. This is what
      lifts it clear. */
+  /* Two tokens, for the same reason the height above has two: the element
+     writes the measurement inline, and a host that states its own value needs
+     a knob that outranks that write rather than one the next write replaces.
+     A host wanting no keyboard lift at all sets --ag-ui-keyboard-inset: 0px. */
+  --_keyboard-inset: var(--ag-ui-keyboard-inset, var(--_visual-viewport-inset-bottom));
   --_visual-viewport-inset-bottom: var(--ag-ui-visual-viewport-inset-bottom, 0px);
   --_viewport-width: var(
     --ag-ui-viewport-width,
@@ -211,31 +216,42 @@ export const STYLES = `
   --_z-index: var(--ag-ui-z-index, 2147483000);
   --_width: var(--ag-ui-width, 380px);
   --_height: var(--ag-ui-height, 560px);
+  /* The gutter a resting floating panel keeps between itself and the edge of
+     the box the host left free. One number, because the inset below spends it
+     and the cap beneath has to know it was spent. */
+  --_edge-gutter: var(--ag-ui-edge-gutter, 24px);
   --_inset: var(
     --ag-ui-inset,
-    auto calc(24px + var(--_viewport-inset-right))
-      calc(24px + var(--_viewport-inset-bottom) + var(--_visual-viewport-inset-bottom)) auto
+    auto calc(var(--_edge-gutter) + var(--_viewport-inset-right))
+      calc(var(--_edge-gutter) + var(--_viewport-inset-bottom) + var(--_keyboard-inset)) auto
   );
-  /* The cap is what the host left free, with no gutter subtracted from it.
-     The gutter belongs in the resting inset above, which is what holds a panel
-     nobody has touched clear of the screen edge; taking it out of the cap as
-     well left the size and the position disagreeing about where the limit is,
-     and a gesture has to land somewhere.
+  /* The cap is what the host left free, less the *one* gutter the inset above
+     spends on the anchored edge -- not two, and not none.
 
-     It showed on one axis only, and the arithmetic says why: the default panel
-     is 560 tall against a cap of the viewport minus 48, which on an 800px
-     screen with a header reserved is 72px of headroom -- so the height reaches
-     its cap almost immediately. The default width is 380 against a cap near
-     1230, which is 850px of headroom nothing ever reaches. Same rule, and only
-     the vertical one was ever felt.
-
+     Two was the first answer and it was felt on one axis only. The arithmetic
+     says why: the default panel is 560 tall against a cap of the viewport
+     minus 48, which on an 800px screen with a header reserved is 72px of
+     headroom, so the height reaches its cap almost immediately; the default
+     width is 380 against a cap near 1230, which is 850px nothing ever reaches.
      Once the size is capped a grip cannot grow the panel, so a pull on the
-     anchored edge is written as position instead and the panel travels; and a
-     pull on the free edge stops a whole gutter short of the edge a drag can
-     reach. The bound in #withinViewport is now the only limit, and it is the
-     same one the drag uses. */
-  --_max-width: var(--ag-ui-max-width, var(--_viewport-width));
-  --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
+     anchored edge is written as position instead and the panel travels, and a
+     pull on the free edge stops a whole gutter short of an edge a drag can
+     reach.
+
+     None was the correction, and it overshot: the panel is anchored bottom-
+     right with a gutter already spent there, so a cap of the full usable
+     height puts the far edge exactly one gutter outside it. On an 800px screen
+     with nothing reserved that is a top of -24 -- the header, and every
+     control in it, off the top of the window. Reserve a 120px header and it
+     sits inside that instead, which is the one thing the reservation exists to
+     prevent.
+
+     One is the fixed point of both complaints. A resting panel grown to the
+     cap runs from the usable near edge to its gutter on the far one, so the
+     near edge is reachable by a resize exactly as it is by a drag, and neither
+     can put any part of the panel outside the box. */
+  --_max-width: var(--ag-ui-max-width, calc(var(--_viewport-width) - var(--_edge-gutter)));
+  --_max-height: var(--ag-ui-max-height, calc(var(--_viewport-height) - var(--_edge-gutter)));
   /* Reading-column width for placement="page" (full-bleed, centred content). */
   --_content-max-width: var(--ag-ui-content-max-width, 820px);
   /* Slim rail the sidebar placement collapses to. Only that placement reads
@@ -315,8 +331,8 @@ export const STYLES = `
 :host([placement="bottom-left"]) {
   --_inset: var(
     --ag-ui-inset,
-    auto auto calc(24px + var(--_viewport-inset-bottom) + var(--_visual-viewport-inset-bottom))
-      calc(24px + var(--_viewport-inset-left))
+    auto auto calc(var(--_edge-gutter) + var(--_viewport-inset-bottom) + var(--_keyboard-inset))
+      calc(var(--_edge-gutter) + var(--_viewport-inset-left))
   );
 }
 
@@ -415,7 +431,7 @@ export const STYLES = `
     --_inset: var(
       --ag-ui-inset,
       var(--_viewport-inset-top) var(--_viewport-inset-right)
-        calc(var(--_viewport-inset-bottom) + var(--_visual-viewport-inset-bottom))
+        calc(var(--_viewport-inset-bottom) + var(--_keyboard-inset))
         var(--_viewport-inset-left)
     );
     --_width: var(--ag-ui-width, var(--_viewport-width));
@@ -1098,6 +1114,28 @@ export const STYLES = `
 
    The 1px box with clip-path, rather than width/height 0, is the shape that
    survives: a zero-sized element is dropped from the tree by some engines. */
+/* A used-value reader for the four viewport-inset tokens, and the only
+   reliable one. getComputedStyle().getPropertyValue() on an unregistered
+   custom property hands back the substituted token stream, not a length: it
+   returns "4rem" verbatim, and "calc(56px + env(safe-area-inset-top))" as
+   "calc(56px + 0px)" -- which parses as NaN and takes the whole inset with it.
+   Padding is a real property, so the same tokens come back resolved to px.
+
+   visibility rather than display: none, because a box that generates no
+   layout has no used values to read. Zero-sized, absolutely positioned and
+   inert, so it costs nothing but the read. */
+.viewport-probe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
+  padding: var(--_viewport-inset-top) var(--_viewport-inset-right)
+    var(--_viewport-inset-bottom) var(--_viewport-inset-left);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

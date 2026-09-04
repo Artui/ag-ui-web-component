@@ -91,10 +91,18 @@ export function launcherPlacement(
 ): LauncherPlacement {
   // Room for a panel pinned to each side of the launcher. A tie goes to the
   // first branch, so the result is deterministic for a centred launcher.
-  const roomRunningRight = viewport.width - launcher.left;
-  const roomRunningLeft = launcher.left + launcher.width;
-  const roomRunningDown = viewport.height - launcher.top;
-  const roomRunningUp = launcher.top + launcher.height;
+  //
+  // Measured against the usable box's own edges, not against its width and
+  // height as if it started at the origin. The launcher's coordinates are the
+  // screen's, while the extents have already had the host's reserved edges
+  // taken out of them, so mixing the two understates the room on one side and
+  // overstates it on the other -- by the same reserved inset, in opposite
+  // directions, which is what makes the comparison flip rather than merely
+  // drift. The clamp below reads `viewport.left`/`top`; this had to as well.
+  const roomRunningRight = viewport.left + viewport.width - launcher.left;
+  const roomRunningLeft = launcher.left + launcher.width - viewport.left;
+  const roomRunningDown = viewport.top + viewport.height - launcher.top;
+  const roomRunningUp = launcher.top + launcher.height - viewport.top;
   const corner: ExpandCorner = {
     x: roomRunningRight >= roomRunningLeft ? "left" : "right",
     y: roomRunningDown >= roomRunningUp ? "top" : "bottom",

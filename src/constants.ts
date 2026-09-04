@@ -337,7 +337,6 @@ export const ICON_ATTACH = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="
 /** The voice-input glyph (a microphone on its stand). */
 export const ICON_VOICE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3z"/><path d="M5 11v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v3"/></svg>`;
 
-/** The default launcher mark (a speech bubble), shown when the host slots none. */
 /**
  * The theme toggle's two marks, drawn rather than typed.
  *
@@ -357,6 +356,7 @@ export const ICON_MOON = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="tr
 /** The other half of the pair; see {@link ICON_MOON}. */
 export const ICON_SUN = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
 
+/** The default launcher mark (a speech bubble), shown when the host slots none. */
 export const ICON_LAUNCHER = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-5 4z"/></svg>`;
 
 /**

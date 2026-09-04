@@ -140,3 +140,62 @@ describe("composer history recall", () => {
     expect(input.value).toBe("second");
   });
 });
+
+/**
+ * The history belongs to the conversation it was typed into.
+ *
+ * The path that makes this more than tidiness is the `user-key` rescope: it
+ * purges storage and wipes the transcript precisely so one principal's words
+ * are not visible to the next, and every turn they typed would otherwise be a
+ * single ArrowUp away in the composer.
+ */
+describe("what the recall history outlives", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    // Storage is cleared by the shared setup, which is the only place that can
+    // do it safely: happy-dom implements no `localStorage` at all -- the object
+    // is there and every method on it is undefined -- while CI's Node provides
+    // a real one, so a bare `.clear()` here passes there and throws here.
+    sessionStorage.clear();
+  });
+
+  it("forgets the previous conversation's turns on a new chat", async () => {
+    const el = mount();
+    await send(el, "something private");
+
+    el.newChat();
+    await send(el, "after the reset");
+
+    // Two presses, and the second is the one that matters. One press walks to
+    // the newest turn either way; it is the step past it that reaches into the
+    // conversation before, or finds nothing there. Sending after the reset is
+    // what stops this passing by simple exhaustion -- there is a turn to walk
+    // off the end of, so an empty box is a cleared history rather than a
+    // history that was never recorded.
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe("after the reset");
+
+    // Walking back past the oldest turn holds there rather than emptying, so
+    // what this asserts is where "there" is: this conversation's only turn,
+    // and not the one typed before the reset.
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe("after the reset");
+    expect(composer(el).value).not.toBe("something private");
+  });
+
+  it("forgets them when the signed-in principal changes", async () => {
+    const el = mount();
+    el.setAttribute("user-key", "alice");
+    await send(el, "alice's message");
+
+    // The rescope that exists to stop one user seeing another's conversation.
+    el.setAttribute("user-key", "bob");
+
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe("");
+  });
+});

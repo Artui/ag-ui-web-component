@@ -24,6 +24,9 @@ import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 
 const STEP_PX = 25;
 /** What the host reserves, which is what the bug's leap was the size of. */
+/** The gutter a resting floating panel keeps, which is the slack the cap leaves. */
+const EDGE_GUTTER_PX = 24;
+
 const RESERVED_TOP_PX = 120;
 
 function mount(collapsed: boolean): AgUiChat {
@@ -185,12 +188,16 @@ describe("dragging tracks the pointer (real browser)", () => {
     expect(el.getBoundingClientRect().height).toBeGreaterThan(before.height);
   });
 
-  it("does not travel when a grip is pulled on a panel that cannot grow", () => {
+  it("travels at most the resting gutter when a grip is pulled on a capped panel", () => {
     // The other half of the same disagreement, and the one that was reported.
     // Once the size is capped a grip cannot make the panel bigger, so the pull
     // has to land somewhere -- and on the anchored edge it landed on the
-    // position, taking the whole panel down the screen. With the cap and the
-    // bound naming the same limit there is no slack left for it to land in.
+    // position, taking the whole panel hundreds of pixels down the screen.
+    //
+    // What is left is the one gutter the cap deliberately does not spend, so
+    // the panel can slide into it and then stops. That is the slack, and it is
+    // bounded by construction: the cap is the usable box less one gutter, so
+    // there is exactly one gutter for a pull to land in however far it goes.
     const el = mount(false);
     const top = part(el, ".resize-handle--top");
     const from = centre(top);
@@ -207,9 +214,20 @@ describe("dragging tracks the pointer (real browser)", () => {
     const bottom = part(el, ".resize-handle--bottom");
     const at = centre(bottom);
     bottom.dispatchEvent(pointer("pointerdown", at.x, at.y));
+    let settledAt = grown.top;
     for (let i = 1; i <= 12; i += 1) {
       window.dispatchEvent(pointer("pointermove", at.x, at.y + i * 30));
-      expect(Math.abs(el.getBoundingClientRect().top - grown.top)).toBeLessThanOrEqual(1);
+      const now = el.getBoundingClientRect().top;
+      // Bounded by the gutter throughout, rather than tracking a pointer that
+      // has travelled 360px by the end of this loop.
+      expect(now - grown.top).toBeLessThanOrEqual(EDGE_GUTTER_PX + 1);
+      expect(now).toBeGreaterThanOrEqual(grown.top - 1);
+      // ...and it stops rather than creeping: once it has taken up the slack,
+      // every further move leaves it exactly where it was.
+      if (i >= 3) {
+        expect(now).toBeCloseTo(settledAt, 0);
+      }
+      settledAt = now;
     }
     window.dispatchEvent(pointer("pointerup", at.x, at.y + 360));
 

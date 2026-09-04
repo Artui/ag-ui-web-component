@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { X_DESTRUCTIVE_KEY } from "../src/constants.js";
 import {
+  CHAT_CORNERS,
   type ChatCorner,
   type ChatSurface,
   type ChatSurfaceReport,
@@ -27,19 +29,24 @@ function makeSurface(overrides: Partial<ChatSurfaceReport> = {}) {
     collapsed: false,
     collapsible: true,
     movable: true,
+    draggable: true,
     fullBleed: false,
     box: { left: 100, top: 100, width: 380, height: 560 },
-    viewport: { width: 1280, height: 800 },
+    viewport: { left: 0, top: 0, width: 1280, height: 800 },
     ...overrides,
   };
   const surface: ChatSurface = {
     describeSurface: () => report,
-    moveTo: (corner: ChatCorner) => {
-      calls.push(`moveTo:${corner}`);
+    // The options are recorded, not discarded. `announce` is what separates a
+    // move the agent made -- which owes the user a notice and a way back --
+    // from the same call by a host arranging its own page, and a double that
+    // drops the argument leaves that distinction held by nothing at all.
+    moveTo: (corner: ChatCorner, options) => {
+      calls.push(`moveTo:${corner}:${options?.announce === true}`);
       return report.movable;
     },
-    setCollapsed: (collapsed: boolean) => {
-      calls.push(`setCollapsed:${collapsed}`);
+    setCollapsed: (collapsed: boolean, options) => {
+      calls.push(`setCollapsed:${collapsed}:${options?.announce === true}`);
     },
   };
   return { surface, calls, tools: createChatSurfaceTools(surface) };
@@ -80,7 +87,9 @@ describe("chat surface tools", () => {
     const result = await tool(built.tools, "move_chat").handler({ corner: "top-left" });
 
     expect(result).toEqual({ moved: true, corner: "top-left" });
-    expect(built.calls).toEqual(["moveTo:top-left"]);
+    // With `announce`, because a move the agent made owes the user a notice
+    // and a way back; a host calling the same method is arranging its own page.
+    expect(built.calls).toEqual(["moveTo:top-left:true"]);
   });
 
   it("refuses honestly when the panel fills the screen, and says what would work", async () => {
@@ -137,17 +146,62 @@ describe("chat surface tools", () => {
     expect(result).toEqual({ moved: false, corner: "top-right" });
   });
 
-  it("defaults a missing corner to something the surface can reject", async () => {
-    const result = (await tool(built.tools, "move_chat").handler({})) as Record<string, unknown>;
+  it("refuses a corner that is not one, rather than moving somewhere else", async () => {
+    // `required` in a schema is advisory, and a model can answer with a corner
+    // that does not exist. `moveTo` matches none of its edge tests for such a
+    // value and falls through to bottom-right -- so without this the tool
+    // reports success for a corner it did not go to, and the agent tells the
+    // user it moved the chat somewhere it did not.
+    for (const asked of [{}, { corner: "middle" }, { corner: "right" }]) {
+      const result = (await tool(built.tools, "move_chat").handler(asked)) as Record<
+        string,
+        unknown
+      >;
 
-    expect(result["corner"]).toBe("");
+      expect(result["moved"]).toBe(false);
+      expect(String(result["reason"])).toContain("not a corner");
+      expect(built.calls).toEqual([]);
+    }
+  });
+
+  it("names the four corners once, and the schema reads them from there", () => {
+    const parameters = tool(built.tools, "move_chat").parameters as Record<string, unknown>;
+    const properties = parameters["properties"] as Record<string, { enum: string[] }>;
+
+    // Restated in the description and the schema, so they are taken from the
+    // same list the validator uses rather than typed out a third time.
+    expect(properties["corner"]?.enum).toEqual([...CHAT_CORNERS]);
+    for (const corner of CHAT_CORNERS) {
+      expect(String(tool(built.tools, "move_chat").description)).toContain(corner);
+    }
+  });
+
+  it("says which reason a move was refused for", async () => {
+    // The two refusals call for different sentences, and the wrong one is a
+    // plain falsehood the agent relays to the user in its own words.
+    const off = makeSurface({ movable: false, draggable: false, placement: "floating" });
+    const owned = makeSurface({ movable: false, draggable: true, placement: "sidebar" });
+
+    const first = (await tool(off.tools, "move_chat").handler({ corner: "top-left" })) as Record<
+      string,
+      unknown
+    >;
+    const second = (await tool(owned.tools, "move_chat").handler({
+      corner: "top-left",
+    })) as Record<string, unknown>;
+
+    expect(String(first["reason"])).toContain("turned off");
+    expect(String(first["reason"])).not.toContain("floating");
+    expect(String(second["reason"])).toContain("sidebar");
   });
 
   it("minimises, and restores", async () => {
     await tool(built.tools, "minimise_chat").handler({});
     await tool(built.tools, "restore_chat").handler({});
 
-    expect(built.calls).toEqual(["setCollapsed:true", "setCollapsed:false"]);
+    // Announced on the way out and not on the way back: a panel that leaves on
+    // its own has to say so, and one arriving is its own announcement.
+    expect(built.calls).toEqual(["setCollapsed:true:true", "setCollapsed:false:false"]);
   });
 
   it("will not minimise a placement with no collapsed state", async () => {
@@ -171,13 +225,15 @@ describe("chat surface tools", () => {
     expect(result["suggestion"]).toBeNull();
   });
 
-  it("marks only the reader as read-only", () => {
+  it("stamps none of them destructive, so none raises a confirmation", () => {
     const destructive = built.tools.map(
-      (t) => (t.parameters as Record<string, unknown>)["x-destructive"],
+      (t) => (t.parameters as Record<string, unknown>)[X_DESTRUCTIVE_KEY],
     );
 
-    // Moving the panel destroys nothing, so none of these is stamped -- a
-    // confirmation card in front of a window move is worse than the move.
+    // Read through the constant rather than its spelling: the guard keys off
+    // the same one, so a rename that left this string behind would stop the
+    // gate firing while this kept agreeing that nothing is stamped.
     expect(destructive).toEqual([undefined, undefined, undefined, undefined]);
+    expect(built.tools).toHaveLength(4);
   });
 });

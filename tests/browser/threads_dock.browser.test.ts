@@ -148,3 +148,59 @@ describe("docked conversation list (real browser)", () => {
     expect(el.shadowRoot?.activeElement).toBe(composer);
   });
 });
+
+/**
+ * Docking is a width decision, so a change of width has to re-take it.
+ *
+ * The drawer can be open across the threshold in either direction, and the
+ * three things docking decides -- the attribute the layout keys off, the focus
+ * trap, and whether there is a backdrop to dismiss it with -- are all wrong
+ * afterwards if the decision is only taken on the way in.
+ */
+describe("docking across a resize (real browser)", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    for (const el of document.querySelectorAll(ELEMENT_TAG)) {
+      el.remove();
+    }
+    sessionStorage.clear();
+    localStorage.clear();
+  });
+
+  it("undocks a list left open when the panel narrows past the threshold", async () => {
+    const el = mount("page");
+    el.openThreads();
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    expect(el.hasAttribute("data-threads-docked")).toBe(true);
+
+    // Narrowed under the panel rather than by resizing the browser, which
+    // would leak a viewport into every file that runs after this one. The
+    // element measures its own box, so this is the same crossing.
+    el.style.setProperty("--ag-ui-max-width", "600px");
+    el.style.setProperty("--ag-ui-width", "600px");
+    window.dispatchEvent(new Event("resize"));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+
+    expect(el.hasAttribute("data-threads-docked")).toBe(false);
+    // The modal half of the same decision: a drawer floating over a narrow
+    // panel needs the trap and the backdrop that a docked rail does not.
+    const panel = part(el, ".drawer-panel");
+    expect(panel.getAttribute("role")).toBe("dialog");
+    expect(panel.getAttribute("aria-modal")).toBe("true");
+  });
+
+  it("leaves a closed drawer alone across the same resize", async () => {
+    const el = mount("page");
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+
+    el.style.setProperty("--ag-ui-max-width", "600px");
+    window.dispatchEvent(new Event("resize"));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+
+    // Nothing to fix when it is not open, and opening re-decides anyway.
+    expect(el.hasAttribute("data-threads-docked")).toBe(false);
+  });
+});

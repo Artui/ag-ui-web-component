@@ -8,7 +8,7 @@ import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
  * A search box above a list you can already read in one glance is a control
  * asking to be used on nothing.
  */
-const FILTER_FROM = 8;
+export const FILTER_FROM = 8;
 
 /** Actions the host ({@link AgUiChat}) wires to the drawer's rows. */
 export interface ThreadDrawerCallbacks {
@@ -284,7 +284,17 @@ export class ThreadDrawer {
 
   #renderList(): void {
     this.#list.replaceChildren();
-    this.#filter.hidden = this.#threads.length < FILTER_FROM;
+    const hideFilter = this.#threads.length < FILTER_FROM;
+    this.#filter.hidden = hideFilter;
+    // Cleared as it goes, or the query outlives the control that set it: a
+    // list that drops below the threshold while a query matches nothing shows
+    // "no conversations match that" over conversations that are right there,
+    // with nothing left on screen to clear. Reopening does not help either --
+    // only a new drawer would.
+    if (hideFilter && this.#query !== "") {
+      this.#filter.value = "";
+      this.#query = "";
+    }
     const shown = this.#matching();
     if (shown.length === 0) {
       const empty = document.createElement("div");

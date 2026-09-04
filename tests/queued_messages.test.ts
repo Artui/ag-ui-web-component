@@ -27,11 +27,16 @@ function mountWithHeldRun(
   let release: (() => void) | null = null;
   const handle = makeFakeAgent({
     script: async (emit: Emit) => {
+      // Counted on the way in, so each run answers under an id of its own. It
+      // was read but never written, which made every flushed run re-emit as
+      // `m0` -- the first run's id -- and any assertion about which run
+      // answered would have been reading an empty list and believing it.
+      sent.push(`run${sent.length}`);
       emit.runStart();
       await new Promise<void>((resolve) => {
         release = resolve;
       });
-      emit.textEnd("answer", `m${sent.length}`);
+      emit.textEnd("answer", `m${sent.length - 1}`);
     },
   });
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
@@ -167,6 +172,63 @@ describe("messages typed during a run", () => {
       (n) => n.textContent ?? "",
     );
     expect(bubbles.some((text) => text.includes("queued"))).toBe(false);
+  });
+
+  it("keeps a discarded queue reachable on the arrow keys", async () => {
+    // Not sending it and destroying it are different things. A queued message
+    // has already left the composer, so dropping it on Stop would take a
+    // paragraph the user typed and leave it nowhere at all -- not on screen,
+    // not in the box, not recallable.
+    const { el, release } = mountWithHeldRun();
+    enter(el, "first");
+    await flush();
+    enter(el, "a long thought worth keeping");
+    await flush();
+
+    composer(el).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
+    );
+    await flush();
+    expect(chips(el)).toEqual([]);
+
+    composer(el).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, composed: true }),
+    );
+    expect(composer(el).value).toBe("a long thought worth keeping");
+
+    release();
+    await flush();
+  });
+
+  it("does not double up a queued message that repeats the last one sent", async () => {
+    // The same guard the send path applies to its own history: pressing the
+    // same thing twice should leave one entry to walk back through, not two
+    // identical ones that take two presses to get past.
+    const { el, release } = mountWithHeldRun();
+    enter(el, "same words");
+    await flush();
+    enter(el, "same words");
+    await flush();
+
+    composer(el).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
+    );
+    await flush();
+
+    const up = (): void => {
+      composer(el).dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, composed: true }),
+      );
+    };
+    up();
+    expect(composer(el).value).toBe("same words");
+    // One entry, so a second press walks off the end and holds rather than
+    // finding a duplicate behind the first.
+    up();
+    expect(composer(el).value).toBe("same words");
+
+    release();
+    await flush();
   });
 
   it("queues nothing for an attachment with no words", async () => {

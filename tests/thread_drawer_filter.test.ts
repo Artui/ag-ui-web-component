@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ThreadMeta } from "../src/core/conversation_store.js";
-import { ThreadDrawer } from "../src/ui/thread_drawer.js";
+import { FILTER_FROM, ThreadDrawer } from "../src/ui/thread_drawer.js";
 
 /**
  * Narrowing a long conversation list.
@@ -16,6 +16,22 @@ function thread(id: string, title: string, preview: string): ThreadMeta {
 
 function many(count: number): ThreadMeta[] {
   return Array.from({ length: count }, (_, i) => thread(`t${i}`, `Thread ${i}`, `preview ${i}`));
+}
+
+/**
+ * The named threads, padded out to where the filter is on screen.
+ *
+ * Every filtering test has to go through a *visible* input: the drawer clears
+ * its query when the control goes away, so a short list would be testing a
+ * state the UI cannot be in -- typing into a hidden box -- and would keep
+ * passing with the whole threshold deleted. The padding is named so it cannot
+ * collide with what the queries look for.
+ */
+function withFilterShown(...named: ThreadMeta[]): ThreadMeta[] {
+  const padding = Array.from({ length: FILTER_FROM - named.length }, (_, i) =>
+    thread(`pad${i}`, `Padding ${i}`, `padding ${i}`),
+  );
+  return [...named, ...padding];
 }
 
 function build(): { drawer: ThreadDrawer; root: HTMLDivElement } {
@@ -54,17 +70,20 @@ describe("conversation list filter", () => {
   it("stays out of the way until there is a list worth narrowing", () => {
     const { drawer, root } = build();
 
-    drawer.setThreads(many(4), "t0");
+    // The boundary, not a number either side of it: at FILTER_FROM - 1 it is
+    // away and at FILTER_FROM it is there, which is what pins both the
+    // constant and the direction of the comparison.
+    drawer.setThreads(many(FILTER_FROM - 1), "t0");
     expect(filterOf(root).hidden).toBe(true);
 
-    drawer.setThreads(many(9), "t0");
+    drawer.setThreads(many(FILTER_FROM), "t0");
     expect(filterOf(root).hidden).toBe(false);
   });
 
   it("matches the title", () => {
     const { drawer, root } = build();
     drawer.setThreads(
-      [thread("a", "Refund policy", "..."), thread("b", "Shipping times", "...")],
+      withFilterShown(thread("a", "Refund policy", "..."), thread("b", "Shipping times", "...")),
       "a",
     );
 
@@ -78,7 +97,10 @@ describe("conversation list filter", () => {
     // user remembers is as likely to be inside the conversation as on it.
     const { drawer, root } = build();
     drawer.setThreads(
-      [thread("a", "Untitled", "the parcel never arrived"), thread("b", "Other", "unrelated")],
+      withFilterShown(
+        thread("a", "Untitled", "the parcel never arrived"),
+        thread("b", "Other", "unrelated"),
+      ),
       "a",
     );
 
@@ -89,7 +111,7 @@ describe("conversation list filter", () => {
 
   it("ignores case and surrounding space", () => {
     const { drawer, root } = build();
-    drawer.setThreads([thread("a", "Refund policy", "...")], "a");
+    drawer.setThreads(withFilterShown(thread("a", "Refund policy", "...")), "a");
 
     type(root, "  REFUND  ");
 
@@ -100,7 +122,7 @@ describe("conversation list filter", () => {
     // Two different situations wearing one sentence would be a small lie: "no
     // conversations yet" reads as data loss when a filter simply missed.
     const { drawer, root } = build();
-    drawer.setThreads([thread("a", "Refund policy", "...")], "a");
+    drawer.setThreads(withFilterShown(thread("a", "Refund policy", "...")), "a");
 
     type(root, "zzz");
 
@@ -111,13 +133,33 @@ describe("conversation list filter", () => {
     expect(root.querySelector(".drawer-empty")?.textContent).toBe("No conversations yet.");
   });
 
+  it("stops filtering when the list shrinks below the box's own threshold", () => {
+    // The query has to go with the control that set it. A list that drops
+    // under the threshold while a query matches nothing would otherwise show
+    // "no conversations match that" over conversations that are right there,
+    // with nothing on screen to clear -- and reopening the drawer does not
+    // help, because only a new one would.
+    const { drawer, root } = build();
+    drawer.setThreads(many(FILTER_FROM), "t0");
+
+    type(root, "zzz");
+    expect(rows(root)).toEqual([]);
+
+    drawer.setThreads(many(FILTER_FROM - 1), "t0");
+
+    expect(filterOf(root).hidden).toBe(true);
+    expect(filterOf(root).value).toBe("");
+    expect(rows(root)).toHaveLength(FILTER_FROM - 1);
+  });
+
   it("shows everything again when the box is cleared", () => {
     const { drawer, root } = build();
-    drawer.setThreads([thread("a", "One", "..."), thread("b", "Two", "...")], "a");
+    const threads = withFilterShown(thread("a", "One", "..."), thread("b", "Two", "..."));
+    drawer.setThreads(threads, "a");
 
     type(root, "one");
     expect(rows(root)).toEqual(["One"]);
     type(root, "");
-    expect(rows(root)).toEqual(["One", "Two"]);
+    expect(rows(root)).toEqual(threads.map((meta) => meta.title));
   });
 });

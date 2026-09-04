@@ -1,8 +1,11 @@
 import { X_SUMMARY_KEY } from "../constants.js";
 import type { ClientTool } from "./client_tool_registry.js";
 
+/** Every corner the panel can be sent to, in the order the schema states them. */
+export const CHAT_CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
+
 /** A corner the panel can be sent to. */
-export type ChatCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+export type ChatCorner = (typeof CHAT_CORNERS)[number];
 
 /** What the agent is told about the surface it is speaking from. */
 export interface ChatSurfaceReport {
@@ -14,6 +17,15 @@ export interface ChatSurfaceReport {
   readonly collapsible: boolean;
   /** Whether the panel can be moved, or the placement owns its position. */
   readonly movable: boolean;
+  /**
+   * Whether this page allows the panel to be moved at all.
+   *
+   * Reported apart from {@link ChatSurfaceReport.movable} only because the two
+   * reasons a move is refused call for different sentences: a host that turned
+   * dragging off is not the placement owning the position, and telling the
+   * user the second when the first is true is a plain falsehood.
+   */
+  readonly draggable: boolean;
   /** Whether the panel currently covers the whole viewport. */
   readonly fullBleed: boolean;
   /** The panel's box, in viewport coordinates. */
@@ -23,8 +35,25 @@ export interface ChatSurfaceReport {
     readonly width: number;
     readonly height: number;
   };
-  /** The viewport the panel is sitting in. */
-  readonly viewport: { readonly width: number; readonly height: number };
+  /**
+   * The part of the viewport the panel may rest in.
+   *
+   * With an origin, because it is not always the screen's: a host can reserve
+   * the edges its own chrome occupies, and an agent reasoning about the room
+   * to the left of `box.left` would otherwise be mixing two coordinate frames
+   * without being told there were two.
+   */
+  readonly viewport: {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+  };
+}
+
+/** Whether a string names one of the four corners. */
+export function isChatCorner(value: string): value is ChatCorner {
+  return (CHAT_CORNERS as readonly string[]).includes(value);
 }
 
 /**
@@ -98,15 +127,26 @@ export function createChatSurfaceTools(surface: ChatSurface): ClientTool[] {
         properties: {
           corner: {
             type: "string",
-            enum: ["top-left", "top-right", "bottom-left", "bottom-right"],
+            enum: [...CHAT_CORNERS],
           },
         },
         required: ["corner"],
         [X_SUMMARY_KEY]: "Move the chat out of the way",
       },
       handler: (args) => {
-        const corner = String(args["corner"] ?? "") as ChatCorner;
+        const asked = String(args["corner"] ?? "");
         const report = surface.describeSurface();
+        // Checked, not cast. `required` is advisory and a model can answer
+        // with a corner that does not exist; `moveTo` would then match none of
+        // its edge tests, send the panel bottom-right, and this would report
+        // success for the corner it was asked for -- so the agent tells the
+        // user it moved the chat somewhere it did not.
+        if (!isChatCorner(asked)) {
+          return {
+            moved: false,
+            reason: `"${asked}" is not a corner; use one of ${CHAT_CORNERS.join(", ")}`,
+          };
+        }
         if (!report.movable) {
           // Named rather than thrown: this is a fact about the surface the
           // agent can act on -- minimise instead -- not a malformed call.
@@ -114,11 +154,13 @@ export function createChatSurfaceTools(surface: ChatSurface): ClientTool[] {
             moved: false,
             reason: report.fullBleed
               ? "the panel fills the screen, so there is nowhere to move it to"
-              : `the "${report.placement ?? ""}" placement owns the panel's position`,
+              : report.draggable === false
+                ? "this page has turned off moving the panel"
+                : `the "${report.placement ?? ""}" placement owns the panel's position`,
             suggestion: report.collapsible ? "minimise_chat" : null,
           };
         }
-        return { moved: surface.moveTo(corner, { announce: true }), corner };
+        return { moved: surface.moveTo(asked, { announce: true }), corner: asked };
       },
     },
     {

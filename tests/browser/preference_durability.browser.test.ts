@@ -106,11 +106,16 @@ describe("layout preference durability (real browser)", () => {
     } finally {
       if (durable !== undefined) {
         Object.defineProperty(window, "localStorage", durable);
+      } else {
+        // Deleted rather than left, because what is installed here is a getter
+        // that throws: leaving it would take down the shared `localStorage.
+        // clear()` in the suite's beforeEach and every remaining test with it.
+        Reflect.deleteProperty(window, "localStorage");
       }
     }
   });
 
-  it("routes the other layout keys through the same durable helper", () => {
+  it("routes the other layout keys through the same durable helper", async () => {
     // Position and size are written by drags, which their own files exercise;
     // what matters here is only that they read from the durable store rather
     // than the per-tab one, so a value with no session copy is still honoured.
@@ -119,11 +124,20 @@ describe("layout preference durability (real browser)", () => {
 
     const el = mount();
     el.setCollapsed(true);
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
 
-    // The element re-clamps a restored position against the current viewport,
-    // so the assertion is that it was read at all -- the element wrote it back
-    // through the same helper, which it only does for a position it adopted.
-    expect(localStorage.getItem(LAUNCHER_KEY)).not.toBeNull();
+    // The durable copy was seeded by this test and nothing removes it, so
+    // asserting it is still there asserts nothing at all -- it was true before
+    // the element existed. What proves the read is where the launcher ended
+    // up: at the stored point rather than at the default bottom-right corner
+    // it would occupy if the durable store had not been consulted.
+    //
+    // Measured from the centre, since the launcher is scaled in several states
+    // and a rect edge is adrift in every one of them.
+    const launcher = el.shadowRoot?.querySelector(".launcher") as HTMLElement;
+    const box = launcher.getBoundingClientRect();
+    expect(box.left + box.width / 2).toBeCloseTo(120 + launcher.offsetWidth / 2, 0);
+    expect(box.top + box.height / 2).toBeCloseTo(96 + launcher.offsetHeight / 2, 0);
     expect(el.collapsed).toBe(true);
   });
 });

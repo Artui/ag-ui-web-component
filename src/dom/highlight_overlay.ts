@@ -90,6 +90,12 @@ export function showHighlightOverlay(
 
   const scrim = document.createElement("div");
   const ring = document.createElement("div");
+  // Named, because this overlay lives in the host's document rather than in
+  // the shadow tree: `::part` cannot reach it, so a class is the only handle a
+  // host has on the two boxes beyond the tokens they read.
+  root.className = "ag-ui-highlight";
+  scrim.className = "ag-ui-highlight-scrim";
+  ring.className = "ag-ui-highlight-ring";
   if (options.scrim === true) {
     root.append(scrim);
   }
@@ -147,8 +153,9 @@ export function showHighlightOverlay(
   //
   // Reduced motion asks for no animation, not for no feedback -- the gradient
   // is still drawn, it simply stops travelling.
+  let flow: Animation | null = null;
   if (options.gradient === true && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    ring.animate([{ backgroundPosition: "100% 0" }, { backgroundPosition: "-100% 0" }], {
+    flow = ring.animate([{ backgroundPosition: "100% 0" }, { backgroundPosition: "-100% 0" }], {
       duration: flowMs,
       iterations: Number.POSITIVE_INFINITY,
       easing: "linear",
@@ -164,8 +171,30 @@ export function showHighlightOverlay(
   return () => {
     window.removeEventListener("scroll", paint, listen);
     window.removeEventListener("resize", paint, listen);
+    // Cancelled as well as detached. An infinite animation never finishes, so
+    // it is never auto-removed the way a finite one is; removing the node
+    // ought to make it irrelevant and collectable, but that is a claim about
+    // when an engine drops a non-relevant animation rather than something this
+    // function controls. Cancelling makes the teardown total and costs a call.
+    flow?.cancel();
     root.remove();
   };
+}
+
+/**
+ * A caller's colour, or `null` if it is not one.
+ *
+ * The value is joined into a `;`-separated `cssText` run, so a string carrying
+ * its own semicolon would write further declarations onto a `position: fixed;
+ * inset: 0` element in the host's page. This function is newly public and
+ * "point at this element in colour X" is the obvious wiring for it, with X
+ * coming from wherever the host got it -- which can be the agent.
+ */
+function safeColor(value: string | undefined): string | null {
+  if (value === undefined) {
+    return null;
+  }
+  return CSS.supports("color", value) ? value : null;
 }
 
 /**
@@ -176,7 +205,7 @@ export function showHighlightOverlay(
  * the padding box, leaving the frame.
  */
 function ringPaint(target: HTMLElement, options: HighlightOverlayOptions): string {
-  const color = options.color ?? tokenOn(target, "--ag-ui-accent", ACCENT);
+  const color = safeColor(options.color) ?? tokenOn(target, "--ag-ui-accent", ACCENT);
   if (options.gradient !== true) {
     return `border-color: ${color}`;
   }

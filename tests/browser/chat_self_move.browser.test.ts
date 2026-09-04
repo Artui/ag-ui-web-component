@@ -233,15 +233,31 @@ describe("the panel moving itself (real browser)", () => {
     expect(el.shadowRoot?.querySelector(".run-notice-undo")).toBeNull();
   });
 
-  it("offers the way back out of an agent's minimise too", async () => {
+  it("says the agent minimised it, and offers no undo beside the saying", async () => {
     const el = mount();
     await settle();
     el.setCollapsed(true, { announce: true });
     await settle();
     expect(el.collapsed).toBe(true);
 
-    undoButton(el).click();
-    expect(el.collapsed).toBe(false);
+    // The notice is written, because a panel that leaves on its own has to say
+    // so and the user will read it when they open the panel again.
+    const notice = el.shadowRoot?.querySelector(".run-notice--surface");
+    expect(notice).not.toBeNull();
+
+    // But no undo, and this is the point: the notice lives in the transcript,
+    // and the collapse it describes is what hides the transcript. The only way
+    // to read it is to expand -- which is exactly what the undo would have
+    // done, so by the time the control can be seen it is a guaranteed no-op.
+    // The launcher is the way back, and it is the one thing still on screen.
+    expect(notice?.querySelector(".run-notice-undo")).toBeNull();
+    // The structural half of that argument, asserted rather than described:
+    // the notice is inside the panel, and the panel is what the collapse takes
+    // away. Checked as containment rather than as a computed visibility,
+    // because the collapse is animated and the end state is a frame away --
+    // which would make this a race rather than a statement.
+    const panel = el.shadowRoot?.querySelector(".chat");
+    expect(panel?.contains(notice ?? null)).toBe(true);
   });
 
   it("hands the axes back when the placement changes", async () => {
@@ -255,5 +271,92 @@ describe("the panel moving itself (real browser)", () => {
     el.setAttribute("placement", "sidebar");
     await settle();
     expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+  });
+});
+
+/**
+ * The frames the agent's move has to speak, which are two and are not the same.
+ *
+ * A host can reserve the edges its own chrome occupies. The usable box that
+ * leaves has an origin, and every coordinate `moveTo` computes is an absolute
+ * screen one -- so a margin applied to the box's *extents* alone sends the
+ * panel under the very chrome the reservation exists to keep it out of.
+ */
+describe("the agent's move and the edges a host reserved (real browser)", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    for (const el of document.querySelectorAll(ELEMENT_TAG)) {
+      el.remove();
+    }
+    sessionStorage.clear();
+    localStorage.clear();
+  });
+
+  it("keeps a corner move out of the reserved edges", async () => {
+    const RESERVED = 120;
+    const el = mount({ placement: "floating" });
+    el.style.setProperty("--ag-ui-viewport-inset-top", `${RESERVED}px`);
+    el.style.setProperty("--ag-ui-viewport-inset-left", `${RESERVED}px`);
+    await settle();
+
+    expect(el.moveTo("top-left")).toBe(true);
+    await settle();
+
+    const box = el.getBoundingClientRect();
+    // Inside the reservation, not measured from the screen: a top of 24 would
+    // be the panel sitting a hundred pixels up inside the host's header.
+    expect(box.top).toBeGreaterThanOrEqual(RESERVED);
+    expect(box.left).toBeGreaterThanOrEqual(RESERVED);
+  });
+
+  it("reaches the far edges of the usable box, not its width", async () => {
+    // Reserved on the *near* side, which is what separates the two readings. A
+    // reservation on the far side is taken out of the extent either way, so it
+    // cannot tell a right edge of `viewport.width` from one of `viewport.left
+    // + viewport.width`; a near-side one leaves the panel short by exactly the
+    // reserved inset, and the move looks like it stopped halfway.
+    // Sized so the panel still fits in what is left. A reservation deep enough
+    // to make the usable box shorter than the panel is a different rule --
+    // the near edge wins and the far one overflows, exactly as the clamp does
+    // for an oversized panel -- and it would hide this one.
+    const LEFT = 200;
+    const TOP = 100;
+    const el = mount({ placement: "floating" });
+    el.style.setProperty("--ag-ui-viewport-inset-left", `${LEFT}px`);
+    el.style.setProperty("--ag-ui-viewport-inset-top", `${TOP}px`);
+    await settle();
+
+    expect(el.moveTo("bottom-right")).toBe(true);
+    await settle();
+
+    const box = el.getBoundingClientRect();
+    expect(box.right).toBeLessThanOrEqual(window.innerWidth);
+    expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
+    // Within a margin of the real far edge, not the reserved inset short of it.
+    expect(box.right).toBeGreaterThan(window.innerWidth - LEFT);
+    expect(box.bottom).toBeGreaterThan(window.innerHeight - TOP);
+  });
+
+  it("erases the stored position when the undo is back to having none", async () => {
+    const el = mount({ placement: "floating" });
+    await settle();
+    // Nothing dragged, so there is nothing stored -- which is the state whose
+    // restore has no value to write and therefore has to remove one.
+    expect(localStorage.getItem("ag-ui-chat:launcher")).toBeNull();
+
+    el.moveTo("top-left", { announce: true });
+    await settle();
+    expect(localStorage.getItem("ag-ui-chat:launcher")).not.toBeNull();
+
+    undoButton(el).click();
+    await settle();
+
+    // The panel goes back either way; what this holds is that the move does
+    // not survive the undo in storage, where it would be re-applied by the
+    // next resize or reload and outlive the tab it was undone in.
+    expect(localStorage.getItem("ag-ui-chat:launcher")).toBeNull();
   });
 });

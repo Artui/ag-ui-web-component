@@ -71,6 +71,46 @@ describe("highlight overlay (real browser)", () => {
     return dismiss;
   }
 
+  it("sets the gradient travelling, and only when one was asked for", async () => {
+    const plain = makeTarget();
+    show(plain, {});
+    await settle();
+    expect(ringOf().getAnimations()).toHaveLength(0);
+
+    for (const dismiss of dismissers.splice(0)) {
+      dismiss();
+    }
+    plain.remove();
+
+    const target = makeTarget();
+    show(target, { gradient: true });
+    await settle();
+
+    // The flow is an infinite animation on the ring. `dismiss` cancels it as
+    // well as removing the node -- deliberately, so the teardown is total
+    // rather than resting on when a detached node's animation stops being
+    // relevant. That half is not asserted here because it cannot be: both
+    // `document.getAnimations()` and `Element.getAnimations()` exclude a
+    // detached target, so they report the same thing cancelled or not.
+    expect(ringOf().getAnimations()).toHaveLength(1);
+  });
+
+  it("rejects a colour that is not one, rather than writing it into the page", async () => {
+    const target = makeTarget();
+    // The value is joined into a `;`-separated cssText run on a fixed,
+    // full-viewport element in the host's own document, so a string carrying
+    // its own semicolon would write further declarations there. This function
+    // is public and the obvious wiring for it -- "point at that, in this
+    // colour" -- is one where the colour came from the agent.
+    show(target, { color: "red; position: static; inset: auto" });
+    await settle();
+
+    const ring = ringOf();
+    expect(getComputedStyle(ring).position).toBe("absolute");
+    // ...and it falls back to the accent rather than painting nothing.
+    expect(getComputedStyle(ring).borderTopColor).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
   it("rings the target from outside it, with a gap", async () => {
     const target = makeTarget();
     show(target, {});
