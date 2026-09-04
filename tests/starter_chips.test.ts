@@ -80,9 +80,22 @@ describe("starter prompts", () => {
   it("shares the count and length limits with the chips a run pushes", () => {
     // Two rows of prompt chips that behaved differently would be the harder
     // thing to explain.
+    //
+    // Sized so each limit is the only thing that can explain its own drop. The
+    // length filter runs before the count is applied, so a list of six short
+    // prompts plus one long one loses the long one to the *count* -- and the
+    // length cap could be deleted from that `and`-chain with the assertion
+    // still passing and the branch gate still reporting every arc taken.
     const el = mount({
-      "data-starters": JSON.stringify(["a", "b", "c", "d", "e", "x".repeat(200)]),
+      "data-starters": JSON.stringify(["a", "b", "x".repeat(200), "c"]),
     });
+
+    // Under the count, so the over-length one is dropped by length alone.
+    expect(chips(el)).toEqual(["a", "b", "c"]);
+  });
+
+  it("caps the count once the lengths are all fine", () => {
+    const el = mount({ "data-starters": JSON.stringify(["a", "b", "c", "d", "e"]) });
 
     expect(chips(el)).toEqual(["a", "b", "c", "d"]);
   });

@@ -20,11 +20,15 @@ import { beforeEach } from "vitest";
  * tolerate the call not existing rather than the store being absent.
  */
 beforeEach(() => {
-  for (const store of [globalThis.sessionStorage, globalThis.localStorage]) {
+  // The property *read* is inside the try as well as the call. A test that
+  // installs a throwing `localStorage` getter -- which is how the durable path
+  // is exercised -- throws on the access itself, and a guard sitting outside
+  // the try is a guard the one failure it exists for jumps straight over.
+  for (const name of ["sessionStorage", "localStorage"] as const) {
     try {
-      store?.clear?.();
+      globalThis[name]?.clear?.();
     } catch {
-      // A store that refuses to be cleared is a store nothing was written to.
+      // A store that refuses to be read or cleared is one nothing reached.
     }
   }
 });

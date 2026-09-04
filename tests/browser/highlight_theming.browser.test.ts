@@ -71,9 +71,11 @@ describe("highlight overlay theming (real browser)", () => {
     show(makeTarget("--ag-ui-highlight-ring-width: 7"), {});
     expect(getComputedStyle(overlay().lastElementChild as HTMLElement).borderTopWidth).toBe("7px");
 
-    dismissers.splice(0);
-    for (const node of document.querySelectorAll("[data-ag-ui-highlight]")) {
-      node.remove();
+    // Called, not discarded. The dismisser owns capturing scroll and resize
+    // listeners on `window`; splicing it away leaves them attached for the
+    // rest of the file, repainting a node that is no longer in the document.
+    for (const dismiss of dismissers.splice(0)) {
+      dismiss();
     }
 
     show(makeTarget("--ag-ui-highlight-ring-width: 7"), { ringWidth: 2 });

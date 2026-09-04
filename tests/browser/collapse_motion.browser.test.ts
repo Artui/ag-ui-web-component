@@ -281,10 +281,15 @@ describe("collapse and slide-over motion (real browser)", () => {
     expect(glyph.width / circle.width).toBeLessThan(0.6);
     expect(glyph.width / circle.width).toBeGreaterThan(0.35);
 
-    // The accent is kept for the icon rather than flooding the whole rail.
+    // The accent is kept for the icon rather than flooding the whole rail: the
+    // rail wears the panel's own surface colour. Compared against the panel
+    // rather than against a token -- `--ag-ui-bg` is only ever read by the
+    // stylesheet and never declared, so `getPropertyValue` returns "" and the
+    // fallback made this a hard-coded assertion that the rail is white,
+    // wearing the shape of one about the theme.
     const rail = part(el, ".launcher");
     expect(getComputedStyle(rail).backgroundColor).toBe(
-      getComputedStyle(el).getPropertyValue("--ag-ui-bg").trim() || "rgb(255, 255, 255)",
+      getComputedStyle(part(el, ".chat")).backgroundColor,
     );
   });
 
