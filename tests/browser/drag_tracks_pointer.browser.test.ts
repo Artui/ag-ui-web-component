@@ -120,6 +120,74 @@ describe("dragging tracks the pointer (real browser)", () => {
     expect(moved.some((distance) => distance > 0)).toBe(true);
   });
 
+  it("stops a resize at the edges the host left free, like a drag", () => {
+    // The same restriction, because it is the same question: a panel resized
+    // under a nav bar is as unreachable as one dragged there. Each edge is
+    // bounded on its own rather than the box being pushed back, because a
+    // resize is anchored on the opposite edge and pushing would move the edge
+    // the user is not touching.
+    const el = mount(false);
+    const grip = part(el, ".resize-handle--top");
+    const from = centre(grip);
+    grip.dispatchEvent(pointer("pointerdown", from.x, from.y));
+
+    const tops: number[] = [];
+    for (let i = 1; i <= 16; i += 1) {
+      window.dispatchEvent(pointer("pointermove", from.x, from.y - i * 40));
+      tops.push(Math.round(el.getBoundingClientRect().top));
+    }
+    const beforeRelease = el.getBoundingClientRect();
+    window.dispatchEvent(pointer("pointerup", from.x, from.y - 640));
+
+    // It stops, and never crosses into what the host reserved -- which is the
+    // restriction dragging has and this did not.
+    //
+    // It stops a gutter short rather than flush, because the placement's own
+    // max-height still caps the panel and that cap is measured from a different
+    // box than the size is. Asserted as a range rather than a number so this
+    // says what is guaranteed: inside the reserved edge, and stopped.
+    expect(Math.min(...tops)).toBeGreaterThanOrEqual(RESERVED_TOP_PX - 1);
+    expect(tops.at(-1)).toBeLessThan(RESERVED_TOP_PX + 48);
+    expect(tops.at(-1)).toBe(tops.at(-2));
+    // ...and releasing keeps the size the panel actually had, rather than the
+    // one the pointer asked for. Within a pixel, because the insets are written
+    // as whole pixels on purpose -- a long gesture that accumulated fractions
+    // would drift.
+    expect(Math.abs(el.getBoundingClientRect().height - beforeRelease.height)).toBeLessThanOrEqual(
+      1,
+    );
+    expect(Math.abs(el.getBoundingClientRect().top - beforeRelease.top)).toBeLessThanOrEqual(1);
+  });
+
+  it("grows to the bottom edge without taking the panel down with it", () => {
+    // Reported as the panel jumping down when resized to the very bottom. The
+    // floating placement is anchored bottom-right, so dragging that edge is
+    // dragging the pinned one -- the grip takes the position over, and an
+    // unbounded box wrote a negative bottom inset, which moved the panel off
+    // the screen rather than stopping it at the edge.
+    const el = mount(false);
+    const grip = part(el, ".resize-handle--bottom");
+    const from = centre(grip);
+    const before = el.getBoundingClientRect();
+    grip.dispatchEvent(pointer("pointerdown", from.x, from.y));
+
+    const tops: number[] = [];
+    for (let i = 1; i <= 12; i += 1) {
+      window.dispatchEvent(pointer("pointermove", from.x, from.y + i * 30));
+      tops.push(el.getBoundingClientRect().top);
+    }
+    window.dispatchEvent(pointer("pointerup", from.x, from.y + 360));
+
+    // The anchored edge does not move: growing downward is the panel getting
+    // taller, not the panel travelling.
+    for (const top of tops) {
+      expect(Math.abs(top - before.top)).toBeLessThanOrEqual(1);
+    }
+    // ...and the bottom stops at the screen rather than going past it.
+    expect(el.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight + 1);
+    expect(el.getBoundingClientRect().height).toBeGreaterThan(before.height);
+  });
+
   it("ignores a viewport change while a gesture owns the position", () => {
     // A phone resizes its visual viewport whenever the browser's own chrome
     // collapses, which the drag itself provokes. Re-placing the widget then

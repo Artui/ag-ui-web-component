@@ -48,6 +48,11 @@ export const STYLES = `
   /* Message action row: the control box and the mark inside it. The box has a
      floor of 24px so it stays a reliable target at every density. */
   --_action-size: var(--ag-ui-action-size, 28px);
+  /* The header's own controls. Sized rather than left to their contents: a row
+     of buttons each as wide as the glyph inside it comes out uneven, and uneven
+     buttons two pixels apart read as one smudge rather than five controls. */
+  --_header-btn-size: var(--ag-ui-header-btn-size, 30px);
+  --_header-gap: var(--ag-ui-header-gap, 4px);
   --_action-icon-size: var(--ag-ui-action-icon-size, 15px);
   --_tooltip-bg: var(--ag-ui-tooltip-bg, #1f2430);
   --_tooltip-fg: var(--ag-ui-tooltip-fg, #f5f6fa);
@@ -784,17 +789,24 @@ export const STYLES = `
 
 .header-controls {
   display: flex;
-  gap: 2px;
+  gap: var(--_header-gap);
   flex: none;
 }
 
 .header-btn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--_header-btn-size);
+  height: var(--_header-btn-size);
   border: none;
   background: transparent;
   color: inherit;
   font: inherit;
   line-height: 1;
-  padding: 4px 7px;
+  padding: 0;
   border-radius: 6px;
   cursor: pointer;
   opacity: 0.85;
@@ -2768,6 +2780,11 @@ export const STYLES = `
     --_action-size: var(--ag-ui-action-size, 44px);
     --_tool-btn-size: var(--ag-ui-tool-btn-size, 44px);
     --_send-size: var(--ag-ui-send-size, 44px);
+    /* Missed the first time these were raised, which left the header -- the
+       widget's primary controls, and the only way to reach history, a new chat
+       or the collapse -- at half the size of everything beside it. */
+    --_header-btn-size: var(--ag-ui-header-btn-size, 44px);
+    --_header-gap: var(--ag-ui-header-gap, 6px);
   }
 
   /* iOS Safari zooms the page when a control under 16px takes focus, which

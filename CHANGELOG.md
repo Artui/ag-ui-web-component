@@ -253,6 +253,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The header's controls were sized by their contents**, so each came out as
+  wide as the glyph inside it -- five buttons of four different widths, four
+  pixels apart, with the theme toggle (the one emoji among the line icons) the
+  widest and looking like it had run into its neighbour. They are square and
+  equal now, from `--ag-ui-header-btn-size`, spaced by `--ag-ui-header-gap`.
+
+  Both go to 44px on a coarse pointer, which the earlier touch pass missed --
+  it raised the message, tool and send controls and left the header at half
+  their size, despite it being the only way to reach history, a new chat or the
+  collapse.
+
+- **Resizing had none of the restrictions dragging has.** A grip could be pulled
+  past the edges the host reserved, and pulling the *anchored* edge -- the
+  bottom, under the default placement -- wrote a negative inset and moved the
+  whole panel down the screen instead of growing it. Each edge is now bounded to
+  what the host left free: the gesture carries on and the panel simply stops.
+
+  A resize also persisted the size the pointer asked for rather than the one the
+  panel got, so the next mount restored a size it never had -- the same
+  disagreement between apply and commit that made the header drag jump.
+
 - **Dragging the panel or the launcher jumped, and stopped short of every
   edge.** Reported from a phone and reproduced on a desktop: the widget
   followed the pointer until it passed roughly the middle of the screen, then

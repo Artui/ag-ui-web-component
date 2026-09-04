@@ -907,6 +907,32 @@ export class AgUiChat extends HTMLElement {
   };
 
   /**
+   * Hold a resized box inside the part of the screen the host left free.
+   *
+   * Each edge on its own, unlike the drag's clamp: a drag moves a box of fixed
+   * size, so pushing it back in is right, while a resize is anchored on the
+   * opposite edge and pushing it back would move the edge the user is not
+   * touching. Bounding each edge instead leaves the grip stopped at the limit
+   * -- the gesture keeps going and the panel simply stops growing, which is
+   * what dragging already does.
+   *
+   * The minimum size is the grip's own concern and is applied before this, so
+   * a panel that cannot fit the space is left at its minimum and overflowing
+   * rather than collapsed to nothing.
+   */
+  #withinViewport(box: PanelRect): PanelRect {
+    const viewport = this.#viewport();
+    const right = viewport.left + viewport.width;
+    const bottom = viewport.top + viewport.height;
+    return {
+      left: Math.min(Math.max(box.left, viewport.left), box.right),
+      top: Math.min(Math.max(box.top, viewport.top), box.bottom),
+      right: Math.max(Math.min(box.right, right), box.left),
+      bottom: Math.max(Math.min(box.bottom, bottom), box.top),
+    };
+  }
+
+  /**
    * Whether a pointer or key gesture is currently placing the widget.
    *
    * Read from the stamp the drag helpers already set, rather than tracked
@@ -2696,6 +2722,13 @@ export class AgUiChat extends HTMLElement {
     if (axis === "none") {
       return;
     }
+    // The placement's max-width and max-height are left alone, which means a
+    // grip pushed against the edge the placement is *not* anchored to stops one
+    // gutter short of the screen. Moving the cap with the size fixes that and
+    // shifts several resting sizes by a pixel or two, because the cap and the
+    // size are not measured from the same box -- not worth the churn for a
+    // symmetry nobody has asked for. The limit that matters, staying inside
+    // what the host left free, is enforced above.
     if (size.width !== undefined) {
       this.style.setProperty("--ag-ui-width", `${size.width}px`);
     }
@@ -3159,10 +3192,11 @@ export class AgUiChat extends HTMLElement {
    * host positioning the panel with its own rule keeps that rule until someone
    * drags the edge it was holding.
    */
-  #applyResize(grip: ResizeGrip, box: PanelRect): void {
+  #applyResize(grip: ResizeGrip, box: PanelRect): PanelRect {
+    box = this.#withinViewport(box);
     this.#applySize({ width: box.right - box.left, height: box.bottom - box.top });
     if (grip.x !== this.#anchor.x && grip.y !== this.#anchor.y) {
-      return;
+      return box;
     }
     // The whole screen, not the usable box: a CSS inset on a fixed element is
     // measured from the real edges, so expressing a right or bottom against a
@@ -3194,12 +3228,17 @@ export class AgUiChat extends HTMLElement {
     if (this.#panelPos !== null) {
       this.#panelPos = { left: box.left, top: box.top };
     }
+    return box;
   }
 
   /** Finish a resize: keep the box, remember it, and re-read the pinned edges. */
   #commitResize(grip: ResizeGrip, box: PanelRect): void {
-    this.#applyResize(grip, box);
-    this.#persistSize({ width: box.right - box.left, height: box.bottom - box.top });
+    // The bounded box, not the one the pointer asked for. Persisting the raw
+    // one would store a size the panel never had and restore it on the next
+    // mount, which is the same disagreement between apply and commit that made
+    // the header drag jump on release.
+    const held = this.#applyResize(grip, box);
+    this.#persistSize({ width: held.right - held.left, height: held.bottom - held.top });
     this.#storeLauncherPosition();
     // Re-stamp after the drag: a host whose layout changed underneath us would
     // otherwise keep the tab-reachable grip in the old corner, which reads as

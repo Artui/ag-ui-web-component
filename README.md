@@ -2562,6 +2562,8 @@ ag-ui-chat {
   --ag-ui-bg: #ffffff;
   --ag-ui-fg: #1a1a2e;
   --ag-ui-radius: 12px;
+  --ag-ui-header-btn-size: 30px;  /* the header's controls; 44px on touch */
+  --ag-ui-header-gap: 4px;
 
   /* What is drawn on top of the accent and danger fills. Change these with
      the fills: a pale accent leaves white-on-pale everywhere they are used. */
