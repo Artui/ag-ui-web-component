@@ -188,7 +188,7 @@ describe("dragging the collapsed launcher", () => {
     // ...which leaves the launcher sitting 24px outside its own host box, on
     // both axes. Nothing clips it there, and that is what lets a launcher be
     // flush to the corner while the panel it opens is not.
-    expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe("auto -24px -24px auto");
+    expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe("auto -16px -16px auto");
   });
 
   it("hands the position back to a placement that owns it", () => {

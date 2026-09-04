@@ -338,6 +338,25 @@ export const ICON_ATTACH = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="
 export const ICON_VOICE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3z"/><path d="M5 11v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v3"/></svg>`;
 
 /** The default launcher mark (a speech bubble), shown when the host slots none. */
+/**
+ * The theme toggle's two marks, drawn rather than typed.
+ *
+ * They were the emoji `\u{1F319}` and `\u2600\uFE0F`, which is why this one
+ * control never sat right beside the others: an emoji is painted by the
+ * platform's own font, at its own weight and colour, and its ink routinely
+ * exceeds the text metrics it is laid out with -- so it drew outside the box
+ * measured for it and clipped, while every neighbour is a stroked path that
+ * fits its viewBox exactly.
+ *
+ * The moon is drawn as one closed crescent rather than a disc with a second
+ * disc cut out of it, because these are stroked (`fill: none`) and a cut-out
+ * needs a fill to hide anything.
+ */
+export const ICON_MOON = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>`;
+
+/** The other half of the pair; see {@link ICON_MOON}. */
+export const ICON_SUN = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
+
 export const ICON_LAUNCHER = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-5 4z"/></svg>`;
 
 /**
@@ -428,3 +447,18 @@ export const THREADS_DOCK_MIN_WIDTH = 900;
  * meaning of its own -- `data-paste-attach` moves it.
  */
 export const PASTE_ATTACH_CHARS = 5000;
+
+/**
+ * How close the launcher may be pushed to the edge of the screen.
+ *
+ * Not the panel's 24px gutter, which was rejected here on purpose: a launcher
+ * held that far in refuses the corners people actually drag it to. But zero is
+ * wrong too. The bubble is a circle with a drop shadow, and one sitting flush
+ * against the edge has its shadow cut and its curve running into the boundary,
+ * which reads as clipped whether or not a single pixel is missing -- and on a
+ * screen with rounded corners, or under a scrollbar, it is genuinely clipped.
+ *
+ * Small enough that every corner is still reachable, large enough that the
+ * circle always closes.
+ */
+export const LAUNCHER_EDGE_MARGIN = 8;

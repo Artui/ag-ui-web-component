@@ -11,9 +11,11 @@ import {
   FEEDBACK_EVENT,
   ICON_ATTACH,
   ICON_LAUNCHER,
+  ICON_MOON,
   ICON_RETRY,
   ICON_SEND,
   ICON_STOP,
+  ICON_SUN,
   INVALIDATE_CUSTOM_NAME,
   INVALIDATE_EVENT,
   LOAD_CAPABILITY_TOOL,
@@ -3491,7 +3493,12 @@ export class AgUiChat extends HTMLElement {
   /** Reflect the current theme on the toggle: show the destination's glyph. */
   #syncThemeGlyph(): void {
     const dark = this.getAttribute("theme") === "dark";
-    this.#themeToggle.textContent = dark ? "☀️" : "🌙";
+    // Replaced wholesale rather than toggling a class: the two marks are
+    // different paths, not one path in two states, and the slot has to keep
+    // working so a host can still supply its own.
+    this.#themeToggle.replaceChildren(
+      this.#iconElement("theme", "theme-icon", dark ? ICON_SUN : ICON_MOON, null),
+    );
   }
 
   /**

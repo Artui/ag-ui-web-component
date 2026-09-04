@@ -145,7 +145,7 @@ describe("enableLauncherDrag", () => {
 
     drag(h.launcher, [948, 748], [2000, 2000]);
 
-    expect(h.committed).toEqual([{ left: 944, top: 744 }]);
+    expect(h.committed).toEqual([{ left: 936, top: 736 }]);
   });
 
   it("marks the launcher while it travels and clears the mark at the end", () => {

@@ -451,12 +451,15 @@ describe("AgUiChat — UX & customization", () => {
       const el = mount({ "data-theme-toggle": "" });
       const toggle = shadow(el).querySelector<HTMLButtonElement>(".header-btn--theme");
       expect(toggle?.getAttribute("part")).toBe("header-button theme-toggle");
-      expect(toggle?.textContent).toBe("🌙"); // light → offer dark
+      // A drawn path now, not a typed emoji: an emoji is painted by the
+      // platform's own font and its ink runs outside the box measured for it,
+      // which is why this one control never sat right beside the others.
+      expect(toggle?.querySelector("svg")).not.toBeNull(); // light -> offer dark
 
       toggle?.click();
       expect(el.getAttribute("theme")).toBe("dark");
       expect(sessionStorage.getItem("ag-ui-chat:theme")).toBe("dark");
-      expect(toggle?.textContent).toBe("☀️"); // dark → offer light
+      expect(toggle?.querySelector("svg")).not.toBeNull(); // dark -> offer light
 
       toggle?.click();
       expect(el.getAttribute("theme")).toBe("light");

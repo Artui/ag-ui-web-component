@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ELEMENT_TAG } from "../../src/constants.js";
+import { ELEMENT_TAG, LAUNCHER_EDGE_MARGIN } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 
@@ -115,9 +115,13 @@ describe("a host that reserves nothing (real browser)", () => {
     dragBy(launcher, -3000, -3000);
     await settle();
 
+    // A small margin, not flush: a circle with a drop shadow touching the
+    // boundary reads as clipped even where no pixel is missing. Still the
+    // screen's own corner rather than the panel's 24px gutter, which would
+    // refuse the corners people drag it to.
     const box = launcher.getBoundingClientRect();
-    expect(box.left + box.width / 2).toBeCloseTo(box.width / 2, 0);
-    expect(box.top + box.height / 2).toBeCloseTo(box.height / 2, 0);
+    expect(box.left).toBeCloseTo(LAUNCHER_EDGE_MARGIN, 0);
+    expect(box.top).toBeCloseTo(LAUNCHER_EDGE_MARGIN, 0);
   });
 
   it("stops a resize at the screen, not before it", async () => {

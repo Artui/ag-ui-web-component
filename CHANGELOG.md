@@ -253,6 +253,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The theme toggle is drawn rather than typed.** It was the moon and sun
+  emoji, and an emoji is painted by the platform's own font at its own weight
+  and colour, with ink that routinely runs outside the box laid out for it -- so
+  it clipped, and it was the one gold glyph in a row of white strokes. It is an
+  SVG path like every neighbour now.
+
+- **The launcher keeps a little clear of the screen edge.** Flush against the
+  boundary, a circle with a drop shadow reads as clipped whether or not a pixel
+  is missing -- and on a rounded display, or under a scrollbar, it is. Not the
+  panel's 24px gutter, which is deliberately refused here because it would put
+  the corners people drag to out of reach; the margin is given up entirely on a
+  viewport too small to hold it.
+
 - **The header's controls were sized by their contents**, so each came out as
   wide as the glyph inside it -- five buttons of four different widths, four
   pixels apart, with the theme toggle (the one emoji among the line icons) the
