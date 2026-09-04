@@ -2743,6 +2743,8 @@ See [`src/ui/styles.ts`](src/ui/styles.ts) for the full variable + preset list. 
 text-animation, tool-display, and the answer well live from a single page, and demos the
 streamed thoughts region, the mic, and the header theme toggle.
 
+It binds every interface and prints the addresses this machine can be reached on, so you can open the playground on a phone — which is the only way to see the small-viewport layout with a real on-screen keyboard rather than a resized desktop window. `HOST=127.0.0.1` keeps it to this machine.
+
 ### Parts and slots
 
 For styling beyond the `--ag-ui-*` variables, every structural element exposes a `part` so you can

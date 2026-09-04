@@ -3,18 +3,27 @@
 // open http://localhost:5173 — the playground (themes/index.html) lets you flip
 // theme / density / placement / text-animation / tool-display live.
 //
+// It binds every interface, so the addresses it prints are reachable from other
+// devices on the same network — which is the only way to look at the
+// small-viewport layout on a real phone, keyboard and all, rather than at a
+// resized desktop window pretending to be one. It serves a scripted mock agent
+// and the playground, and holds nothing but what the page puts in the browser's
+// own storage. Set HOST=127.0.0.1 to keep it to this machine.
+//
 // Speaks just enough of the AG-UI wire protocol for @ag-ui/client's HttpAgent:
 // a POST of RunAgentInput is answered with an SSE stream of AG-UI events. The
 // scripted agent fills an article form via frontend tools, pausing on the
 // destructive "save" for the inline confirmation card.
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { networkInterfaces } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
 const PORT = Number(process.env.PORT ?? 5173);
+const HOST = process.env.HOST ?? "0.0.0.0";
 
 const HTML = "text/html; charset=utf-8";
 // The playground: a single page that flips every option live (see
@@ -553,6 +562,25 @@ const server = createServer((req, res) => {
   res.end("not found");
 });
 
-server.listen(PORT, () => {
+/**
+ * The addresses this machine can be reached on, for typing into a phone.
+ *
+ * IPv4 and non-internal only: a link-local IPv6 address carries a zone index
+ * that no phone browser will accept, and the loopback entry is the one already
+ * printed above it.
+ */
+function networkUrls() {
+  return Object.values(networkInterfaces())
+    .flat()
+    .filter((nic) => nic && nic.family === "IPv4" && !nic.internal)
+    .map((nic) => `http://${nic.address}:${PORT}`);
+}
+
+server.listen(PORT, HOST, () => {
   process.stdout.write(`ag-ui-web-component demo: http://localhost:${PORT}\n`);
+  if (HOST === "0.0.0.0") {
+    for (const url of networkUrls()) {
+      process.stdout.write(`  on this network: ${url}\n`);
+    }
+  }
 });
