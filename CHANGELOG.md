@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Touch affordances, decided by the pointer rather than the width.** The eight
+  resize grips are hidden -- a 6px edge strip is not a control, it is a trap that
+  eats a scroll -- and the action, tool and send buttons go to 44px, which is
+  what iOS and Android ask for and what 28-30px missed.
+
+  The composer states at least 16px. iOS Safari zooms the page when a control
+  under that takes focus, which drags the whole fixed panel with it and leaves
+  the user pinching back out of a chat they only wanted to type into; the
+  composer inherits the widget font, which is 14px by default and 13px at
+  compact density.
+
+  Every scroll container also contains its own overscroll, so reaching the end
+  of the transcript no longer scrolls the page behind it.
+
 - **A small-viewport layout.** At 600px wide and below, every placement but
   `embedded` becomes one full-bleed shape: edge to edge, no radius, no shadow,
   no resize grips. There was previously no width-based behaviour of any kind, so

@@ -54,6 +54,10 @@ describe("small-viewport layout (real browser)", () => {
   });
 
   afterAll(async () => {
+    // Politeness rather than the guarantee. The guarantee is in the project's
+    // setup file, which gives every browser file this size to start from --
+    // restoring it here alone was not enough, because the ordering that
+    // decides who runs next changes with coverage on.
     await page.viewport(DESKTOP.width, DESKTOP.height);
   });
 
@@ -97,6 +101,16 @@ describe("small-viewport layout (real browser)", () => {
 
     const grip = el.shadowRoot?.querySelector(".resize-handle") as HTMLElement;
     expect(getComputedStyle(grip).display).toBe("none");
+  });
+
+  it("keeps the transcript's scroll out of the page behind it", async () => {
+    // Reaching the end of the transcript chained the scroll into the host
+    // page, and on iOS bounced the whole document with it.
+    const el = mount("floating");
+    await settle();
+    const messages = el.shadowRoot?.querySelector(".messages") as HTMLElement;
+
+    expect(getComputedStyle(messages).overscrollBehavior).toBe("contain");
   });
 
   it("still rests at the launcher, which is the way back in", async () => {

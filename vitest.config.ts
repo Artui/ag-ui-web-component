@@ -45,6 +45,9 @@ export default defineConfig({
         test: {
           name: "chromium",
           include: ["tests/browser/**/*.browser.test.ts"],
+          // Every browser file starts from the same viewport. See the file for
+          // why a teardown in the one file that changes it is not enough.
+          setupFiles: ["tests/browser/setup_viewport.ts"],
           // One file at a time. The viewport belongs to the browser context
           // rather than to a file, so a test that narrows it to exercise the
           // small-viewport layout resizes it under every file running beside

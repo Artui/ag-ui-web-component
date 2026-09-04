@@ -966,6 +966,8 @@ export const STYLES = `
 .messages {
   flex: 1;
   overflow-y: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   /* The browser's own scroll anchoring competes with the scroller for the same
      job and wins unpredictably -- it can hold the view still exactly when we
      want to follow. Turned off so following is decided in one place. Safari
@@ -1118,6 +1120,8 @@ export const STYLES = `
 .message--assistant pre {
   padding: 8px 10px;
   overflow: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   background: var(--_bg);
   border: 1px solid var(--_border);
   border-radius: 6px;
@@ -1296,6 +1300,8 @@ export const STYLES = `
   border-left: 2px solid var(--_border);
   max-height: 220px;
   overflow: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
@@ -1486,6 +1492,8 @@ export const STYLES = `
   padding: 6px 8px;
   max-height: 160px;
   overflow: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   background: var(--_bg);
   border: 1px solid var(--_border);
   border-radius: 6px;
@@ -1980,6 +1988,8 @@ export const STYLES = `
   resize: none;
   max-height: var(--_composer-max-height);
   overflow-y: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   padding: 6px 4px 2px;
   background: transparent;
   border: none;
@@ -2408,6 +2418,8 @@ export const STYLES = `
   padding: 8px 10px;
   max-height: 140px;
   overflow: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   font-size: 12px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   background: var(--_assistant-bg);
@@ -2593,6 +2605,38 @@ export const STYLES = `
 @media (hover: none) {
   .message-action::after {
     content: none;
+  }
+}
+
+/* Touch. Separate from the width breakpoint above on purpose: width decides
+   the layout, the pointer decides which controls make sense, and a touch
+   laptop is coarse-pointered and wide while a narrow desktop window is
+   fine-pointered and small. */
+@media (pointer: coarse) {
+  /* A 6px edge strip is not a control, it is a trap that eats a scroll. The
+     corners are 14px, still under the 24px floor a target is meant to clear,
+     and the panel has other ways to be resized on a device that has a pointer
+     precise enough to grab one. */
+  .resize-handle {
+    display: none;
+  }
+
+  /* Platform guidance is 44pt on iOS and 48dp on Android. These sit at 28-30px,
+     which clears the WCAG minimum and misses both. */
+  :host {
+    --_action-size: var(--ag-ui-action-size, 44px);
+    --_tool-btn-size: var(--ag-ui-tool-btn-size, 44px);
+    --_send-size: var(--ag-ui-send-size, 44px);
+  }
+
+  /* iOS Safari zooms the page when a control under 16px takes focus, which
+     drags the whole fixed panel with it and leaves the user pinching back out
+     of a chat they only wanted to type into. The composer inherits the widget
+     font, which is 14px by default and 13px at compact density, so it has to
+     say 16 outright -- and only ever upward, so a host that has deliberately
+     set something larger keeps it. */
+  .input {
+    font-size: max(16px, var(--_font-size));
   }
 }
 
@@ -2784,6 +2828,8 @@ export const STYLES = `
   flex-direction: column;
   max-height: 220px;
   overflow: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   background: var(--_bg);
   border: 1px solid var(--_border);
   border-radius: 8px;
@@ -2872,6 +2918,8 @@ export const STYLES = `
   box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
   max-height: 60%;
   overflow-y: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
   transform-origin: top center;
   transition:
     opacity var(--_motion) var(--_ease),
@@ -3075,6 +3123,8 @@ export const STYLES = `
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Scrolling past the end of this must not scroll the page behind it. */
+  overscroll-behavior: contain;
 }
 
 .drawer-empty {
