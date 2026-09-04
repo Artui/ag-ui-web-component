@@ -310,6 +310,24 @@ export const STYLES = `
    the host as a flex child. Collapsing shrinks the host to the rail width, and
    a flex child would be squashed to 52px on the way out instead of sliding out
    at full width. */
+/* The panel is taken out of flow so the collapse can slide it out at full
+   width; see the note above. That makes the host its containing block, and the
+   host is only one by accident: it is position: fixed by default. A host that
+   takes the documented route to a pushed layout instead of an overlay sets
+   --ag-ui-position: static, and a static element establishes nothing -- so the
+   panel resolved against the initial containing block, landed at the document
+   origin, and scrolled away with the page. Docked left it pinned to the
+   document's left edge rather than the host's.
+
+   It looked correct wherever it was first tried, because a full-height column
+   at the top of an unscrolled document is exactly where those two answers
+   coincide. Containment makes the host a containing block whatever its
+   position, so the panel stays in the box the host was given. It is a no-op in
+   the default case, which is already positioned. */
+:host([placement="sidebar"]) {
+  contain: layout;
+}
+
 :host([placement="sidebar"]) .chat {
   position: absolute;
   inset: 0 0 0 auto;

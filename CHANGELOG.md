@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The documented way to make a sidebar push content instead of overlaying it
+  did not work.** Setting `--ag-ui-position: static` and placing the element in
+  your own layout is what the README offers, and it put the panel at the
+  document origin rather than in the box you gave it -- measured 1631px above
+  its own host on a scrolled page, and pinned to the document's left edge rather
+  than the host's when docked left.
+
+  The panel is taken out of flow so the collapse can slide it out at full width,
+  which needs the host to be a containing block. The host was one only by
+  accident, because it is `position: fixed` by default; a static element
+  establishes nothing, so the panel resolved against the initial containing
+  block instead. The sidebar host now contains its own layout whatever its
+  position, which is a no-op in the default overlay case.
+
+  It looked correct wherever it was first tried: a full-height column at the top
+  of an unscrolled document is exactly where the two answers coincide. The
+  stylesheet's own tests could not see it either -- they match strings against
+  the source, and every declaration involved was already correct on its own. The
+  regression test measures rects in a real browser, with the host offset from
+  the viewport and the page scrolled.
+
 ### Changed
 
 - **The page placement no longer collapses.** It is a dedicated route rather
