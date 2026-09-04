@@ -2237,9 +2237,20 @@ export class AgUiChat extends HTMLElement {
    * per-tab, and emit a {@link TOGGLE_EVENT} so a host can mirror the state in
    * its own chrome.
    */
-  setCollapsed(collapsed: boolean): void {
+  setCollapsed(collapsed: boolean, options: { readonly announce?: boolean } = {}): void {
     if (collapsed && !this.#collapsible()) {
       return;
+    }
+    // Announced before the state changes, so the notice is written into a
+    // transcript the user can still see -- and only when the agent did it,
+    // rather than when the user pressed the control themselves.
+    //
+    // Collapsing only. Expanding announces nothing because the panel arriving
+    // is the announcement, and a notice about something visibly happening is
+    // noise; there is also nothing to undo that the collapse control does not
+    // already do.
+    if (options.announce === true && collapsed && !this.collapsed) {
+      this.#announceSurfaceChange(this.#strings.chatMinimised, () => this.setCollapsed(false));
     }
     if (!collapsed) {
       // Re-decide which way to open before opening: the viewport may have
@@ -2363,10 +2374,11 @@ export class AgUiChat extends HTMLElement {
    * hence the boolean, and hence {@link describeSurface} existing so a caller
    * can ask first.
    */
-  moveTo(corner: ChatCorner): boolean {
+  moveTo(corner: ChatCorner, options: { readonly announce?: boolean } = {}): boolean {
     if (!this.#launcherDraggable()) {
       return false;
     }
+    const restore = options.announce === true ? this.#captureGeometry() : null;
     const viewport = this.#viewport();
     const box = this.getBoundingClientRect();
     if (box.width >= viewport.width - 1 && box.height >= viewport.height - 1) {
@@ -2390,7 +2402,50 @@ export class AgUiChat extends HTMLElement {
       height: size,
     });
     this.#storeLauncherPosition();
+    if (restore !== null) {
+      this.#announceSurfaceChange(this.#strings.chatMoved, restore);
+    }
     return true;
+  }
+
+  /**
+   * Snapshot the panel's stated position, and return a function that puts it
+   * back.
+   *
+   * Both insets and the expand corner, because they are one decision: the
+   * corner is what the panel grows from, so restoring a position without it
+   * puts the box back and animates it out of the wrong side. Absent values are
+   * captured as absent and removed on the way back, rather than written as
+   * empty strings that would outrank the placement.
+   */
+  #captureGeometry(): () => void {
+    const inset = this.style.getPropertyValue("--ag-ui-inset");
+    const launcherInset = this.style.getPropertyValue("--ag-ui-launcher-inset");
+    const corner = this.getAttribute("data-expand-corner");
+    const launcherPos = this.#launcherPos;
+    const panelPos = this.#panelPos;
+    const expandCorner = this.#expandCorner;
+    return () => {
+      const put = (name: string, value: string): void => {
+        if (value === "") {
+          this.style.removeProperty(name);
+        } else {
+          this.style.setProperty(name, value);
+        }
+      };
+      put("--ag-ui-inset", inset);
+      put("--ag-ui-launcher-inset", launcherInset);
+      if (corner === null) {
+        this.removeAttribute("data-expand-corner");
+      } else {
+        this.setAttribute("data-expand-corner", corner);
+      }
+      this.#launcherPos = launcherPos;
+      this.#panelPos = panelPos;
+      this.#expandCorner = expandCorner;
+      this.#storeLauncherPosition();
+      this.#syncResizeAnchor();
+    };
   }
 
   /** Flip the collapsed state. Bound to the built-in header toggle. */
@@ -5330,10 +5385,33 @@ export class AgUiChat extends HTMLElement {
     return true;
   }
 
-  #appendNotice(icon: string, text: string, kind: string): void {
-    this.#ensureGroup().appendChild(renderRunNotice(icon, text, kind));
+  /**
+   * An inline notice about something the run did.
+   *
+   * `undo` is offered only where the agent rearranged the user's own window --
+   * see {@link renderRunNotice} for why a notice may carry that one control and
+   * nothing else.
+   */
+  #appendNotice(
+    icon: string,
+    text: string,
+    kind: string,
+    undo?: { readonly label: string; readonly onActivate: () => void },
+  ): void {
+    this.#ensureGroup().appendChild(renderRunNotice(icon, text, kind, undo));
     this.#updateEmptyState();
     this.#scroller.follow();
+  }
+
+  /**
+   * Say that the agent rearranged the user's window, and offer the way back.
+   *
+   * Only on the agent's path. A host calling {@link moveTo} is arranging its
+   * own page and does not need telling what it just did; an agent doing it
+   * mid-conversation is the case where a panel appears to move on its own.
+   */
+  #announceSurfaceChange(text: string, undo: () => void): void {
+    this.#appendNotice("⤢", text, "surface", { label: this.#strings.undo, onActivate: undo });
   }
 
   /**

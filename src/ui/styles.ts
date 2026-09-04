@@ -2347,6 +2347,30 @@ export const STYLES = `
   opacity: 0.75;
 }
 
+/* The one control a notice may carry. Quiet, because it reports something
+   already done rather than asking for a decision. */
+.run-notice-undo {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--_border);
+  border-radius: var(--_radius);
+  background: var(--_bg);
+  color: var(--_accent);
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.run-notice-undo:hover:not(:disabled) {
+  background: var(--_hover);
+}
+
+.run-notice-undo:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .run-notice-text {
   min-width: 0;
   overflow-wrap: anywhere;

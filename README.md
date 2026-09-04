@@ -191,6 +191,7 @@ another origin, add `credentials="include"` too; see
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
+| `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
 | `data-small-viewport` | — | CSS-only: `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
 | `data-start-open` | — | Mount the panel open on a first visit. The corner placements otherwise rest at their launcher, the way every corner chat does; a stored choice wins over both. The placements that place themselves are unaffected. |
 | `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
@@ -2745,7 +2746,7 @@ component sets, so a new one cannot ship undocumented.
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
 | Follow-up suggestions | `suggestions`, `suggestion-chip` |
 | Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`), and the icon holder inside each: `message-action-icon` (plus `message-action-icon-retry`, `message-action-icon-copy`, `message-action-icon-up`, `message-action-icon-down`) |
-| Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-icon`, `run-notice-text` |
+| Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`), `run-notice-surface`), `run-notice-icon`, `run-notice-text`, `run-notice-undo` |
 | Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent` |
 | Delegated sub-agents | `subagent`, `subagent-row`, `subagent-icon`, `subagent-status`, `subagent-steps`, `subagent-step`, `subagent-step-icon`, `subagent-step-name` |
 | Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`, `confirm-always`) |

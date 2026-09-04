@@ -17,6 +17,12 @@ export interface UiStrings {
   chatHistory: string;
   /** Dismiss the chat-history list and return to the conversation. */
   closeHistory: string;
+  /** Notice text when the agent moved its own panel out of the way. */
+  chatMoved: string;
+  /** Notice text when the agent collapsed its own panel. */
+  chatMinimised: string;
+  /** The one control a run notice may carry. */
+  undo: string;
   /** New-chat button (header + drawer). */
   newChat: string;
   /** Collapse button. */
@@ -288,6 +294,9 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   title: "Assistant",
   chatHistory: "Chat history",
   closeHistory: "Close history",
+  chatMoved: "Moved this panel out of the way",
+  chatMinimised: "Minimised this panel",
+  undo: "Undo",
   newChat: "New chat",
   collapse: "Collapse",
   expand: "Expand",

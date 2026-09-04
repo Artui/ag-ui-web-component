@@ -37,8 +37,14 @@ export interface ChatSurfaceReport {
  */
 export interface ChatSurface {
   describeSurface(): ChatSurfaceReport;
-  moveTo(corner: ChatCorner): boolean;
-  setCollapsed(collapsed: boolean): void;
+  /**
+   * `announce` writes a notice into the transcript with an undo beside it.
+   * The tools always pass it: a panel that rearranges itself mid-conversation
+   * has to say so, and a host driving the same method is arranging its own
+   * page and needs no telling.
+   */
+  moveTo(corner: ChatCorner, options?: { readonly announce?: boolean }): boolean;
+  setCollapsed(collapsed: boolean, options?: { readonly announce?: boolean }): void;
 }
 
 /**
@@ -112,7 +118,7 @@ export function createChatSurfaceTools(surface: ChatSurface): ClientTool[] {
             suggestion: report.collapsible ? "minimise_chat" : null,
           };
         }
-        return { moved: surface.moveTo(corner), corner };
+        return { moved: surface.moveTo(corner, { announce: true }), corner };
       },
     },
     {
@@ -135,7 +141,7 @@ export function createChatSurfaceTools(surface: ChatSurface): ClientTool[] {
             reason: "this placement has no collapsed state, so there is no launcher to return to",
           };
         }
-        surface.setCollapsed(true);
+        surface.setCollapsed(true, { announce: true });
         return { minimised: true };
       },
     },
@@ -149,6 +155,8 @@ export function createChatSurfaceTools(surface: ChatSurface): ClientTool[] {
         [X_SUMMARY_KEY]: "Restore the chat",
       },
       handler: () => {
+        // No notice: the user can see the panel come back, and a notice about
+        // something visibly happening is noise.
         surface.setCollapsed(false);
         return { restored: true };
       },

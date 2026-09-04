@@ -14,6 +14,14 @@ import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
  * declines rather than lying wherever the position is not its to take.
  */
 
+function undoButton(el: AgUiChat): HTMLButtonElement {
+  const found = el.shadowRoot?.querySelector(".run-notice-undo");
+  if (!(found instanceof HTMLButtonElement)) {
+    throw new Error("no undo control on the notice");
+  }
+  return found;
+}
+
 const settle = (): Promise<null> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
 
@@ -163,6 +171,77 @@ describe("the panel moving itself (real browser)", () => {
     await settle();
 
     expect(el.describeSurface().collapsible).toBe(false);
+  });
+
+  it("says so when the agent moves the panel, and offers the way back", async () => {
+    // A panel that rearranges itself mid-conversation has to be both visible
+    // and reversible. The notice is the surface that already reports what the
+    // run did, so it carries the one control it is allowed to carry.
+    const el = mount();
+    await settle();
+    const before = el.getBoundingClientRect();
+
+    el.moveTo("top-left", { announce: true });
+    await settle();
+    expect(el.getBoundingClientRect().left).not.toBeCloseTo(before.left, 0);
+
+    const undo = undoButton(el);
+    undo.click();
+    await settle();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(before.left, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(before.top, 0);
+    // One use: what it restores is the state as it was when the notice was
+    // written, so offering it again would put back something already moved on.
+    expect(undo.disabled).toBe(true);
+  });
+
+  it("puts back a position that was itself stated, not just the default", async () => {
+    // Undoing from a pristine panel only ever has to clear what the move
+    // wrote. The case that actually restores something is the second move: the
+    // panel already had a stated inset and an expand corner, and both have to
+    // come back or the box lands right and animates out of the wrong side.
+    const el = mount();
+    await settle();
+    el.moveTo("bottom-left");
+    await settle();
+    const stated = {
+      box: el.getBoundingClientRect(),
+      inset: el.style.getPropertyValue("--ag-ui-inset"),
+      corner: el.getAttribute("data-expand-corner"),
+    };
+    expect(stated.inset).not.toBe("");
+    expect(stated.corner).not.toBeNull();
+
+    el.moveTo("top-right", { announce: true });
+    await settle();
+    undoButton(el).click();
+    await settle();
+
+    expect(el.getBoundingClientRect().left).toBeCloseTo(stated.box.left, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(stated.box.top, 0);
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(stated.inset);
+    expect(el.getAttribute("data-expand-corner")).toBe(stated.corner);
+  });
+
+  it("stays quiet when the host moves its own panel", async () => {
+    // A host arranging its own page does not need telling what it just did.
+    const el = mount();
+    await settle();
+    el.moveTo("top-left");
+    await settle();
+
+    expect(el.shadowRoot?.querySelector(".run-notice-undo")).toBeNull();
+  });
+
+  it("offers the way back out of an agent's minimise too", async () => {
+    const el = mount();
+    await settle();
+    el.setCollapsed(true, { announce: true });
+    await settle();
+    expect(el.collapsed).toBe(true);
+
+    undoButton(el).click();
+    expect(el.collapsed).toBe(false);
   });
 
   it("hands the axes back when the placement changes", async () => {

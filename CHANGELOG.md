@@ -27,7 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-picked, and switching placement hands everything back.
 
   None is stamped `x-destructive`: moving a window destroys nothing, and a
-  confirmation card in front of it would be worse than the move.
+  confirmation card in front of it would be worse than the move. **What it gets
+  instead is a notice and an undo.** A panel that rearranges itself
+  mid-conversation has to be both visible and reversible, so `move_chat` and
+  `minimise_chat` write a run notice with an Undo beside it that puts the panel
+  back exactly where it was -- inset, launcher inset and the corner it opens
+  from, which are one decision rather than three. A host calling `moveTo` or
+  `setCollapsed` itself gets no notice: it is arranging its own page and does
+  not need telling what it just did.
+
+  Run notices may now carry that one control, and only ever an undo. Anything
+  the user has to *decide* is a confirmation card; a notice reports something
+  already done.
 
 - **`showHighlightOverlay(el, options)`** -- ring a host-page element from an
   overlay drawn *outside* it, optionally dimming everything else (`scrim`) or
