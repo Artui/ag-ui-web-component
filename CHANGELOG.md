@@ -269,6 +269,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **One screen-edge bound, instead of four answers to one question.** A drag
+  stopped the panel at 0, a resize at 0, a restore at the 24px resting gutter,
+  and the launcher at 8 -- so a panel dragged flush leapt a whole gutter inward
+  the next time anything re-placed it (a resize, an expand, a reload), and a
+  bubble held clear of the boundary sat beside a panel welded to it. Every
+  gesture now stops on the same line, 8px in, which is the bound the launcher
+  already had and it has it for the same reason: a rounded box with a drop
+  shadow sitting on the boundary has its shadow cut and its curve running into
+  the edge, and on a rounded screen or under a scrollbar it is genuinely
+  clipped. The 24px gutter keeps its own job -- where an untouched panel
+  *rests*, and what the size cap subtracts -- and is no longer a limit on where
+  a person may put one.
+
 - **A floating panel grown to its cap sat outside the screen.** The cap was the
   whole usable box while the resting inset had already spent a gutter on the
   anchored corner, so the far edge landed exactly one gutter outside it -- a top

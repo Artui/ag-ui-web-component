@@ -82,12 +82,13 @@ describe("launcherPlacement", () => {
     const placed = launcherPlacement(middle, panel, shallow, shallow);
 
     // Opening downward would run to 320 + 560 = 880, past the 700 viewport, so
-    // the box is pulled up to sit on the bottom margin.
+    // the box is pulled up to sit on the bottom margin -- the screen-edge
+    // bound every gesture stops at, not the wider gutter a placement rests at.
     expect(placed.corner.y).toBe("top");
-    expect(placed.hostInset).toBe("116px auto auto 600px");
-    // 320 - 116 = 204: the launcher keeps its dragged position by carrying the
+    expect(placed.hostInset).toBe("132px auto auto 600px");
+    // 320 - 132 = 188: the launcher keeps its dragged position by carrying the
     // whole of the clamp's correction in its own inset.
-    expect(placed.launcherInset).toBe("204px auto auto 0px");
+    expect(placed.launcherInset).toBe("188px auto auto 0px");
   });
 
   it("holds a clamped panel against the near margin rather than off-screen", () => {
@@ -98,12 +99,24 @@ describe("launcherPlacement", () => {
     const placed = launcherPlacement(box(200, 100), { width: 800, height: 560 }, narrow, narrow);
 
     // This launcher is pinned right, so the clamp reaches the same left edge by
-    // pushing the right one past the viewport: 320 + 504 - 800 = 24. A negative
+    // pushing the right one past the viewport: 320 + 488 - 800 = 8. A negative
     // offset is the correct expression of it, not a symptom.
     expect(placed.corner.x).toBe("right");
-    expect(placed.hostInset).toBe("100px -504px auto auto");
-    const right = 320 - -504;
-    expect(right - 800).toBe(24);
+    expect(placed.hostInset).toBe("100px -488px auto auto");
+    const right = 320 - -488;
+    expect(right - 800).toBe(8);
+  });
+
+  it("holds a panel opening at an edge on the same line a drag stops at", () => {
+    // The expand path and the drag path are two ways of putting the panel in
+    // the same place, so they cannot stop on different lines: a launcher held
+    // at the screen-edge bound would otherwise open a panel a whole resting
+    // gutter further in than the user had just dragged the same panel to.
+    const tight = { left: 0, top: 0, width: 1440, height: 900 };
+
+    const placed = launcherPlacement(box(-500, -500), panel, tight, tight);
+
+    expect(placed.hostInset).toBe("8px auto auto 8px");
   });
 
   it("takes a caller's margin over the default gutter", () => {

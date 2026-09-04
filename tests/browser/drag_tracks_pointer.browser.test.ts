@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ELEMENT_TAG } from "../../src/constants.js";
+import { ELEMENT_TAG, SCREEN_EDGE_MARGIN } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 
@@ -142,12 +142,14 @@ describe("dragging tracks the pointer (real browser)", () => {
     const beforeRelease = el.getBoundingClientRect();
     window.dispatchEvent(pointer("pointerup", from.x, from.y - 640));
 
-    // It reaches the reserved edge and stops there -- flush, the same place a
-    // drag reaches. Stopping short of it was the cap and the bound disagreeing
-    // about where the limit was, which left a band the panel could be dragged
-    // into but not resized into.
-    expect(Math.min(...tops)).toBeGreaterThanOrEqual(RESERVED_TOP_PX - 1);
-    expect(tops.at(-1)).toBeCloseTo(RESERVED_TOP_PX, 0);
+    // It reaches the reserved edge and stops on the same line a drag stops on
+    // -- which is the screen-edge bound inside it, not flush against it.
+    // Stopping anywhere else was the cap and the bound disagreeing about where
+    // the limit was, leaving a band the panel could be dragged into but not
+    // resized into.
+    const limit = RESERVED_TOP_PX + SCREEN_EDGE_MARGIN;
+    expect(Math.min(...tops)).toBeGreaterThanOrEqual(limit - 1);
+    expect(tops.at(-1)).toBeCloseTo(limit, 0);
     expect(tops.at(-1)).toBe(tops.at(-2));
     // ...and releasing keeps the size the panel actually had, rather than the
     // one the pointer asked for. Within a pixel, because the insets are written
@@ -209,7 +211,7 @@ describe("dragging tracks the pointer (real browser)", () => {
 
     // Now at its full height, with nothing left to give.
     const grown = el.getBoundingClientRect();
-    expect(grown.top).toBeCloseTo(RESERVED_TOP_PX, 0);
+    expect(grown.top).toBeCloseTo(RESERVED_TOP_PX + SCREEN_EDGE_MARGIN, 0);
 
     const bottom = part(el, ".resize-handle--bottom");
     const at = centre(bottom);

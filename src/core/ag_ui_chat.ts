@@ -25,6 +25,7 @@ import {
   PASTE_ATTACH_CHARS,
   READ_PAGE_TOOL,
   RUN_FINISHED_EVENT,
+  SCREEN_EDGE_MARGIN,
   STATE_EVENT,
   SUBAGENT_CUSTOM_NAME,
   SUBAGENT_PHASE,
@@ -939,11 +940,16 @@ export class AgUiChat extends HTMLElement {
    */
   #withinViewport(box: PanelRect): PanelRect {
     const viewport = this.#viewport();
-    const right = viewport.left + viewport.width;
-    const bottom = viewport.top + viewport.height;
+    // The same bound a drag stops at, so a grip pulled to the edge and a panel
+    // dragged to it come to rest on the same line. The inner Math.max/min pair
+    // keeps an already-inverted box from turning inside out.
+    const left = viewport.left + SCREEN_EDGE_MARGIN;
+    const top = viewport.top + SCREEN_EDGE_MARGIN;
+    const right = viewport.left + viewport.width - SCREEN_EDGE_MARGIN;
+    const bottom = viewport.top + viewport.height - SCREEN_EDGE_MARGIN;
     return {
-      left: Math.min(Math.max(box.left, viewport.left), box.right),
-      top: Math.min(Math.max(box.top, viewport.top), box.bottom),
+      left: Math.min(Math.max(box.left, left), box.right),
+      top: Math.min(Math.max(box.top, top), box.bottom),
       right: Math.max(Math.min(box.right, right), box.left),
       bottom: Math.max(Math.min(box.bottom, bottom), box.top),
     };
@@ -3030,12 +3036,15 @@ export class AgUiChat extends HTMLElement {
     // The launcher as it was when the gesture began. Held for the whole drag:
     // every move measures from here, so the two halves cannot drift apart.
     const start = this.#launcherPos;
-    // No gutter on a dragged panel. The 24px margin is where a placement rests
-    // one, not a rule about where a person may put it: enforcing it against a
-    // drag is what made the panel feel stuck short of every edge, on all four
-    // sides at once. Staying inside the box the host left free is the part that
-    // matters, and that is still enforced.
-    const held = clampPanel(box, this.#viewport(), 0);
+    // The screen-edge bound, not the resting gutter. The 24px margin is where
+    // a placement rests one, not a rule about where a person may put it, and
+    // enforcing it against a drag is what made the panel feel stuck short of
+    // every edge on all four sides at once. Zero was the correction and it
+    // went too far the other way: it welded the panel to the boundary while
+    // the launcher -- same shadow, same rounded edge -- was held 8px off it,
+    // and it disagreed with the restore below, so a panel dragged flush leapt
+    // inward the next time the viewport changed.
+    const held = clampPanel(box, this.#viewport(), SCREEN_EDGE_MARGIN);
     const corner = this.#expandCorner ?? this.#anchor;
     // The usable box decides where the panel may rest, above; the screen is
     // what these insets are measured from, because that is what the browser
@@ -3137,9 +3146,14 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     const rect = this.getBoundingClientRect();
+    // The same bound the drag itself used. Taking the default here instead is
+    // what made a panel dragged to an edge jump a whole resting gutter inward
+    // on the next resize, reload or expand -- re-placing a position the user
+    // had stated, against a limit they had never been shown.
     const held = clampPanel(
       { left: at.left, top: at.top, right: at.left + rect.width, bottom: at.top + rect.height },
       this.#viewport(),
+      SCREEN_EDGE_MARGIN,
     );
     const launcher = this.#launcherBox();
     const carried = {

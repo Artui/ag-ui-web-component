@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ELEMENT_TAG, LAUNCHER_EDGE_MARGIN } from "../../src/constants.js";
+import { ELEMENT_TAG, SCREEN_EDGE_MARGIN } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 
@@ -12,6 +12,13 @@ import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
  * limits below are "stay on the screen", which is what they were before any of
  * this, and the reserved-edge behaviour is what a host opts into rather than
  * what everyone gets.
+ *
+ * On the screen means `SCREEN_EDGE_MARGIN` inside it, not welded to it -- the
+ * same bound the launcher stops at, and for the same reason: a rounded box
+ * with a drop shadow sitting on the boundary has its shadow cut and its curve
+ * running into the edge, and on a rounded screen or under a scrollbar it is
+ * genuinely clipped. The distances are written against the constant here so
+ * the two cannot drift apart again.
  *
  * Worth its own file because the rest of the drag and resize tests state an
  * inset in order to exercise it, and a suite that only ever tests the
@@ -87,8 +94,8 @@ describe("a host that reserves nothing (real browser)", () => {
     // Zero, not a gutter and not somebody's header bar: with nothing reserved
     // the limit is the screen.
     const box = el.getBoundingClientRect();
-    expect(box.left).toBeCloseTo(0, 0);
-    expect(box.top).toBeCloseTo(0, 0);
+    expect(box.left).toBeCloseTo(SCREEN_EDGE_MARGIN, 0);
+    expect(box.top).toBeCloseTo(SCREEN_EDGE_MARGIN, 0);
   });
 
   it("lets the panel reach the bottom-right of the screen itself", async () => {
@@ -99,8 +106,8 @@ describe("a host that reserves nothing (real browser)", () => {
     await settle();
 
     const box = el.getBoundingClientRect();
-    expect(box.right).toBeCloseTo(window.innerWidth, 0);
-    expect(box.bottom).toBeCloseTo(window.innerHeight, 0);
+    expect(box.right).toBeCloseTo(window.innerWidth - SCREEN_EDGE_MARGIN, 0);
+    expect(box.bottom).toBeCloseTo(window.innerHeight - SCREEN_EDGE_MARGIN, 0);
   });
 
   it("lets the launcher reach the screen's own corner", async () => {
@@ -120,8 +127,8 @@ describe("a host that reserves nothing (real browser)", () => {
     // screen's own corner rather than the panel's 24px gutter, which would
     // refuse the corners people drag it to.
     const box = launcher.getBoundingClientRect();
-    expect(box.left).toBeCloseTo(LAUNCHER_EDGE_MARGIN, 0);
-    expect(box.top).toBeCloseTo(LAUNCHER_EDGE_MARGIN, 0);
+    expect(box.left).toBeCloseTo(SCREEN_EDGE_MARGIN, 0);
+    expect(box.top).toBeCloseTo(SCREEN_EDGE_MARGIN, 0);
   });
 
   it("stops a resize at the screen, not before it", async () => {
@@ -134,7 +141,7 @@ describe("a host that reserves nothing (real browser)", () => {
 
     const box = el.getBoundingClientRect();
     expect(box.bottom).toBeLessThanOrEqual(window.innerHeight + 1);
-    expect(box.bottom).toBeCloseTo(window.innerHeight, 0);
+    expect(box.bottom).toBeCloseTo(window.innerHeight - SCREEN_EDGE_MARGIN, 0);
     // ...and the anchored edge did not travel.
     expect(Math.abs(box.top - before.top)).toBeLessThanOrEqual(1);
   });

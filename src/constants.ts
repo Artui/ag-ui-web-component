@@ -400,10 +400,17 @@ export const ICON_FILE_TEXT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidde
 export const CHART_ACTIVITY_TYPE = "chart";
 
 /**
- * The gutter a floating panel keeps from the viewport edge.
+ * The gutter a floating panel *rests* at, before anyone has touched it.
  *
- * It matches the default `--ag-ui-inset`, so an undragged widget resolves to
- * exactly the placement it already had. Changing it moves every clamped panel.
+ * It matches the default `--ag-ui-inset` and the stylesheet's
+ * `--ag-ui-edge-gutter`, so an undragged widget resolves to exactly the
+ * placement it already had, and it is what the size cap subtracts so a resting
+ * panel grown to its limit stops at the far edge rather than one gutter past
+ * it.
+ *
+ * Not a limit on where a *person* may put the widget -- that is
+ * {@link SCREEN_EDGE_MARGIN}, and the two being one number is what made a
+ * dragged panel feel stuck short of every edge on all four sides at once.
  */
 export const EDGE_MARGIN = 24;
 
@@ -460,5 +467,12 @@ export const PASTE_ATTACH_CHARS = 5000;
  *
  * Small enough that every corner is still reachable, large enough that the
  * circle always closes.
+ *
+ * The panel obeys the same bound, for the same reason: it is a rounded box
+ * with the same drop shadow, and there is no account of why a bubble held off
+ * the boundary should sit beside a panel welded to it. Before this was shared
+ * there were four answers to one question -- a drag stopped at 0, a resize at
+ * 0, a restore at 24 and the launcher at 8 -- so a panel dragged flush leapt
+ * 24px inward the next time anything re-placed it.
  */
-export const LAUNCHER_EDGE_MARGIN = 8;
+export const SCREEN_EDGE_MARGIN = 8;

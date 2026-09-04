@@ -1,4 +1,4 @@
-import { EDGE_MARGIN } from "../constants.js";
+import { SCREEN_EDGE_MARGIN } from "../constants.js";
 import { clampPanel } from "./clamp_panel.js";
 import { placeWidget } from "./place_widget.js";
 
@@ -87,7 +87,7 @@ export function launcherPlacement(
   panel: Extent,
   viewport: ViewportBox,
   screen: Extent,
-  margin: number = EDGE_MARGIN,
+  margin: number = SCREEN_EDGE_MARGIN,
 ): LauncherPlacement {
   // Room for a panel pinned to each side of the launcher. A tie goes to the
   // first branch, so the result is deterministic for a centred launcher.

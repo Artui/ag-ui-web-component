@@ -194,12 +194,19 @@ describe("dragging the panel by its header", () => {
 
     drag(header, [700, 240], [0, 0]);
 
-    // Flush to the corner, not held 24px short of it. That gutter is where a
-    // placement rests a panel, not a rule about where a person may drag one --
-    // enforcing it against a drag made the panel feel stuck short of every
-    // edge on all four sides. Staying on screen is the part that matters, and
-    // the zeroes here are that: the panel stops at the viewport, not before it.
-    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("auto auto 240px 0px");
+    // At the screen-edge bound, not held a resting gutter short of it. That
+    // 24px gutter is where a placement rests a panel, not a rule about where a
+    // person may drag one -- enforcing it against a drag made the panel feel
+    // stuck short of every edge on all four sides at once.
+    //
+    // 8 rather than 0, though, and the same 8 the launcher stops at. The panel
+    // is a rounded box with a drop shadow, so one welded to the boundary has
+    // its shadow cut and its curve running into the edge exactly as the bubble
+    // did -- and on a rounded screen, or under a scrollbar, it is genuinely
+    // clipped. Zero also disagreed with the restore, which used the resting
+    // gutter, so a panel dragged flush leapt 24px inward the next time
+    // anything re-placed it: a resize, an expand, a reload.
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("auto auto 232px 8px");
   });
 
   it("remembers the position for the next mount, per tab", async () => {
