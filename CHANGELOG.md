@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.2] — 2026-09-05
+
+### Fixed
+
+- **The README's two callouts rendered as code blocks.** This file is the
+  documentation -- there is no docs site, so it is what GitHub shows and what npm
+  puts on the package page -- and `!!! note` is MkDocs syntax that neither
+  understands. The line rendered literally and its indented body became a *code
+  block*, so a warning was displayed as something to copy. Both are now GitHub
+  callouts.
+
+  One of the two was 0.35.1's own note about forgetting `defineAgUiChat()`,
+  written because that failure is silent. A reader hit the same failure after it
+  shipped, which is how the rendering was found: the note was there, was
+  correct, and reached nobody. `tests/readme_renders.test.ts` now fails on any
+  admonition, and on the registration callout going missing.
+
 ## [0.35.1] — 2026-09-05
 
 ### Documentation
@@ -3415,7 +3432,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.2...HEAD
+[0.35.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.1...v0.35.2
 [0.35.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.0...v0.35.1
 [0.35.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.33.1...v0.34.0
