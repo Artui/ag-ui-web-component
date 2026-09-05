@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The README's two callouts rendered as code blocks.** This file is the
+  documentation -- there is no docs site, so it is what GitHub shows and what npm
+  puts on the package page -- and `!!! note` is MkDocs syntax that neither
+  understands. The line rendered literally and its indented body became a *code
+  block*, so a warning was displayed as something to copy. Both are now GitHub
+  callouts.
+
+  One of the two was 0.35.1's own note about forgetting `defineAgUiChat()`,
+  written because that failure is silent. A reader hit the same failure after it
+  shipped, which is how the rendering was found: the note was there, was
+  correct, and reached nobody. `tests/readme_renders.test.ts` now fails on any
+  admonition, and on the registration callout going missing.
+
 ## [0.35.1] — 2026-09-05
 
 ### Documentation
