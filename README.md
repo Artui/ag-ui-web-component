@@ -149,6 +149,17 @@ Drop the element into your page and register the tools the agent may call:
 <ag-ui-chat endpoint="/agent/" title-text="Assistant"></ag-ui-chat>
 ```
 
+!!! note "If nothing appears, check `defineAgUiChat()` ran"
+    Forgetting it looks like nothing. `<ag-ui-chat>` is then an *unknown
+    element*, which every browser renders as an inline 0x0 box, in flow, with no
+    console warning and no error — so the page looks finished and the chat is
+    simply absent. A bare `import "@artooi/ag-ui-web-component"` does not
+    register anything, deliberately: registration is an explicit call so the
+    package stays tree-shakeable.
+
+    `customElements.get("ag-ui-chat")` in a console answers it in one line —
+    `undefined` means the call did not run.
+
 That's the whole integration: an `endpoint` attribute pointing at your AG-UI server, optional
 `headers`, and the tools you want the agent to be able to invoke in the browser. If your API is on
 another origin, add `credentials="include"` too; see

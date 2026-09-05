@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.1] — 2026-09-05
+
+### Documentation
+
+- **Named the symptom of forgetting `defineAgUiChat()`**, which is that there is
+  no symptom. A bare `import "@artooi/ag-ui-web-component"` registers nothing --
+  deliberately, so the package stays tree-shakeable -- and `<ag-ui-chat>` is then
+  an unknown element, which every browser renders as an inline 0x0 box, in flow,
+  with no console warning and no error. The page looks finished and the chat is
+  simply absent.
+
+  Reported by a consumer who lost time to it. The design is right and does not
+  change; what was missing was the one line saying that
+  `customElements.get("ag-ui-chat")` returning `undefined` is the answer.
+
 ## [0.35.0] — 2026-09-04
 
 ### Added
@@ -3400,7 +3415,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.1...HEAD
+[0.35.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.0...v0.35.1
 [0.35.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.33.1...v0.34.0
 [0.33.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.33.0...v0.33.1
