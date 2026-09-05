@@ -264,6 +264,32 @@ export const TOOL_CALL_STATUS = {
 } as const;
 
 /**
+ * How a tool call ended, as the server states it on `TOOL_CALL_RESULT`.
+ *
+ * The vocabulary is pydantic-ai's own `ToolReturnPart.outcome`, carried whole
+ * rather than re-spelled, so the four repos that pass a refusal along agree on
+ * one word for it.
+ *
+ * **Absent means {@link TOOL_OUTCOME.SUCCESS}, and that is load-bearing.** Every
+ * server written before the field existed omits it, so a missing field has to
+ * render exactly as a plain result did — which is why this is an optional
+ * annotation on the event and not a required one. `FAILED` is a call that ran
+ * and failed; `DENIED` is one a person or a guard refused, so it never ran at
+ * all. The two are worth distinguishing on screen because only the second is
+ * something the user did.
+ *
+ * Anything *else* on the wire — a value from a later protocol version, or
+ * pydantic-ai's own `interrupted` — is read as a success rather than rejected.
+ * A card is a claim about what happened, and "I do not know this word" is not
+ * grounds for claiming failure. `toolStatusFromOutcome` is where that is done.
+ */
+export const TOOL_OUTCOME = {
+  SUCCESS: "success",
+  FAILED: "failed",
+  DENIED: "denied",
+} as const;
+
+/**
  * Lifecycle status of a pending-attachment chip in the composer tray. A chip
  * opens as `UPLOADING` (with a progress bar), then settles to `READY` (a durable
  * ref) or `ERROR` (with a retry control).

@@ -35,6 +35,7 @@ import {
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
+  TOOL_OUTCOME,
   UNREAD_EVENT,
   X_CONFIRM_KEY,
   X_SUMMARY_KEY,
@@ -144,6 +145,7 @@ import {
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunIndex } from "./run_index.js";
+import { toolStatusFromOutcome } from "./tool_outcome.js";
 import { type TranscribeHandler, transcribeAudio } from "./transcribe_audio.js";
 import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
 import { mintThread, warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
@@ -3995,7 +3997,17 @@ export class AgUiChat extends HTMLElement {
     if (message.role === "tool") {
       const card = this.#toolCards.get(message.toolCallId);
       if (card !== undefined) {
-        card.settle(TOOL_CALL_STATUS.DONE, message.content);
+        // The outcome `AgUiClient` annotated onto the persisted message, read
+        // back through the same mapping the live path uses -- so a card that
+        // said "declined" before the reload still says it after. Narrowed off
+        // `unknown` rather than trusted, like every other field read out of the
+        // store: `Message` does not declare it, a host store may not round-trip
+        // it, and history written before this shipped has none. All three land
+        // on DONE, which is what this line did unconditionally.
+        card.settle(
+          toolStatusFromOutcome((message as { outcome?: unknown }).outcome),
+          message.content,
+        );
       }
     }
   }
@@ -5175,7 +5187,9 @@ export class AgUiChat extends HTMLElement {
       const message = this.#strings.pageMoved;
       card.settle(TOOL_CALL_STATUS.ERROR, message);
       this.#showPending();
-      return { content: `Error: ${message}`, error: message };
+      // Stated so a reload settles this card the same way. The card's own status
+      // lives only in the DOM, and the DOM is what a reload throws away.
+      return { content: `Error: ${message}`, error: message, outcome: TOOL_OUTCOME.FAILED };
     }
     const rule = await this.#confirmationRule(call, tool);
     if (rule !== null) {
@@ -5208,7 +5222,11 @@ export class AgUiChat extends HTMLElement {
         const message = this.#strings.declinedAction;
         card.settle(TOOL_CALL_STATUS.DECLINED, message);
         this.#showPending();
-        return { content: message };
+        // The one outcome with no error text and no server involvement at all:
+        // a person said no in this browser. Nothing else records that, so
+        // without the annotation the reload showed a green card for an action
+        // the user had explicitly refused.
+        return { content: message, outcome: TOOL_OUTCOME.DENIED };
       }
     }
     // A navigating tool reloads only without a client-side router; with a
@@ -5251,7 +5269,7 @@ export class AgUiChat extends HTMLElement {
       const message = error instanceof Error ? error.message : String(error);
       card.settle(TOOL_CALL_STATUS.ERROR, message);
       this.#showPending();
-      return { content: `Error: ${message}`, error: message };
+      return { content: `Error: ${message}`, error: message, outcome: TOOL_OUTCOME.FAILED };
     }
   }
 
@@ -5516,12 +5534,18 @@ export class AgUiChat extends HTMLElement {
         // got for compaction, one handler up.
         this.#appendNotice("\u{1F504}", this.#strings.historyReplaced, "history-replaced");
       },
-      onToolResult: (toolCallId, content) => {
+      onToolResult: (toolCallId, content, outcome) => {
         const card = this.#toolCards.get(toolCallId);
         if (card === undefined) {
           return;
         }
-        card.settle(TOOL_CALL_STATUS.DONE, content);
+        // Settled as the server says it ended, not as "it ended". This path used
+        // to pass DONE unconditionally, so a refusal arrived as a green card
+        // with the reason folded inside it -- a booking the server declined
+        // read, at a glance, as a booking that was made. An absent or
+        // unrecognised outcome still means DONE, so every server written before
+        // the field existed renders exactly as it did.
+        card.settle(toolStatusFromOutcome(outcome), content);
         this.#serverSettled.add(toolCallId);
         // The card stops being the live thing the moment it settles, and the
         // server goes straight back to the model with the result -- a wait with

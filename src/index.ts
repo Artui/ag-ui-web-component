@@ -20,6 +20,7 @@ export {
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
+  TOOL_OUTCOME,
   UNREAD_EVENT,
   X_CONFIRM_KEY,
   X_DESTRUCTIVE_KEY,
@@ -69,6 +70,7 @@ export {
 export { defineAgUiChat } from "./core/define_ag_ui_chat.js";
 export { RemoteConversationStore } from "./core/remote_conversation_store.js";
 export { RunIndex, type RunRow } from "./core/run_index.js";
+export { type ToolOutcome, toolStatusFromOutcome } from "./core/tool_outcome.js";
 export {
   type TranscribeHandler,
   type TranscribeOptions,

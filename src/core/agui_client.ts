@@ -8,6 +8,7 @@ import {
 import type { Context, Interrupt, Message, ResumeEntry, Tool } from "@ag-ui/core";
 import { MAX_TOOL_ROUNDS } from "../constants.js";
 import type { AttachmentRef } from "./attachment.js";
+import type { ToolOutcome } from "./tool_outcome.js";
 
 /** A tool call surfaced to the host by {@link AgUiClient}. */
 export interface AgUiToolCall {
@@ -22,6 +23,18 @@ export interface ToolExecution {
   content: string;
   /** Present when the handler failed; surfaced for logging. */
   error?: string;
+  /**
+   * How the call ended, in the same vocabulary a server states on
+   * `TOOL_CALL_RESULT`. Omit for a success -- absent *is* success, here for the
+   * same reason it is on the wire.
+   *
+   * Distinct from {@link error}, which is a *message* and only exists for the
+   * one failure shape that produces one. A refusal has no error and is still
+   * not a success, and that is the case this field exists for: without it a
+   * declined call was persisted as an ordinary result and came back from a
+   * reload as a green card.
+   */
+  outcome?: ToolOutcome;
   /**
    * When `true`, a navigating tool triggered a page reload. The loop stops
    * without appending a result — the result is supplied after the next mount
@@ -76,8 +89,19 @@ export interface AgUiClientHandlers {
    * Fired when a server-side tool's result streams back (AG-UI's
    * `TOOL_CALL_RESULT`). Frontend tools don't emit this — the client supplies
    * their result itself — so this is the channel for server-executed output.
+   *
+   * `outcome` is the event's optional `outcome` field, forwarded raw. It is
+   * `unknown` rather than {@link ToolOutcome} because it comes off a
+   * `passthrough` zod schema: the protocol does not validate it, so neither can
+   * this signature honestly claim to. Read it with `toolStatusFromOutcome`,
+   * which treats `undefined` and anything unrecognised as a success.
+   *
+   * Added as a third parameter rather than as a new callback, so an
+   * implementation written against the two-parameter form still satisfies this
+   * interface and still behaves exactly as it did — which is the same
+   * backwards-compatibility promise the wire field makes.
    */
-  onToolResult(toolCallId: string, content: string): void;
+  onToolResult(toolCallId: string, content: string, outcome?: unknown): void;
   /**
    * Fired for AG-UI activity events — ambient notices about what the *run* did,
    * as opposed to work the agent asked for. `django-ag-ui` emits one with
@@ -259,6 +283,25 @@ export class AgUiClient {
    * set would miss entirely.
    */
   readonly #closedMessageIds = new Set<string>();
+  /**
+   * How each tool call ended, keyed by call id, for the transcript this client
+   * persists.
+   *
+   * A side table rather than a field written onto the message, because neither
+   * producer of a tool message will carry it. `@ag-ui/client` builds the
+   * server-side one by destructuring five named fields off the event, so an
+   * `outcome` beside them is dropped before the message exists; and writing it
+   * back onto that message afterwards would put it in `agent.messages`, which is
+   * what the *next* request sends to the server. This keeps the annotation on
+   * the copy handed to the store and off the wire.
+   *
+   * Per client, not per run: `saveMessages` rewrites the whole transcript on
+   * every persist, so an outcome recorded in round one has to still be here in
+   * round five or the earlier card silently reverts to a green one. Bounded by
+   * the number of tool calls in the conversation, which the transcript beside it
+   * already is.
+   */
+  readonly #outcomes = new Map<string, string>();
   readonly #connectionLostMessage: string;
   readonly #maxToolRounds: number;
   // Set by cancel(); reset at the top of each #run(). Checked by the loop so
@@ -334,7 +377,7 @@ export class AgUiClient {
       (message as { attachments?: readonly AttachmentRef[] }).attachments = attachments;
     }
     this.#agent.addMessage(message);
-    this.#onPersist(this.#agent.messages);
+    this.#persist();
     await this.#run();
   }
 
@@ -373,7 +416,7 @@ export class AgUiClient {
     }
     const kept = messages.slice(0, lastUser + 1);
     this.#agent.setMessages(kept);
-    this.#onPersist(this.#agent.messages);
+    this.#persist();
     return kept;
   }
 
@@ -389,7 +432,7 @@ export class AgUiClient {
   /** Append a frontend tool result to history (used by the resume path). */
   addToolResult(toolCallId: string, content: string): void {
     this.#agent.addMessage({ id: randomUUID(), role: "tool", content, toolCallId });
-    this.#onPersist(this.#agent.messages);
+    this.#persist();
   }
 
   /**
@@ -428,8 +471,40 @@ export class AgUiClient {
   #onCancelled(): void {
     // Persist so the truncated exchange, partial assistant text included,
     // survives a reload.
-    this.#onPersist(this.#agent.messages);
+    this.#persist();
     this.#handlers.onCancelled();
+  }
+
+  /**
+   * Hand the transcript to the host's store, annotated with what {@link #outcomes}
+   * knows about how each tool call ended.
+   *
+   * Every persist in this class goes through here, because the store keeps only
+   * the most recent list: annotating one call site would mean the next
+   * unannotated save quietly threw the annotations away.
+   */
+  #persist(): void {
+    const messages = this.#agent.messages;
+    if (this.#outcomes.size === 0) {
+      this.#onPersist(messages);
+      return;
+    }
+    // A copy, and only of the messages that gain something. `agent.messages` is
+    // the list the next `runAgent` sends back to the server, so writing an extra
+    // field into it would put a client-side annotation on the wire; a store is
+    // allowed to hold more than the protocol does.
+    this.#onPersist(
+      messages.map((message) => {
+        if (message.role !== "tool") {
+          return message;
+        }
+        const outcome = this.#outcomes.get(message.toolCallId);
+        // Cast at the AG-UI boundary, as the `attachments` augmentation on a
+        // user message already does: `Message` does not declare the field, and
+        // the default store round-trips it through `JSON.stringify` verbatim.
+        return outcome === undefined ? message : ({ ...message, outcome } as Message);
+      }),
+    );
   }
 
   async #runLoop(): Promise<void> {
@@ -455,7 +530,7 @@ export class AgUiClient {
       }
       await this.#agent.runAgent(params, this.#buildSubscriber(pending, runState));
       resume = undefined;
-      this.#onPersist(this.#agent.messages);
+      this.#persist();
       // Cancelled mid-stream: don't execute the tool calls collected before the
       // abort.
       if (this.#cancelled) {
@@ -503,13 +578,21 @@ export class AgUiClient {
           // next mount. Stop here rather than re-running into a dead context.
           return;
         }
+        // Recorded before the persist below, so the very first save of this
+        // message already carries how it ended. A frontend tool's refusal or
+        // failure never touches the wire's `outcome` field -- no server states
+        // it, because no server ran the call -- so this side table is the only
+        // record there is, and a reload reads a card off it.
+        if (result.outcome !== undefined) {
+          this.#outcomes.set(call.id, result.outcome);
+        }
         this.#agent.addMessage({
           id: randomUUID(),
           role: "tool",
           content: result.content,
           toolCallId: call.id,
         });
-        this.#onPersist(this.#agent.messages);
+        this.#persist();
         executed = true;
       }
       if (!executed) {
@@ -521,6 +604,7 @@ export class AgUiClient {
   #buildSubscriber(pending: AgUiToolCall[], runState: RunState): AgentSubscriber {
     const h = this.#handlers;
     const closed = this.#closedMessageIds;
+    const outcomes = this.#outcomes;
     // Read at event time, not captured now: the flag flips mid-run, and the
     // subscriber is built before the run that a later `cancel()` stops.
     const cancelled = (): boolean => this.#cancelled;
@@ -562,7 +646,20 @@ export class AgUiClient {
         h.onToolCall(call);
       },
       onToolCallResultEvent({ event }) {
-        h.onToolResult(event.toolCallId, event.content);
+        // Bracket access because the field is not declared: `TOOL_CALL_RESULT`
+        // extends a `passthrough` schema, so an unknown key survives parsing and
+        // arrives here typed only by the catch-all index signature. That is the
+        // whole mechanism the outcome rides -- no schema change in `@ag-ui/core`
+        // is needed for a server to state one.
+        const outcome = event["outcome"];
+        // Recorded even when it is a word this client does not recognise, and
+        // even when it says "success": the store is a record of what the server
+        // said, and re-reading it through the same mapping as the live path is
+        // what keeps a reload agreeing with what the user watched happen.
+        if (typeof outcome === "string") {
+          outcomes.set(event.toolCallId, outcome);
+        }
+        h.onToolResult(event.toolCallId, event.content, outcome);
       },
       onActivitySnapshotEvent({ event, messages }) {
         // A snapshot for an id already in the list is a replacement, not a new

@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A tool call that failed can now say so.** `TOOL_CALL_RESULT` may carry an
+  optional `outcome` field -- `success`, `failed` or `denied`, read off the new
+  `TOOL_OUTCOME` constant -- and the card settles to *done*, *error* or
+  *declined* accordingly. **Absent is a success**, so every server written before
+  the field existed renders exactly as it did, and so does any value this release
+  does not recognise: a card is a claim about what happened, and not knowing a
+  word is not grounds for claiming failure.
+
+  Nothing in `@ag-ui/core` declares the field. AG-UI's event schemas extend a
+  `passthrough` base, so an unknown key survives parsing and reaches the
+  subscriber -- asserted in `tests/ag_ui_event_contract.test.ts`, because if that
+  ever stops being true every card silently goes back to claiming success.
+
+  `AgUiClientHandlers.onToolResult` gains a third parameter for it, typed
+  `unknown` because the protocol does not validate it; `toolStatusFromOutcome`
+  does the narrowing. A handler written against the two-parameter form still
+  satisfies the interface and still behaves as before. A **frontend** tool states
+  its own outcome on the `ToolExecution` it returns, since no server ran it.
+
+### Fixed
+
+- **A refused tool call rendered as a successful one.** Every `TOOL_CALL_RESULT`
+  settled its card as *done*, whatever the server said, so a refusal arrived
+  green with the reason folded into its result body -- in a sibling demo, a
+  booking the server had declined read at a glance as a booking that was made.
+  `ERROR` and `DECLINED` existed and the card rendered all three distinctly; they
+  were simply unreachable from the server's side.
+
+- **A reload turned every tool card green**, which was the same bug reached by a
+  second path and needed no server involvement at all: restoring a conversation
+  settled *every* historical `tool` message as *done*, so a confirmation the user
+  had cancelled came back as an action that went through. The outcome is now
+  persisted beside the tool message and read back through the same mapping the
+  live path uses.
+
+  It is written onto the copy handed to the store, never onto `agent.messages` --
+  so it does not travel back to the server on the next run -- and a store that
+  drops fields it does not know loses only the distinction, falling back to
+  *done*. `Message` does not declare the field, exactly as it does not declare
+  the `attachments` an upload rides on a user message.
+
 ## [0.35.2] — 2026-09-05
 
 ### Fixed
