@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-09-05
+
 ### Added
 
 - **A tool call that failed can now say so.** `TOOL_CALL_RESULT` may carry an
@@ -3475,7 +3477,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.2...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.2...v0.36.0
 [0.35.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.1...v0.35.2
 [0.35.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.0...v0.35.1
 [0.35.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.34.0...v0.35.0
