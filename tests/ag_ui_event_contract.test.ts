@@ -1,4 +1,4 @@
-import { EventType } from "@ag-ui/core";
+import { EventType, ToolCallResultEventSchema } from "@ag-ui/core";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -59,6 +59,24 @@ describe("AG-UI event-set contract", () => {
   it("matches the canonical cross-repo set", () => {
     const actual = new Set(Object.values(EventType).filter((v) => typeof v === "string"));
     expect(actual).toEqual(CANONICAL_AG_UI_EVENTS);
+  });
+
+  it("lets a TOOL_CALL_RESULT carry an outcome the schema never declared", () => {
+    // The mechanism the whole four-repo change rides on, asserted rather than
+    // assumed. `@ag-ui/core` does not declare `outcome` anywhere; the reason a
+    // server can state one is that `BaseEventSchema` is `.passthrough()` and
+    // `.extend()` keeps that setting, so an unknown key survives parsing instead
+    // of being stripped. Drop passthrough upstream and every card in this
+    // component silently goes back to claiming success.
+    const parsed = ToolCallResultEventSchema.parse({
+      type: EventType.TOOL_CALL_RESULT,
+      messageId: "m1",
+      toolCallId: "tc1",
+      content: "no seats left",
+      outcome: "failed",
+    });
+
+    expect(parsed).toHaveProperty("outcome", "failed");
   });
 
   it("includes the reasoning event family", () => {

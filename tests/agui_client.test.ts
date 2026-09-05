@@ -1,4 +1,4 @@
-import type { Context, Interrupt, Tool } from "@ag-ui/core";
+import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_TOOL_ROUNDS } from "../src/constants.js";
 import {
@@ -257,7 +257,13 @@ describe("AgUiClient", () => {
     // Both tools were offered to executeTool, but only the frontend tool posted
     // a result — and that triggered a second round.
     expect(executed).toEqual(["server_tool", "fill_field"]);
+    // Both results are in the transcript, and only one of them is this client's
+    // doing: the server tool's message is written by `@ag-ui/client` when it
+    // applies `TOOL_CALL_RESULT`, before any of our code runs. This assertion
+    // read `["filled"]` while the fake agent silently skipped that append, which
+    // made it a claim about the helper rather than about the protocol.
     expect(fake.messages.filter((m) => m.role === "tool").map((m) => m.content)).toEqual([
+      '{"ok":true}',
       "filled",
     ]);
     expect(round).toBe(2);
@@ -744,6 +750,152 @@ describe("duplicate message ids", () => {
 
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+describe("a tool result's outcome", () => {
+  it("forwards the wire outcome to the handler", async () => {
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "book_flight", {});
+        emit.toolResult("tc1", "no seats left", "failed");
+        emit.runEnd();
+      },
+    });
+    const seen: unknown[] = [];
+    const handlers = recordingHandlers();
+    handlers.onToolResult = (_id, _content, outcome) => {
+      seen.push(outcome);
+    };
+    await new AgUiClient({ agent: fake.agent, handlers }).send("book it");
+
+    expect(seen).toEqual(["failed"]);
+  });
+
+  it("forwards undefined when the server states no outcome", async () => {
+    // The shape every server written before the field existed produces, and the
+    // one a two-parameter handler has always seen.
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "book_flight", {});
+        emit.toolResult("tc1", "seat 12A held");
+        emit.runEnd();
+      },
+    });
+    const seen: unknown[] = [];
+    const handlers = recordingHandlers();
+    handlers.onToolResult = (_id, _content, outcome) => {
+      seen.push(outcome);
+    };
+    await new AgUiClient({ agent: fake.agent, handlers }).send("book it");
+
+    expect(seen).toEqual([undefined]);
+  });
+
+  it("persists a server outcome beside the tool message without putting it on the wire", async () => {
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "book_flight", {});
+        emit.toolResult("tc1", "no seats left", "failed");
+        emit.runEnd();
+      },
+    });
+    const persisted: Message[][] = [];
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      onPersist: (messages) => persisted.push([...messages]),
+    }).send("book it");
+
+    const saved = persisted.at(-1)?.find((m) => m.role === "tool");
+    expect(saved).toMatchObject({ toolCallId: "tc1", outcome: "failed" });
+    // `agent.messages` is what the next run posts back, so the annotation must
+    // not be there -- `@ag-ui/client` never put it there, and neither do we.
+    expect(fake.messages.find((m) => m.role === "tool")).not.toHaveProperty("outcome");
+  });
+
+  it("persists a frontend tool's own outcome", async () => {
+    // Nothing on the wire carries this one: the call never reached a server.
+    let round = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        if (round === 0) {
+          emit.toolCall("tc1", "delete_user", {});
+        }
+        round += 1;
+      },
+    });
+    const persisted: Message[][] = [];
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      onPersist: (messages) => persisted.push([...messages]),
+      executeTool: async () => ({ content: "User declined the action.", outcome: "denied" }),
+    }).send("delete user 7");
+
+    expect(persisted.at(-1)?.find((m) => m.role === "tool")).toMatchObject({
+      toolCallId: "tc1",
+      outcome: "denied",
+    });
+  });
+
+  it("re-applies an earlier round's outcome on every later persist", async () => {
+    // The store keeps only the most recent list, so an annotation that was
+    // written once and then dropped by the next save would leave the card green
+    // again -- and the persist that overwrites it is one the *next* round makes.
+    let round = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        if (round === 0) {
+          emit.toolCall("tc1", "book_flight", {});
+          emit.toolResult("tc1", "no seats left", "failed");
+          emit.toolCall("ui1", "note_it", {});
+        } else {
+          emit.text("understood");
+          emit.textEnd("understood");
+        }
+        round += 1;
+      },
+    });
+    const persisted: Message[][] = [];
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      onPersist: (messages) => persisted.push([...messages]),
+      executeTool: async (call) => (call.name === "note_it" ? { content: "noted" } : null),
+    }).send("book it");
+
+    expect(round).toBe(2);
+    const last = persisted.at(-1) ?? [];
+    expect(last.find((m) => m.role === "tool" && m.toolCallId === "tc1")).toMatchObject({
+      outcome: "failed",
+    });
+    // And the round that followed did not acquire one.
+    expect(last.find((m) => m.role === "tool" && m.toolCallId === "ui1")).not.toHaveProperty(
+      "outcome",
+    );
+  });
+
+  it("leaves the persisted list untouched when nothing has an outcome", async () => {
+    // The overwhelmingly common case, and the one that must stay allocation-free
+    // and byte-identical to what a host store saw before this shipped.
+    const fake = makeFakeAgent();
+    const seen: (readonly Message[])[] = [];
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      onPersist: (messages) => {
+        seen.push(messages);
+      },
+    }).send("hello");
+
+    // The same array, not a copy of it: with nothing to annotate there is
+    // nothing to rebuild, and a host store diffing what it is handed should see
+    // exactly what it saw before.
+    expect(seen.at(-1)).toBe(fake.messages);
   });
 });
 

@@ -555,6 +555,38 @@ card (honouring `data-tool-display`), so server-side output is visible too. The 
 and context are read **fresh on every run** (`getTools()` / `getContext()`), so they always reflect
 the current page state.
 
+#### A tool call that failed
+
+A `TOOL_CALL_RESULT` may carry an optional **`outcome`** field saying how the call ended. It takes
+pydantic-ai's own `ToolReturnPart` vocabulary — read the values off `TOOL_OUTCOME`:
+
+| `outcome` | Card | Means |
+| --- | --- | --- |
+| *(absent)* | done | A result, said the way every server has always said it. |
+| `success` | done | The same thing, stated. |
+| `failed` | error | The call ran and failed. |
+| `denied` | declined | A person or a guard refused it, so it never ran. |
+
+**Absent is a success, and anything unrecognised is too** — including a value from a later protocol
+version, and pydantic-ai's own `interrupted`. A card is a claim about what happened, and refusing to
+recognise a word is not grounds for claiming failure. So no server has to change to keep the
+rendering it has today, and a server that adds the field gets the truth on screen instead of a
+green card with a refusal folded inside it.
+
+Nothing in `@ag-ui/core` needs to declare the field: AG-UI's event schemas are zod `passthrough`, so
+an unknown key survives parsing and reaches the subscriber. It arrives on
+`AgUiClientHandlers.onToolResult` as an optional third argument, typed `unknown` because the
+protocol does not validate it; `toolStatusFromOutcome` does the narrowing.
+
+A **frontend** tool never streams this event — the client posts its own result — so its outcome is
+recorded on the `ToolExecution` the executor returns (`{ content, outcome: "denied" }`). That covers
+the two refusals the component makes itself: a confirmation card the user declined, and a call
+blocked because the page moved under the round.
+
+Either way the outcome is **persisted beside the tool message**, so a reload replays the card as it
+settled rather than as a plain result. See
+[MPA durability](#mpa-durability-surviving-full-page-reloads).
+
 The catalog a run advertises is also the set that run can execute. Override `getTools` to scope
 what a page offers — say, exposing `delete_record` only where deleting makes sense — and a call
 naming a tool you withheld is treated exactly as a call naming a tool you never registered: no
@@ -1923,6 +1955,15 @@ On mount the element rehydrates the transcript from the store, so the chat looks
 including tool-call cards and their results (reconstructed from the persisted `toolCalls` and `tool`
 messages), not just the text turns.
 
+A tool message is saved with an extra **`outcome`** field when the call did not simply succeed, in
+the same vocabulary the wire uses (see [A tool call that failed](#a-tool-call-that-failed)), so a
+failed or declined card replays as failed or declined instead of turning green on reload. `Message`
+does not declare the field, exactly as it does not declare the `attachments` an upload rides on a
+user message; the default store round-trips both through `JSON.stringify`. **A store that drops
+unknown fields loses only the distinction** — the card falls back to *done*, which is what it did
+before. It is written onto the copy handed to the store and never onto `agent.messages`, so it is
+not sent back to the server on the next run.
+
 **3. Resumable loop (`x-navigates` + `navigationResult`).** A tool whose schema carries
 `x-navigates: true` (use `X_NAVIGATES_KEY`; read back by [`isNavigates`](src/tools/is_navigates.ts))
 triggers a full reload. Before the handler navigates, the element writes a checkpoint
@@ -2397,6 +2438,8 @@ re-export point. Internal modules import from leaf paths.
 | `AgUiClient` | class | Orchestration layer over an AG-UI `AbstractAgent`. |
 | `AgUiClientConfig` / `AgUiClientHandlers` / `AgUiRunInputs` | type | Client config, lifecycle handlers, per-run input providers. |
 | `AgUiToolCall` / `ToolExecution` / `ExecuteTool` | type | Tool-call shape, execution result, executor signature. |
+| `ToolOutcome` | type | The `TOOL_OUTCOME` values as a union. |
+| `toolStatusFromOutcome` | function | Map a wire outcome to the card status it settles into; anything absent or unrecognised is a success. |
 | `ConnectionLostError` | class | Raised (→ `onError`) when a run's stream closes with no terminal AG-UI event. |
 | `createHttpAgent(options)` | function | Default agent factory (wraps `HttpAgent`). |
 | `AgentFactory` / `HttpAgentOptions` | type | Factory signature and its options. |
@@ -2551,6 +2594,7 @@ re-export point. Internal modules import from leaf paths.
 | `MESSAGE_ACTIONS` | The message-action tokens `data-message-actions` selects by (`copy` / `retry` / `feedback`). |
 | `TOOL_CALL_STATUS` | Tool-call card status constants. |
 | `TOOL_DISPLAY` | Tool-call display-mode constants (`inline` / `minimal` / `compact` / `full`). |
+| `TOOL_OUTCOME` | How a tool call ended, as a server states it on `TOOL_CALL_RESULT` (`success` / `failed` / `denied`). |
 | `X_CONFIRM_KEY` | Confirmation-prompt key: on a tool's JSON Schema for a client-side confirmation, and in an AG-UI interrupt's `metadata` for a server-side approval. |
 | `X_SUMMARY_KEY` | JSON-Schema key carrying a short tool-card label. |
 | `MAX_TOOL_ROUNDS` | Upper bound on tool-call → re-run rounds per send. |

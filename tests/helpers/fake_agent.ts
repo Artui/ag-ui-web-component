@@ -19,7 +19,15 @@ export interface Emit {
   textStart(messageId: string): void;
   textEnd(buffer: string, messageId?: string): void;
   toolCall(id: string, name: string, args: Record<string, unknown>): void;
-  toolResult(toolCallId: string, content: string): void;
+  /**
+   * Emit a `TOOL_CALL_RESULT` and append the tool message the real client
+   * appends for it.
+   *
+   * `outcome` is the optional field a server states to say the call failed or
+   * was refused. Omitted by default, which is what every stream written before
+   * the field existed looks like.
+   */
+  toolResult(toolCallId: string, content: string, outcome?: string): void;
   /** Emit an AG-UI `ACTIVITY_SNAPSHOT` (the run-notice channel). */
   activity(activityType: string, content: ActivityContent, messageId?: string): void;
   /** Re-send an activity under an id already seen, as `replace` does. */
@@ -159,21 +167,37 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
         event: { type: EventType.TEXT_MESSAGE_END, messageId },
         textMessageBuffer,
       }),
-    toolCall: (toolCallId, toolCallName, toolCallArgs) =>
+    toolCall: (toolCallId, toolCallName, toolCallArgs) => {
+      agent.appendToolCall(toolCallId, toolCallName, JSON.stringify(toolCallArgs));
       dispatch(s, "onToolCallEndEvent", {
         event: { type: EventType.TOOL_CALL_END, toolCallId },
         toolCallName,
         toolCallArgs,
-      }),
-    toolResult: (toolCallId, content) =>
+      });
+    },
+    toolResult: (toolCallId, content, outcome) => {
       dispatch(s, "onToolCallResultEvent", {
         event: {
           type: EventType.TOOL_CALL_RESULT,
           messageId: `${toolCallId}-result`,
           toolCallId,
           content,
+          // Only when given, because the field is absent on every stream from a
+          // server that predates it -- which is the case the component has to
+          // keep rendering exactly as before, so it is the case the default
+          // here has to be.
+          ...(outcome === undefined ? {} : { outcome }),
         },
-      }),
+      });
+      // The real client appends the tool message *after* dispatching the event,
+      // building it from five named fields on the event and dropping anything
+      // else -- `outcome` included. Modelled here because the omission is what a
+      // test of persistence has to see: a fake that never wrote the message
+      // would let "the outcome survives a reload" pass without a tool message to
+      // survive on, and a fake that copied `outcome` onto it would agree with a
+      // fix that was never made.
+      agent.appendToolMessage(`${toolCallId}-result`, toolCallId, content);
+    },
     // `messages` is passed because the real client always passes it, and the
     // component reads it to tell a new activity from one being replaced. A fake
     // that omitted it would let a null-check rot in the source unnoticed.
@@ -348,6 +372,10 @@ interface FakeAgentInternals {
   applyState(snapshot: Record<string, unknown>): void;
   /** Replace the agent's message list, as `MESSAGES_SNAPSHOT` does. */
   applyMessagesSnapshot(next: ReadonlyArray<{ id: string; role: string; content: string }>): void;
+  /** Append the tool message a `TOOL_CALL_RESULT` leaves in the transcript. */
+  appendToolMessage(id: string, toolCallId: string, content: string): void;
+  /** Append the assistant message a `TOOL_CALL_START` opens for a call. */
+  appendToolCall(toolCallId: string, name: string, args: string): void;
 }
 
 /** The subset of `RunAgentParameters` the fake records / hands to the script. */
@@ -376,6 +404,17 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
     // client's list behaves and why anything reading it later sees the
     // server's version rather than the one the run built.
     messages.splice(0, messages.length, ...next.map((m) => ({ ...m })));
+  };
+  const appendToolMessage = (id: string, toolCallId: string, content: string): void => {
+    messages.push({ id, role: "tool", content, toolCallId });
+  };
+  const appendToolCall = (toolCallId: string, name: string, args: string): void => {
+    messages.push({
+      id: `${toolCallId}-call`,
+      role: "assistant",
+      content: "",
+      toolCalls: [{ id: toolCallId, type: "function", function: { name, arguments: args } }],
+    } as never);
   };
   const applyState = (snapshot: Record<string, unknown>): void => {
     agent.state = { ...snapshot };
@@ -422,7 +461,12 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
       }
       const state: EmitState = { terminal: false, reasoning: "" };
       await opts.script?.(
-        emitter(subscriber, state, { applyState, applyMessagesSnapshot }),
+        emitter(subscriber, state, {
+          applyState,
+          applyMessagesSnapshot,
+          appendToolMessage,
+          appendToolCall,
+        }),
         params,
       );
       // A real run that streamed cleanly emits RUN_FINISHED with an ordinary
