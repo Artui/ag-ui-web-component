@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **Named the symptom of forgetting `defineAgUiChat()`**, which is that there is
+  no symptom. A bare `import "@artooi/ag-ui-web-component"` registers nothing --
+  deliberately, so the package stays tree-shakeable -- and `<ag-ui-chat>` is then
+  an unknown element, which every browser renders as an inline 0x0 box, in flow,
+  with no console warning and no error. The page looks finished and the chat is
+  simply absent.
+
+  Reported by a consumer who lost time to it. The design is right and does not
+  change; what was missing was the one line saying that
+  `customElements.get("ag-ui-chat")` returning `undefined` is the answer.
+
 ## [0.35.0] — 2026-09-04
 
 ### Added
