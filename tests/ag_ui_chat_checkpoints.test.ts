@@ -3,6 +3,7 @@ import { ELEMENT_TAG } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import type { RunRow } from "../src/core/run_index.js";
+import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 beforeAll(() => {
@@ -161,9 +162,42 @@ describe("continuing a run", () => {
     expect(input.value).toBe("");
   });
 
-  it("does nothing when the composer is empty", async () => {
+  it("sends nothing when the composer is empty", async () => {
+    // A continuation carries only the new turn -- the snapshot supplies the
+    // rest -- so with nothing typed there is nothing to send.
     const { built } = await pick("resume", "   ");
     expect(built).toHaveLength(0);
+  });
+
+  it("says what the composer still needs, rather than closing over nothing", async () => {
+    // The row's button closes the panel before the pick is handled, so a bare
+    // return left the widget visibly reacting and then doing nothing at all --
+    // which reads as a resume that was attempted and lost.
+    const { el } = await pick("resume", "   ");
+
+    const hint = shadow(el).querySelector<HTMLElement>(".skill-hint");
+    expect(hint?.hidden).toBe(false);
+    expect(hint?.textContent).toBe(DEFAULT_UI_STRINGS.continueNeedsTurn);
+  });
+
+  it("puts the caret where the fix goes", async () => {
+    const { el, input } = await pick("resume", "");
+    expect(shadow(el).activeElement).toBe(input);
+  });
+
+  it("takes the hint down on the next keystroke", async () => {
+    // Self-clearing is why this lives at the composer and not in the transcript:
+    // the slip is recoverable, and typing is the recovery.
+    const { el, input } = await pick("resume", "");
+    const hint = shadow(el).querySelector<HTMLElement>(".skill-hint");
+    // Asserted before the keystroke, or this passes against a hint that was
+    // never raised -- which is the very state this test is here to rule out.
+    expect(hint?.hidden).toBe(false);
+
+    input.value = "and now sort them";
+    input.dispatchEvent(new Event("input"));
+
+    expect(hint?.hidden).toBe(true);
   });
 });
 

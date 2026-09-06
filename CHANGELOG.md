@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The README attribute gate only checked one direction, so it could not see its
+  own weakening.** It asked whether every attribute the element *reads* is
+  documented; an attribute falling out of the scanned set shrinks the set being
+  filtered, so the answer stays empty and nothing goes red. Adding a
+  variable-named read and raising the declared count -- without teaching the
+  matcher the new helper -- dropped two attributes out of the scan and the whole
+  suite still passed. Verified by doing exactly that: 1651 tests green.
+
+  There is now a reverse check. It refuses a documented row that nothing
+  consumes, and "consumes" had to be defined carefully: four documented
+  attributes (`density`, `data-side`, `data-small-viewport`, `data-answer-well`)
+  are host-set and read by the stylesheet alone through `:host([...])`, never by
+  any `getAttribute` call. A first version that looked only at JavaScript called
+  all four stale, which would have deleted four working rows.
+
+- **A message sent with no `endpoint` disappeared without a word.** The send path
+  returned early when the attribute was unset, and by then the two visible halves
+  of a successful send had already happened: the user's bubble was in the
+  transcript and `ag-ui-submit` had been dispatched. So the composer cleared, the
+  message appeared to go, Send never became Stop, no request was made, and
+  nothing at all reached the console. What that looks like is an agent ignoring
+  you, and what it gets reported as is a server that never answers.
+
+  The refusal stays -- there is nowhere to send to, and an agent built on an
+  empty endpoint would post to the current page -- but both audiences are now
+  told, because they need different things. A `console.error` names the missing
+  attribute and what to set it to, since a missing attribute is the page's
+  mistake and the page's author is not reading the transcript. A `not-connected`
+  run notice tells the reader their message went nowhere, because the honest
+  alternative to one muted line is an indefinite wait in front of their own
+  question. Both fire on every attempt rather than once: a one-shot report is the
+  same silence again for the second try, which is the try a puzzled user makes.
+
+- **Picking a run to continue with an empty composer closed the panel over
+  nothing.** A continuation sends only the new turn -- the server supplies
+  everything before it from the snapshot -- so with nothing typed there was
+  nothing to send, and the handler returned. The row's button had already
+  dismissed the panel by then, so the widget visibly reacted and then did
+  nothing, which reads as a resume that was attempted and lost rather than one
+  that never started. It now says what the composer still needs, above the input
+  and cleared by the next keystroke, and puts the caret there.
+
+- **A `data-strings` or `data-skills` value that would not parse was discarded
+  without a word.** Quoting JSON inside an HTML attribute is fiddly, and the
+  result of getting it wrong was indistinguishable from never having set the
+  attribute: the strings stayed English, or the palette came up empty, with
+  nothing anywhere naming the attribute. Both now warn on the console, naming
+  which one and what to check -- the answer `data-paste-attach` already gave for
+  a value it could not read. Console only: a page author's typo is not the
+  reader's business, nothing the reader did was refused, and the widget is still
+  perfectly usable without the override.
+
+### Changed
+
+- The composer hint above the input is no longer only a skills affordance: it
+  also carries the message above. Its `skill-hint` `part` is unchanged, since
+  renaming a part is breaking and a second hint in the same slot would be worse
+  than one whose name is older than its job. Two new `UiStrings` keys,
+  `notConnected` and `continueNeedsTurn`, are overridable like every other.
+
 ## [0.36.0] — 2026-09-05
 
 ### Added

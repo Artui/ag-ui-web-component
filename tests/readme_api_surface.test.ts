@@ -60,6 +60,7 @@ import { describe, expect, it } from "vitest";
 const INDEX = readFileSync("src/index.ts", "utf8");
 const README = readFileSync("README.md", "utf8");
 const ELEMENT = readFileSync("src/core/ag_ui_chat.ts", "utf8");
+const STYLES = readFileSync("src/ui/styles.ts", "utf8");
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -94,11 +95,13 @@ const INTERNAL_ATTRIBUTES = new Set([
 
 /**
  * How many attribute reads take their name from a variable rather than stating
- * it. Exactly one — the `#flag` helper — and its own call sites are literal, so
- * the literal scan below still sees every name. A second one would hide a name
- * from this file, which is why the count is asserted rather than assumed.
+ * it. Two — the `#flag` helper and `#readJsonAttribute` — and both are reached
+ * only through call sites that state the name, which `attributesRead` matches by
+ * helper name so the scan still sees every attribute. A third would hide a name
+ * from this file, which is why the count is asserted rather than assumed; adding
+ * one means teaching that matcher about it, not raising this number alone.
  */
-const VARIABLE_ATTRIBUTE_READS = 1;
+const VARIABLE_ATTRIBUTE_READS = 2;
 
 // --------------------------------------------------------------------------
 // Reading the source
@@ -183,7 +186,7 @@ function publicMethods(): string[] {
 function attributesRead(): string[] {
   const names = new Set<string>();
   for (const match of ELEMENT.matchAll(
-    /(?:getAttribute|hasAttribute|#flag)\("([a-z][a-z0-9-]*)"\)/g,
+    /(?:getAttribute|hasAttribute|#flag|#readJsonAttribute)\("([a-z][a-z0-9-]*)"\)/g,
   )) {
     names.add(match[1] ?? "");
   }
@@ -527,10 +530,39 @@ describe("the README's element reference", () => {
     expect(missing).toEqual([]);
   });
 
+  it("documents no attribute nothing consumes", () => {
+    // The check above runs one way only -- is everything *read* documented --
+    // and an attribute falling out of the scan shrinks the set it filters, so
+    // the answer stays empty and nothing goes red. That is how a row for a
+    // removed attribute survives forever, and how a helper the matcher was never
+    // taught about hides a name from this file. Found by deleting
+    // `#readJsonAttribute` from `attributesRead`'s matcher and watching all 1651
+    // tests pass.
+    //
+    // "Consumes" has to mean more than "reads in JavaScript". Four documented
+    // attributes -- `density`, `data-side`, `data-small-viewport`,
+    // `data-answer-well` -- are host-set and consumed by the stylesheet alone,
+    // through `:host([...])`, and the element never calls `getAttribute` for any
+    // of them. They are a supported part of the surface, so the stylesheet is
+    // the second place to look before calling a row stale.
+    const rows = tableRows(section("### Attributes and properties"));
+    const documented = rows
+      .map((cells) => /^`([a-z][a-z0-9-]*)`$/.exec(cells[0] ?? "")?.[1])
+      .filter((name): name is string => name !== undefined);
+    const styled = new Set(
+      [...STYLES.matchAll(/\[([a-z][a-z0-9-]*)[~^$*|]?=?/g)].map((match) => match[1] ?? ""),
+    );
+    const read = new Set(attributesRead());
+    const orphaned = documented.filter((name) => !read.has(name) && !styled.has(name)).sort();
+
+    expect(orphaned).toEqual([]);
+  });
+
   it("accounts for every attribute read whose name it cannot see", () => {
-    // The literal scan cannot see `getAttribute(name)`. One such read exists —
-    // the `#flag` helper — and it is reached only through literal call sites,
-    // which the scan does read. A second would go undocumented in silence.
+    // The literal scan cannot see `getAttribute(name)`. Two such reads exist —
+    // the `#flag` and `#readJsonAttribute` helpers — and both are reached only
+    // through literal call sites, which the scan does read. A third would go
+    // undocumented in silence.
     const reads = [...ELEMENT.matchAll(/(?:getAttribute|hasAttribute)\(/g)].length;
     const literal = [...ELEMENT.matchAll(/(?:getAttribute|hasAttribute)\("/g)].length;
 
