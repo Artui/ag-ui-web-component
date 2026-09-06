@@ -829,7 +829,17 @@ export class AgUiChat extends HTMLElement {
   readonly #checkpoints: CheckpointMenu;
   /** Built lazily from `data-runs-url`; `null` when the host didn't opt in. */
   #runIndex: RunIndex | null = null;
-  readonly #skillHint: HTMLDivElement;
+  /**
+   * The one-line hint above the composer, cleared by the next keystroke.
+   *
+   * Two things write it -- a skill whose template is short of a field, and a
+   * run continuation picked with nothing typed -- and both say the same kind of
+   * thing: what the composer still needs before this can go. Its `part` stays
+   * `skill-hint`, which the skills feature named and the README documents;
+   * renaming a part is breaking, and a second hint element in the same slot
+   * would be worse than one whose name is a release older than its job.
+   */
+  readonly #composerHint: HTMLDivElement;
   /** File-picker button + hidden input + tray slot; the tray mounts on connect. */
   readonly #attachButton: HTMLButtonElement;
   readonly #fileInput: HTMLInputElement;
@@ -1052,7 +1062,7 @@ export class AgUiChat extends HTMLElement {
     this.#input = document.createElement("textarea");
     this.#send = document.createElement("button");
     this.#title = document.createElement("span");
-    this.#skillHint = document.createElement("div");
+    this.#composerHint = document.createElement("div");
     this.#attachButton = document.createElement("button");
     this.#fileInput = document.createElement("input");
     this.#attachSlot = document.createElement("div");
@@ -1144,10 +1154,29 @@ export class AgUiChat extends HTMLElement {
   async #continueRun(runId: string, verb: CheckpointVerb): Promise<void> {
     const index = this.#runs();
     if (index === null) {
+      // Unreachable from the built-in control: the header button is only
+      // rendered when `#runs()` is configured, so a row to pick cannot exist
+      // without one. A host calling `openCheckpoints()` regardless gets the
+      // documented empty panel, which has no rows either. Typed, not silent.
       return;
     }
     const content = this.#input.value.trim();
     if (content === "") {
+      // A continuation sends *only* the next turn -- the snapshot supplies
+      // everything before it -- so with an empty composer there is nothing to
+      // send. Returning here was the same failure the endpoint guard above had:
+      // the row's button closes the panel before this runs, so the widget
+      // visibly reacted and then did nothing, which reads as a resume that was
+      // attempted and lost rather than one that never started.
+      //
+      // Said at the composer rather than in the transcript, because that is
+      // where the fix goes and because the hint clears itself on the first
+      // keystroke -- a transcript notice for a recoverable slip would outlive
+      // the slip. Focus follows for the same reason `#applySkill` moves it when
+      // a template is short of a field.
+      this.#composerHint.textContent = this.#strings.continueNeedsTurn;
+      this.#composerHint.hidden = false;
+      this.#input.focus();
       return;
     }
     this.#input.value = "";
@@ -1805,21 +1834,45 @@ export class AgUiChat extends HTMLElement {
     return value !== null && value !== "false";
   }
 
-  /** Parse the inline `data-strings` JSON overrides (empty when absent/malformed). */
-  #readStringOverrides(): Partial<UiStrings> {
-    const raw = this.getAttribute("data-strings");
+  /**
+   * Parse a JSON-valued attribute, saying so when it will not parse.
+   *
+   * `null` for an absent attribute, and `null` again for one that is not JSON --
+   * but not quietly the second time. Quoting JSON inside an HTML attribute is
+   * fiddly, and the result of getting it wrong is indistinguishable from the
+   * feature being switched off: no chips appear, or the strings stay English,
+   * with nothing anywhere saying why. That is the same failure `data-paste-attach`
+   * already reports for a value it cannot read.
+   *
+   * Console only. A page author's typo is not the reader's business, nothing the
+   * reader did was refused, and the degraded widget is still perfectly usable.
+   */
+  #readJsonAttribute(name: string): unknown {
+    const raw = this.getAttribute(name);
     if (raw === null) {
-      return {};
+      return null;
     }
     try {
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed === "object" && parsed !== null) {
-        return parsed as Partial<UiStrings>;
-      }
+      return JSON.parse(raw);
     } catch {
-      // Malformed JSON — fall back to the defaults rather than failing to mount.
+      console.warn(
+        `<ag-ui-chat>: ${name} is not valid JSON, so it was ignored entirely and ` +
+          "the built-in default is being used. Check the quoting -- JSON inside " +
+          "an HTML attribute needs single quotes around the attribute value, or " +
+          "its own double quotes escaped.",
+      );
+      return null;
     }
-    return {};
+  }
+
+  /** Parse the inline `data-strings` JSON overrides (empty when absent/malformed). */
+  #readStringOverrides(): Partial<UiStrings> {
+    const parsed = this.#readJsonAttribute("data-strings");
+    // A JSON number or string parses fine and overrides nothing. Not warned
+    // about separately: it is the same "this attribute did not take effect"
+    // as a parse failure, and the warning above already covers the spelling
+    // that produces it by accident.
+    return typeof parsed === "object" && parsed !== null ? (parsed as Partial<UiStrings>) : {};
   }
 
   /**
@@ -2278,15 +2331,9 @@ export class AgUiChat extends HTMLElement {
 
   /** Parse the inline `data-skills` JSON catalog (empty when absent/malformed). */
   #readEmbeddedSkills(): readonly Skill[] {
-    const raw = this.getAttribute("data-skills");
-    if (raw === null) {
-      return [];
-    }
-    try {
-      return parseSkills(JSON.parse(raw));
-    } catch {
-      return [];
-    }
+    // `parseSkills` drops anything that is not a well-formed skill, `null`
+    // included, so the absent and unparseable cases need no branch here.
+    return parseSkills(this.#readJsonAttribute("data-skills"));
   }
 
   /** Fetch the backend skills catalog from `data-skills-url`, if set. */
@@ -2329,7 +2376,7 @@ export class AgUiChat extends HTMLElement {
    */
   #applySkill(skill: Skill): void {
     if (skill.prompt === undefined) {
-      this.#skillHint.hidden = true;
+      this.#composerHint.hidden = true;
       void this.sendMessage(`/${skill.name}`);
       return;
     }
@@ -2341,17 +2388,17 @@ export class AgUiChat extends HTMLElement {
       // keystroke replaces it. Blocking with a hint alone left whatever the
       // user had typed to open the palette — a lone "/" — sitting there, which
       // says nothing about what the skill wanted or how to give it.
-      this.#skillHint.textContent = this.#strings.skillNeeds
+      this.#composerHint.textContent = this.#strings.skillNeeds
         .replace("{title}", skill.title)
         .replace("{fields}", missing.join(", "));
-      this.#skillHint.hidden = false;
+      this.#composerHint.hidden = false;
       this.#input.value = text;
       this.#autoGrow();
       this.#input.focus();
       this.#selectFirstPlaceholder(text);
       return;
     }
-    this.#skillHint.hidden = true;
+    this.#composerHint.hidden = true;
     this.#input.value = text;
     this.#autoGrow();
     if (skill.sendImmediately === false) {
@@ -4318,9 +4365,9 @@ export class AgUiChat extends HTMLElement {
       void this.#submit();
     });
 
-    this.#skillHint.className = "skill-hint";
-    this.#skillHint.setAttribute("part", "skill-hint");
-    this.#skillHint.hidden = true;
+    this.#composerHint.className = "skill-hint";
+    this.#composerHint.setAttribute("part", "skill-hint");
+    this.#composerHint.hidden = true;
 
     // File-upload affordance: a paperclip button (hidden until
     // `data-attachments-url` is wired) opening a hidden multi-file input.
@@ -4352,8 +4399,9 @@ export class AgUiChat extends HTMLElement {
     tools.append(this.#attachButton, this.#voiceSlot, this.#send);
     composer.append(this.#input, tools);
     inputRow.append(composer, this.#fileInput);
-    // Skill surfaces sit just above the input: palette (opens on `/`), chips,
-    // the missing-placeholder hint, and the pending-attachments tray.
+    // Composer surfaces sit just above the input: the skills palette (opens on
+    // `/`), the chips, the hint saying what the composer still needs, and the
+    // pending-attachments tray.
     this.#messagesWrap.className = "messages-wrap";
     // Sibling of the list inside a shared box, not a child of it: the
     // affordance offering to scroll must not scroll away with the content.
@@ -4364,7 +4412,7 @@ export class AgUiChat extends HTMLElement {
       this.#messagesWrap,
       this.#skillsMenu.palette,
       this.#skillsMenu.chips,
-      this.#skillHint,
+      this.#composerHint,
       this.#queuedRow,
       this.#attachSlot,
       inputRow,
@@ -4689,10 +4737,16 @@ export class AgUiChat extends HTMLElement {
     this.#emptyWrap.hidden = this.#messages.childElementCount > 1;
   }
 
-  /** Forward input changes to the skills palette and clear any stale hint. */
+  /**
+   * Forward input changes to the skills palette and clear any stale hint.
+   *
+   * Typing is the answer to every hint that surface carries -- a skill short of
+   * a field, a continuation short of its next turn -- so the keystroke that
+   * starts answering it is the right moment to take it down.
+   */
   #onInput(): void {
     this.#skillsMenu.onInput(this.#input.value);
-    this.#skillHint.hidden = true;
+    this.#composerHint.hidden = true;
     this.#autoGrow();
     // Typing puts the composer back in the user's hands: the next ArrowUp
     // starts from the newest turn again rather than continuing a walk through
@@ -4992,8 +5046,39 @@ export class AgUiChat extends HTMLElement {
     );
   }
 
+  /**
+   * Hand the message to the client, or say why it is going nowhere.
+   *
+   * With no `endpoint` there is nothing to send to, and this used to return
+   * here in silence. That is the worst shape the failure can take, because the
+   * two halves of a send that *did* work have already happened by now: the
+   * user's bubble is on screen and {@link SUBMIT_EVENT} has been dispatched. So
+   * the message looks sent, the composer is empty, the Send button never turns
+   * into Stop, and no request is ever made -- an unanswered question rather
+   * than a broken widget. Nothing reached the console either, so the developer
+   * had no thread to pull and the user had no reason to think anything was
+   * wrong with the page.
+   *
+   * Both audiences are told, because they need different things. The console
+   * carries the developer's version -- the attribute is missing, here is what
+   * to set -- since a missing attribute is a page's mistake and not the
+   * reader's. The transcript carries the reader's, because they are looking at
+   * their own message waiting for a reply that cannot come, and the honest
+   * alternative to one muted line is an indefinite wait.
+   *
+   * Said on every attempt rather than once. Each send is a separate thing the
+   * user asked for and did not get, and a once-only report is silence for every
+   * attempt after the first -- which is the defect again, just later.
+   */
   async #client_send(content: string, attachments: readonly AttachmentRef[]): Promise<void> {
     if (this.endpoint === "") {
+      console.error(
+        "<ag-ui-chat>: no endpoint is set, so this message was not sent and no " +
+          "request was made. Point the element at your AG-UI mount with the " +
+          'endpoint attribute (endpoint="/agent/"), or assign chat.endpoint ' +
+          "before sending.",
+      );
+      this.#appendNotice("⚠", this.#strings.notConnected, "not-connected");
       return;
     }
     await this.#ensureClient().send(content, attachments);

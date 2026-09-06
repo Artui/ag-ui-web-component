@@ -92,6 +92,10 @@ export interface UiStrings {
   pageMoved: string;
   /** Notice when Send ran while a file was still uploading. Token: `{n}`. */
   attachmentsStillUploading: string;
+  /** Notice shown when a message was typed at an element with no `endpoint`. */
+  notConnected: string;
+  /** Composer hint when a run continuation was picked with an empty composer. */
+  continueNeedsTurn: string;
 
   // ── Composer ────────────────────────────────────────────────────────────────
   /** `aria-label` of the message textarea. */
@@ -347,6 +351,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     "The page changed since you last looked at it. Call read_page to see the current page, then retry.",
   attachmentsStillUploading:
     "{n} file still uploading — it was not sent with this message and is still attached.",
+  notConnected: "This chat isn’t connected to an agent, so the message wasn’t sent.",
+  continueNeedsTurn: "Type the next turn in the composer first, then pick a run to continue.",
   skillNeeds: "“{title}” needs {fields} — fill it in below, then send.",
 
   message: "Message",

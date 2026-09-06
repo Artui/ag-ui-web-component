@@ -173,14 +173,14 @@ another origin, add `credentials="include"` too; see
 
 | Attribute | Property | Notes |
 | --- | --- | --- |
-| `endpoint` | `endpoint` | The AG-UI endpoint URL. Required to send. Reflecting getter + setter. |
+| `endpoint` | `endpoint` | The AG-UI endpoint URL. Required to send: without it a send is refused with a `console.error` naming the missing attribute and a `not-connected` run notice in the transcript. Reflecting getter + setter. |
 | `credentials` | `credentials` | Cookie policy for every request the element makes: `omit` / `same-origin` / `include`. Unset means the browser default (`same-origin`), which sends no cookies cross-origin. See [Authenticating requests](#authenticating-requests). |
 | `title-text` | — | Header label; defaults to `"Assistant"`. Live: writing it after the element connects re-labels the header. See [When each attribute is read](#when-each-attribute-is-read). |
 | `data-tool-display` | `toolDisplay` | Tool-call card detail: `inline` / `minimal` / `compact` / `full` (default `full`). |
 | `data-text-animation` | — | Incoming-text reveal: `none` (default) / `fade` / `word`. |
 | `data-prompt-chips` | — | Present (bare, or any value but `"false"`) to surface skills as chips. |
 | `data-slash-commands` | — | Present (bare, or any value but `"false"`) to enable the `/`-command palette. |
-| `data-skills` | — | Inline JSON skill catalog. |
+| `data-skills` | — | Inline JSON skill catalog. A value that will not parse is ignored and reported on the console, rather than reading as an empty catalog. |
 | `data-skills-url` | — | URL of a JSON skill catalog (fetched with the element's headers and cookie policy). |
 | `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with the element's headers and cookie policy; labels tool-call cards for server-side tools. |
 | `user-key` | `userKey` | Who the stored conversation belongs to — any string identifying the signed-in principal. Joins the storage namespace, and **changing it purges what the previous principal left behind**. Live (not connect-time): a logout is the host's to announce. See [Who the stored conversation belongs to](#who-the-stored-conversation-belongs-to-user-key). |
@@ -192,7 +192,7 @@ another origin, add `credentials="include"` too; see
 | `data-attachment-max-bytes` | — | Client-side upload size cap in bytes (default 10 MiB; `0` disables). The server stays authoritative. |
 | `data-transcribe-url` | — | URL of the voice-transcription endpoint (django-ag-ui's `TranscribeView`); reveals the composer's mic button. See [Voice input](#voice-input). |
 | `data-theme-toggle` | — | Boolean: show a built-in header light⇄dark toggle (persists per tab). Off by default. See [Theme toggle](#theme-toggle). |
-| `data-strings` | `strings` | Partial JSON override of the UI string table (localization). The property wins key-by-key over the attribute; see [Internationalization](#internationalization-i18n). |
+| `data-strings` | `strings` | Partial JSON override of the UI string table (localization). The property wins key-by-key over the attribute; a value that will not parse is ignored and reported on the console. See [Internationalization](#internationalization-i18n). |
 | `data-icon-url` | — | Header (and launcher) icon image URL. A slotted `slot="icon"` wins; see [Header & launcher icon](#header-and-launcher-icon). |
 | `data-launcher-icon-url` | — | Icon image URL for the collapsed launcher only, when it should differ from the header's. Falls back to `data-icon-url`; a slotted `slot="launcher"` wins over both. |
 | `data-unread-badge` | — | **On by default.** `="false"` hides the launcher's unread badge; the count and the `ag-ui-unread` event keep running. See [Collapsing to the launcher](#collapsing-to-the-launcher). |
@@ -2312,6 +2312,10 @@ Type the next turn in the composer, then pick a row:
 
 Both send to the matching server endpoint and stream into the same transcript.
 
+Picking a row with an empty composer says so above the input and puts the caret
+there, rather than closing the panel over nothing: a continuation sends **only**
+the new turn, so with nothing typed there is nothing to send.
+
 ### One URL, three endpoints
 
 `data-runs-url` is the only thing to configure. `resume/<id>/` and `fork/<id>/`
@@ -2873,7 +2877,7 @@ component sets, so a new one cannot ship undocumented.
 | Follow-up suggestions | `suggestions`, `suggestion-chip` |
 | Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`), and the icon holder inside each: `message-action-icon` (plus `message-action-icon-retry`, `message-action-icon-copy`, `message-action-icon-up`, `message-action-icon-down`) |
 | Queued messages | `queued`, `queued-chip` |
-| Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`, `run-notice-surface`), `run-notice-icon`, `run-notice-text`, `run-notice-undo` |
+| Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`, `run-notice-surface`, `run-notice-not-connected`), `run-notice-icon`, `run-notice-text`, `run-notice-undo` |
 | Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent` |
 | Delegated sub-agents | `subagent`, `subagent-row`, `subagent-icon`, `subagent-status`, `subagent-steps`, `subagent-step`, `subagent-step-icon`, `subagent-step-name` |
 | Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`, `confirm-always`) |
@@ -2881,7 +2885,7 @@ component sets, so a new one cannot ship undocumented.
 | Typed question | `question`, `question-body`, `question-options`, `question-choice`, `question-choice-text`, `question-radio`, `question-input`, `question-actions`, `question-button` |
 | Composer | `composer`, `composer-surface`, `composer-tools`, `input`, `send`, `attach-button`, `voice-button` |
 | Attachments | `attachment-tray`, `attachment-chips` (the read-only chips on sent bubbles), and the shared chip parts `attachment-chip`, `attachment-chip-icon`, `attachment-chip-name`, `attachment-chip-size`, `attachment-chip-bar`, `attachment-chip-bar-fill`, `attachment-chip-retry`, `attachment-chip-remove` |
-| Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the missing-placeholder hint) |
+| Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the composer hint: a skill’s missing placeholders, and a run continuation with nothing typed) |
 | Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-close`, `drawer-filter`, `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
 | Charts | `chart-block`, `chart-title`, `chart-legend` |
 | Checkpoints panel | `checkpoints`, `checkpoints-header`, `checkpoints-title`, `checkpoints-list`, `checkpoints-empty`, `checkpoint-row`, `checkpoint-label`, `checkpoint-time`, `checkpoint-id`, `checkpoint-branch`, `checkpoint-action` (plus `checkpoint-resume`, `checkpoint-fork`) |

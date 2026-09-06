@@ -41,6 +41,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     "run-notice-history-replaced",
     "run-notice-chart-undrawable",
     "run-notice-surface",
+    "run-notice-not-connected",
   ],
   // ag_ui_chat message bubbles, by role.
   bubble: ["message", "message-user", "message-assistant"],

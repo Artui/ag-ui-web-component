@@ -1,15 +1,21 @@
 /**
- * Two failures the component used to keep to itself.
+ * Failures the component used to keep to itself.
  *
- * Both were found by a downstream consumer running the component against a real
- * Django backend and watching it do nothing -- neither the competitive survey
- * that produced the transcript defects nor the 2026-08 audit wave saw them,
- * because one leaves the DOM correct while corrupting storage and the other
- * only fires on a data shape our own fixtures never produce.
+ * The first two were found by a downstream consumer running the component
+ * against a real Django backend and watching it do nothing -- neither the
+ * competitive survey that produced the transcript defects nor the 2026-08 audit
+ * wave saw them, because one leaves the DOM correct while corrupting storage and
+ * the other only fires on a data shape our own fixtures never produce.
  *
  * A failure with no console call and nothing on screen is not reported as a
  * bug. It is reported as "the charts are flaky", or "the chat lost my
  * messages".
+ *
+ * The third was found by reading for the shape rather than by hitting it: a
+ * `return` that leaves an offered control inert. A missing `endpoint` swallowed
+ * every send outright, and the two halves of a successful send had already run
+ * by then -- so the bubble was on screen, the composer was empty, and the only
+ * thing missing was the reply.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -259,5 +265,113 @@ describe("a pushed chart that cannot be drawn", () => {
 
     expect(shadow(el).querySelector(".chart-block")).not.toBeNull();
     expect(shadow(el).querySelector(".run-notice--chart-undrawable")).toBeNull();
+  });
+});
+
+describe("an element with no endpoint", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  /** Mount with no `endpoint` at all, and refuse to build an agent. */
+  function mountUnconfigured(): { el: AgUiChat; agents: number } {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    const counter = { n: 0 };
+    el.agentFactory = () => {
+      counter.n += 1;
+      throw new Error("no agent should be built without an endpoint");
+    };
+    document.body.appendChild(el);
+    return {
+      el,
+      get agents() {
+        return counter.n;
+      },
+    };
+  }
+
+  it("still makes no request, which is the part that was right", async () => {
+    // The refusal itself is correct and stays: there is nowhere to send to, and
+    // an agent built on an empty endpoint would POST to the current page.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const probe = mountUnconfigured();
+      await send(probe.el, "is anyone there");
+
+      expect(probe.agents).toBe(0);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("names the missing attribute on the console, for whoever has to fix the page", async () => {
+    // The defect. A missing attribute is the page author's mistake, and the
+    // page author is not looking at the transcript -- so the version that says
+    // which attribute and what to set it to belongs on the console.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const probe = mountUnconfigured();
+      await send(probe.el, "is anyone there");
+
+      const said = error.mock.calls.map((c) => String(c[0])).join(" ");
+      expect(said).toContain("endpoint");
+      expect(said).toContain("<ag-ui-chat>");
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("tells the reader their message went nowhere", async () => {
+    // The other half. `sendMessage` renders the user's bubble and dispatches
+    // SUBMIT_EVENT before this is reached, so without a notice the transcript
+    // shows a question that was asked and simply never answered -- which reads
+    // as a slow server rather than an unconfigured widget.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const probe = mountUnconfigured();
+      await send(probe.el, "is anyone there");
+
+      const notice = shadow(probe.el).querySelector(".run-notice--not-connected");
+      expect(notice?.textContent).toContain(DEFAULT_UI_STRINGS.notConnected);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("says so again on the second attempt, not only the first", async () => {
+    // A once-only report is the same silence for every attempt after the first,
+    // and the second attempt is the one a puzzled user makes.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const probe = mountUnconfigured();
+      await send(probe.el, "hello");
+      await send(probe.el, "hello?");
+
+      expect(error).toHaveBeenCalledTimes(2);
+      expect(shadow(probe.el).querySelectorAll(".run-notice--not-connected")).toHaveLength(2);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("stays quiet once an endpoint is set", async () => {
+    // The guard must not outlive the condition: `endpoint` is read at use time
+    // precisely so a runtime assignment applies to the next run.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const el = mount((emit) => {
+        emit.runStart();
+        emit.textStart("m1");
+        emit.textEnd("an ordinary answer", "m1");
+      });
+
+      await send(el, "hi");
+
+      expect(error).not.toHaveBeenCalled();
+      expect(shadow(el).querySelector(".run-notice--not-connected")).toBeNull();
+      expect(shadow(el).textContent).toContain("an ordinary answer");
+    } finally {
+      error.mockRestore();
+    }
   });
 });

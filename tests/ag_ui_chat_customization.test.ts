@@ -1,5 +1,5 @@
 import type { Tool } from "@ag-ui/core";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG, MESSAGE_ROLE } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
@@ -105,10 +105,31 @@ describe("AgUiChat — UX & customization", () => {
     });
 
     it("falls back to defaults on malformed `data-strings`", () => {
-      const el = mount({ "data-strings": "{not json" });
-      expect(shadow(el).querySelector<HTMLTextAreaElement>(".input")?.placeholder).toBe(
-        "Ask anything…",
-      );
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const el = mount({ "data-strings": "{not json" });
+        expect(shadow(el).querySelector<HTMLTextAreaElement>(".input")?.placeholder).toBe(
+          "Ask anything…",
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("names the attribute on the console rather than reading as untranslated", () => {
+      // Quoting JSON inside an HTML attribute is fiddly, and a typo there looks
+      // exactly like never having set the attribute: English strings, and no
+      // reason given anywhere.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        mount({ "data-strings": "{not json" });
+
+        const said = warn.mock.calls.map((c) => String(c[0])).join(" ");
+        expect(said).toContain("data-strings");
+        expect(said).toContain("JSON");
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it("ignores a non-object `data-strings` payload", () => {

@@ -71,8 +71,28 @@ describe("AgUiChat skills", () => {
   });
 
   it("ignores malformed data-skills", () => {
-    const el = mount({ "data-skills": "{not json", "data-prompt-chips": "true" });
-    expect(shadow(el).querySelectorAll(".skill-chip")).toHaveLength(0);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const el = mount({ "data-skills": "{not json", "data-prompt-chips": "true" });
+      expect(shadow(el).querySelectorAll(".skill-chip")).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("says which attribute would not parse, instead of an empty palette", () => {
+    // An empty chip row is what a host that never opted in also gets, so
+    // without this the typo is indistinguishable from the feature being off.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      mount({ "data-skills": "{not json", "data-prompt-chips": "true" });
+
+      const said = warn.mock.calls.map((c) => String(c[0])).join(" ");
+      expect(said).toContain("data-skills");
+      expect(said).toContain("JSON");
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("opens the slash palette and picks with Enter, pre-filling when asked", () => {
