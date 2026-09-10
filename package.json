@@ -71,14 +71,14 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",
     "@types/node": "^26.1.2",
-    "@vitest/browser": "^4.1.10",
-    "@vitest/browser-playwright": "^4.1.10",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/browser": "^5.0.0",
+    "@vitest/browser-playwright": "^5.0.0",
+    "@vitest/coverage-v8": "^5.0.0",
     "esbuild": "^0.28.1",
     "happy-dom": "^20.11.1",
     "playwright": "^1.62.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.0"
   },
   "packageManager": "pnpm@11.2.2"
 }
