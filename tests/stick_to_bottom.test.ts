@@ -12,7 +12,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createStickToBottom, type StickToBottom } from "../src/ui/stick_to_bottom.js";
+import { createStickToBottom, type StickToBottom } from "../src/ui/transcript/stick_to_bottom.js";
 
 /**
  * A scrolling element with settable metrics.

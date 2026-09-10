@@ -7,7 +7,7 @@ import {
   SUBMIT_EVENT,
   UNREAD_EVENT,
 } from "../src/constants.js";
-import type { AgUiChat, SubmitDetail, UnreadDetail } from "../src/core/ag_ui_chat.js";
+import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import type {
   ClientConversationStore,
   NavigationCheckpoint,
@@ -15,9 +15,11 @@ import type {
 } from "../src/core/conversation_store.js";
 import { SessionStorageStore } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { SubmitDetail } from "../src/core/events/submit_detail.js";
+import type { UnreadDetail } from "../src/core/events/unread_detail.js";
 import { RemoteConversationStore } from "../src/core/remote_conversation_store.js";
-import type { ApprovalRequest } from "../src/ui/approval_card.js";
-import type { QuestionRequest } from "../src/ui/question_card.js";
+import type { ApprovalRequest } from "../src/ui/interrupts/approval_card.js";
+import type { QuestionRequest } from "../src/ui/interrupts/question_card.js";
 import { type Emit, type FakeRunParams, makeFakeAgent } from "./helpers/fake_agent.js";
 
 /** Mount the element with a fake agent factory and an optional run script. */

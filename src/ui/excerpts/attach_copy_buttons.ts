@@ -1,4 +1,4 @@
-import type { UiStrings } from "./ui_strings.js";
+import type { UiStrings } from "../ui_strings.js";
 
 /** How long the button shows its "copied" confirmation before reverting. */
 const CONFIRM_MS = 1500;

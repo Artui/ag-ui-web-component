@@ -8,7 +8,7 @@
  * tool against the same seam.
  */
 
-import type { ClientTool } from "../tools/client_tool_registry.js";
+import type { ClientTool } from "../../tools/client_tool_registry.js";
 import { renderChart } from "./chart_block.js";
 import { chartSpecFrom } from "./chart_spec_from.js";
 

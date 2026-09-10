@@ -61,47 +61,45 @@ import { createPageMapContext, type PageMap } from "../tools/page_map.js";
 import { createPageStateTools, type PageState } from "../tools/page_state.js";
 import { parseToolCatalog, type ToolCatalogEntry } from "../tools/parse_tool_catalog.js";
 import { createRouteTools, type RouteMap } from "../tools/route_map.js";
+import { renderChart } from "../ui/charts/chart_block.js";
+import { chartSpecFrom } from "../ui/charts/chart_spec_from.js";
+import { CHART_TOOL_NAME, createChartTool } from "../ui/charts/chart_tool.js";
+import { AttachmentTray } from "../ui/composer/attachment_tray.js";
+import { SkillsMenu } from "../ui/composer/skills_menu.js";
+import { VoiceInput } from "../ui/composer/voice_input.js";
+import { attachCopyButtons } from "../ui/excerpts/attach_copy_buttons.js";
+import { copyPayload } from "../ui/excerpts/copy_payload.js";
+import { attachQuoteOffer, type PageQuoteOffer } from "../ui/excerpts/page_quote_offer.js";
+import { asQuote, quotableSelection } from "../ui/excerpts/quote_selection.js";
+import { CheckpointMenu, type CheckpointVerb } from "../ui/history/checkpoint_menu.js";
+import type { RelativeTimeFormatter } from "../ui/history/relative_time.js";
+import { ThreadDrawer } from "../ui/history/thread_drawer.js";
 import {
   type ApprovalRenderer,
   type ApprovalRequest,
   requestApproval,
-} from "../ui/approval_card.js";
-import { attachCopyButtons } from "../ui/attach_copy_buttons.js";
-import { renderAttachmentChips } from "../ui/attachment_chips.js";
-import { AttachmentTray } from "../ui/attachment_tray.js";
-import { renderChart } from "../ui/chart_block.js";
-import { chartSpecFrom } from "../ui/chart_spec_from.js";
-import { CHART_TOOL_NAME, createChartTool } from "../ui/chart_tool.js";
-import { CheckpointMenu, type CheckpointVerb } from "../ui/checkpoint_menu.js";
-import { clampLauncher } from "../ui/clamp_launcher.js";
-import { clampPanel } from "../ui/clamp_panel.js";
-import { type ConfirmationRequest, requestConfirmation } from "../ui/confirmation_card.js";
-import { copyPayload } from "../ui/copy_payload.js";
-import { enableLauncherDrag } from "../ui/launcher_drag.js";
+} from "../ui/interrupts/approval_card.js";
+import {
+  type ConfirmationRequest,
+  requestConfirmation,
+} from "../ui/interrupts/confirmation_card.js";
+import {
+  type QuestionRenderer,
+  type QuestionRequest,
+  requestQuestion,
+} from "../ui/interrupts/question_card.js";
+import { clampLauncher } from "../ui/placement/clamp_launcher.js";
+import { clampPanel } from "../ui/placement/clamp_panel.js";
+import { enableLauncherDrag } from "../ui/placement/launcher_drag.js";
 import {
   type ExpandCorner,
   type Extent,
   type LauncherBox,
   launcherPlacement,
   type ViewportBox,
-} from "../ui/launcher_placement.js";
-import {
-  attachMessageActions,
-  messageActionBar,
-  messageActionButton,
-} from "../ui/message_actions.js";
-import { attachQuoteOffer, type PageQuoteOffer } from "../ui/page_quote_offer.js";
-import { enablePanelDrag } from "../ui/panel_drag.js";
-import { placeWidget } from "../ui/place_widget.js";
-import { prettifyToolName } from "../ui/prettify_tool_name.js";
-import {
-  type QuestionRenderer,
-  type QuestionRequest,
-  requestQuestion,
-} from "../ui/question_card.js";
-import { asQuote, quotableSelection } from "../ui/quote_selection.js";
-import type { RelativeTimeFormatter } from "../ui/relative_time.js";
-import { renderMarkdown } from "../ui/render_markdown.js";
+} from "../ui/placement/launcher_placement.js";
+import { enablePanelDrag } from "../ui/placement/panel_drag.js";
+import { placeWidget } from "../ui/placement/place_widget.js";
 import {
   createResizeHandle,
   gripName,
@@ -110,24 +108,35 @@ import {
   type ResizeAxis,
   type ResizeGrip,
   type ResizeSize,
-} from "../ui/resize_handle.js";
-import { wrapWords } from "../ui/reveal_words.js";
-import { renderRunNotice } from "../ui/run_notice.js";
-import { SkillsMenu } from "../ui/skills_menu.js";
-import { createStickToBottom, type StickToBottom } from "../ui/stick_to_bottom.js";
-import { STYLES } from "../ui/styles.js";
-import { SubAgentPanel, type SubAgentPhase, type SubAgentUpdate } from "../ui/subagent_panel.js";
-import { subAgentUpdate } from "../ui/subagent_update.js";
-import { renderSuggestionChips } from "../ui/suggestion_chips.js";
-import { ThoughtsBlock } from "../ui/thoughts_block.js";
-import { ThreadDrawer } from "../ui/thread_drawer.js";
+} from "../ui/placement/resize_handle.js";
+import { prettifyToolName } from "../ui/progress/prettify_tool_name.js";
+import { renderRunNotice } from "../ui/progress/run_notice.js";
+import {
+  SubAgentPanel,
+  type SubAgentPhase,
+  type SubAgentUpdate,
+} from "../ui/progress/subagent_panel.js";
+import { subAgentUpdate } from "../ui/progress/subagent_update.js";
+import { ThoughtsBlock } from "../ui/progress/thoughts_block.js";
 import {
   ToolCallCard,
   type ToolDisplayMode,
   type ToolPayloadFormatter,
-} from "../ui/tool_call_card.js";
+} from "../ui/progress/tool_call_card.js";
+import { STYLES } from "../ui/styles.js";
+import { renderAttachmentChips } from "../ui/transcript/attachment_chips.js";
+import {
+  attachMessageActions,
+  messageActionBar,
+  messageActionButton,
+} from "../ui/transcript/message_actions.js";
+import { renderMarkdown } from "../ui/transcript/render_markdown.js";
+import { wrapWords } from "../ui/transcript/reveal_words.js";
+import { createStickToBottom, type StickToBottom } from "../ui/transcript/stick_to_bottom.js";
+import { renderSuggestionChips } from "../ui/transcript/suggestion_chips.js";
 import { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "../ui/ui_strings.js";
-import { VoiceInput } from "../ui/voice_input.js";
+import type { ActivityRegistration } from "./activity_registration.js";
+import type { ActivityRenderer } from "./activity_renderer.js";
 import {
   AgUiClient,
   type AgUiClientHandlers,
@@ -143,146 +152,23 @@ import {
   writeStoredItem,
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
+import type { AttachmentsDetail } from "./events/attachments_detail.js";
+import type { CustomAgentDetail } from "./events/custom_agent_detail.js";
+import type { FeedbackDetail } from "./events/feedback_detail.js";
+import type { InvalidateDetail } from "./events/invalidate_detail.js";
+import type { RunFinishedDetail } from "./events/run_finished_detail.js";
+import type { StateDetail } from "./events/state_detail.js";
+import type { SubmitDetail } from "./events/submit_detail.js";
+import type { ToggleDetail } from "./events/toggle_detail.js";
+import type { ToolRun } from "./events/tool_run.js";
+import type { UnreadDetail } from "./events/unread_detail.js";
+import type { MessageRole } from "./message_role.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunIndex } from "./run_index.js";
 import { toolStatusFromOutcome } from "./tool_outcome.js";
 import { type TranscribeHandler, transcribeAudio } from "./transcribe_audio.js";
 import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
 import { mintThread, warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
-
-/** The role a rendered chat message takes. */
-export type MessageRole = (typeof MESSAGE_ROLE)[keyof typeof MESSAGE_ROLE];
-
-/** `detail` shape of the {@link SUBMIT_EVENT} CustomEvent. */
-export interface SubmitDetail {
-  readonly content: string;
-  /** Durable refs for the files attached to this message (empty when none). */
-  readonly attachments: readonly AttachmentRef[];
-}
-
-/** `detail` shape of the {@link ATTACHMENT_EVENT} CustomEvent. */
-export interface AttachmentsDetail {
-  /** Durable refs for every file that has finished uploading. */
-  readonly attachments: readonly AttachmentRef[];
-  /** How many files are still uploading; a send now would leave these behind. */
-  readonly pending: number;
-}
-
-/** `detail` shape of the {@link STATE_EVENT} CustomEvent. */
-/** {@link FEEDBACK_EVENT} detail: what was rated, and how. */
-export interface FeedbackDetail {
-  /** The rated message's text, as rendered. */
-  readonly content: string;
-  readonly rating: "up" | "down";
-}
-
-export interface StateDetail {
-  readonly state: Readonly<Record<string, unknown>>;
-}
-
-/** One tool that ran during an interaction, as {@link RunFinishedDetail} lists it. */
-export interface ToolRun {
-  readonly name: string;
-  /**
-   * Where it executed. `"server"` is the one a data-rendering host cares about:
-   * a `"client"` tool ran in the host's own handler, so the host already knows
-   * whatever it did.
-   */
-  readonly side: "server" | "client";
-}
-
-/** `detail` shape of the {@link RUN_FINISHED_EVENT} CustomEvent. */
-export interface RunFinishedDetail {
-  /** In settle order. Empty when the interaction called no tools. */
-  readonly tools: readonly ToolRun[];
-  /**
-   * Every key announced during the interaction, de-duplicated, first-seen order.
-   *
-   * **This is the field that makes adoption one line** for a host already
-   * listening here, and the `else` is the whole compatibility story:
-   *
-   * ```js
-   * if (detail.invalidated.length > 0) refetchOnly(detail.invalidated);
-   * else if (detail.tools.some((t) => t.side === "server")) refetchEverything();
-   * ```
-   *
-   * Empty against a server that announces nothing, so an old server and a new
-   * client fall through to the coarse refetch that shipped before either.
-   */
-  readonly invalidated: readonly string[];
-}
-
-/**
- * Draw one activity, from its content alone.
- *
- * The contract is {@link ClientTool.render}'s, and for the same reason rather
- * than by analogy. An activity is materialised into a `role: "activity"`
- * message, persisted with the transcript, and re-fired on every restore -- so a
- * renderer that writes to the page instead of returning DOM fires again on
- * every thread load, which is exactly the bug the tool registry's purity rule
- * was written to make unmakeable.
- *
- * - a pure function of `content` -- no host state, no network, no clock;
- * - deterministic, so a reload reproduces what was there before;
- * - free of effects outside the node it returns, which the component places.
- *
- * Return `null` for content that says nothing worth drawing. Anything already
- * drawn under that message id is then removed: live and reload should agree,
- * and the stored content is the version that could not be drawn.
- */
-export type ActivityRenderer = (content: unknown) => Node | null;
-
-/** One `activity_type` a host can draw. See {@link AgUiChat.registerActivityRenderer}. */
-export interface ActivityRegistration {
-  /**
-   * The AG-UI `activity_type` this draws, matched exactly.
-   *
-   * An open string the protocol does not enumerate -- which is the whole reason
-   * this is a registry rather than a branch.
-   */
-  readonly type: string;
-  readonly render: ActivityRenderer;
-  /**
-   * Shown in the transcript when something already drawn under this type stops
-   * being renderable. Omit for an activity whose disappearance needs no
-   * explanation.
-   */
-  readonly removedNotice?: string;
-}
-
-/** `detail` shape of the {@link CUSTOM_AGENT_EVENT} CustomEvent. */
-export interface CustomAgentDetail {
-  /** The `CUSTOM` event's `name`, verbatim. An open string; never interpreted here. */
-  readonly name: string;
-  /** Its `value`, verbatim and unparsed. `unknown` because the protocol says nothing about it. */
-  readonly value: unknown;
-}
-
-/** `detail` shape of the {@link INVALIDATE_EVENT} CustomEvent. */
-export interface InvalidateDetail {
-  /**
-   * The resources that moved, as the server named them.
-   *
-   * **Opaque strings, and matching is exact.** `orders/42` does not imply
-   * `orders` -- a prefix rule would be this component guessing at a scheme it
-   * does not own, and `orders/1` would match `orders/11`. A server that wants
-   * the collection refreshed names it. Your own matching may be hierarchical,
-   * because in your vocabulary the scheme is known.
-   */
-  readonly keys: readonly string[];
-  /** What caused the write -- usually the tool's name. `null` when unstated. */
-  readonly reason: string | null;
-}
-
-/** `detail` shape of the {@link TOGGLE_EVENT} CustomEvent. */
-export interface ToggleDetail {
-  readonly collapsed: boolean;
-}
-
-/** `detail` shape of the {@link UNREAD_EVENT} CustomEvent. */
-export interface UnreadDetail {
-  readonly unread: number;
-}
 
 /**
  * Attributes read once while connecting, to decide what chrome exists at all.

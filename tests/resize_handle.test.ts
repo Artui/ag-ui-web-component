@@ -14,7 +14,7 @@ import {
   type PanelRect,
   type ResizeAxis,
   type ResizeGrip,
-} from "../src/ui/resize_handle.js";
+} from "../src/ui/placement/resize_handle.js";
 
 afterEach(() => {
   document.body.innerHTML = "";

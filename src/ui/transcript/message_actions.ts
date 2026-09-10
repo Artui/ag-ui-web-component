@@ -1,5 +1,5 @@
-import { ICON_COPY, ICON_THUMB_DOWN, ICON_THUMB_UP } from "../constants.js";
-import type { UiStrings } from "./ui_strings.js";
+import { ICON_COPY, ICON_THUMB_DOWN, ICON_THUMB_UP } from "../../constants.js";
+import type { UiStrings } from "../ui_strings.js";
 
 /** How long a button shows its confirmation before reverting. */
 const CONFIRM_MS = 1500;

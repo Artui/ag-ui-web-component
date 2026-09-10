@@ -22,7 +22,7 @@
 import { describe, expect, it } from "vitest";
 
 import { SUBAGENT_PHASE } from "../src/constants.js";
-import { subAgentUpdate } from "../src/ui/subagent_update.js";
+import { subAgentUpdate } from "../src/ui/progress/subagent_update.js";
 import { subAgentValue, subAgentValues } from "./helpers/subagent_fixture.js";
 
 /** Two real payloads: a call in flight, and a result that landed. */

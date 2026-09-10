@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { relativeTime } from "../src/ui/relative_time.js";
-import { ThreadDrawer } from "../src/ui/thread_drawer.js";
+import { relativeTime } from "../src/ui/history/relative_time.js";
+import { ThreadDrawer } from "../src/ui/history/thread_drawer.js";
 
 const NOW = 1_000_000_000_000;
 const SECOND = 1000;

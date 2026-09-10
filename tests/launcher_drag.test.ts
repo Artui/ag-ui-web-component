@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { enableLauncherDrag } from "../src/ui/launcher_drag.js";
+import { enableLauncherDrag } from "../src/ui/placement/launcher_drag.js";
 
 afterEach(() => {
   document.body.innerHTML = "";

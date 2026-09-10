@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RunRow } from "../src/core/run_index.js";
-import { CheckpointMenu } from "../src/ui/checkpoint_menu.js";
+import { CheckpointMenu } from "../src/ui/history/checkpoint_menu.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 
 function row(overrides: Partial<RunRow> = {}): RunRow {

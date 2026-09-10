@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ThreadMeta } from "../src/core/conversation_store.js";
-import { FILTER_FROM, ThreadDrawer } from "../src/ui/thread_drawer.js";
+import { FILTER_FROM, ThreadDrawer } from "../src/ui/history/thread_drawer.js";
 
 /**
  * Narrowing a long conversation list.

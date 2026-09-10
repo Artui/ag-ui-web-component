@@ -1,7 +1,8 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG, STATE_EVENT } from "../src/constants.js";
-import type { AgUiChat, StateDetail } from "../src/core/ag_ui_chat.js";
+import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { StateDetail } from "../src/core/events/state_detail.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 beforeAll(() => {

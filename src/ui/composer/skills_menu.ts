@@ -1,4 +1,4 @@
-import type { Skill } from "../skills/skill.js";
+import type { Skill } from "../../skills/skill.js";
 
 /**
  * The two skill surfaces over a single catalog: a chips row (the `chip: true`

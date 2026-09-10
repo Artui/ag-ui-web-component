@@ -27,22 +27,9 @@ export {
   X_NAVIGATES_KEY,
   X_SUMMARY_KEY,
 } from "./constants.js";
-export {
-  type ActivityRegistration,
-  type ActivityRenderer,
-  AgUiChat,
-  type AttachmentsDetail,
-  type CustomAgentDetail,
-  type FeedbackDetail,
-  type InvalidateDetail,
-  type MessageRole,
-  type RunFinishedDetail,
-  type StateDetail,
-  type SubmitDetail,
-  type ToggleDetail,
-  type ToolRun,
-  type UnreadDetail,
-} from "./core/ag_ui_chat.js";
+export type { ActivityRegistration } from "./core/activity_registration.js";
+export type { ActivityRenderer } from "./core/activity_renderer.js";
+export { AgUiChat } from "./core/ag_ui_chat.js";
 export {
   AgUiClient,
   type AgUiClientConfig,
@@ -68,6 +55,17 @@ export {
   type HttpAgentOptions,
 } from "./core/create_http_agent.js";
 export { defineAgUiChat } from "./core/define_ag_ui_chat.js";
+export type { AttachmentsDetail } from "./core/events/attachments_detail.js";
+export type { CustomAgentDetail } from "./core/events/custom_agent_detail.js";
+export type { FeedbackDetail } from "./core/events/feedback_detail.js";
+export type { InvalidateDetail } from "./core/events/invalidate_detail.js";
+export type { RunFinishedDetail } from "./core/events/run_finished_detail.js";
+export type { StateDetail } from "./core/events/state_detail.js";
+export type { SubmitDetail } from "./core/events/submit_detail.js";
+export type { ToggleDetail } from "./core/events/toggle_detail.js";
+export type { ToolRun } from "./core/events/tool_run.js";
+export type { UnreadDetail } from "./core/events/unread_detail.js";
+export type { MessageRole } from "./core/message_role.js";
 export { RemoteConversationStore } from "./core/remote_conversation_store.js";
 export { RunIndex, type RunRow } from "./core/run_index.js";
 export { type ToolOutcome, toolStatusFromOutcome } from "./core/tool_outcome.js";
@@ -149,42 +147,18 @@ export {
   type RouteMap,
   type RouteWithParams,
 } from "./tools/route_map.js";
-export {
-  type ApprovalOptions,
-  type ApprovalRenderer,
-  type ApprovalRequest,
-  requestApproval,
-} from "./ui/approval_card.js";
 // Charts. `CHART_ACTIVITY_TYPE` above is the wire name a server sets on an
 // ACTIVITY_SNAPSHOT; these are the shape it carries and the renderer itself,
 // for a host building its own visual on the same seam.
-export type { ChartKind, ChartSeries, ChartSpec } from "./ui/chart_block.js";
-export { renderChart } from "./ui/chart_block.js";
-export { chartSpecFrom } from "./ui/chart_spec_from.js";
-export { CHART_TOOL_NAME } from "./ui/chart_tool.js";
-export { CheckpointMenu, type CheckpointVerb } from "./ui/checkpoint_menu.js";
-export {
-  type ConfirmationOptions,
-  type ConfirmationRequest,
-  requestConfirmation,
-} from "./ui/confirmation_card.js";
-export {
-  attachMessageActions,
-  type MessageActionsOptions,
-  messageActionBar,
-} from "./ui/message_actions.js";
+export type { ChartKind, ChartSeries, ChartSpec } from "./ui/charts/chart_block.js";
+export { renderChart } from "./ui/charts/chart_block.js";
+export { chartSpecFrom } from "./ui/charts/chart_spec_from.js";
+export { CHART_TOOL_NAME } from "./ui/charts/chart_tool.js";
 export {
   attachQuoteOffer,
   type PageQuoteOffer,
   type PageQuoteOfferOptions,
-} from "./ui/page_quote_offer.js";
-export { prettifyToolName } from "./ui/prettify_tool_name.js";
-export {
-  type QuestionOptions,
-  type QuestionRenderer,
-  type QuestionRequest,
-  requestQuestion,
-} from "./ui/question_card.js";
+} from "./ui/excerpts/page_quote_offer.js";
 // Quoting. The transcript wires these itself; they are exported for the half
 // the component cannot reach -- a selection made in the **host page**, which
 // a host reads its own way and hands to `AgUiChat.quote()`.
@@ -193,18 +167,30 @@ export {
   MAX_QUOTE_CHARS,
   type QuotableSelection,
   quotableSelection,
-} from "./ui/quote_selection.js";
+} from "./ui/excerpts/quote_selection.js";
+export { CheckpointMenu, type CheckpointVerb } from "./ui/history/checkpoint_menu.js";
 export {
   type RelativeTimeFormatter,
   relativeTime,
-} from "./ui/relative_time.js";
-export { type RenderMarkdownOptions, renderMarkdown } from "./ui/render_markdown.js";
+} from "./ui/history/relative_time.js";
 export {
-  MAX_SUGGESTION_CHARS,
-  MAX_SUGGESTIONS,
-  renderSuggestionChips,
-  suggestionPrompts,
-} from "./ui/suggestion_chips.js";
+  type ApprovalOptions,
+  type ApprovalRenderer,
+  type ApprovalRequest,
+  requestApproval,
+} from "./ui/interrupts/approval_card.js";
+export {
+  type ConfirmationOptions,
+  type ConfirmationRequest,
+  requestConfirmation,
+} from "./ui/interrupts/confirmation_card.js";
+export {
+  type QuestionOptions,
+  type QuestionRenderer,
+  type QuestionRequest,
+  requestQuestion,
+} from "./ui/interrupts/question_card.js";
+export { prettifyToolName } from "./ui/progress/prettify_tool_name.js";
 export {
   type SettledStatus,
   ToolCallCard,
@@ -213,6 +199,18 @@ export {
   type ToolDisplayMode,
   type ToolPayload,
   type ToolPayloadFormatter,
-} from "./ui/tool_call_card.js";
+} from "./ui/progress/tool_call_card.js";
+export {
+  attachMessageActions,
+  type MessageActionsOptions,
+  messageActionBar,
+} from "./ui/transcript/message_actions.js";
+export { type RenderMarkdownOptions, renderMarkdown } from "./ui/transcript/render_markdown.js";
+export {
+  MAX_SUGGESTION_CHARS,
+  MAX_SUGGESTIONS,
+  renderSuggestionChips,
+  suggestionPrompts,
+} from "./ui/transcript/suggestion_chips.js";
 export { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "./ui/ui_strings.js";
 export { VERSION } from "./version.js";
