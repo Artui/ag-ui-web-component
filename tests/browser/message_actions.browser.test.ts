@@ -17,7 +17,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
-import { attachMessageActions } from "../../src/ui/message_actions.js";
+import { attachMessageActions } from "../../src/ui/transcript/message_actions.js";
 import { DEFAULT_UI_STRINGS } from "../../src/ui/ui_strings.js";
 
 /** The smallest target WCAG 2.2 accepts without a spacing exemption. */

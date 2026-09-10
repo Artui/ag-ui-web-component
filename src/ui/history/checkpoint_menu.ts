@@ -1,6 +1,6 @@
-import type { RunRow } from "../core/run_index.js";
+import type { RunRow } from "../../core/run_index.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 import { type RelativeTimeFormatter, relativeTime } from "./relative_time.js";
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
 /** How the host continues a picked run. */
 export type CheckpointVerb = "resume" | "fork";

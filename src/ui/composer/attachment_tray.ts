@@ -1,9 +1,9 @@
 import { randomUUID } from "@ag-ui/client";
-import { ATTACHMENT_STATUS } from "../constants.js";
-import type { AttachmentRef } from "../core/attachment.js";
-import type { UploadHandler } from "../core/upload_attachment.js";
-import { formatBytes, iconFor } from "./attachment_chips.js";
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+import { ATTACHMENT_STATUS } from "../../constants.js";
+import type { AttachmentRef } from "../../core/attachment.js";
+import type { UploadHandler } from "../../core/upload_attachment.js";
+import { formatBytes, iconFor } from "../transcript/attachment_chips.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /** Status of a pending tray chip. */
 type AttachmentStatus = (typeof ATTACHMENT_STATUS)[keyof typeof ATTACHMENT_STATUS];

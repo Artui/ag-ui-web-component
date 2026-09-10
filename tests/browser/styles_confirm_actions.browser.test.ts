@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
-import { requestConfirmation } from "../../src/ui/confirmation_card.js";
+import { requestConfirmation } from "../../src/ui/interrupts/confirmation_card.js";
 
 /**
  * The confirmation card's action row, measured rather than inspected.

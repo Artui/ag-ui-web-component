@@ -3,7 +3,7 @@ import { ELEMENT_TAG, MESSAGE_ROLE } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import type { AttachmentRef } from "../../src/core/attachment.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
-import { renderAttachmentChips } from "../../src/ui/attachment_chips.js";
+import { renderAttachmentChips } from "../../src/ui/transcript/attachment_chips.js";
 
 /**
  * Attachment chips, asserted against a real cascade.

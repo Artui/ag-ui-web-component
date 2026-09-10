@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ThoughtsBlock } from "../src/ui/thoughts_block.js";
+import { ThoughtsBlock } from "../src/ui/progress/thoughts_block.js";
 import { mergeUiStrings } from "../src/ui/ui_strings.js";
 
 describe("ThoughtsBlock", () => {

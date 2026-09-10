@@ -1,4 +1,4 @@
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /**
  * A compact relative timestamp for a thread row — e.g. `"just now"`, `"5m ago"`,

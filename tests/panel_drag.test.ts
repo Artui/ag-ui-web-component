@@ -9,8 +9,8 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { enablePanelDrag, type PanelDragOptions } from "../src/ui/panel_drag.js";
-import type { PanelRect } from "../src/ui/resize_handle.js";
+import { enablePanelDrag, type PanelDragOptions } from "../src/ui/placement/panel_drag.js";
+import type { PanelRect } from "../src/ui/placement/resize_handle.js";
 
 const PANEL: PanelRect = { left: 100, top: 60, right: 480, bottom: 620 };
 

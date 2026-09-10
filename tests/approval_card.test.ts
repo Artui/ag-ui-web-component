@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { requestApproval } from "../src/ui/approval_card.js";
+import { requestApproval } from "../src/ui/interrupts/approval_card.js";
 
 afterEach(() => {
   document.body.innerHTML = "";

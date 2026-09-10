@@ -1,8 +1,8 @@
 import DOMPurify from "dompurify";
 import { afterEach, describe, expect, it } from "vitest";
-import { requestApproval } from "../../src/ui/approval_card.js";
-import { renderMarkdown, SANITIZE_CONFIG } from "../../src/ui/render_markdown.js";
+import { requestApproval } from "../../src/ui/interrupts/approval_card.js";
 import { STYLES } from "../../src/ui/styles.js";
+import { renderMarkdown, SANITIZE_CONFIG } from "../../src/ui/transcript/render_markdown.js";
 
 /**
  * What the sanitiser lets model output *look like*, measured in a real browser.

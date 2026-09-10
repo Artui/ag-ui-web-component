@@ -13,8 +13,10 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { ELEMENT_TAG, LOAD_CAPABILITY_TOOL, RUN_FINISHED_EVENT } from "../src/constants.js";
-import type { AgUiChat, RunFinishedDetail, ToolRun } from "../src/core/ag_ui_chat.js";
+import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { RunFinishedDetail } from "../src/core/events/run_finished_detail.js";
+import type { ToolRun } from "../src/core/events/tool_run.js";
 import { type Emit, type FakeRunParams, makeFakeAgent } from "./helpers/fake_agent.js";
 
 defineAgUiChat();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ToolCallCard, type ToolPayload } from "../src/ui/tool_call_card.js";
+import { ToolCallCard, type ToolPayload } from "../src/ui/progress/tool_call_card.js";
 import { mergeUiStrings } from "../src/ui/ui_strings.js";
 
 const args = (card: ToolCallCard) => card.element.querySelector<HTMLElement>(".tool-call-args");

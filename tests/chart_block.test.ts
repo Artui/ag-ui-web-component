@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type ChartSpec, renderChart, seriesColor } from "../src/ui/chart_block.js";
+import { type ChartSpec, renderChart, seriesColor } from "../src/ui/charts/chart_block.js";
 
 function spec(over: Partial<ChartSpec> = {}): ChartSpec {
   return {

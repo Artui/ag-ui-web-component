@@ -1,4 +1,4 @@
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /** What the inline question card asks (the `ask_user` frontend tool's args). */
 export interface QuestionRequest {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { requestQuestion } from "../src/ui/question_card.js";
+import { requestQuestion } from "../src/ui/interrupts/question_card.js";
 
 afterEach(() => {
   document.body.innerHTML = "";
