@@ -1,4 +1,4 @@
-import { SCREEN_EDGE_MARGIN } from "../constants.js";
+import { SCREEN_EDGE_MARGIN } from "../../constants.js";
 import { clampPanel } from "./clamp_panel.js";
 import { placeWidget } from "./place_widget.js";
 

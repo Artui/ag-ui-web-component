@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { copyPayload } from "../src/ui/copy_payload.js";
+import { copyPayload } from "../src/ui/excerpts/copy_payload.js";
 
 /** A bubble holding `html`, the way a rendered markdown answer looks. */
 function bubble(html: string): HTMLElement {

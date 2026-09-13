@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { VoiceInput } from "../src/ui/composer/voice_input.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
-import { VoiceInput } from "../src/ui/voice_input.js";
 import { installFakeMedia } from "./helpers/fake_media.js";
 
 /** Drain microtasks so the async start/finish chain settles. */

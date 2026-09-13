@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { wrapWords } from "../src/ui/reveal_words.js";
+import { wrapWords } from "../src/ui/transcript/reveal_words.js";
 
 afterEach(() => {
   document.body.innerHTML = "";

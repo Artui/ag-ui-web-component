@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { attachCopyButtons } from "../src/ui/attach_copy_buttons.js";
+import { attachCopyButtons } from "../src/ui/excerpts/attach_copy_buttons.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 
 function block(code = "print('hi')"): HTMLDivElement {

@@ -1,4 +1,4 @@
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /** What the inline approval card displays for one server-side-tool interrupt. */
 export interface ApprovalRequest {

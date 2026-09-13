@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chartSpecFrom } from "../src/ui/chart_spec_from.js";
+import { chartSpecFrom } from "../src/ui/charts/chart_spec_from.js";
 
 const ok = { kind: "line", labels: ["a", "b"], series: [{ label: "s", points: [1, 2] }] };
 

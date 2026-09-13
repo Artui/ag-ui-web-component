@@ -76,13 +76,42 @@ inferred, so the published layout stays `dist/index.d.ts` rather than
    types without needing `allowImportingTsExtensions`. Never use bare extensionless imports or
    `.ts` extensions (the latter forces the flag onto every downstream consumer).
 8. **`import type` for type-only imports** (Biome enforces `useImportType`).
-9. **`src/` is grouped one level deep by concern** — `core/` (the element, AG-UI client,
-   conversation store), `ui/` (rendered widgets + styles + markdown/word rendering), `dom/`
-   (host-page driving: animations, dom driver, native setter), `tools/` (client tool registry,
-   route/page maps, state hook, schema predicates), and `skills/` (skill type, templating,
-   parsing). `index.ts`, `constants.ts`, and `version.ts` stay at the `src/` root. One level
-   only — no deeper nesting. Cross-group imports use relative `../<group>/x.js` paths; same-group
-   imports use `./x.js`. Tests stay flat under `tests/` (named after the source symbol).
+9. **`src/` is grouped by concern, two levels at most.** The top level is `core/` (the
+   element, AG-UI client, conversation store), `ui/` (everything rendered), `dom/`
+   (host-page driving: animations, dom driver, native setter), `tools/` (client tool
+   registry, route/page maps, state hook, schema predicates), and `skills/` (skill type,
+   templating, parsing). `index.ts`, `constants.ts`, and `version.ts` stay at the `src/`
+   root.
+
+   Every rule above this one governs a *file*, so a package can obey all eight and still
+   put everything it owns in one flat directory — which is what `src/ui/` was at 37
+   modules. The rules for a directory are:
+
+   - **Name it for a concern, never for a kind of thing.** `placement/`, `interrupts/`,
+     `excerpts/`, `composer/` say what the code does. `helpers/`, `common/`, `misc/`,
+     `types/`, `cards/`, `widgets/` say only what shape the exports have, and a directory
+     named for a shape is the flat root again one level down. The test: `ui/interrupts/`
+     holds the approval, confirmation and question cards because all three pause a run to
+     ask the user something, and `ui/progress/tool_call_card.ts` is a card that is
+     deliberately not among them, because it reports work rather than asking for a
+     decision. A `cards/` directory would have held all four and said nothing about any
+     of them.
+   - **Three modules on one concern earn a directory.** Below three they stay at the group
+     root; at three they move, and moving them is a chore rather than a refactor.
+   - **A group root holds only what everything under it uses.** `ui/ui_strings.ts` and
+     `ui/styles.ts` are there because all eight concern directories read them, the way
+     `constants.ts` sits at the `src/` root. It is not the drawer for whatever has not
+     found a home yet.
+   - **Two levels is the limit.** Wanting a third means the second was named for a kind.
+
+   Cross-group imports use relative `../<group>/x.js` paths, `../../<group>/x.js` from
+   inside a concern directory; same-directory imports use `./x.js`.
+
+   **Tests stay flat under `tests/`**, named after the source symbol —
+   `src/ui/placement/clamp_panel.ts` is `tests/clamp_panel.test.ts`, and the browser-only
+   assertions live under `tests/browser/`. This deliberately does *not* mirror the source
+   tree: a test is found by the symbol it names, and mirroring would make moving a module
+   between concerns move its test too, turning a rename into a two-sided change.
 
 ## API style rules
 

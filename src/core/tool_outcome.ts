@@ -1,5 +1,5 @@
 import { TOOL_CALL_STATUS, TOOL_OUTCOME } from "../constants.js";
-import type { SettledStatus } from "../ui/tool_call_card.js";
+import type { SettledStatus } from "../ui/progress/tool_call_card.js";
 
 /**
  * How a tool call ended, in the wire's own words. See {@link TOOL_OUTCOME}.

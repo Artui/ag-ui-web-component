@@ -1,8 +1,10 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ATTACHMENT_EVENT, ELEMENT_TAG, SUBMIT_EVENT } from "../src/constants.js";
-import type { AgUiChat, AttachmentsDetail, SubmitDetail } from "../src/core/ag_ui_chat.js";
+import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import type { AttachmentRef } from "../src/core/attachment.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { AttachmentsDetail } from "../src/core/events/attachments_detail.js";
+import type { SubmitDetail } from "../src/core/events/submit_detail.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 import { type FakeXhrController, installFakeXhr } from "./helpers/fake_xhr.js";
 

@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`src/ui/` is grouped by concern instead of being 37 modules in one flat
+  directory.** A flat directory that size is a table of contents nobody reads: the
+  placement arithmetic, the inline cards, the chart renderer and the clipboard
+  payload builder were neighbours only in the sense that all of them draw
+  something. They are now eight directories -- `placement/`, `transcript/`,
+  `progress/`, `excerpts/`, `charts/`, `interrupts/`, `history/` and `composer/`
+  -- with `styles.ts` and `ui_strings.ts` left at the group root because every one
+  of the eight reads them.
+
+  The split is by the question a module answers, never by the kind of export it
+  has. `interrupts/` holds the approval, confirmation and question cards because
+  all three pause a run to ask the user something; `tool_call_card.ts` is also a
+  card and sits in `progress/` instead, because it reports work rather than asking
+  for a decision. A `cards/` directory would have held all four and said nothing
+  about any of them. `CLAUDE.md` now states the rule, since the eight structural
+  rules it had all governed a file and none governed a directory.
+
+  Moves only. No module's contents changed, and the published surface is
+  unchanged: the same 92 runtime exports, the same 173 declared names, and every
+  emitted declaration line identical to the release before it.
+
+- **The element's event detail shapes are their own modules.** `ag_ui_chat.ts`
+  declared thirteen exported types alongside the `AgUiChat` class, so a consumer
+  looking up `RunFinishedDetail` opened a file of several thousand lines to read
+  twenty. The nine `detail` shapes and the `ToolRun` one of them lists are now in
+  `src/core/events/`, and `MessageRole`, `ActivityRenderer` and
+  `ActivityRegistration` at the `src/core/` root -- one symbol per file, like
+  everything else in the package.
+
+  The file shrank by only about a hundred lines, which is not the point: the point
+  is that each of these thirteen now has an import path a reader can go to, and
+  the element's contract with its host is no longer interleaved with the
+  implementation of it. Consumers importing from the package entry point see no
+  difference; the names and the shapes are the same.
+
+### Fixed
+
+- **`StateDetail` was documented as if it were `FeedbackDetail`.** The two
+  interfaces sat next to each other and `StateDetail`'s doc comment had drifted
+  above `FeedbackDetail`'s own, so `FeedbackDetail` carried two comments,
+  `StateDetail` carried none, and an editor offered the wrong one for both. It
+  survived because a stray comment is invisible in a file long enough to hold both
+  declarations screens apart from their reader; putting one symbol in one file is
+  what made it obvious. Nothing about either type changed.
+
 ## [0.37.0] — 2026-09-06
 
 ### Fixed

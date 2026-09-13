@@ -27,8 +27,8 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
-import { SubAgentPanel } from "../../src/ui/subagent_panel.js";
-import { ToolCallCard } from "../../src/ui/tool_call_card.js";
+import { SubAgentPanel } from "../../src/ui/progress/subagent_panel.js";
+import { ToolCallCard } from "../../src/ui/progress/tool_call_card.js";
 import { DEFAULT_UI_STRINGS } from "../../src/ui/ui_strings.js";
 import { FIXTURE_EVENTS, lifecycleEvent } from "../helpers/subagent_fixture.js";
 

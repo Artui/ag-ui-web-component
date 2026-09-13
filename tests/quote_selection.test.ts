@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { asQuote, MAX_QUOTE_CHARS, quotableSelection } from "../src/ui/quote_selection.js";
+import { asQuote, MAX_QUOTE_CHARS, quotableSelection } from "../src/ui/excerpts/quote_selection.js";
 
 /**
  * Reading a selection out of a shadow tree, without a browser's help.

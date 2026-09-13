@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampLauncher } from "../src/ui/clamp_launcher.js";
+import { clampLauncher } from "../src/ui/placement/clamp_launcher.js";
 
 const launcher = (left: number, top: number) => ({ left, top, width: 56, height: 56 });
 // A screen with an origin: the clamps take a box rather than a size now, because

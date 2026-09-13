@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
-import { asQuote, quotableSelection } from "../../src/ui/quote_selection.js";
+import { asQuote, quotableSelection } from "../../src/ui/excerpts/quote_selection.js";
 
 /**
  * The quote offer, measured, and the shadow read done for real.

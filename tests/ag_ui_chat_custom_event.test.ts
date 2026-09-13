@@ -17,8 +17,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CUSTOM_AGENT_EVENT, ELEMENT_TAG } from "../src/constants.js";
-import type { AgUiChat, CustomAgentDetail } from "../src/core/ag_ui_chat.js";
+import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { CustomAgentDetail } from "../src/core/events/custom_agent_detail.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 defineAgUiChat();

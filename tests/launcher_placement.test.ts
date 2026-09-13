@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { launcherPlacement } from "../src/ui/launcher_placement.js";
+import { launcherPlacement } from "../src/ui/placement/launcher_placement.js";
 
 /** A 56px launcher, the component's default size. */
 const box = (left: number, top: number, size = 56) => ({ left, top, width: size, height: size });

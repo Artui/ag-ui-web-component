@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Skill } from "../src/skills/skill.js";
-import { SkillsMenu } from "../src/ui/skills_menu.js";
+import { SkillsMenu } from "../src/ui/composer/skills_menu.js";
 
 afterEach(() => {
   document.body.innerHTML = "";

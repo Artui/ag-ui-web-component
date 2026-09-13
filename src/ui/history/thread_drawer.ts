@@ -1,6 +1,6 @@
-import type { ThreadMeta } from "../core/conversation_store.js";
+import type { ThreadMeta } from "../../core/conversation_store.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 import { type RelativeTimeFormatter, relativeTime } from "./relative_time.js";
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
 
 /**
  * How many conversations there have to be before the filter appears.

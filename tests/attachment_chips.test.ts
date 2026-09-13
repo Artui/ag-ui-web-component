@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ICON_FILE, ICON_FILE_IMAGE, ICON_FILE_PDF, ICON_FILE_TEXT } from "../src/constants.js";
 import type { AttachmentRef } from "../src/core/attachment.js";
-import { formatBytes, iconFor, renderAttachmentChips } from "../src/ui/attachment_chips.js";
+import {
+  formatBytes,
+  iconFor,
+  renderAttachmentChips,
+} from "../src/ui/transcript/attachment_chips.js";
 
 function ref(over: Partial<AttachmentRef> = {}): AttachmentRef {
   return { id: "a1", name: "notes.txt", mime: "text/plain", size: 1234, ...over };

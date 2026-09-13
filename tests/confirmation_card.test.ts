@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { requestConfirmation } from "../src/ui/confirmation_card.js";
+import { requestConfirmation } from "../src/ui/interrupts/confirmation_card.js";
 
 afterEach(() => {
   document.body.innerHTML = "";

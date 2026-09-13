@@ -17,7 +17,7 @@ import { page } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
-import { type ChartSpec, renderChart } from "../../src/ui/chart_block.js";
+import { type ChartSpec, renderChart } from "../../src/ui/charts/chart_block.js";
 
 const SPEC: ChartSpec = {
   kind: "bar",

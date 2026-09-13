@@ -1,4 +1,4 @@
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /**
  * A muted, collapsible "thinking" region for a reasoning model's streamed

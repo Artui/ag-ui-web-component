@@ -4,7 +4,7 @@ import {
   MAX_SUGGESTIONS,
   renderSuggestionChips,
   suggestionPrompts,
-} from "../src/ui/suggestion_chips.js";
+} from "../src/ui/transcript/suggestion_chips.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 
 afterEach(() => {

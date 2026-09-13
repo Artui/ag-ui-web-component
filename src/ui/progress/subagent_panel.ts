@@ -1,5 +1,5 @@
-import type { SUBAGENT_PHASE } from "../constants.js";
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+import type { SUBAGENT_PHASE } from "../../constants.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /** One phase of a delegation's life, as the server spells it. */
 export type SubAgentPhase = (typeof SUBAGENT_PHASE)[keyof typeof SUBAGENT_PHASE];

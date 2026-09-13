@@ -2,8 +2,8 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
-import { requestApproval } from "../../src/ui/approval_card.js";
-import { ToolCallCard } from "../../src/ui/tool_call_card.js";
+import { requestApproval } from "../../src/ui/interrupts/approval_card.js";
+import { ToolCallCard } from "../../src/ui/progress/tool_call_card.js";
 
 /**
  * A gated call's card, with the question about it inside.

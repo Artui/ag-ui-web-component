@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderMarkdown } from "../../src/ui/render_markdown.js";
+import { renderMarkdown } from "../../src/ui/transcript/render_markdown.js";
 
 /**
  * Runs in Chromium (the `chromium` project in `vitest.config.ts`), not

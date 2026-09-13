@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { attachQuoteOffer, type PageQuoteOffer } from "../src/ui/page_quote_offer.js";
+import { attachQuoteOffer, type PageQuoteOffer } from "../src/ui/excerpts/page_quote_offer.js";
 
 /**
  * The page-side offer, and the three reasons it is not a recipe.

@@ -14,8 +14,8 @@
 import { describe, expect, it } from "vitest";
 
 import { SUBAGENT_PHASE } from "../src/constants.js";
-import { SubAgentPanel, type SubAgentUpdate } from "../src/ui/subagent_panel.js";
-import { subAgentUpdate } from "../src/ui/subagent_update.js";
+import { SubAgentPanel, type SubAgentUpdate } from "../src/ui/progress/subagent_panel.js";
+import { subAgentUpdate } from "../src/ui/progress/subagent_update.js";
 import { DEFAULT_UI_STRINGS, mergeUiStrings } from "../src/ui/ui_strings.js";
 import { subAgentValue } from "./helpers/subagent_fixture.js";
 

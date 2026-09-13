@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prettifyToolName } from "../src/ui/prettify_tool_name.js";
+import { prettifyToolName } from "../src/ui/progress/prettify_tool_name.js";
 
 describe("prettifyToolName", () => {
   it("turns snake_case into a capitalised phrase", () => {

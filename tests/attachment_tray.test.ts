@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AttachmentRef } from "../src/core/attachment.js";
-import { AttachmentTray, type AttachmentTrayConfig } from "../src/ui/attachment_tray.js";
+import { AttachmentTray, type AttachmentTrayConfig } from "../src/ui/composer/attachment_tray.js";
 
 interface Deferred<T> {
   promise: Promise<T>;

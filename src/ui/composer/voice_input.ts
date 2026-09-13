@@ -1,6 +1,6 @@
-import { ICON_VOICE } from "../constants.js";
-import type { TranscribeHandler } from "../core/transcribe_audio.js";
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+import { ICON_VOICE } from "../../constants.js";
+import type { TranscribeHandler } from "../../core/transcribe_audio.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /** Lifecycle of the mic button, reflected on its `data-state` for CSS. */
 type VoiceState = "idle" | "recording" | "transcribing";

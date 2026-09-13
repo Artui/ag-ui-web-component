@@ -1,4 +1,4 @@
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /** What the inline confirmation card displays. */
 export interface ConfirmationRequest {

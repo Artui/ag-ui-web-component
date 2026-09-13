@@ -1,5 +1,5 @@
-import { TOOL_CALL_STATUS, type TOOL_DISPLAY } from "../constants.js";
-import { DEFAULT_UI_STRINGS, type UiStrings } from "./ui_strings.js";
+import { TOOL_CALL_STATUS, type TOOL_DISPLAY } from "../../constants.js";
+import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /** Any state a tool-call card can be in. */
 export type ToolCallStatus = (typeof TOOL_CALL_STATUS)[keyof typeof TOOL_CALL_STATUS];

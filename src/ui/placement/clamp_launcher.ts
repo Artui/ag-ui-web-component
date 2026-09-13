@@ -1,4 +1,4 @@
-import { SCREEN_EDGE_MARGIN } from "../constants.js";
+import { SCREEN_EDGE_MARGIN } from "../../constants.js";
 import type { LauncherBox, ViewportBox } from "./launcher_placement.js";
 
 /**

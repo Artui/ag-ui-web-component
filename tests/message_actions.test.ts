@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { attachMessageActions, messageActionBar } from "../src/ui/message_actions.js";
+import { attachMessageActions, messageActionBar } from "../src/ui/transcript/message_actions.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 
 let written: string[] = [];

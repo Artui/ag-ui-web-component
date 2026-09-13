@@ -22,8 +22,10 @@ import {
   INVALIDATE_EVENT,
   RUN_FINISHED_EVENT,
 } from "../src/constants.js";
-import type { AgUiChat, InvalidateDetail, RunFinishedDetail } from "../src/core/ag_ui_chat.js";
+import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { InvalidateDetail } from "../src/core/events/invalidate_detail.js";
+import type { RunFinishedDetail } from "../src/core/events/run_finished_detail.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 defineAgUiChat();

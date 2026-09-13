@@ -1,4 +1,4 @@
-import type { UiStrings } from "./ui_strings.js";
+import type { UiStrings } from "../ui_strings.js";
 
 /**
  * Most prompts one push may draw.

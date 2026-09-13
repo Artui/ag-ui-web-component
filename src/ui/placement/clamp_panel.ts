@@ -1,4 +1,4 @@
-import { EDGE_MARGIN } from "../constants.js";
+import { EDGE_MARGIN } from "../../constants.js";
 import type { ViewportBox } from "./launcher_placement.js";
 import type { PanelRect } from "./resize_handle.js";
 

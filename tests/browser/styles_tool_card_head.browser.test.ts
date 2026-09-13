@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
-import { ToolCallCard } from "../../src/ui/tool_call_card.js";
+import { ToolCallCard } from "../../src/ui/progress/tool_call_card.js";
 
 /**
  * The tool card's head row, measured rather than inspected.

@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
-import type { RenderMarkdownOptions } from "../src/ui/render_markdown.js";
+import type { RenderMarkdownOptions } from "../src/ui/transcript/render_markdown.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 /**
@@ -25,8 +25,8 @@ import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
  */
 const counter = vi.hoisted(() => ({ renders: 0 }));
 
-vi.mock("../src/ui/render_markdown.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/ui/render_markdown.js")>();
+vi.mock("../src/ui/transcript/render_markdown.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/ui/transcript/render_markdown.js")>();
   return {
     ...actual,
     renderMarkdown: (text: string, options?: RenderMarkdownOptions): string => {

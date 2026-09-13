@@ -1,5 +1,5 @@
-import { ICON_FILE, ICON_FILE_IMAGE, ICON_FILE_PDF, ICON_FILE_TEXT } from "../constants.js";
-import type { AttachmentRef } from "../core/attachment.js";
+import { ICON_FILE, ICON_FILE_IMAGE, ICON_FILE_PDF, ICON_FILE_TEXT } from "../../constants.js";
+import type { AttachmentRef } from "../../core/attachment.js";
 
 /**
  * Render the read-only attachment chips on a sent user message bubble and on

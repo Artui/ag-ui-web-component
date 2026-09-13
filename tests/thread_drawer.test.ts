@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ThreadMeta } from "../src/core/conversation_store.js";
-import { ThreadDrawer } from "../src/ui/thread_drawer.js";
+import { ThreadDrawer } from "../src/ui/history/thread_drawer.js";
 
 function make() {
   const callbacks = {

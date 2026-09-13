@@ -23,7 +23,7 @@
  * `null`, which the panel reads as "said nothing about this".
  */
 
-import { SUBAGENT_PHASE } from "../constants.js";
+import { SUBAGENT_PHASE } from "../../constants.js";
 import type { SubAgentPhase, SubAgentTool, SubAgentUpdate } from "./subagent_panel.js";
 
 const PHASES: readonly string[] = Object.values(SUBAGENT_PHASE);
