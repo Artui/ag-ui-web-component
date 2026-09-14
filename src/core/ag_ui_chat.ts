@@ -5394,6 +5394,26 @@ export class AgUiChat extends HTMLElement {
         this.#streamDeltas += 1;
       },
       onTextEnd: (buffer) => {
+        // A text message that carried no content is a declaration, not an
+        // answer, and drawing one puts an empty bubble above every tool call.
+        //
+        // `TOOL_CALL_START` names the assistant message a call belongs to, and
+        // a response whose first part is a tool call has no text to open that
+        // message with. pydantic-ai 2.37 started opening and closing an empty
+        // one there so the id names a message the stream actually announced --
+        // before that it named one no event carried, which a client could only
+        // answer by inventing an id of its own that matches nothing echoed
+        // back. So this envelope is a correctness fix upstream, it is legal
+        // AG-UI, and any server may send one.
+        //
+        // `#renderHistoricMessage` already declines to draw a bubble for an
+        // assistant message with no text. Without the same rule here the live
+        // transcript and the reloaded one disagree about the same
+        // conversation, which is the harder half of the bug to notice.
+        if (buffer === "") {
+          this.#endStream();
+          return;
+        }
         const bubble = this.#streamInto(buffer);
         // Only reveal word-by-word when the message arrived at once. If it
         // streamed across multiple deltas it already revealed progressively, so

@@ -46,6 +46,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A text message carrying no content no longer draws an empty bubble.**
+  `TOOL_CALL_START` names the assistant message a call belongs to, and a
+  response whose first part is a tool call has no text to open that message
+  with. pydantic-ai 2.37 began opening and closing an empty message there so
+  that `parentMessageId` names one the stream actually announced -- before that
+  it named a message no event carried, which a client could only answer by
+  inventing an id matching nothing echoed back. The envelope is a correctness
+  fix on the server side, it is legal AG-UI, and any server may send one.
+
+  Drawing it put an empty bubble above **every** tool call. Measured in
+  Chromium it was 16px tall and laid out between the question and the card, so
+  it read as a gap rather than as nothing.
+
+  The sharper half is that `#renderHistoricMessage` has always declined to draw
+  a bubble for an assistant message with no text, so the transcript during a run
+  disagreed with the same conversation after a reload. This is the live path
+  adopting a rule the restore path already stated, and the test asserts the two
+  against each other rather than against separate literals, so they cannot drift
+  apart again.
+
+  The guard tests the buffer for emptiness rather than blankness on purpose:
+  whitespace is content a server chose to send, and trimming would make the
+  client the judge of what counts as an answer.
+
 - **`StateDetail` was documented as if it were `FeedbackDetail`.** The two
   interfaces sat next to each other and `StateDetail`'s doc comment had drifted
   above `FeedbackDetail`'s own, so `FeedbackDetail` carried two comments,
