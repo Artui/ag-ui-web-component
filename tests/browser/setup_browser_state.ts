@@ -1,5 +1,5 @@
-import { page } from "@vitest/browser/context";
 import { beforeAll, beforeEach } from "vitest";
+import { page } from "vitest/browser";
 
 /**
  * Reset the state the browser context shares between test files.
