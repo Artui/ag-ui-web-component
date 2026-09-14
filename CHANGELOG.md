@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] — 2026-09-14
+
 ### Changed
 
 - **`src/ui/` is grouped by concern instead of being 37 modules in one flat
@@ -3612,7 +3614,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.2...v0.36.0
 [0.35.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.1...v0.35.2
