@@ -108,6 +108,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the conversation list, and continuing a run from the checkpoint panel -- is
     `ConversationHistory` in `src/ui/history/`, beside the list and the panel
     it drives.
+  - What held no state of its own became plain functions. The builders of the
+    element's shell -- a header control, an icon holder, a glyph slot, the
+    adopted stylesheet -- and the readers of the launcher's icon URL and its
+    unread badge switch are in `src/ui/shell/`. The starter prompts are beside
+    the suggestion chips, the composer's sizing is in `src/ui/composer/`,
+    whether a placement can collapse is beside whether it can be dragged, and
+    the tool-round limit is read in `src/core/`. The attachment tray's `accept`
+    list is split by the same comma tokeniser the other opt-in lists use.
 
   Nothing a consumer can see changes. The emitted declarations are
   byte-identical to the previous release apart from the new internal modules,

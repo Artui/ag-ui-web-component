@@ -2,6 +2,7 @@ import { randomUUID } from "@ag-ui/client";
 import { ATTACHMENT_STATUS } from "../../constants.js";
 import type { AttachmentRef } from "../../core/attachment.js";
 import type { UploadHandler } from "../../core/upload_attachment.js";
+import { commaTokens } from "../../core/utils.js";
 import { fillUiString } from "../fill_ui_string.js";
 import { formatBytes, iconFor } from "../transcript/attachment_chips.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
@@ -274,10 +275,9 @@ export class AttachmentTray {
 
 /** Whether `file` matches an `<input accept>` list (`""` accepts anything). */
 function accepts(accept: string, file: File): boolean {
-  const tokens = accept
-    .split(",")
-    .map((token) => token.trim().toLowerCase())
-    .filter((token) => token !== "");
+  // Lower-cased after the shared split rather than before the filter: no
+  // non-empty token lower-cases to an empty one, so the order cannot matter.
+  const tokens = commaTokens(accept).map((token) => token.toLowerCase());
   if (tokens.length === 0) {
     return true;
   }
