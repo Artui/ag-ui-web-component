@@ -23,6 +23,7 @@ describe("STYLES", () => {
       "--ag-ui-assistant-bg",
       "--ag-ui-border",
       "--ag-ui-radius",
+      "--ag-ui-panel-radius",
     ]) {
       expect(STYLES).toContain(aliasDeclaration(name));
     }
@@ -250,7 +251,7 @@ describe("STYLES", () => {
     expect(STYLES).toContain(".answer {");
     // …but the bordered well only draws under the data-answer-well opt-in.
     expect(STYLES).toContain(":host([data-answer-well]) .answer");
-    for (const name of ["--ag-ui-well-bg", "--ag-ui-well-border"]) {
+    for (const name of ["--ag-ui-well-bg", "--ag-ui-well-border", "--ag-ui-well-radius"]) {
       expect(STYLES).toContain(aliasDeclaration(name));
     }
   });
