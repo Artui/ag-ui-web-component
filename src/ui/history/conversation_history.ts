@@ -105,6 +105,11 @@ export class ConversationHistory {
   #generation = 0;
   /** Built lazily from `data-runs-url`; `null` when the host didn't opt in. */
   #runIndex: RunIndex | null = null;
+  /**
+   * The checkpoint continuation in flight, so stopping the conversation's run
+   * reaches it. `null` when none is running.
+   */
+  #continuation: AgUiClient | null = null;
 
   constructor(host: ConversationHistoryHost) {
     this.#host = host;
@@ -128,6 +133,20 @@ export class ConversationHistory {
   /** Make a freshly minted thread the active one. */
   startThread(): void {
     this.#threadId = mintThread(this.#host.conversationStore());
+  }
+
+  /**
+   * Stop the checkpoint continuation in flight, if there is one.
+   *
+   * A continuation runs on a client of its own, which the element never held,
+   * so Stop cancelled the conversation's client and left this one streaming:
+   * the button read Stop and did nothing, and New chat, a thread switch or
+   * removing the element carried on drawing the resumed answer into whatever
+   * came next. The element calls this wherever it stops its own run.
+   */
+  stopContinuation(): void {
+    this.#continuation?.cancel();
+    this.#continuation = null;
   }
 
   /** Forget the messages the last restore seeded, with the rest of the run. */
@@ -243,7 +262,8 @@ export class ConversationHistory {
    *
    * Built by the same construction as the conversation's own client, so the
    * continuation streams into the same transcript the user is looking at and
-   * runs under the same state, tools and bounds.
+   * runs under the same state, tools and bounds. It is the run in flight while
+   * it lasts: {@link stopContinuation} is how the element's Stop reaches it.
    */
   async continueRun(runId: string, verb: CheckpointVerb): Promise<void> {
     const index = this.runs();
@@ -284,7 +304,13 @@ export class ConversationHistory {
       // client has would replace the conversation with its last exchange.
       persist: false,
     });
+    this.#continuation = client;
     await client.send(content);
+    // Only if it is still the one in flight: stopping forgets it at once, and a
+    // continuation started after that one is not this one to forget.
+    if (this.#continuation === client) {
+      this.#continuation = null;
+    }
   }
 
   /**

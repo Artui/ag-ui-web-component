@@ -5,7 +5,7 @@ import type { HttpAgentOptions as AgentOptions } from "../src/core/create_http_a
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import type { RunRow } from "../src/core/run_index.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
-import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
+import { type Emit, type FakeAgentHandle, makeFakeAgent } from "./helpers/fake_agent.js";
 
 beforeAll(() => {
   defineAgUiChat();
@@ -570,6 +570,119 @@ describe("the two overlapping surfaces", () => {
 
     expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(true);
     expect(shadow(el).querySelector<HTMLElement>(".drawer")?.hidden).toBe(false);
+  });
+});
+
+describe("a continuation is the run in flight", () => {
+  /**
+   * Continue a run whose stream is held open until the test releases it.
+   *
+   * Every agent the element builds is recorded, because the continuation's is
+   * the one that has to be stopped and the conversation's own is not. Once
+   * released, the script delivers the rest of its answer only if nothing
+   * aborted it -- which is what a real agent does, since an abort closes the
+   * request the rest would have arrived on.
+   */
+  async function continueHeld(): Promise<{
+    el: AgUiChat;
+    agents: FakeAgentHandle[];
+    release: () => void;
+  }> {
+    stubRuns([row()]);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-runs-url", "/agent/runs/");
+    const agents: FakeAgentHandle[] = [];
+    el.agentFactory = () => {
+      const handle = makeFakeAgent({
+        script: async (emit) => {
+          emit.runStart();
+          await gate;
+          if (handle.abortRuns === 0) {
+            emit.text("the rest of the resumed answer");
+          }
+        },
+      });
+      agents.push(handle);
+      return handle.agent;
+    };
+    document.body.appendChild(el);
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+    (shadow(el).querySelector("textarea") as HTMLTextAreaElement).value = "go on";
+    (shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement).click();
+    await flush();
+    return { el, agents, release };
+  }
+
+  function sendButton(el: AgUiChat): HTMLButtonElement {
+    return shadow(el).querySelector(".send") as HTMLButtonElement;
+  }
+
+  it("offers Stop while it runs", async () => {
+    const { el, release } = await continueHeld();
+    expect(sendButton(el).title).toBe(DEFAULT_UI_STRINGS.stop);
+    release();
+    await flush();
+  });
+
+  it("stops when Stop is pressed", async () => {
+    // The button read Stop and pressing it did nothing: the element cancelled
+    // only the conversation's own client, and a continuation runs on another.
+    const { el, agents, release } = await continueHeld();
+
+    sendButton(el).click();
+    release();
+    await flush();
+
+    expect(agents.map((agent) => agent.abortRuns)).toEqual([1]);
+    expect(shadow(el).querySelector(".stopped-note")).not.toBeNull();
+    expect(shadow(el).textContent).not.toContain("the rest of the resumed answer");
+    expect(sendButton(el).title).toBe(DEFAULT_UI_STRINGS.send);
+  });
+
+  it("stops when a new chat starts, and draws no more of its answer", async () => {
+    const { el, agents, release } = await continueHeld();
+
+    el.newChat();
+    release();
+    await flush();
+
+    expect(agents.map((agent) => agent.abortRuns)).toEqual([1]);
+    // The rest of its answer belongs to the conversation that was left.
+    expect(shadow(el).querySelector(".message--assistant")).toBeNull();
+  });
+
+  it("stops when another conversation is opened", async () => {
+    const { el, agents, release } = await continueHeld();
+    el.conversationStore.saveMessages("elsewhere", [
+      { id: "u1", role: "user", content: "another conversation" },
+    ] as never);
+
+    (shadow(el).querySelector(".header-btn--history") as HTMLButtonElement).click();
+    await flush();
+    const rows = [...shadow(el).querySelectorAll<HTMLButtonElement>(".drawer-row-select")];
+    rows.find((button) => button.textContent?.includes("another conversation"))?.click();
+    release();
+    await flush();
+
+    expect(el.conversationStore.threadId()).toBe("elsewhere");
+    expect(agents.map((agent) => agent.abortRuns)).toEqual([1]);
+    expect(shadow(el).textContent).not.toContain("the rest of the resumed answer");
+  });
+
+  it("stops when the element is removed", async () => {
+    const { el, agents, release } = await continueHeld();
+
+    el.remove();
+    release();
+    await flush();
+
+    expect(agents.map((agent) => agent.abortRuns)).toEqual([1]);
   });
 });
 

@@ -619,7 +619,9 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
   (the terminal-rest guarantee), returning the button to **Send**.
 
 `cancel()` with no run in flight is a safe no-op. `newChat()` cancels any in-flight run before
-discarding the client.
+discarding the client, and so do switching conversations, `reload()` and removing the element. A
+[checkpoint continuation](#resuming-a-run) is the run in flight while it lasts, so Stop and all of
+these end it too.
 
 ### Registering tools
 
@@ -2344,8 +2346,8 @@ one. Your main agent's history is never touched.
 A resumed run is a normal run in every other respect: frontend tools execute,
 approval interrupts render their card, `headers` are re-read per request so
 a rotated CSRF token or JWT still reaches the endpoint, it carries and updates
-[shared state](#host-seams-the-spa-story) like any other run, and it is bounded by
-`data-max-tool-rounds`. Its client is built by the same
+[shared state](#host-seams-the-spa-story) like any other run, it is bounded by
+`data-max-tool-rounds`, and Stop ends it. Its client is built by the same
 construction as the conversation's own, differing only in the endpoint and the
 empty seed.
 

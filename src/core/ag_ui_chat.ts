@@ -2278,6 +2278,9 @@ export class AgUiChat extends HTMLElement {
     this.#renderQueued();
     this.#decision.abort();
     this.#client?.cancel();
+    // A checkpoint continuation is as much the run in flight -- the composer
+    // offers Stop for it -- but it runs on a client the element does not hold.
+    this.#history.stopContinuation();
   }
 
   /**

@@ -150,6 +150,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stop ends a checkpoint continuation.** While a resumed or forked run was
+  streaming, the composer offered Stop and pressing it did nothing; New chat,
+  switching conversations and removing the element left it streaming too, so the
+  rest of the resumed answer drew itself into whatever came next. The element
+  cancelled only the conversation's own client, and a continuation runs on a
+  client of its own. Every path that stops the conversation's run now stops a
+  continuation as well.
+
 - **A resumed or forked run now carries the page's shared state, reports the
   state it changes, and stops at `data-max-tool-rounds`.** A checkpoint
   continuation sent an empty state object, so an agent whose tools read the
