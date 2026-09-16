@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] — 2026-09-16
+
 ### Changed
 
 - **An empty conversation under `placement="page"` now greets the user, with the
@@ -117,12 +119,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the tool-round limit is read in `src/core/`. The attachment tray's `accept`
     list is split by the same comma tokeniser the other opt-in lists use.
 
-  Nothing a consumer can see changes. The emitted declarations are
-  byte-identical to the previous release apart from the new internal modules,
-  which the package entry point does not export, and no test was edited to
-  make a move pass. The bundle is not byte-identical, and this entry is the
-  reason why: a re-vendor of this release has no host wiring to do and is still
-  a different build.
+  Nothing a consumer can see changes. Every declaration file the package
+  already emitted was compared byte for byte before and after each step, and
+  the moves altered one: the internal `core/utils.d.ts` gained the shared comma
+  tokeniser. No declaration reachable from the package entry point imports
+  that file or any of the new modules' declarations, so a consumer's types
+  cannot reach them. No test was edited to make a move pass.
+
+  The public declarations do differ from the previous release, by the other
+  entries in this release and not by this one. The bundle differs by this one
+  as well: on its own it asks a re-vendor for no host wiring, and it is still a
+  different build.
 
 - **A new chat puts focus in the composer.** Starting a conversation is a
   request to type one, but pressing *New chat* left focus on the button, so a
@@ -3771,7 +3778,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.2...v0.36.0
