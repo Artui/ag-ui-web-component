@@ -1231,24 +1231,52 @@ export const STYLES = `
   content: "";
 }
 
-:host([data-empty]) .chat::after {
+/* Not while a restore is in flight: a conversation a remote store is still
+   fetching is more likely to have messages than not, and centring it first
+   would drop the composer the moment they land. */
+:host([data-empty]:not([data-restoring])) .chat::after {
   flex-grow: 1;
+}
+
+/* Only the send that leaves the empty state travels. The element arms this for
+   that one change and disarms it whenever the transcript is cleared, so a
+   restored conversation, a thread switch and a new chat all snap. Growth rather
+   than a transform, because the rows between the transcript and the composer
+   move with it, and growth is continuous where a reorder is not. Reduced motion
+   needs no rule of its own: the motion token already collapses to a frame
+   there.
+
+   The rule over the composer fades in over the same stretch. Appearing at once,
+   it was drawn across the page at the composer's destination while the
+   composer was still on its way there. */
+:host([data-composer-settling]) .chat::after {
+  transition: flex-grow var(--_motion) var(--_ease);
+}
+
+:host([data-composer-settling]) .input-row {
+  transition: border-color var(--_motion) var(--_ease);
 }
 
 /* The greeting and whatever the host slotted sit at the foot of the upper
    half, directly over the composer, rather than floating in its middle. The
    region is hidden once the conversation has content, so this needs no state
    of its own. */
-:host([placement="page"]:not([data-greeting="off"])) .empty,
-:host([placement="embedded"][data-greeting]:not([data-greeting="off"])) .empty {
+:host([placement="page"]:not([data-greeting="off"]):not([data-restoring])) .empty,
+:host([placement="embedded"][data-greeting]:not([data-greeting="off"]):not([data-restoring])) .empty {
   margin: auto auto 0;
 }
 
 /* The rule over the composer separates it from a transcript. Over nothing it
    is a line drawn across the middle of the page. */
-:host([placement="page"][data-empty]:not([data-greeting="off"])) .input-row,
-:host([placement="embedded"][data-greeting][data-empty]:not([data-greeting="off"])) .input-row {
+:host([placement="page"][data-empty]:not([data-greeting="off"]):not([data-restoring])) .input-row,
+:host([placement="embedded"][data-greeting][data-empty]:not([data-greeting="off"]):not([data-restoring])) .input-row {
   border-block-start-color: transparent;
+}
+
+/* Nor does the greeting paint while a restore is in flight. Hidden rather than
+   removed, so it keeps its place and nothing around it moves when it shows. */
+:host([data-restoring]) .greeting {
+  visibility: hidden;
 }
 
 /* ── Answer group / well ─────────────────────────────────────────

@@ -40,6 +40,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Every condition in its selectors is held by a Chromium test that fails with
   that condition removed, since a stylesheet has no coverage to fall back on.
 
+  **Only a send moves the composer, and it slides.** It moves on send rather
+  than on the first keystroke, because a field that moves under the caret moves
+  during IME composition too, and because taking the greeting away before
+  anything is committed would mean bringing it back when the draft is deleted.
+  The slide uses `--ag-ui-motion`, so reduced motion jumps straight to the
+  dock, and the rule over the composer fades in with it rather than being drawn
+  at its destination while the composer is still on the way. Every other way
+  out of the empty state -- a restored conversation, a thread picked from the
+  list, a continued run -- and every way back into it snap, because each is a
+  change of context rather than a continuation of what the user was doing.
+
+  A conversation a slow store is still fetching is held in the docked layout
+  with the greeting hidden, so a page restoring an existing conversation never
+  paints a centred composer that then drops when the messages land. A new chat
+  started during that fetch greets at once rather than waiting on it.
+
 - **Internal restructuring: `ag_ui_chat.ts` is split into modules that each own
   one concern.** The element was one class of more than six thousand lines in
   which a single concern -- the transcript, the run handlers -- was spread over

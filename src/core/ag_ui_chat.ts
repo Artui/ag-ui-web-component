@@ -2790,6 +2790,12 @@ export class AgUiChat extends HTMLElement {
     this.#activityBlocks.clear();
     this.#retryOwner = null;
     this.#attachTray?.clear();
+    // Returning to an empty conversation snaps back to the centre: only the send
+    // that left it travels. And whatever restore was holding the layout back is
+    // no longer this transcript's, so a new chat started mid-restore greets the
+    // user rather than waiting on a load it has abandoned.
+    this.removeAttribute("data-composer-settling");
+    this.removeAttribute("data-restoring");
     // Keep the empty-state region; everything else clears.
     this.#messages.replaceChildren(this.#emptyWrap);
     this.#updateEmptyState();
@@ -2878,7 +2884,22 @@ export class AgUiChat extends HTMLElement {
     // started meanwhile (its `#resetState` already cleared the transcript).
     this.#rehydrateGeneration += 1;
     const generation = this.#rehydrateGeneration;
-    const messages = await this.conversationStore.loadMessages(this.#threadId);
+    // Held while the store answers. A remote store answers after first paint,
+    // and a conversation it is still fetching is more likely to have messages
+    // than not, so without this the page would paint the greeting and a centred
+    // composer and then drop the composer the moment they land. The built-in
+    // store answers in a microtask, before paint, so for it this never reaches
+    // the screen. Released in `finally` so a store that rejects cannot leave the
+    // layout held for good, and only by the restore that is still current.
+    this.setAttribute("data-restoring", "");
+    let messages: readonly Message[] | null;
+    try {
+      messages = await this.conversationStore.loadMessages(this.#threadId);
+    } finally {
+      if (generation === this.#rehydrateGeneration) {
+        this.removeAttribute("data-restoring");
+      }
+    }
     if (generation !== this.#rehydrateGeneration) {
       return;
     }
@@ -3965,6 +3986,15 @@ export class AgUiChat extends HTMLElement {
   async sendMessage(content: string, attachments: readonly AttachmentRef[] = []): Promise<void> {
     if (this.#running || (content === "" && attachments.length === 0)) {
       return;
+    }
+    // Only a send travels. Every other way out of the empty state -- a restored
+    // transcript, a thread picked from the drawer, a resumed checkpoint -- is a
+    // change of context rather than a continuation of what the user was doing,
+    // and snaps. Armed before the bubble lands so both writes reach the same
+    // style recalculation, which is what makes the change a transition rather
+    // than a jump.
+    if (!this.#emptyWrap.hidden) {
+      this.setAttribute("data-composer-settling", "");
     }
     const bubble = this.appendMessage(MESSAGE_ROLE.USER, content);
     if (attachments.length > 0) {

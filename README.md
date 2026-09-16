@@ -3005,6 +3005,13 @@ The composer's rows stay centred while you type, while a draft grows and while a
 added, because the centring is two equal flexible halves either side of them and growth splits
 into both. Nothing in the DOM moves, so focus, the caret and IME composition are unaffected.
 
+**Sending is what moves it**, not typing, and the composer slides to the foot of the page over
+`--ag-ui-motion` (a single frame under reduced motion). Everything else that changes the
+conversation snaps: a restored conversation mounts docked, picking a thread from the list or
+continuing a run docks at once, and a new chat returns to the centre at once. While a slow
+conversation store is still fetching, the page stays docked with the greeting hidden, so a
+restored conversation never paints the empty layout first.
+
 ### The answer well
 
 Each assistant turn renders inside one `.answer` group (part `answer`) that holds its streamed

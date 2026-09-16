@@ -10,7 +10,7 @@
  */
 
 import type { Message } from "@ag-ui/core";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG, LOAD_CAPABILITY_TOOL, MESSAGE_ROLE } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import type { ClientConversationStore } from "../src/core/conversation_store.js";
@@ -79,6 +79,29 @@ function storeWith(messages: readonly Message[]): ClientConversationStore {
   };
 }
 
+/**
+ * A store whose every load waits to be answered, so "a restore in flight" is a
+ * real state rather than a flag set from outside.
+ */
+function heldStore(): {
+  store: ClientConversationStore;
+  answer: (index: number, messages: readonly Message[] | null) => void;
+  loads: () => number;
+} {
+  const pending: ((messages: readonly Message[] | null) => void)[] = [];
+  return {
+    store: {
+      ...storeWith([]),
+      loadMessages: () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    },
+    answer: (index, messages) => pending[index]?.(messages),
+    loads: () => pending.length,
+  };
+}
+
 const answering = (emit: Emit): void => {
   emit.runStart();
   emit.textEnd("an answer");
@@ -92,6 +115,10 @@ beforeAll(() => {
 beforeEach(() => {
   document.body.innerHTML = "";
   sessionStorage.clear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("the greeting's text", () => {
@@ -345,5 +372,206 @@ describe("data-empty", () => {
     el.setAttribute("user-key", "bob");
 
     expect(el.hasAttribute("data-empty")).toBe(true);
+  });
+});
+
+describe("the send that leaves the empty state", () => {
+  it("arms the slide for a send from an empty conversation", async () => {
+    const handle = makeFakeAgent({ script: answering });
+    const el = mount({}, (e) => {
+      e.agentFactory = () => handle.agent;
+    });
+    expect(el.hasAttribute("data-composer-settling")).toBe(false);
+
+    await send(el, "hi");
+
+    expect(el.hasAttribute("data-composer-settling")).toBe(true);
+  });
+
+  it("arms it for a host's own sendMessage and for a starter, which are sends too", async () => {
+    const handle = makeFakeAgent({ script: answering });
+    const host = mount({}, (e) => {
+      e.agentFactory = () => handle.agent;
+    });
+    await host.sendMessage("from the host");
+    expect(host.hasAttribute("data-composer-settling")).toBe(true);
+
+    document.body.innerHTML = "";
+    const starter = mount({ "data-starters": JSON.stringify(["Summarise this page"]) }, (e) => {
+      e.agentFactory = () => handle.agent;
+    });
+    shadow(starter).querySelector<HTMLButtonElement>(".suggestion-chip")?.click();
+    await flush();
+    expect(starter.hasAttribute("data-composer-settling")).toBe(true);
+  });
+
+  it("does not arm it for a send into a conversation that already has content", async () => {
+    const handle = makeFakeAgent({ script: answering });
+    const el = mount({}, (e) => {
+      e.agentFactory = () => handle.agent;
+      e.conversationStore = storeWith([
+        { id: "u1", role: "user", content: "earlier" },
+        { id: "a1", role: "assistant", content: "an answer" },
+      ]);
+    });
+    await flush();
+
+    await send(el, "and another thing");
+
+    expect(el.hasAttribute("data-composer-settling")).toBe(false);
+  });
+
+  it("does not arm it for a send that is refused before anything lands", async () => {
+    // Nothing leaves the empty state, so there is nothing to travel.
+    const el = mount();
+    await el.sendMessage("");
+    expect(el.hasAttribute("data-composer-settling")).toBe(false);
+  });
+
+  it("never arms it for a restored conversation", async () => {
+    const el = mount({}, (e) => {
+      e.conversationStore = storeWith([{ id: "u1", role: "user", content: "earlier" }]);
+    });
+    await flush();
+
+    expect(el.hasAttribute("data-empty")).toBe(false);
+    expect(el.hasAttribute("data-composer-settling")).toBe(false);
+  });
+
+  it("never arms it for a continued run, which is a change of context", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          runs: [
+            {
+              run_id: "r1",
+              thread_id: "t1",
+              parent_run_id: null,
+              started_at: "2026-07-27T12:00:00+00:00",
+              continuable: true,
+            },
+          ],
+        }),
+      })),
+    );
+    const el = mount({ "data-runs-url": "/agent/runs/" }, (e) => {
+      e.agentFactory = () =>
+        makeFakeAgent({
+          script: (emit) => {
+            emit.runStart();
+            emit.textEnd("continued");
+            emit.runEnd();
+          },
+        }).agent;
+    });
+    shadow(el).querySelector<HTMLButtonElement>(".header-btn--checkpoints")?.click();
+    await flush();
+    const input = shadow(el).querySelector<HTMLTextAreaElement>(".input") as HTMLTextAreaElement;
+    input.value = "and now sort them";
+    shadow(el).querySelector<HTMLButtonElement>(".checkpoint-resume")?.click();
+    await flush();
+
+    expect(el.hasAttribute("data-empty")).toBe(false);
+    expect(el.hasAttribute("data-composer-settling")).toBe(false);
+  });
+
+  it("disarms it when the conversation is emptied, so returning to the centre snaps", async () => {
+    const handle = makeFakeAgent({ script: answering });
+    const el = mount({}, (e) => {
+      e.agentFactory = () => handle.agent;
+    });
+    await send(el, "hi");
+    expect(el.hasAttribute("data-composer-settling")).toBe(true);
+
+    el.newChat();
+
+    expect(el.hasAttribute("data-composer-settling")).toBe(false);
+  });
+});
+
+describe("holding the layout while a conversation is restored", () => {
+  it("holds it for as long as the store takes to answer", async () => {
+    const held = heldStore();
+    const el = mount({}, (e) => {
+      e.conversationStore = held.store;
+    });
+    await flush();
+    expect(el.hasAttribute("data-restoring")).toBe(true);
+
+    held.answer(0, [{ id: "u1", role: "user", content: "earlier" }]);
+    await flush();
+
+    expect(el.hasAttribute("data-restoring")).toBe(false);
+    expect(el.hasAttribute("data-empty")).toBe(false);
+  });
+
+  it("releases it for a thread that turns out to be empty, which then greets", async () => {
+    const held = heldStore();
+    const el = mount({}, (e) => {
+      e.conversationStore = held.store;
+    });
+    await flush();
+
+    held.answer(0, null);
+    await flush();
+
+    expect(el.hasAttribute("data-restoring")).toBe(false);
+    expect(el.hasAttribute("data-empty")).toBe(true);
+  });
+
+  it("is released only by the restore that is still current", async () => {
+    // A principal change starts a second restore while the first is pending.
+    // The first answering late must neither release the hold the second still
+    // needs nor draw its messages.
+    const held = heldStore();
+    const el = mount({ "user-key": "alice" }, (e) => {
+      e.conversationStore = held.store;
+    });
+    await flush();
+    el.setAttribute("user-key", "bob");
+    await flush();
+    expect(held.loads()).toBe(2);
+    expect(el.hasAttribute("data-restoring")).toBe(true);
+
+    held.answer(0, [{ id: "u1", role: "user", content: "alice's" }]);
+    await flush();
+    expect(el.hasAttribute("data-restoring")).toBe(true);
+    expect(el.hasAttribute("data-empty")).toBe(true);
+
+    held.answer(1, null);
+    await flush();
+    expect(el.hasAttribute("data-restoring")).toBe(false);
+    expect(el.hasAttribute("data-empty")).toBe(true);
+  });
+
+  it("is dropped by a new chat started mid-restore, which greets at once", async () => {
+    const held = heldStore();
+    const el = mount({}, (e) => {
+      e.conversationStore = held.store;
+    });
+    await flush();
+    expect(el.hasAttribute("data-restoring")).toBe(true);
+
+    el.newChat();
+
+    expect(el.hasAttribute("data-restoring")).toBe(false);
+    expect(el.hasAttribute("data-empty")).toBe(true);
+  });
+
+  it("is released when the store fails rather than answering", async () => {
+    const el = mount({}, (e) => {
+      e.conversationStore = storeWith([]);
+    });
+    await flush();
+    el.conversationStore = {
+      ...storeWith([]),
+      loadMessages: () => Promise.reject(new Error("offline")),
+    };
+
+    await expect(el.reload()).rejects.toThrow("offline");
+
+    expect(el.hasAttribute("data-restoring")).toBe(false);
   });
 });
