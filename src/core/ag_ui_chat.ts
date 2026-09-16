@@ -10,7 +10,6 @@ import {
   ICON_SEND,
   ICON_STOP,
   ICON_SUN,
-  MAX_TOOL_ROUNDS,
   MESSAGE_ROLE,
   STATE_EVENT,
   SUBMIT_EVENT,
@@ -37,6 +36,7 @@ import { ToolDispatch } from "../tools/tool_dispatch.js";
 import { renderChart } from "../ui/charts/chart_block.js";
 import { chartSpecFrom } from "../ui/charts/chart_spec_from.js";
 import { CHART_TOOL_NAME, createChartTool } from "../ui/charts/chart_tool.js";
+import { autoGrow } from "../ui/composer/auto_grow.js";
 import { ComposerAttachments } from "../ui/composer/composer_attachments.js";
 import { ComposerVoice } from "../ui/composer/composer_voice.js";
 import { SkillsMenu } from "../ui/composer/skills_menu.js";
@@ -51,6 +51,7 @@ import { type ApprovalRenderer } from "../ui/interrupts/approval_card.js";
 import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
+import { isCollapsiblePlacement } from "../ui/placement/is_collapsible_placement.js";
 import { isDraggablePlacement } from "../ui/placement/is_draggable_placement.js";
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
 import { RunAnnouncer } from "../ui/progress/run_announcer.js";
@@ -58,10 +59,16 @@ import { renderRunNotice } from "../ui/progress/run_notice.js";
 import { SubAgentProgress } from "../ui/progress/subagent_progress.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type ToolDisplayMode, type ToolPayloadFormatter } from "../ui/progress/tool_call_card.js";
-import { STYLES } from "../ui/styles.js";
+import { adoptStyles } from "../ui/shell/adopt_styles.js";
+import { glyphSlot } from "../ui/shell/glyph_slot.js";
+import { headerButton } from "../ui/shell/header_button.js";
+import { iconElement } from "../ui/shell/icon_element.js";
+import { isUnreadBadgeEnabled } from "../ui/shell/is_unread_badge_enabled.js";
+import { readLauncherIconUrl } from "../ui/shell/read_launcher_icon_url.js";
 import { AnswerActions } from "../ui/transcript/answer_actions.js";
 import { AnswerStream } from "../ui/transcript/answer_stream.js";
 import { renderAttachmentChips } from "../ui/transcript/attachment_chips.js";
+import { renderStarterChips } from "../ui/transcript/starter_chips.js";
 import { renderSuggestionChips } from "../ui/transcript/suggestion_chips.js";
 import { Transcript } from "../ui/transcript/transcript.js";
 import { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "../ui/ui_strings.js";
@@ -83,6 +90,7 @@ import type { SubmitDetail } from "./events/submit_detail.js";
 import type { ToggleDetail } from "./events/toggle_detail.js";
 import type { UnreadDetail } from "./events/unread_detail.js";
 import type { MessageRole } from "./message_role.js";
+import { readMaxToolRounds } from "./read_max_tool_rounds.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunHandlers } from "./run_handlers.js";
 import { StorageScope } from "./storage_scope.js";
@@ -703,7 +711,7 @@ export class AgUiChat extends HTMLElement {
       root: this.#root,
       connected: () => this.#connected,
       collapsed: () => this.collapsed,
-      collapsible: () => this.#collapsible(),
+      collapsible: () => isCollapsiblePlacement(this.getAttribute("placement")),
       strings: () => this.#strings,
       readPreference: (base) => this.#storage.readPreference(base),
       writePreference: (base, value) => this.#storage.writePreference(base, value),
@@ -717,7 +725,7 @@ export class AgUiChat extends HTMLElement {
       messagesWrap: this.#messagesWrap,
       input: this.#input,
       strings: () => this.#strings,
-      autoGrow: () => this.#autoGrow(),
+      autoGrow: () => autoGrow(this.#input),
       quote: (text) => this.quote(text),
     });
     this.#attachments = new ComposerAttachments({
@@ -785,7 +793,7 @@ export class AgUiChat extends HTMLElement {
       submit: () => {
         void this.#submit();
       },
-      autoGrow: () => this.#autoGrow(),
+      autoGrow: () => autoGrow(this.#input),
     });
     this.#drawer = new ThreadDrawer({
       onSelect: (threadId) => {
@@ -831,7 +839,7 @@ export class AgUiChat extends HTMLElement {
       requestCredentials: () => this.#requestCredentials(),
       credentialsOption: () => this.#credentialsOption(),
       appendMessage: (role, content) => this.appendMessage(role, content),
-      autoGrow: () => this.#autoGrow(),
+      autoGrow: () => autoGrow(this.#input),
       ensureClient: () => this.#ensureClient(),
       cancelRun: () => this.#cancelRun(),
       resetState: () => this.#resetState(),
@@ -878,7 +886,7 @@ export class AgUiChat extends HTMLElement {
       // not just stop offering it: the control is gone from the header the
       // moment the attribute changes, so a panel collapsed under the previous
       // placement would have no way back.
-      if (!this.#collapsible() && this.collapsed) {
+      if (!isCollapsiblePlacement(this.getAttribute("placement")) && this.collapsed) {
         this.setCollapsed(false);
       }
       // Placement also moves the panel, so the edges its layout holds still
@@ -1203,7 +1211,7 @@ export class AgUiChat extends HTMLElement {
     // namespaced per instance but not per placement, so a tab that collapsed a
     // floating panel and later loaded the same instance as a page would restore
     // a state that placement has no way out of.
-    if (this.#collapsible() && this.#startsCollapsed()) {
+    if (isCollapsiblePlacement(this.getAttribute("placement")) && this.#startsCollapsed()) {
       this.setAttribute("collapsed", "");
     }
     this.#syncLauncher();
@@ -1403,18 +1411,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * The tool-round budget from `data-max-tool-rounds`, for one send.
-   *
-   * Anything unparseable becomes `NaN`, which {@link AgUiClient} rejects along
-   * with a bound below one -- so the two ways of setting this are validated in
-   * one place rather than agreeing by coincidence.
-   */
-  #maxToolRounds(): number {
-    const attr = this.getAttribute("data-max-tool-rounds");
-    return attr === null ? MAX_TOOL_ROUNDS : Number.parseInt(attr, 10);
-  }
-
-  /**
    * When `data-threads-url` is set, route thread enumeration / load / rename /
    * delete through that server endpoint (wrapping the current store as the
    * client-only fallback), so the history drawer shows durable, cross-device
@@ -1463,7 +1459,7 @@ export class AgUiChat extends HTMLElement {
    * its own chrome.
    */
   setCollapsed(collapsed: boolean, options: { readonly announce?: boolean } = {}): void {
-    if (collapsed && !this.#collapsible()) {
+    if (collapsed && !isCollapsiblePlacement(this.getAttribute("placement"))) {
       return;
     }
     // Announced before the state changes, so the notice is written into a
@@ -1542,26 +1538,6 @@ export class AgUiChat extends HTMLElement {
     return (
       isDraggablePlacement(this.getAttribute("placement")) && !this.hasAttribute("data-start-open")
     );
-  }
-
-  /**
-   * Whether this placement has a collapsed state at all.
-   *
-   * `page` does not. It is a dedicated route rather than a panel sitting on
-   * someone else's page, so there is no "away" for it to go to: collapsing it
-   * left a strip of application chrome fixed over a route that no longer had an
-   * owner. It is also the placement that hides the launcher, so the usual way
-   * back does not exist here.
-   *
-   * The header hides its collapse control under this placement, but a control
-   * removed from the UI is not a state removed from the model -- the property,
-   * the attribute and a value restored from storage all still reach it. This is
-   * what the reachable paths are gated on; the stylesheet covers the one path
-   * that never passes through here, an attribute written straight onto the
-   * element.
-   */
-  #collapsible(): boolean {
-    return this.getAttribute("placement") !== "page";
   }
 
   /**
@@ -1671,7 +1647,7 @@ export class AgUiChat extends HTMLElement {
     // different paths, not one path in two states, and the slot has to keep
     // working so a host can still supply its own.
     this.#themeToggle.replaceChildren(
-      this.#iconElement("theme", "theme-icon", dark ? ICON_SUN : ICON_MOON, null),
+      iconElement("theme", "theme-icon", dark ? ICON_SUN : ICON_MOON, null),
     );
   }
 
@@ -1879,7 +1855,7 @@ export class AgUiChat extends HTMLElement {
       this.querySelector('[slot="icon"]') !== null ||
       this.getAttribute("data-icon-url") !== null
     ) {
-      header.append(this.#iconElement("icon", "icon", null));
+      header.append(iconElement("icon", "icon", null, this.getAttribute("data-icon-url")));
     }
 
     // A coarse slot for host-provided header actions, between title and controls.
@@ -1892,19 +1868,19 @@ export class AgUiChat extends HTMLElement {
 
     // Both controls delegate to the public methods, so a host chrome driving
     // them imperatively takes exactly the path the built-in button takes.
-    const history = this.#headerButton("history", this.#strings.chatHistory, "☰");
+    const history = headerButton("history", this.#strings.chatHistory, "☰");
     history.addEventListener("click", () => this.openThreads());
 
     // ↺ rather than ⭯: the same idea in a glyph that has a font behind it in
     // every browser. The obscure one rendered as an unreadable mark at 14px, and a
     // header control nobody can name is one nobody presses.
-    const checkpoints = this.#headerButton("checkpoints", this.#strings.checkpoints, "↺");
+    const checkpoints = headerButton("checkpoints", this.#strings.checkpoints, "↺");
     checkpoints.addEventListener("click", () => this.toggleCheckpoints());
 
-    const newChat = this.#headerButton("new", this.#strings.newChat, "✚");
+    const newChat = headerButton("new", this.#strings.newChat, "✚");
     newChat.addEventListener("click", () => this.newChat());
 
-    const collapse = this.#headerButton("collapse", this.#strings.collapse, "—");
+    const collapse = headerButton("collapse", this.#strings.collapse, "—");
     collapse.addEventListener("click", () => this.toggleCollapsed());
 
     // Only offered when the server actually indexes runs — without
@@ -1985,7 +1961,9 @@ export class AgUiChat extends HTMLElement {
     // Fallback content, so a host that slots its own gets exactly that and
     // nothing of ours: the starters live *inside* the slot rather than beside
     // it, which is the difference between an offer and an imposition.
-    const starters = this.#starterChips();
+    const starters = renderStarterChips(this, this.#strings, (prompt) => {
+      void this.sendMessage(prompt);
+    });
     if (starters !== null) {
       emptySlot.append(starters);
     }
@@ -2029,8 +2007,8 @@ export class AgUiChat extends HTMLElement {
     this.#send.type = "button";
     this.#send.setAttribute("part", "send");
     this.#send.append(
-      this.#glyphSlot("icon-send", "send-send", ICON_SEND),
-      this.#glyphSlot("icon-stop", "send-stop", ICON_STOP),
+      glyphSlot("icon-send", "send-send", ICON_SEND),
+      glyphSlot("icon-stop", "send-stop", ICON_STOP),
     );
     this.#send.title = this.#strings.send;
     this.#send.setAttribute("aria-label", this.#strings.send);
@@ -2055,7 +2033,7 @@ export class AgUiChat extends HTMLElement {
     this.#attachButton.className = "attach-btn";
     this.#attachButton.type = "button";
     this.#attachButton.setAttribute("part", "attach-button");
-    this.#attachButton.append(this.#glyphSlot("icon-attach", "attach-glyph", ICON_ATTACH));
+    this.#attachButton.append(glyphSlot("icon-attach", "attach-glyph", ICON_ATTACH));
     this.#attachButton.title = this.#strings.attachFiles;
     this.#attachButton.setAttribute("aria-label", this.#strings.attachFiles);
     this.#attachButton.hidden = true;
@@ -2143,7 +2121,7 @@ export class AgUiChat extends HTMLElement {
     this.#railLabel.setAttribute("aria-hidden", "true");
     this.#railLabel.textContent = this.getAttribute("title-text") ?? this.#strings.title;
     this.#launcher.append(
-      this.#iconElement("launcher", "launcher-icon", ICON_LAUNCHER, this.#launcherIconUrl()),
+      iconElement("launcher", "launcher-icon", ICON_LAUNCHER, readLauncherIconUrl(this)),
       this.#railLabel,
       this.#badge,
     );
@@ -2151,111 +2129,11 @@ export class AgUiChat extends HTMLElement {
     this.#placement.enableLauncherDrag();
 
     this.#placement.mountResizeGrips(this.#chat);
-    this.#adoptStyles();
+    adoptStyles(this.#root);
     const probe = this.#placement.probe;
     probe.className = "viewport-probe";
     probe.setAttribute("aria-hidden", "true");
     this.#root.append(probe, this.#announcer.region, this.#chat, this.#launcher);
-  }
-
-  /**
-   * Attach the stylesheet without an inline `<style>` element.
-   *
-   * A host with a strict `style-src` and no `'unsafe-inline'` drops an injected
-   * `<style>` silently: the component mounts, functions, and renders completely
-   * unstyled, with nothing in the console to point at. `adoptedStyleSheets`
-   * carries no inline-style origin, so it is unaffected by that policy.
-   *
-   * The sheet is constructed **per instance** rather than shared at module
-   * scope. A shared sheet would additionally avoid re-parsing the stylesheet
-   * once per mounted element, which is what `adoptedStyleSheets` is usually
-   * reached for -- but a module-level singleton is exactly what this package
-   * forbids, and the CSP defect is fixed either way. Per instance is no worse
-   * than the `<style>` element it replaces, which also parsed once per mount.
-   *
-   * No fallback: constructible `CSSStyleSheet` is Chrome 73, Firefox 101 and
-   * Safari 16.4, all below this package's declared Safari 17 runtime target. A
-   * guard here would be code no supported browser can reach, and the only way
-   * to keep it would be to exempt it from the coverage gate.
-   */
-  #adoptStyles(): void {
-    const sheet = new CSSStyleSheet();
-    sheet.replaceSync(STYLES);
-    this.#root.adoptedStyleSheets = [sheet];
-  }
-
-  /**
-   * Build a header control button: a named slot a host can project markup into,
-   * with the built-in glyph as the slot's fallback.
-   *
-   * The slot is what lets a host replace the mark with its own `<img>` or
-   * `<svg>` rather than only restyle it through the `part`; the same
-   * slot-with-fallback idiom the header icon uses.
-   */
-  #headerButton(modifier: string, label: string, glyph: string): HTMLButtonElement {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `header-btn header-btn--${modifier}`;
-    button.setAttribute("part", `header-button ${modifier}-button`);
-    button.title = label;
-    button.setAttribute("aria-label", label);
-    const slot = document.createElement("slot");
-    slot.name = `icon-${modifier}`;
-    slot.append(document.createTextNode(glyph));
-    button.append(slot);
-    return button;
-  }
-
-  /**
-   * A `<slot>` a host can project its own mark into, falling back to one of the
-   * built-in glyphs. The markup is an author-written constant, never user or
-   * server data, so it is assigned directly rather than sanitised.
-   */
-  #glyphSlot(slotName: string, className: string, markup: string): HTMLSlotElement {
-    const slot = document.createElement("slot");
-    slot.name = slotName;
-    slot.className = className;
-    slot.innerHTML = markup;
-    return slot;
-  }
-
-  /**
-   * The launcher's own image URL. `data-launcher-icon-url` lets the collapsed
-   * button carry a different mark from the header's — a product logo reads at
-   * 22px in a header bar but rarely at 26px in a circle — and falls back to the
-   * header icon so a single `data-icon-url` still feeds both.
-   */
-  #launcherIconUrl(): string | null {
-    return this.getAttribute("data-launcher-icon-url") ?? this.getAttribute("data-icon-url");
-  }
-
-  /**
-   * An icon holder wrapping a `<slot>` so a host can project custom markup;
-   * with an `<img>` as the slot's fallback when an icon URL is configured, or
-   * the given glyph markup when it is not.
-   */
-  #iconElement(
-    slotName: string,
-    part: string,
-    fallbackGlyph: string | null,
-    iconUrl: string | null = this.getAttribute("data-icon-url"),
-  ): HTMLSpanElement {
-    const holder = document.createElement("span");
-    holder.className = "icon-holder";
-    holder.setAttribute("part", part);
-    const slot = document.createElement("slot");
-    slot.name = slotName;
-    if (iconUrl !== null) {
-      const img = document.createElement("img");
-      img.className = "icon-img";
-      img.src = iconUrl;
-      img.alt = "";
-      slot.append(img);
-    } else if (fallbackGlyph !== null) {
-      slot.innerHTML = fallbackGlyph;
-    }
-    holder.append(slot);
-    return holder;
   }
 
   /**
@@ -2271,22 +2149,12 @@ export class AgUiChat extends HTMLElement {
     // Past 9 the exact number stops being information and starts being a
     // layout problem — the badge is a circle, not a field.
     this.#badge.textContent = unread > 9 ? "9+" : String(unread);
-    this.#badge.hidden = unread === 0 || !this.#badgeEnabled();
+    this.#badge.hidden = unread === 0 || !isUnreadBadgeEnabled(this);
     const label = this.#badge.hidden
       ? this.#strings.expand
       : fillUiString(this.#strings.expandUnread, { count: unread });
     this.#launcher.setAttribute("aria-label", label);
     this.#launcher.title = label;
-  }
-
-  /**
-   * The unread badge, unlike every other affordance here, is on by default:
-   * a collapsed widget is the one state where an answer can arrive with nothing
-   * on screen to say so. `data-unread-badge="false"` turns it off for a host
-   * that drives its own chrome from the `ag-ui-unread` event.
-   */
-  #badgeEnabled(): boolean {
-    return this.getAttribute("data-unread-badge") !== "false";
   }
 
   /**
@@ -2320,39 +2188,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * The prompts offered on an empty transcript, from `data-starters`.
-   *
-   * Different from the suggestion chips a run pushes, which are follow-ups to
-   * something already said. These answer the blank-page question instead, and
-   * they are the host's rather than the model's -- only the host knows what its
-   * page is for. Shares the renderer, the count and the length limit, because
-   * two rows of prompt chips that behaved differently would be the harder
-   * thing to explain.
-   *
-   * Read once at connect: it is content for a state the widget is in before
-   * anything happens, and a host that wants it to change has `slot="empty"`.
-   */
-  #starterChips(): HTMLElement | null {
-    const raw = this.getAttribute("data-starters");
-    if (raw === null) {
-      return null;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      console.warn(
-        "<ag-ui-chat>: data-starters is not valid JSON, so no starters are shown. " +
-          "It takes an array of strings, e.g. data-starters='[\"Summarise this page\"]'.",
-      );
-      return null;
-    }
-    return renderSuggestionChips({ prompts: parsed }, this.#strings, (prompt) => {
-      void this.sendMessage(prompt);
-    });
-  }
-
-  /**
    * Forward input changes to the skills palette and clear any stale hint.
    *
    * Typing is the answer to every hint that surface carries -- a skill short of
@@ -2362,7 +2197,7 @@ export class AgUiChat extends HTMLElement {
   #onInput(): void {
     this.#skillsMenu.onInput(this.#input.value);
     this.#composerHint.hidden = true;
-    this.#autoGrow();
+    autoGrow(this.#input);
     // Typing puts the composer back in the user's hands: the next ArrowUp
     // starts from the newest turn again rather than continuing a walk through
     // history the user has since edited.
@@ -2429,7 +2264,7 @@ export class AgUiChat extends HTMLElement {
     // because it looks like a case somebody thought about.
     this.#input.value = next < 0 ? "" : (drafts[next] as string);
     this.#input.setSelectionRange(this.#input.value.length, this.#input.value.length);
-    this.#autoGrow();
+    autoGrow(this.#input);
   }
 
   /**
@@ -2523,19 +2358,6 @@ export class AgUiChat extends HTMLElement {
     }
   }
 
-  /**
-   * Size the field to its content: one row when empty, growing with what is
-   * typed until the CSS ceiling takes over and it scrolls.
-   *
-   * Resetting to `auto` first is what makes it shrink again — `scrollHeight`
-   * never reports less than the current height, so measuring without the reset
-   * would ratchet the composer taller and never back down.
-   */
-  #autoGrow(): void {
-    this.#input.style.height = "auto";
-    this.#input.style.height = `${this.#input.scrollHeight}px`;
-  }
-
   async #submit(): Promise<void> {
     // Ignore a submit while a run is in flight — the single choke point for
     // both Enter and the Send button. The button already turns into Stop, but
@@ -2562,7 +2384,7 @@ export class AgUiChat extends HTMLElement {
         this.#queued.push(content);
         this.#renderQueued();
         this.#input.value = "";
-        this.#autoGrow();
+        autoGrow(this.#input);
       }
       return;
     }
@@ -2574,7 +2396,7 @@ export class AgUiChat extends HTMLElement {
     }
     this.#recallIndex = null;
     this.#input.value = "";
-    this.#autoGrow();
+    autoGrow(this.#input);
     // A file still uploading does not ride along — `readyRefs()` returns only
     // settled ones, and `clearReady()` deliberately keeps the rest for a
     // follow-up. Nothing said so, which is the whole defect: attachments are
@@ -2718,7 +2540,7 @@ export class AgUiChat extends HTMLElement {
           this.conversationStore.saveMessages(this.#history.threadId, messages),
         onStateChanged: (state) => this.#onSharedStateChanged(state),
         connectionLostMessage: this.#strings.connectionLost,
-        maxToolRounds: this.#maxToolRounds(),
+        maxToolRounds: readMaxToolRounds(this),
       });
     }
     return this.#client;
