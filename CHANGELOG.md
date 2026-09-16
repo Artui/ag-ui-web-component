@@ -84,6 +84,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `src/ui/transcript/`, a delegated sub-agent's progress is
     `SubAgentProgress` in `src/ui/progress/`, and the registry of activity
     renderers and the blocks they drew is `ActivityRegistry` in `src/core/`.
+  - The decision a run is suspended on, which Stop abandons, is
+    `PendingDecision` in `src/ui/interrupts/`: one owner where four places
+    used to write one field.
+  - The frontend tools the agent is offered -- the host's, the built-ins, the
+    `ask_user` question, what the current round advertised, and the server's
+    labels for its own tools -- are `ToolCatalog` in `src/tools/`.
 
   Nothing a consumer can see changes. The emitted declarations are
   byte-identical to the previous release apart from the new internal modules,
