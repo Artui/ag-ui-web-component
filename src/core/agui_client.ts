@@ -300,8 +300,12 @@ export class AgUiClient {
    * round five or the earlier card silently reverts to a green one. Bounded by
    * the number of tool calls in the conversation, which the transcript beside it
    * already is.
+   *
+   * Values are `unknown` because a restored seed fills it too (see
+   * {@link #adoptSeededOutcomes}), and a store is not trusted to hold only the
+   * words this class writes: whatever it held is written back as it was.
    */
-  readonly #outcomes = new Map<string, string>();
+  readonly #outcomes = new Map<string, unknown>();
   readonly #connectionLostMessage: string;
   readonly #maxToolRounds: number;
   // Set by cancel(); reset at the top of each #run(). Checked by the loop so
@@ -323,6 +327,7 @@ export class AgUiClient {
     // the agent zero times, which would look exactly like a broken endpoint.
     const rounds = config.maxToolRounds ?? MAX_TOOL_ROUNDS;
     this.#maxToolRounds = rounds >= 1 ? Math.floor(rounds) : MAX_TOOL_ROUNDS;
+    this.#adoptSeededOutcomes();
     const onStateChanged = config.onStateChanged;
     if (onStateChanged !== undefined) {
       // The agent applies STATE_SNAPSHOT / STATE_DELTA itself; subscribing is
@@ -473,6 +478,41 @@ export class AgUiClient {
     // survives a reload.
     this.#persist();
     this.#handlers.onCancelled();
+  }
+
+  /**
+   * Move the outcome annotations a restored history carries off the agent's
+   * messages and into {@link #outcomes}.
+   *
+   * A restore seeds the agent from the stored copy, and the stored copy is the
+   * annotated one {@link #persist} wrote. Left on `agent.messages`, the
+   * annotation went out on the very next request -- the one place it was
+   * promised never to go. Moved rather than dropped: the store keeps the whole
+   * transcript as one list, so the next save has to write each annotation back
+   * or a declined card turns green on the reload after.
+   *
+   * `ag_ui_chat_restored_outcome_wire.test.ts` holds the move, off the body of a
+   * real request. The early return only spares the copy for a seed with nothing
+   * to move, and the role check is held by the type checker: only a tool message
+   * has the `toolCallId` the annotation is keyed by.
+   */
+  #adoptSeededOutcomes(): void {
+    const seeded = this.#agent.messages;
+    if (!seeded.some((message) => "outcome" in message)) {
+      return;
+    }
+    this.#agent.setMessages(
+      seeded.map((message) => {
+        if (message.role !== "tool") {
+          return message;
+        }
+        // An unannotated message records `undefined`, which `#persist` already
+        // reads as "nothing to write back".
+        const { outcome, ...wire } = message as typeof message & { outcome?: unknown };
+        this.#outcomes.set(message.toolCallId, outcome);
+        return wire;
+      }),
+    );
   }
 
   /**

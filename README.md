@@ -1988,7 +1988,9 @@ does not declare the field, exactly as it does not declare the `attachments` an 
 user message; the default store round-trips both through `JSON.stringify`. **A store that drops
 unknown fields loses only the distinction** — the card falls back to *done*, which is what it did
 before. It is written onto the copy handed to the store and never onto `agent.messages`, so it is
-not sent back to the server on the next run.
+not sent back to the server on the next run. That holds after a restore too: the client seeded from
+a stored conversation takes the field off every message it is seeded with and writes it back on the
+next save.
 
 **3. Resumable loop (`x-navigates` + `navigationResult`).** A tool whose schema carries
 `x-navigates: true` (use `X_NAVIGATES_KEY`; read back by [`isNavigates`](src/tools/is_navigates.ts))

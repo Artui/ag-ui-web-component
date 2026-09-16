@@ -311,6 +311,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call that an earlier round went past without a result now settles to "No
   result returned.", as it did live, instead of spinning.
 
+- **A request sent after a reload no longer carries the element's `outcome`
+  labels to the server.** The label that lets a reload replay a declined or
+  failed card is written onto the stored copy of a tool message only, and the
+  README promises it is never sent. A restore seeds the next agent from that
+  stored copy, though, so every tool message restored with a label went out
+  with it on the next request. The client now takes the labels off the history
+  it is seeded with and keeps them beside it, so the request carries none, the
+  restored cards still settle as they did, and the next save writes each label
+  back.
+
 ## [0.38.0] — 2026-09-14
 
 ### Changed
