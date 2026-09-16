@@ -2342,8 +2342,16 @@ thing it *can* send, and the fresh run id comes free because a new agent mints
 one. Your main agent's history is never touched.
 
 A resumed run is a normal run in every other respect: frontend tools execute,
-approval interrupts render their card, and `headers` are re-read per request so
-a rotated CSRF token or JWT still reaches the endpoint.
+approval interrupts render their card, `headers` are re-read per request so
+a rotated CSRF token or JWT still reaches the endpoint, it carries and updates
+[shared state](#host-seams-the-spa-story) like any other run, and it is bounded by
+`data-max-tool-rounds`. Its client is built by the same
+construction as the conversation's own, differing only in the endpoint and the
+empty seed.
+
+It does not write the conversation store. Its agent holds only the new turn and
+the answer, and a store keeps one message list per thread, so saving that would
+replace the stored conversation with its last exchange.
 
 If the index can't be reached, the panel shows its empty state rather than an
 error — a history affordance that fails is empty, not broken.

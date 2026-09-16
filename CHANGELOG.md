@@ -150,6 +150,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A resumed or forked run now carries the page's shared state, reports the
+  state it changes, and stops at `data-max-tool-rounds`.** A checkpoint
+  continuation sent an empty state object, so an agent whose tools read the
+  page's state resumed without it; a `STATE_SNAPSHOT` it streamed never reached
+  `ag-ui-state`; and on a page that had raised the tool-round bound, the resumed
+  half of a form-filling task still stopped at ten.
+
+  The continuation's client was built separately from the conversation's own,
+  and both options arrived after continuations did, so each was wired into one
+  construction only. There is now one construction, and a continuation differs
+  from the conversation's client only in its endpoint, its empty seed, and in
+  not writing the conversation store -- which it never did, deliberately: its
+  agent holds only the new turn and its answer, so saving them would replace the
+  stored conversation with its last exchange.
+
 - **Text a user or a server wrote could rewrite the label it was put into.**
   Every string-table template was filled with `template.replace("{token}",
   value)`, and a string replacement interprets dollar patterns in the value: `$&`
