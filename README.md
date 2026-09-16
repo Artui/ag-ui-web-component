@@ -631,8 +631,9 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
   answers the pending question. Likewise an open **approval card** is denied, and the next request
   carries that decline as the call's result; a call already approved when Stop lands was declined
   by nobody, so it is answered as not finished instead. An open **question card** (`ask_user`)
-  resolves with an empty answer. Reloading the page while a card is
-  open lands in the same place; see [MPA durability](#mpa-durability-surviving-full-page-reloads).
+  resolves with an empty answer. Reloading the page while a card is open does not decline it,
+  because nobody answered: the call comes back not finished; see
+  [MPA durability](#mpa-durability-surviving-full-page-reloads).
 - The new `onCancelled()` handler fires instead of `onError()`; `onSettled()` still follows
   (the terminal-rest guarantee), returning the button to **Send**.
 
@@ -2024,16 +2025,19 @@ triggers a full reload. Before the handler navigates, the element writes a check
 
 The MPA round-trip becomes a clean observation point instead of a dropped conversation.
 
-**A reload the run did not expect is settled the way Stop settles it.** A round's history is saved
-when its stream ends, before the element asks about a gated call, runs a frontend tool or collects a
-server-side approval, so a reload in that window finds the round's calls with no result and no run
-left to produce one. On restore, each such call in the final round (other than a checkpointed
-navigating call) is declined: its card settles as `declined`, and the restored conversation gains
-the same result Stop records (`User declined the action.`, outcome `denied`), so the next request
-carries a result for every call and a later reload still shows the decline. The saved history
-cannot tell a call waiting on a person from a frontend tool the reload interrupted, so both come back
-declined. A card for a call an earlier round went past without a result settles to the no-result
-label, as it did when the run was live.
+**A reload the run did not expect settles every open call as not finished.** A round's history is
+saved when its stream ends, before the element asks about a gated call, runs a frontend tool or
+collects a server-side approval, so a reload in that window finds the round's calls with no result
+and no run left to produce one. On restore, every call without a result (other than a checkpointed
+navigating call) is answered the way the client answers an open call before a request: its card
+settles as `interrupted` ("not finished"), and the restored conversation gains the `callNotFinished`
+result with the outcome `interrupted`, so the next request carries a result for every call and a
+later reload shows the same.
+
+It is not declined, although Stop declines an open card. Pressing Stop is a person answering the
+question; a reload answers nothing. The saved history is the same whether the round was waiting on a
+person or on a frontend tool the reload killed, so a decline would be unproven for one and false for
+the other, and "not finished" is true of both. The same goes for a server-side approval left open.
 
 ### Who the stored conversation belongs to (`user-key`)
 

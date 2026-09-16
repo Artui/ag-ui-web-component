@@ -293,23 +293,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the built-in card does on the same signal, with no card drawn and no warning.
 
 - **Reloading the page while a tool call waits for approval now shows that call
-  declined, where it showed a spinner that never stopped.** The run loop saves a
-  round's history when its stream ends, which is before it asks about a gated
-  call, runs a frontend tool or collects a server-side approval. A reload in that
-  window left the call stored with no result, and the request that would have
-  produced one had died with the page, so the restored card had no Approve or
-  Decline and nothing left to settle it. The next message then went out carrying
-  a tool call with no result, which several model providers reject.
+  as not finished, where it showed a spinner that never stopped.** The run loop
+  saves a round's history when its stream ends, which is before it asks about a
+  gated call, runs a frontend tool or collects a server-side approval. A reload in
+  that window left the call stored with no result, and the request that would
+  have produced one had died with the page, so the restored card had no Approve
+  or Decline and nothing left to settle it. The next message then went out
+  carrying a tool call with no result, which several model providers reject.
 
-  A reload now lands where Stop does, since Stop is the other way to abandon
-  that wait: the card is declined, and the conversation carries the same declined
-  result Stop records, so the next request is a valid turn and a later reload
-  still shows the decline. The saved history looks the same whether the round
-  was waiting on a person or on a frontend tool the reload interrupted, so a
-  tool that was still running comes back declined too. A navigating tool's call
-  is unchanged: it resumes from the page it landed on. A restored card for a
-  call that an earlier round went past without a result now settles as not
-  finished, as it does live, instead of spinning.
+  The card now settles as not finished, and the conversation carries the same
+  not-finished result the client gives any call a run left open, so the next
+  request is a valid turn and a later reload shows the same. It is not declined,
+  although Stop declines an open card, because Stop is a person answering the
+  question and a reload is not: the saved history looks the same whether the
+  round was waiting on a person or on a frontend tool the reload killed, so a
+  decline would be unproven for the first and false for the second, and "not
+  finished" is true of both. A server-side approval left open by a
+  reload comes back the same way. A navigating tool's call is unchanged: it
+  resumes from the page it landed on. A restored card for a call that an earlier
+  round went past without a result settles as not finished too, and the restore
+  now gives that call its result as well, at the end of its own round.
 
 - **A request sent after a reload no longer carries the element's `outcome`
   labels to the server.** The label that lets a reload replay a declined or

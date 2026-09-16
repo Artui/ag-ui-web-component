@@ -1,6 +1,6 @@
 import { randomUUID } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
-import { MESSAGE_ROLE, TOOL_CALL_STATUS, TOOL_OUTCOME } from "../../constants.js";
+import { MESSAGE_ROLE, TOOL_OUTCOME } from "../../constants.js";
 import type { ActivityRegistry } from "../../core/activity_registry.js";
 import type { AgUiClient } from "../../core/agui_client.js";
 import { messageAttachments } from "../../core/attachment.js";
@@ -12,7 +12,7 @@ import type {
 import type { MessageRole } from "../../core/message_role.js";
 import { RunIndex } from "../../core/run_index.js";
 import { toolStatusFromOutcome } from "../../core/tool_outcome.js";
-import { mintThread } from "../../core/utils.js";
+import { answerUnansweredCalls, mintThread } from "../../core/utils.js";
 import type { ToolCatalog } from "../../tools/tool_catalog.js";
 import type { AnswerActions } from "../transcript/answer_actions.js";
 import { renderAttachmentChips } from "../transcript/attachment_chips.js";
@@ -319,9 +319,30 @@ export class ConversationHistory {
    * tool reloaded the page mid-run — resume the loop by supplying that tool's
    * result from the page we landed on.
    *
-   * Any other call the stored run left unanswered is settled on the way in,
-   * because no run is left to answer it: the final round's calls are declined as
-   * Stop would have declined them, and older ones settle as not finished.
+   * Any other call the stored run left unanswered is answered on the way in, as
+   * not finished, because no run is left to answer it.
+   *
+   * **What the store holds after a reload mid-run.** The run loop persists a
+   * round when its stream ends, which is *before* it asks about a gated call,
+   * runs a frontend tool, or collects a server-side approval. A reload in that
+   * window leaves the round's calls stored with no result, and the request that
+   * would have produced one died with the page.
+   *
+   * **Why not finished, and not declined.** Stop declines an open card because
+   * pressing it is a person answering the question. A reload answers nothing, and
+   * the stored shape is the same whether the round waited on a person or on a
+   * handler the reload killed, so declined would be unproven for the first and
+   * false for the second. A marker saved while a card is open could tell them
+   * apart, but every host store would have to round-trip it, and a store that
+   * dropped it would fall back to this wording anyway -- which is true of both.
+   *
+   * The answers come from the same helper the client runs before each request,
+   * so a restored card and the result the next request carries cannot disagree.
+   * Giving them to the replay, rather than leaving the client to add them, is
+   * what settles each card from its result. The checkpointed call is excluded,
+   * because the resume path answers it from the page the reload landed on; that
+   * exclusion is held by "still resumes with the landed page's result, and is not
+   * declined" in `ag_ui_chat_reload_mid_run.test.ts`.
    */
   async rehydrate(): Promise<void> {
     // Guard against a thread-switch race: with a slow remote store, picking
@@ -354,47 +375,32 @@ export class ConversationHistory {
     // which it is so as not to settle it as abandoned.
     const checkpoint = this.#host.conversationStore().loadCheckpoint(this.#threadId);
     if (messages !== null) {
-      const restored = answerAbandonedCalls(
+      const unfinished = this.#host.strings().callNotFinished;
+      const restored = answerUnansweredCalls(
         messages,
-        checkpoint?.toolCallId,
-        this.#host.strings().declinedAction,
+        // The shape the store holds for a call the client answered the same way:
+        // its tool message, with the outcome it annotates onto the stored copy.
+        // Cast at the AG-UI boundary, as the client's own annotation is.
+        (toolCallId) =>
+          ({
+            id: randomUUID(),
+            role: "tool",
+            content: unfinished,
+            toolCallId,
+            outcome: TOOL_OUTCOME.INTERRUPTED,
+          }) as Message,
+        new Set(checkpoint === null ? [] : [checkpoint.toolCallId]),
       );
       this.#restored = restored;
       for (const message of restored) {
         this.replay(message);
       }
-      this.#settleUnanswered(checkpoint?.toolCallId);
     }
     if (checkpoint !== null) {
       await this.#resumeFrom(checkpoint);
       return;
     }
     this.#noticeIfRunUnfinished(messages);
-  }
-
-  /**
-   * Settle every restored card that no stored result settled, except the one a
-   * checkpoint is about to answer.
-   *
-   * The restore's half of the terminal sweep a live run does at `onSettled`, and
-   * with the same words, because it covers the same calls: ones the run went
-   * past without a result -- a name no tool here owns, or a server that sent
-   * none -- which the live sweep had already settled to exactly this before the
-   * reload threw the card away. Their history is not rewritten here: the client
-   * answers them on the next request, where the answer is needed. A call the
-   * reload itself abandoned never gets here; {@link answerAbandonedCalls} gave it
-   * a result for the replay to settle.
-   */
-  #settleUnanswered(resuming: string | undefined): void {
-    // Left running, because it is: the resume path answers it next.
-    const resumingCard = resuming === undefined ? undefined : this.#host.transcript.card(resuming);
-    for (const card of this.#host.transcript.cards()) {
-      // A card a stored result already settled keeps that outcome: `settle`
-      // ignores every call after its first.
-      if (card !== resumingCard) {
-        card.settle(TOOL_CALL_STATUS.INTERRUPTED, this.#host.strings().callNotFinished);
-      }
-    }
   }
 
   /**
@@ -542,87 +548,6 @@ export class ConversationHistory {
     );
     await client.resume();
   }
-}
-
-/**
- * The restored history, with a declined result for each call the reload abandoned.
- *
- * **What the store holds after a reload mid-run.** The run loop persists a round
- * when its stream ends, which is *before* it asks about a gated call, before it
- * runs a frontend tool, and before it collects a server-side approval. A reload
- * in that window leaves the round's calls stored with no result, and the request
- * that would have produced one died with the page. Nothing will ever answer
- * them: the card waited for good, and the next send carried a tool call with no
- * result, which several providers reject as a malformed turn.
- *
- * **Why declined.** Stop is the other way to abandon that wait, and it declines
- * the open decision -- a card settled as declined, and a denied result the loop
- * records in history. A reload has to land where Stop does or the two ways out of
- * one prompt disagree, so this writes the result Stop's loop would have: the same
- * content, the same outcome, after the same turn. The stored shape is the same
- * whether the round was waiting on a person or on a handler the reload killed,
- * so the two cannot be told apart here; neither finished, and neither can.
- *
- * **Which calls.** Only the final round's: the assistant turns with calls at the
- * end of history, with no user turn and no answer after them -- only results,
- * and messages such as activity that are not a turn. A call further
- * back was one the run went past, and the conversation that followed it is not
- * this restore's to rewrite -- `#settleUnanswered` stops its card spinning, and
- * the client answers it as not finished on the next request. The checkpointed call is excluded
- * too, because the resume path answers it from the page the reload landed on.
- *
- * Returns `messages` itself when nothing was abandoned, so a transcript that
- * finished cleanly is seeded exactly as it was stored.
- *
- * Every condition below is one branch arc or one conjunct, which a coverage gate
- * reports as covered with any of them deleted. Each is held by one test: in
- * `ag_ui_chat_reload_mid_run.test.ts`, the answered-call check by "is restored
- * exactly as it was stored", the checkpoint exclusion by "still resumes with the
- * landed page's result", and a turn without calls closing the round by "is not
- * reopened by a call the same run answered with text"; a user turn closing it by
- * "answers each round's open call before the next round starts" in
- * `ag_ui_chat_unanswered_tool_calls.test.ts`.
- */
-function answerAbandonedCalls(
-  messages: readonly Message[],
-  resuming: string | undefined,
-  declined: string,
-): readonly Message[] {
-  const answered = new Set<string>();
-  let final: readonly RestoredToolCall[] = [];
-  for (const message of messages) {
-    if (message.role === "tool") {
-      answered.add(message.toolCallId);
-    } else if (message.role === MESSAGE_ROLE.USER) {
-      final = [];
-    } else if (message.role === MESSAGE_ROLE.ASSISTANT) {
-      // A turn with calls opens the final round, or extends it: the client opens
-      // one assistant message per call when a server names no parent message.
-      // A turn with none is the run moving on, which closes the round.
-      const calls = restoredToolCalls(message.toolCalls);
-      final = calls.length === 0 ? [] : [...final, ...calls];
-    }
-  }
-  const abandoned = final.filter((call) => !answered.has(call.id) && call.id !== resuming);
-  if (abandoned.length === 0) {
-    return messages;
-  }
-  return [
-    ...messages,
-    ...abandoned.map(
-      (call) =>
-        // The shape the store holds after a Stop: the loop's tool message, with
-        // the outcome `AgUiClient` annotates onto the stored copy. Cast at the
-        // AG-UI boundary, as the client's own annotation is.
-        ({
-          id: randomUUID(),
-          role: "tool",
-          content: declined,
-          toolCallId: call.id,
-          outcome: TOOL_OUTCOME.DENIED,
-        }) as Message,
-    ),
-  ];
 }
 
 /** One tool call as a restored assistant message carries it. */
