@@ -138,6 +138,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a host resetting a chat further down the page from its own code does not move
   the page to it.
 
+- **The conversation list now slides over the transcript at every width,
+  including a wide full page, where it used to dock beside it.** Under
+  `placement="page"` with at least 900px of panel, opening the list padded the
+  rows over to make room for it, so the conversation, the centred greeting and
+  the composer all moved sideways the moment it opened. It is now the same
+  slide-over there as under every other placement and width: a modal dialog
+  over a backdrop, with nothing behind it moving. `data-threads-docked` and
+  `--ag-ui-threads-rail-width` no longer exist, so host CSS written against
+  either can be deleted.
+
 ### Fixed
 
 - **Text a user or a server wrote could rewrite the label it was put into.**

@@ -2671,31 +2671,6 @@ only you know whether that column should become the whole screen.
 The corner placements still rest at their launcher, so a full-bleed panel is
 something the user opens rather than something they are given.
 
-### The conversation list on a full page
-
-On `placement="page"`, once the panel is at least **900px** wide, the chat-history
-list **docks beside the transcript** instead of covering it — no backdrop, no
-focus trap, and `role="region"` rather than a modal dialog. Covering the
-conversation to show the list of conversations hides the thing you are trying to
-get back to, and a dedicated route is the one surface with width to spare.
-
-Narrower than that, or under any other placement, it stays the slide-over it was:
-a few hundred pixels of panel with a list docked into it leaves a column of
-transcript narrower than the messages in it. Width alone is not the test — an app
-shell can hand `embedded` a page-sized box, and that box is still a column of
-somebody's layout.
-
-`--ag-ui-threads-rail-width` sets the docked width (default 280px). While it is
-docked the host carries `data-threads-docked`, so your own CSS can react.
-
-The list also grows a filter once there are eight or more conversations in it
-— above that a search box is worth having, below it it is a control asking to be
-used on a list you can already read in one glance. It matches the title **and**
-the preview, because the title is often the model's one-line summary and the
-phrase you remember is as likely to be inside the conversation as on it, and it
-filters what the drawer already holds rather than going back to the server for a
-list that is already in memory.
-
 **To keep your desktop layout at every width**, set `data-small-viewport="off"`.
 That exists because the *trigger* is the one part of this you cannot reach: every
 value the override sets is a `--ag-ui-*` token you can re-state, but a media
@@ -2705,6 +2680,24 @@ The breakpoint is a width rather than a pointer test, and that is on purpose: a
 touch laptop is coarse-pointered and wide, a narrow desktop window is
 fine-pointered and small. Width decides the layout; the pointer decides which
 controls make sense.
+
+### The conversation list
+
+The chat-history list slides over the transcript at every width and under every
+placement, a full page included. Opening it moves nothing underneath: the
+conversation, the centred greeting and the composer are exactly where they were.
+While it is open it is a modal dialog: focus moves into it, Tab stays inside it,
+and Escape, its close control or a click on the backdrop beside it closes it and
+returns focus to where it was. `openThreads()` and `closeThreads()` do the same
+from your own chrome.
+
+The list also grows a filter once there are eight or more conversations in it
+— above that a search box is worth having, below it it is a control asking to be
+used on a list you can already read in one glance. It matches the title **and**
+the preview, because the title is often the model's one-line summary and the
+phrase you remember is as likely to be inside the conversation as on it, and it
+filters what the drawer already holds rather than going back to the server for a
+list that is already in memory.
 
 ### Reserving the space your own chrome occupies
 
