@@ -1017,7 +1017,8 @@ matching JS API:
   The conversation it leaves is **kept**: it stays in the history drawer to return to, and on a
   server-backed store it stays on the server. Deleting one is the drawer row's own action. A chat
   nothing was ever sent in is the exception — it was never listed, so it is dropped rather than
-  left behind.
+  left behind. Focus moves to the composer, whichever control started the new chat, unless the
+  widget is collapsed, and the page is not scrolled to it.
 - `describeSurface()` — where the panel is and what can be done to it: placement, collapsed,
   whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
   the two reasons a move can fail into the one answer a caller needs.

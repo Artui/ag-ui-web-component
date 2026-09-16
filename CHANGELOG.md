@@ -75,6 +75,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason why: a re-vendor of this release has no host wiring to do and is still
   a different build.
 
+- **A new chat puts focus in the composer.** Starting a conversation is a
+  request to type one, but pressing *New chat* left focus on the button, so a
+  keyboard user emptied the composer and then had to find their way back to it.
+  `newChat()` now focuses the composer whichever control called it -- the
+  header's button, the history list's own, or a host's -- unless the widget is
+  collapsed and the composer is not on screen. It does so without scrolling, so
+  a host resetting a chat further down the page from its own code does not move
+  the page to it.
+
 ### Fixed
 
 - **Text a user or a server wrote could rewrite the label it was put into.**

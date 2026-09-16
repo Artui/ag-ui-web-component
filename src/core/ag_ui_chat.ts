@@ -2732,6 +2732,10 @@ export class AgUiChat extends HTMLElement {
    * The conversation being left is kept, and stays in the history drawer to
    * return to. Deleting one is the drawer row's own action; a button that
    * starts something new must not be the button that destroys what was there.
+   *
+   * Focus moves to the composer, unless the widget is collapsed and the
+   * composer is not on screen: starting a conversation is a request to type
+   * one. The page is not scrolled to bring the composer into view.
    */
   newChat(): void {
     // Stop any in-flight run first — discarding the client mid-run would
@@ -2747,6 +2751,19 @@ export class AgUiChat extends HTMLElement {
     this.#threadId = mintThread(this.conversationStore);
     this.#setRunning(false);
     this.#setUnread(0);
+    // Whichever control started it: the header's, the history list's (which
+    // hands focus back to its opener as it closes, before this runs), or a
+    // host's own. A keyboard user otherwise had to find their way back to the
+    // field that had just been emptied.
+    //
+    // Without scrolling. Both of the element's own buttons sit in the panel, so
+    // the composer is already on screen when they run; a host calling this from
+    // its own code may be resetting a chat further down the page, and moving
+    // the page to it (and opening a phone's keyboard over what the user was
+    // reading) is not what a reset asked for.
+    if (!this.collapsed) {
+      this.#input.focus({ preventScroll: true });
+    }
   }
 
   /** Drop the in-memory run + transcript, leaving the thread id untouched. */
