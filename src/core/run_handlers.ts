@@ -52,38 +52,43 @@ export interface RunHandlersHost {
 }
 
 /**
- * The AG-UI event handlers a run is drawn by, and what one interaction
- * accumulates for the host between its first round and its settle: the tool
- * calls it made, the keys it invalidated, and whether it already said how it
- * ended.
+ * What one conversation's runs accumulate for the host between an
+ * interaction's first round and its settle.
  *
- * A controller rather than a factory. The handlers hold nothing of their own,
- * but that bookkeeping is state, and it has never belonged to one handler
- * table: a table is built per client -- the conversation's own, rebuilt after
- * a reset, and one for each checkpoint continuation -- and every one of them
- * reports into the same bookkeeping. {@link forClient} still returns a fresh
- * table per call.
- *
- * Owned one-to-one by an `<ag-ui-chat>`, and holding no state outside the
- * instance.
+ * A record per conversation rather than fields on the controller, because a
+ * run can outlive the conversation it belongs to. Cancelling is a request, not
+ * an ending: a stopped run reports how it ended once its request has closed --
+ * or once a host tool's handler, which cancelling cannot interrupt, has
+ * returned -- and by then New chat may have cleared the transcript and the next
+ * message may already be running. Each handler table keeps the record it was
+ * built with, so that report describes the run that made it and nothing the
+ * next conversation did.
  */
-export class RunHandlers {
-  readonly #host: RunHandlersHost;
+interface RunLedger {
   /**
    * Tool calls made during the current interaction, in the order they started,
    * so {@link RUN_FINISHED_EVENT} can report them once the whole thing settles.
-   * Spans tool rounds and an approval interrupt; cleared when the event fires.
+   * Spans tool rounds and an approval interrupt; emptied when the event fires.
    */
-  #runTools: { readonly id: string; readonly name: string }[] = [];
+  readonly tools: { readonly id: string; readonly name: string }[];
+  /**
+   * Which of those calls had a result streamed back, and so ran on the server.
+   *
+   * The transcript keeps the same fact for its cards, and this used to be read
+   * from there. But New chat clears the transcript, and a run it cut off
+   * reports afterwards -- so a booking the server made came out as the host's
+   * own tool, which is the one side the documented listener skips a refetch for.
+   */
+  readonly serverSettled: Set<string>;
   /**
    * Keys announced during this interaction, de-duplicated in first-seen order.
    *
    * Per element, never module-level: a second mounted chat is a second run, and
-   * sharing this would tell one page to refetch on the other's writes. Reset by
-   * {@link RunHandlers.#dispatchRunFinished}, which is the one place that has
+   * sharing this would tell one page to refetch on the other's writes. Emptied
+   * by {@link RunHandlers.#dispatchRunFinished}, which is the one place that has
    * read it.
    */
-  #runInvalidated = new Set<string>();
+  readonly invalidated: Set<string>;
   /**
    * Whether this turn already announced how it ended.
    *
@@ -93,24 +98,114 @@ export class RunHandlers {
    * or `onError`, and "assistant answered" after "response stopped" is worse
    * than silence.
    */
-  #announcedOutcome = false;
+  announcedOutcome: boolean;
+}
+
+/** An empty ledger, for a conversation nothing has run in yet. */
+function emptyLedger(): RunLedger {
+  return {
+    tools: [],
+    serverSettled: new Set<string>(),
+    invalidated: new Set<string>(),
+    announcedOutcome: false,
+  };
+}
+
+/** Handlers with the same signatures as `table`, each doing nothing once `attached` is false. */
+function whileAttached<T extends object>(table: T, attached: () => boolean): T {
+  const guarded: Record<string, (...args: unknown[]) => void> = {};
+  for (const [name, handler] of Object.entries(table) as [string, (...args: unknown[]) => void][]) {
+    guarded[name] = (...args) => {
+      if (attached()) {
+        handler(...args);
+      }
+    };
+  }
+  return guarded as T;
+}
+
+/**
+ * The AG-UI event handlers a run is drawn by, and what one interaction
+ * accumulates for the host between its first round and its settle: the tool
+ * calls it made, the keys it invalidated, and whether it already said how it
+ * ended.
+ *
+ * A controller rather than a factory. The handlers hold nothing of their own,
+ * but that bookkeeping is state, and it has never belonged to one handler
+ * table: a table is built per client -- the conversation's own, rebuilt after
+ * a reset, and one for each checkpoint continuation -- and every table built
+ * for one conversation reports into the same bookkeeping. {@link forClient}
+ * still returns a fresh table per call.
+ *
+ * Owned one-to-one by an `<ag-ui-chat>`, and holding no state outside the
+ * instance.
+ */
+export class RunHandlers {
+  readonly #host: RunHandlersHost;
+  /**
+   * The bookkeeping of the conversation on screen. Replaced rather than
+   * emptied by {@link detach}, so a table built before then keeps its own.
+   */
+  #ledger: RunLedger = emptyLedger();
 
   constructor(host: RunHandlersHost) {
     this.#host = host;
   }
 
   /**
-   * A handler table for one AG-UI client. Every table draws into the same
-   * transcript and shares this instance's bookkeeping, so a continuation run
-   * reports into the interaction the user is looking at.
+   * Detach every handler table built so far, because the conversation they
+   * drew into has been cleared away.
+   *
+   * The element calls this when it resets, having first cancelled what was
+   * running. A cancelled run still ends later, and a detached table still
+   * reports to the host what that run did: a run stopped part-way may already
+   * have written something, and {@link RUN_FINISHED_EVENT} fires on
+   * cancellation for exactly that reason. Everything else it would do -- draw a
+   * stopped note, announce, put the composer back to Send, settle the pending
+   * cards -- would land in a transcript and a composer that now belong to
+   * another conversation, possibly mid-run, and is dropped. So is any event the
+   * run streams after the reset, invalidations included: an abort closes the
+   * request those would arrive on, so what a cancelled run still delivers is
+   * how it ended.
+   */
+  detach(): void {
+    this.#ledger = emptyLedger();
+  }
+
+  /**
+   * A handler table for one AG-UI client. Every table built for the current
+   * conversation draws into the same transcript and shares its bookkeeping, so
+   * a continuation run reports into the interaction the user is looking at.
    */
   forClient(): AgUiClientHandlers {
+    const ledger = this.#ledger;
+    const attached = (): boolean => ledger === this.#ledger;
+    const { onSettled, ...drawing } = this.#tableFor(ledger);
+    return {
+      ...whileAttached(drawing, attached),
+      onSettled: () => {
+        if (attached()) {
+          onSettled();
+        }
+        // Last, so a listener that refetches sees a transcript that has already
+        // stopped changing -- and outside the check, because what a run did is
+        // true whichever conversation is on screen when it ends.
+        this.#dispatchRunFinished(ledger);
+      },
+    };
+  }
+
+  /**
+   * The handler table itself, recording into `ledger`. {@link forClient}
+   * decides how much of it still runs once the table is detached.
+   */
+  #tableFor(ledger: RunLedger): AgUiClientHandlers {
     return {
       onRunStart: () => {
         // Per *round*, so guard on the turn: a run that calls three tools fires
         // this three times and the user needs telling once.
         if (!this.#host.running()) {
-          this.#announcedOutcome = false;
+          ledger.announcedOutcome = false;
           this.#host.announcer.announce(this.#host.strings().announceResponding);
         }
         this.#host.setRunning(true);
@@ -186,7 +281,7 @@ export class RunHandlers {
         }
         // Recorded after the skill-load return: a capability load is the agent
         // arranging itself, not work a host's data could have moved under.
-        this.#runTools.push({ id: call.id, name: call.name });
+        ledger.tools.push({ id: call.id, name: call.name });
         this.#host.transcript.cardFor(call);
       },
       onActivity: (activityType, content, messageId) => {
@@ -194,7 +289,7 @@ export class RunHandlers {
       },
       onCustomEvent: (name, value) => {
         if (name === INVALIDATE_CUSTOM_NAME) {
-          this.#dispatchInvalidation(value);
+          this.#dispatchInvalidation(ledger, value);
           return;
         }
         if (name === SUBAGENT_CUSTOM_NAME) {
@@ -263,6 +358,7 @@ export class RunHandlers {
         // the field existed renders exactly as it did.
         card.settle(toolStatusFromOutcome(outcome), content);
         this.#host.transcript.markServerSettled(toolCallId);
+        ledger.serverSettled.add(toolCallId);
         // The card stops being the live thing the moment it settles, and the
         // server goes straight back to the model with the result -- a wait with
         // nothing on screen to own it, and the longest one in a run when the
@@ -288,7 +384,7 @@ export class RunHandlers {
         this.#host.stream.end();
       },
       onError: (message) => {
-        this.#announcedOutcome = true;
+        ledger.announcedOutcome = true;
         this.#host.announcer.announce(this.#host.strings().announceFailed);
         this.#host.transcript.hidePending();
         const bubble = this.#host.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`);
@@ -309,7 +405,7 @@ export class RunHandlers {
       onCancelled: () => {
         // Deliberate stop, not a failure: keep whatever partial text already
         // streamed and add a muted note instead of an error bubble.
-        this.#announcedOutcome = true;
+        ledger.announcedOutcome = true;
         this.#host.announcer.announce(this.#host.strings().announceStopped);
         this.#host.transcript.hidePending();
         this.#host.transcript.appendStoppedNote();
@@ -317,7 +413,7 @@ export class RunHandlers {
       },
       onSettled: () => {
         // Terminal guarantee: whatever path ended the run, return to rest.
-        if (!this.#announcedOutcome) {
+        if (!ledger.announcedOutcome) {
           this.#host.announcer.announce(this.#host.strings().announceAnswerReady);
         }
         this.#host.transcript.hidePending();
@@ -332,7 +428,6 @@ export class RunHandlers {
           }
         }
         this.#host.transcript.closeGroup();
-        this.#dispatchRunFinished();
       },
     };
   }
@@ -346,14 +441,15 @@ export class RunHandlers {
    * server is a fact about the run, and a name can appear on both sides across a
    * conversation.
    */
-  #dispatchRunFinished(): void {
-    const tools: ToolRun[] = this.#runTools.map(({ id, name }) => ({
+  #dispatchRunFinished(ledger: RunLedger): void {
+    const tools: ToolRun[] = ledger.tools.map(({ id, name }) => ({
       name,
-      side: this.#host.transcript.isServerSettled(id) ? "server" : "client",
+      side: ledger.serverSettled.has(id) ? "server" : "client",
     }));
-    this.#runTools = [];
-    const invalidated = [...this.#runInvalidated];
-    this.#runInvalidated = new Set<string>();
+    const invalidated = [...ledger.invalidated];
+    ledger.tools.length = 0;
+    ledger.serverSettled.clear();
+    ledger.invalidated.clear();
     this.#host.element.dispatchEvent(
       new CustomEvent<RunFinishedDetail>(RUN_FINISHED_EVENT, {
         detail: { tools, invalidated },
@@ -377,7 +473,7 @@ export class RunHandlers {
    * and replaying one on every thread load would be a refetch storm. That is the
    * whole reason the server sends it as `CUSTOM` rather than as an activity.
    */
-  #dispatchInvalidation(value: unknown): void {
+  #dispatchInvalidation(ledger: RunLedger, value: unknown): void {
     const payload = (value ?? {}) as { keys?: unknown; reason?: unknown };
     // Defensive about the payload, not about the name: `value` is typed
     // `unknown` by the protocol, so a server can put anything there, and a
@@ -389,7 +485,7 @@ export class RunHandlers {
       return;
     }
     for (const key of keys) {
-      this.#runInvalidated.add(key);
+      ledger.invalidated.add(key);
     }
     this.#host.element.dispatchEvent(
       new CustomEvent<InvalidateDetail>(INVALIDATE_EVENT, {

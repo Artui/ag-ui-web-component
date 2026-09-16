@@ -158,6 +158,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client of its own. Every path that stops the conversation's run now stops a
   continuation as well.
 
+- **A run cut off by New chat or a thread switch stays with the conversation it
+  belonged to.** Cancelling closes the request, but the run finishes a moment
+  later, and by then the element had moved on. So its "Stopped" note appeared at
+  the top of the new conversation; its truncated exchange was saved under the new
+  thread, which the drawer then listed as a second copy of the old one; and its
+  `ag-ui-run-finished` reported a server-side tool as the host's own, because the
+  record of what streamed back had been cleared with the transcript. Where a host
+  tool's handler was still running -- which cancelling cannot interrupt -- and the
+  user sent the next message before it returned, the old run's settle also put the
+  new run's Stop button back to Send, and one event carried both runs' tools while
+  the new run's own reported none.
+
+  Each conversation's runs now keep their bookkeeping apart. A run left behind by
+  a reset still reports what it ran, since a stopped run may already have written
+  something, and saves to the thread it was started in; nothing else it does
+  reaches the conversation that replaced it.
+
 - **A resumed or forked run now carries the page's shared state, reports the
   state it changes, and stops at `data-max-tool-rounds`.** A checkpoint
   continuation sent an empty state object, so an agent whose tools read the

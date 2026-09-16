@@ -1726,6 +1726,12 @@ export class AgUiChat extends HTMLElement {
   /** Drop the in-memory run + transcript, leaving the thread id untouched. */
   #resetState(): void {
     this.#client = null;
+    // Every path here has just cancelled the run, but a cancelled run ends
+    // later: once its request closes, or once a host tool's handler returns.
+    // Whatever it says then is about the conversation being cleared, so it must
+    // not draw into this one, put a new run's Stop back to Send, or report the
+    // new conversation's tools as its own.
+    this.#runHandlers.detach();
     this.#clearTranscript();
     this.#history.forgetRestored();
     // The composer's own history goes with the conversation it was typed
@@ -2521,6 +2527,11 @@ export class AgUiChat extends HTMLElement {
    * that had raised it. What genuinely differs is the seed.
    */
   #buildClient(seed: ClientSeed): AgUiClient {
+    // Fixed when the client is built rather than read at each save. A run
+    // outlives a reset -- a stopped run makes its last save once its request
+    // closes -- and read live, that save landed after New chat had moved the
+    // active thread on, filing the conversation being left under the new one.
+    const threadId = this.#history.threadId;
     const agent = this.agentFactory({
       endpoint: seed.endpoint,
       headers: this.#requestHeaders(),
@@ -2530,7 +2541,7 @@ export class AgUiChat extends HTMLElement {
       getHeaders: () => this.#requestHeaders(),
       trustedOrigins: this.trustedOrigins,
       ...this.#credentialsOption(),
-      threadId: this.#history.threadId,
+      threadId,
       initialMessages: seed.initialMessages,
       initialState: this.#sharedState,
     });
@@ -2544,7 +2555,7 @@ export class AgUiChat extends HTMLElement {
       ...(seed.persist
         ? {
             onPersist: (messages: readonly Message[]) =>
-              this.conversationStore.saveMessages(this.#history.threadId, messages),
+              this.conversationStore.saveMessages(threadId, messages),
           }
         : {}),
       onStateChanged: (state) => this.#onSharedStateChanged(state),

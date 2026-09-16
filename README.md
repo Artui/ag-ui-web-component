@@ -623,6 +623,11 @@ discarding the client, and so do switching conversations, `reload()` and removin
 [checkpoint continuation](#resuming-a-run) is the run in flight while it lasts, so Stop and all of
 these end it too.
 
+A cancelled run ends a moment later, once its request has closed or a running tool handler has
+returned. What it does then stays with the conversation it belonged to: its truncated exchange is
+saved to that thread, `ag-ui-run-finished` still reports the tools it ran, and nothing reaches the
+transcript or the Stop button of the conversation that replaced it.
+
 ### Registering tools
 
 A tool is a `ClientTool`: `{ name, description, parameters, handler }`, where `parameters` is a

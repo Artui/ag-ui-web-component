@@ -645,7 +645,7 @@ describe("a continuation is the run in flight", () => {
     expect(sendButton(el).title).toBe(DEFAULT_UI_STRINGS.send);
   });
 
-  it("stops when a new chat starts, and draws no more of its answer", async () => {
+  it("stops when a new chat starts, and leaves the new conversation empty", async () => {
     const { el, agents, release } = await continueHeld();
 
     el.newChat();
@@ -653,8 +653,10 @@ describe("a continuation is the run in flight", () => {
     await flush();
 
     expect(agents.map((agent) => agent.abortRuns)).toEqual([1]);
-    // The rest of its answer belongs to the conversation that was left.
+    // Nothing the abandoned run does afterwards belongs to the conversation
+    // that replaced it -- not its answer, and not the note saying it stopped.
     expect(shadow(el).querySelector(".message--assistant")).toBeNull();
+    expect(shadow(el).querySelector(".stopped-note")).toBeNull();
   });
 
   it("stops when another conversation is opened", async () => {
