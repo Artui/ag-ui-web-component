@@ -275,6 +275,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   how a renderer is expected to honour Stop: that wait resolves as denied, as
   the built-in card does on the same signal, with no card drawn and no warning.
 
+- **Reloading the page while a tool call waits for approval now shows that call
+  declined, where it showed a spinner that never stopped.** The run loop saves a
+  round's history when its stream ends, which is before it asks about a gated
+  call, runs a frontend tool or collects a server-side approval. A reload in that
+  window left the call stored with no result, and the request that would have
+  produced one had died with the page, so the restored card had no Approve or
+  Decline and nothing left to settle it. The next message then went out carrying
+  a tool call with no result, which several model providers reject.
+
+  A reload now lands where Stop does, since Stop is the other way to abandon
+  that wait: the card is declined, and the conversation carries the same declined
+  result Stop records, so the next request is a valid turn and a later reload
+  still shows the decline. The saved history looks the same whether the round
+  was waiting on a person or on a frontend tool the reload interrupted, so a
+  tool that was still running comes back declined too. A navigating tool's call
+  is unchanged: it resumes from the page it landed on. A restored card for a
+  call that an earlier round went past without a result now settles to "No
+  result returned.", as it did live, instead of spinning.
+
 ## [0.38.0] — 2026-09-14
 
 ### Changed
