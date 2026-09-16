@@ -1,4 +1,4 @@
-import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
+import type { Context, Message, Tool } from "@ag-ui/core";
 import {
   ANNOUNCE_CLEAR_MS,
   ATTACHMENT_EVENT,
@@ -15,7 +15,6 @@ import {
   INVALIDATE_EVENT,
   MAX_TOOL_ROUNDS,
   MESSAGE_ROLE,
-  READ_PAGE_TOOL,
   RUN_FINISHED_EVENT,
   STATE_EVENT,
   SUBAGENT_CUSTOM_NAME,
@@ -25,19 +24,14 @@ import {
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
-  TOOL_OUTCOME,
   UNREAD_EVENT,
-  X_CONFIRM_KEY,
 } from "../constants.js";
 import type { Skill } from "../skills/skill.js";
 import { SkillCatalog } from "../skills/skill_catalog.js";
-import { skillNameFrom } from "../skills/skill_name_from.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type ChatCorner, type ChatSurfaceReport } from "../tools/chat_surface_tools.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type ClientTool } from "../tools/client_tool_registry.js";
-import { isDestructive } from "../tools/is_destructive.js";
-import { isNavigates } from "../tools/is_navigates.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type ResolvePageTarget } from "../tools/page_action_tools.js";
 import { createPageMapContext, type PageMap } from "../tools/page_map.js";
@@ -46,6 +40,7 @@ import { type PageState } from "../tools/page_state.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type RouteMap } from "../tools/route_map.js";
 import { ToolCatalog } from "../tools/tool_catalog.js";
+import { ToolDispatch } from "../tools/tool_dispatch.js";
 import { renderChart } from "../ui/charts/chart_block.js";
 import { chartSpecFrom } from "../ui/charts/chart_spec_from.js";
 import { CHART_TOOL_NAME, createChartTool } from "../ui/charts/chart_tool.js";
@@ -58,15 +53,8 @@ import { fillUiString } from "../ui/fill_ui_string.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/history/checkpoint_menu.js";
 import type { RelativeTimeFormatter } from "../ui/history/relative_time.js";
 import { ThreadDrawer } from "../ui/history/thread_drawer.js";
-import {
-  type ApprovalRenderer,
-  type ApprovalRequest,
-  requestApproval,
-} from "../ui/interrupts/approval_card.js";
-import {
-  type ConfirmationRequest,
-  requestConfirmation,
-} from "../ui/interrupts/confirmation_card.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type ApprovalRenderer } from "../ui/interrupts/approval_card.js";
 import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
@@ -86,13 +74,7 @@ import { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "../ui/ui_str
 import type { ActivityRegistration } from "./activity_registration.js";
 import { ActivityRegistry } from "./activity_registry.js";
 import type { ActivityRenderer } from "./activity_renderer.js";
-import {
-  AgUiClient,
-  type AgUiClientHandlers,
-  type AgUiToolCall,
-  type InterruptResponse,
-  type ToolExecution,
-} from "./agui_client.js";
+import { AgUiClient, type AgUiClientHandlers } from "./agui_client.js";
 import { type AttachmentRef, messageAttachments } from "./attachment.js";
 import {
   type ClientConversationStore,
@@ -461,14 +443,6 @@ export class AgUiChat extends HTMLElement {
    * Spans tool rounds and an approval interrupt; cleared when the event fires.
    */
   #runTools: { readonly id: string; readonly name: string }[] = [];
-  /**
-   * Tool names the user waived confirmation for, for the life of this element.
-   *
-   * Per instance and never persisted: a session decision that outlived the tab
-   * would be a permanent grant made by one click, which is the thing
-   * `autoConfirm` already exists to say deliberately. Cleared with the element.
-   */
-  readonly #sessionApproved = new Set<string>();
 
   /** The action row under each finished answer, and the one row holding Retry. */
   readonly #actions = new AnswerActions({
@@ -567,6 +541,11 @@ export class AgUiChat extends HTMLElement {
    */
   readonly #transcript: Transcript;
   /**
+   * Running the tool calls a round produced and answering the server's
+   * interrupts. Built in the constructor, after the transcript it draws in.
+   */
+  readonly #dispatch: ToolDispatch;
+  /**
    * The greeting's own text, the fallback content of the `greeting` slot.
    * Rendered under every placement and shown by the stylesheet only where the
    * greeting layout is on, so a placement switch needs nothing from script.
@@ -643,10 +622,6 @@ export class AgUiChat extends HTMLElement {
   // the Send⇄Stop button: `agent.isRunning` is false between frontend-tool
   // rounds, but the user must still be able to stop there.
   #running = false;
-  // The page the current round's context describes, captured when that context
-  // was built. `null` until the first round. Compared in `#executeTool` to
-  // catch a page that moved under a round still in flight.
-  #contextHref: string | null = null;
   /** The decision a run is suspended on, which a Stop abandons. */
   readonly #decision = new PendingDecision();
   /**
@@ -726,6 +701,23 @@ export class AgUiChat extends HTMLElement {
       // this for the life of the call, and the result region is filled when the
       // tool settles -- which can be long after a host set the hook.
       formatToolPayload: (payload) => this.formatToolPayload?.(payload) ?? null,
+    });
+    this.#dispatch = new ToolDispatch({
+      element: this,
+      transcript: this.#transcript,
+      tools: this.#tools,
+      decision: this.#decision,
+      strings: () => this.#strings,
+      announce: (message) => this.#announce(message),
+      autoConfirm: () => this.autoConfirm,
+      confirmPredicate: () => this.confirmPredicate,
+      getPageMap: () => this.getPageMap,
+      navigate: () => this.navigate,
+      approveWithEdits: () => this.approveWithEdits,
+      approvalRenderer: () => this.approvalRenderer,
+      getContext: () => this.getContext(),
+      conversationStore: () => this.conversationStore,
+      threadId: () => this.#threadId,
     });
     this.#placement = new PanelPlacement({
       element: this,
@@ -914,9 +906,9 @@ export class AgUiChat extends HTMLElement {
       agent,
       handlers: this.#handlers(),
       getTools: () => this.#tools.advertise(),
-      getContext: () => this.#buildContext(),
-      executeTool: (call) => this.#executeTool(call),
-      resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
+      getContext: () => this.#dispatch.buildContext(),
+      executeTool: (call) => this.#dispatch.execute(call),
+      resolveInterrupts: (interrupts) => this.#dispatch.resolveInterrupts(interrupts),
       connectionLostMessage: this.#strings.connectionLost,
     });
     await client.send(content);
@@ -2065,30 +2057,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Build a round's context, recording which page it describes.
-   *
-   * The AG-UI client re-invokes this at the top of **every** tool round, not
-   * once per `send()`, so the page map the agent sees is already refreshed
-   * between rounds and the href captured here is the page it was shown for
-   * *this* round. {@link #executeTool} compares against it to catch a page that
-   * moved under a round still in flight.
-   */
-  #buildContext(): Context[] {
-    this.#contextHref = window.location.href;
-    return this.getContext();
-  }
-
-  /**
-   * Whether the page moved since the current round's context was built.
-   *
-   * `null` means no round has built context yet (nothing to compare), which is
-   * not a move.
-   */
-  #pageMoved(): boolean {
-    return this.#contextHref !== null && this.#contextHref !== window.location.href;
-  }
-
-  /**
    * Notice a previous run that never produced a response.
    *
    * {@link AgUiClient.send} persists the user's message before starting the
@@ -3132,9 +3100,9 @@ export class AgUiChat extends HTMLElement {
         agent,
         handlers: this.#handlers(),
         getTools: () => this.#tools.advertise(),
-        getContext: () => this.#buildContext(),
-        executeTool: (call) => this.#executeTool(call),
-        resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
+        getContext: () => this.#dispatch.buildContext(),
+        executeTool: (call) => this.#dispatch.execute(call),
+        resolveInterrupts: (interrupts) => this.#dispatch.resolveInterrupts(interrupts),
         onPersist: (messages) => this.conversationStore.saveMessages(this.#threadId, messages),
         onStateChanged: (state) => this.#onSharedStateChanged(state),
         connectionLostMessage: this.#strings.connectionLost,
@@ -3154,279 +3122,6 @@ export class AgUiChat extends HTMLElement {
         composed: true,
       }),
     );
-  }
-
-  /**
-   * Which rule gates `call`, or `null` when it runs straight through.
-   *
-   * The rule, rather than a bare boolean, because it decides whether the user
-   * may *waive* the prompt for the rest of the session. Only the default
-   * `x-destructive` gate is waivable: `confirmPredicate` is documented as
-   * authoritative, so letting one click retire it would silently defeat a host
-   * policy — and the session allowlist is consulted on the same path it can
-   * be added from, so the button is never offered where honouring it would be
-   * refused.
-   */
-  async #confirmationRule(call: AgUiToolCall, tool: ClientTool): Promise<ConfirmationRule | null> {
-    if (this.autoConfirm) {
-      return null;
-    }
-    if (this.confirmPredicate !== null) {
-      return (await this.confirmPredicate(call.name, call.args)) === true ? "predicate" : null;
-    }
-    if (this.#sessionApproved.has(call.name)) {
-      return null;
-    }
-    return isDestructive(tool.parameters) ? "destructive" : null;
-  }
-
-  async #executeTool(call: AgUiToolCall): Promise<ToolExecution | null> {
-    // A skill load already rendered as a notice on the stream; it is never a
-    // client tool and its result is pydantic-ai's business, so it must not
-    // acquire a card here on the way to the no-result fallback below.
-    if (skillNameFrom(call) !== null) {
-      return null;
-    }
-    const card = this.#transcript.cardFor(call);
-    this.#transcript.forgetCard(call.id);
-    // Kept after the card leaves the awaiting cards: a tool that renders into the
-    // transcript places itself against its own card, and by the time it runs the
-    // card is no longer reachable by id.
-    this.#transcript.setCardElement(call.id, card.element);
-    // Scoped out of this round's catalog ⇒ not a frontend tool of ours, for
-    // this round. A host that offers `delete_record` only on the page where
-    // deleting makes sense has said something about *this* run, and a call
-    // arriving anyway (a hallucinated name, or one steered by text the model
-    // just read) must not find the handler that happens to be registered
-    // mount-wide. Treated exactly as an unknown name rather than as a refusal:
-    // withholding a tool and never registering it are the same statement, and
-    // the branch below already says the honest thing for both.
-    const tool = this.#tools.wasAdvertised(call.name) ? this.#tools.resolve(call.name) : null;
-    if (tool === null) {
-      // Not a client tool. A server-side tool's real output arrives via
-      // `onToolResult` (TOOL_CALL_RESULT) and already settled the card — only
-      // fall back when it didn't. When no result ever arrived, the call wasn't
-      // executed by either side (no handler, no server result), so say so
-      // honestly rather than claiming server execution. We do NOT show the
-      // pending indicator: nothing here triggers another client round, so it
-      // would hang after the run ended.
-      if (!this.#transcript.isServerSettled(call.id)) {
-        card.settle(TOOL_CALL_STATUS.DONE, this.#strings.noResult);
-      }
-      return null;
-    }
-    // The page moved under this round. Acting now would target whatever
-    // matches on the new page, and the case worth preventing is a same-named
-    // control matching silently — the only way the agent acts on the wrong page
-    // without either side noticing.
-    //
-    // Must precede the confirmation prompt, so the user is never asked to
-    // approve an action about to be refused. Navigating tools are exempt, since
-    // moving the page is their job, as is read_page, the documented recovery.
-    // Gated on a page-map provider: without one there is no read_page to
-    // recommend and the host's tools are not page-scoped anyway.
-    if (
-      this.getPageMap !== null &&
-      call.name !== READ_PAGE_TOOL &&
-      !isNavigates(tool.parameters) &&
-      this.#pageMoved()
-    ) {
-      const message = this.#strings.pageMoved;
-      card.settle(TOOL_CALL_STATUS.ERROR, message);
-      this.#transcript.showPending();
-      // Stated so a reload settles this card the same way. The card's own status
-      // lives only in the DOM, and the DOM is what a reload throws away.
-      return { content: `Error: ${message}`, error: message, outcome: TOOL_OUTCOME.FAILED };
-    }
-    const rule = await this.#confirmationRule(call, tool);
-    if (rule !== null) {
-      const request: ConfirmationRequest = { toolName: call.name, args: call.args };
-      const confirmText = tool.parameters[X_CONFIRM_KEY];
-      if (typeof confirmText === "string") {
-        request.message = confirmText;
-      }
-      // The run loop is suspended on this card; a Stop while it's open aborts
-      // the controller, resolving the decision as declined.
-      const signal = this.#decision.open();
-      // Into the turn's answer group, like every other inline card. Appending
-      // to the message list made it a sibling *after* the group, so anything
-      // that streamed afterwards rendered above it and the prompt drifted to
-      // the foot of the turn no matter when it was asked.
-      const decision = requestConfirmation(this.#transcript.ensureGroup(), request, {
-        signal,
-        strings: this.#strings,
-        // Offered only where it can be honoured -- see `#confirmationRule`.
-        ...(rule === "destructive"
-          ? { onAlwaysAllow: () => this.#sessionApproved.add(call.name) }
-          : {}),
-      });
-      this.#transcript.updateEmptyState();
-      this.#transcript.follow();
-      const accepted = await decision;
-      this.#decision.close();
-      card.recordDecision(accepted ? "approved" : "declined");
-      if (!accepted) {
-        const message = this.#strings.declinedAction;
-        card.settle(TOOL_CALL_STATUS.DECLINED, message);
-        this.#transcript.showPending();
-        // The one outcome with no error text and no server involvement at all:
-        // a person said no in this browser. Nothing else records that, so
-        // without the annotation the reload showed a green card for an action
-        // the user had explicitly refused.
-        return { content: message, outcome: TOOL_OUTCOME.DENIED };
-      }
-    }
-    // A navigating tool reloads only without a client-side router; with a
-    // host `navigate()` (SPA) it routes in-page and the loop just continues.
-    const navigates = isNavigates(tool.parameters) && this.navigate === null;
-    if (navigates) {
-      // Checkpoint before the handler reloads the page; the history (incl.
-      // this tool call) was already persisted when the run that produced it
-      // settled. The result is supplied on the next mount via the resume path.
-      this.conversationStore.saveCheckpoint(this.#threadId, { toolCallId: call.id });
-    }
-    try {
-      // The call id lets a handler that renders into the transcript find its
-      // own card; handlers that only act on the page ignore it.
-      const result = await tool.handler(call.args, call.id);
-      // Drawn from the arguments rather than the result, so the live path and
-      // the replay path render the same thing from the same input.
-      if (tool.render !== undefined) {
-        this.#transcript.renderToolOutput(tool.render, call);
-      }
-      if (navigates) {
-        card.settle(TOOL_CALL_STATUS.DONE, this.#strings.navigating);
-        return { content: "", halt: true };
-      }
-      const content = JSON.stringify(result ?? null);
-      card.settle(TOOL_CALL_STATUS.DONE, content);
-      this.#transcript.showPending();
-      return { content };
-    } catch (error) {
-      if (navigates) {
-        // The navigation never happened; drop the dangling checkpoint.
-        this.conversationStore.saveCheckpoint(this.#threadId, null);
-      }
-      // The handler's own message, verbatim, in two places at once: the card,
-      // which the user sees, and the tool result, which goes to the endpoint,
-      // is persisted there and is replayed to the model on every later round.
-      // Kept verbatim because a real reason is what lets the agent recover —
-      // and said out loud on `registerTool`, because the second destination is
-      // invisible from the host's side and is not one it can take back.
-      const message = error instanceof Error ? error.message : String(error);
-      card.settle(TOOL_CALL_STATUS.ERROR, message);
-      this.#transcript.showPending();
-      return { content: `Error: ${message}`, error: message, outcome: TOOL_OUTCOME.FAILED };
-    }
-  }
-
-  /**
-   * Render an approval card per server-side-tool interrupt and collect the
-   * user's decisions (approve → run it, deny → decline it).
-   *
-   * **One card per gated call, in that call's own tool card, all at once.** A run
-   * can defer several calls, and the wire answers each independently — so the UI
-   * has to let a person answer each independently, which means saying which is
-   * which. The prompt cannot: it comes from the tool's `x-confirm` and is
-   * identical for every call of that tool. The tool card can, by position, and it
-   * is already showing the arguments. Asking them serially was the other half of
-   * the problem: the second question only appeared once the first was answered,
-   * so a person could neither compare them nor tell that more were coming.
-   *
-   * Each gated card is marked `deferred` for the wait. That is not cosmetic — at
-   * `pending` it read "running…" while the stream was over and the server idle.
-   *
-   * The run is suspended on these cards. A Stop while any is open aborts the
-   * shared pending decision, resolving every still-open card as
-   * denied. An approved tool runs on the follow-up resume run and streams its
-   * result into the same card (returned to `pending`, since it now really is
-   * running); a denied one settles here, as no result will ever arrive.
-   */
-  async #resolveInterrupts(
-    interrupts: readonly Interrupt[],
-  ): Promise<Record<string, InterruptResponse>> {
-    // One controller covers the whole batch: a single Stop denies all of them.
-    const signal = this.#decision.open();
-    // The run has stopped and is waiting on a person. Nothing else on screen
-    // says so to a screen reader: the cards appear inside the transcript, which
-    // is deliberately not a live region, so without this the run simply goes
-    // quiet and the user has no reason to go looking.
-    this.#announce(
-      fillUiString(this.#strings.announceAwaitingDecision, { count: interrupts.length }),
-    );
-    this.#transcript.hidePending();
-    const answered = await Promise.all(
-      interrupts.map(async (interrupt) => {
-        const card =
-          interrupt.toolCallId !== undefined
-            ? this.#transcript.card(interrupt.toolCallId)
-            : undefined;
-        const request: ApprovalRequest = {};
-        const phrase = confirmPhrase(interrupt) ?? interrupt.message;
-        if (phrase !== undefined) {
-          request.message = phrase;
-        }
-        const toolName = card?.element.getAttribute("data-tool-name");
-        if (toolName !== null && toolName !== undefined) {
-          request.toolName = toolName;
-        }
-        // Offered only where it can be honoured: the host has said its agent
-        // accepts `editedArgs`, and this interrupt named a call whose arguments
-        // we still hold.
-        let editedArgs: Record<string, unknown> | undefined;
-        const editable = this.approveWithEdits && card !== undefined;
-        if (editable) {
-          request.args = card.args;
-        }
-        card?.mark(TOOL_CALL_STATUS.DEFERRED);
-        // A host-supplied renderer takes full control of the approval UI. The
-        // built-in card renders into the gated call's own card, falling back to
-        // the answer group when the interrupt names no call we hold one for.
-        const approved =
-          this.approvalRenderer !== null
-            ? await this.approvalRenderer(request, { signal })
-            : await requestApproval(card?.approvalSlot ?? this.#transcript.ensureGroup(), request, {
-                signal,
-                strings: this.#strings,
-                ...(editable
-                  ? {
-                      onEdit: (args: Record<string, unknown>) => {
-                        editedArgs = args;
-                      },
-                    }
-                  : {}),
-              });
-        // Same annotation as the client-side confirmation gate. Without it the
-        // two gates read differently for the same act: a locally-confirmed call
-        // said who let it through and a server-gated one said nothing, which is
-        // backwards, since the server-side gate is the one guarding the tools
-        // that actually run on the backend.
-        card?.recordDecision(approved ? "approved" : "declined");
-        if (approved) {
-          card?.mark(TOOL_CALL_STATUS.PENDING);
-        } else {
-          // No TOOL_CALL_RESULT will stream for a denied tool — settle its card
-          // now rather than leaving it hanging until the onSettled sweep.
-          card?.settle(TOOL_CALL_STATUS.DECLINED, this.#strings.declinedAction);
-        }
-        return { id: interrupt.id, approved, editedArgs };
-      }),
-    );
-    this.#transcript.updateEmptyState();
-    this.#transcript.follow();
-    this.#decision.close();
-    const responses: Record<string, InterruptResponse> = {};
-    for (const { id, approved, editedArgs } of answered) {
-      // `editedArgs` rides only when the user actually changed something, so a
-      // server can tell "approved as proposed" from "approved, but like this".
-      responses[id] = approved
-        ? {
-            status: "resolved",
-            payload: editedArgs === undefined ? { approved: true } : { approved: true, editedArgs },
-          }
-        : { status: "cancelled" };
-    }
-    return responses;
   }
 
   #handlers(): AgUiClientHandlers {
@@ -3596,8 +3291,8 @@ export class AgUiChat extends HTMLElement {
         // and whatever comes next clears them: reasoning, the first text delta,
         // the round ending, or ``onSettled``'s terminal guarantee.
         //
-        // Not the same case as the one ``#executeTool`` refuses to show them
-        // for. That runs after the run has ended, so there is nothing left to
+        // Not the same case as the one ``ToolDispatch.execute`` refuses to show
+        // them for. That runs after the run has ended, so there is nothing left to
         // clear them and they would hang -- which is what happened before 0.2.1
         // and is why they were removed from here too. The terminal guarantee
         // that shipped in the same release is what makes showing them safe now.
@@ -3835,34 +3530,6 @@ export class AgUiChat extends HTMLElement {
     return this.#activities.unhandledTypes();
   }
 }
-
-/**
- * A server-authored question for a gated call, read off the interrupt's metadata.
- *
- * The question an AG-UI interrupt carries by default is the call itself, spelled
- * out: `Approve create_event({"title": "Design sync", …})?`. Accurate, and not
- * something to put in front of a person. A client-side confirmation has
- * `x-confirm` on the tool's schema for exactly this, so the same key is read here
- * — whichever end gates a call, the phrase comes from one place, and a server
- * that supplies none keeps the generated text.
- *
- * Narrowed rather than trusted: `metadata` is `Record<string, any>` on the wire,
- * so anything at all can arrive under that key, and a non-string would render as
- * "[object Object]" in the one place a person is being asked to allow a write.
- */
-function confirmPhrase(interrupt: Interrupt): string | undefined {
-  const phrase = interrupt.metadata?.[X_CONFIRM_KEY];
-  return typeof phrase === "string" && phrase.trim() !== "" ? phrase : undefined;
-}
-
-/**
- * Why a client tool call is gated behind the confirmation card.
- *
- * Only `"destructive"` -- the default `x-destructive` gate -- may be waived for
- * the session. `confirmPredicate` is documented as authoritative, so a call it
- * gates keeps asking.
- */
-type ConfirmationRule = "destructive" | "predicate";
 
 /** One tool call as a restored assistant message carries it. */
 interface RestoredToolCall {
