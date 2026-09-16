@@ -122,7 +122,7 @@ export class ToolDispatch {
   async execute(call: AgUiToolCall): Promise<ToolExecution | null> {
     // A skill load already rendered as a notice on the stream; it is never a
     // client tool and its result is pydantic-ai's business, so it must not
-    // acquire a card here on the way to the no-result fallback below.
+    // acquire a card here on the way to the not-finished fallback below.
     if (skillNameFrom(call) !== null) {
       return null;
     }
