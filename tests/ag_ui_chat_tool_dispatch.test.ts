@@ -9,7 +9,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ELEMENT_TAG } from "../src/constants.js";
+import { ELEMENT_TAG, SUBMIT_EVENT } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
@@ -206,5 +206,105 @@ describe("a frontend tool handler that throws", () => {
     expect(toolMessage?.content).toBe(
       "Error: PUT https://internal.example/records/7?sig=abc failed",
     );
+  });
+});
+
+describe("an Always allow waiver and the principal who granted it", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  /**
+   * Mount as `userKey`, with one destructive tool the run calls once per send,
+   * and waive it with Always allow on the first card. Returns the element and
+   * how many times the handler ran.
+   */
+  async function waivedBy(userKey: string | null): Promise<{ el: AgUiChat; ran: () => number }> {
+    let calls = 0;
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    if (userKey !== null) {
+      el.setAttribute("user-key", userKey);
+    }
+    let round = 0;
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        if (round === 0) {
+          emit.toolCall(`call-${calls}`, "delete_record", { id: 7 });
+        }
+        round += 1;
+        emit.runEnd();
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    // A fresh round counter per send, so every send makes exactly one call.
+    el.addEventListener(SUBMIT_EVENT, () => {
+      round = 0;
+    });
+    document.body.appendChild(el);
+    el.registerTool({
+      name: "delete_record",
+      description: "Delete a record",
+      parameters: { type: "object", "x-destructive": true },
+      handler: () => {
+        calls += 1;
+        return "deleted";
+      },
+    });
+
+    await send(el, "delete record 7");
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--always")?.click();
+    await flush();
+    expect(calls).toBe(1);
+    return { el, ran: () => calls };
+  }
+
+  it("asks the next principal again after user-key changes hands", async () => {
+    // One person's "stop asking me" is not the next person's. `user-key` is how
+    // a host says a different principal is now in this tab, and a waiver that
+    // carried across would run the second user's destructive call on the
+    // first user's click.
+    const { el, ran } = await waivedBy("alice");
+
+    el.setAttribute("user-key", "bob");
+    await flush();
+    await send(el, "delete record 7");
+
+    expect(ran()).toBe(1);
+    expect(shadow(el).querySelector(".confirm")).not.toBeNull();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
+    await flush();
+  });
+
+  it("asks again after a sign-out that drops user-key", async () => {
+    // Removing the attribute is a documented sign-out, and it purges the stored
+    // conversation the same way a new key does; the waiver goes with it.
+    const { el, ran } = await waivedBy("alice");
+
+    el.removeAttribute("user-key");
+    await flush();
+    await send(el, "delete record 7");
+
+    expect(ran()).toBe(1);
+    expect(shadow(el).querySelector(".confirm")).not.toBeNull();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
+    await flush();
+  });
+
+  it("keeps the waiver when user-key first arrives", async () => {
+    // The first key names the user who was already there -- an auth handshake
+    // resolving after mount -- which is why the conversation on screen moves
+    // into their namespace rather than being purged. The waiver is theirs by
+    // the same reasoning, so asking again would contradict the adoption.
+    const { el, ran } = await waivedBy(null);
+
+    el.setAttribute("user-key", "alice");
+    await flush();
+    await send(el, "delete record 7");
+
+    expect(ran()).toBe(2);
+    expect(shadow(el).querySelector(".confirm")).toBeNull();
   });
 });

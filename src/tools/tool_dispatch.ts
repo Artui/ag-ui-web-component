@@ -69,11 +69,13 @@ export interface ToolDispatchHost {
 export class ToolDispatch {
   readonly #host: ToolDispatchHost;
   /**
-   * Tool names the user waived confirmation for, for the life of this element.
+   * Tool names the user waived confirmation for, for the life of this element
+   * or until the principal changes, whichever comes first.
    *
    * Per instance and never persisted: a session decision that outlived the tab
    * would be a permanent grant made by one click, which is the thing
-   * `autoConfirm` already exists to say deliberately. Cleared with the element.
+   * `autoConfirm` already exists to say deliberately. Cleared with the element,
+   * and by {@link forgetWaivers} when the host names a different principal.
    */
   readonly #sessionApproved = new Set<string>();
   // The page the current round's context describes, captured when that context
@@ -83,6 +85,19 @@ export class ToolDispatch {
 
   constructor(host: ToolDispatchHost) {
     this.#host = host;
+  }
+
+  /**
+   * Forget every tool the user waived confirmation for.
+   *
+   * A waiver is one person's click, and it is only ever that person's to give.
+   * `user-key` exists because a logout is a navigation inside one tab rather
+   * than a remount, so the element outlives the principal who clicked Always
+   * allow -- and without this the next one's destructive calls would run on the
+   * previous one's say-so, with no card to show that anyone was asked.
+   */
+  forgetWaivers(): void {
+    this.#sessionApproved.clear();
   }
 
   /**

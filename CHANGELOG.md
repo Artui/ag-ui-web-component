@@ -231,6 +231,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transitions, which is why the unit tests of the same calls passed; the new
   tests are in Chromium.
 
+- **A new `user-key` now gets its own confirmation cards.** A tool one principal
+  waived with *Always allow* kept running without a card for whoever signed in
+  next in the same tab, because the waiver lives in the element's memory rather
+  than in the stored conversation that changing `user-key` purges. `user-key`
+  exists because a sign-out is a navigation inside one tab, not a remount, so the
+  element outlives the person who clicked -- and the next person's destructive
+  calls ran on that click, with nothing on screen to say anyone had been asked.
+
+  Changing the key, or removing it, now forgets every waiver along with the
+  transcript. The first key to arrive keeps them, for the same reason it keeps
+  the conversation on screen: it names the user who was already there.
+
 ## [0.38.0] — 2026-09-14
 
 ### Changed

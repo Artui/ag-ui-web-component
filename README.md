@@ -700,7 +700,10 @@ The offer and the allowlist sit on the same path, so there is no dead button eit
 
 The waiver is **per tool name and per element**, held in memory and never persisted. A session
 decision that outlived the tab would be a permanent grant made by one click — which is what
-`autoConfirm` already exists to say deliberately. It is cleared when the element goes away.
+`autoConfirm` already exists to say deliberately. It is cleared when the element goes away, and
+when [`user-key`](#who-the-stored-conversation-belongs-to-user-key) changes hands: one person's
+*Always allow* is not the next person's, and a sign-out in the same tab does not remount anything.
+The first key to arrive keeps it, for the same reason it keeps the conversation.
 
 AG-UI has no built-in risk flag, so destructiveness is carried as a JSON-Schema extension at the
 **schema root**: `parameters["x-destructive"] = true` (use the exported `X_DESTRUCTIVE_KEY`
@@ -2005,7 +2008,8 @@ data, so treat that as the default and turn it off:
 The value is any string that identifies the principal — a user id, an account id, a hash of one.
 It joins the storage namespace, so two principals in the same tab cannot reach each other's
 conversation, and **changing it purges everything the previous principal stored**: transcript,
-history drawer index and navigation checkpoints, for this element's namespace only.
+history drawer index and navigation checkpoints, for this element's namespace only. The tools they
+waived with *Always allow* are forgotten with it, so the next principal is asked again.
 
 Set it live, from script, as part of signing out or in:
 
