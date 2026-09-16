@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ag-ui-web-component — full page</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        color: #1a1a2e;
+        background: #f7f7fb;
+      }
+
+      /* The same dark bar as the playground, so the two pages read as one demo.
+         It is the only chrome here: the rest of the route is the chat, which is
+         what a host's dedicated chat page looks like.
+
+         Stacked over the chat rather than under it. A page placement is fixed
+         at the element's own very high z-index, so at the playground's value
+         the "What to try" list opened behind the conversation. */
+      header.bar {
+        position: sticky;
+        top: 0;
+        z-index: 2147483001;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        gap: 12px 22px;
+        padding: 10px 24px;
+        background: #15151f;
+        color: #fff;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+      }
+      header.bar .brand {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-weight: 700;
+        margin-right: 6px;
+      }
+      header.bar .brand a {
+        color: #b6b6d8;
+        font-size: 12px;
+        font-weight: 400;
+      }
+      header.bar label {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 3px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #b6b6d8;
+      }
+      header.bar select,
+      header.bar input[type="text"] {
+        font: inherit;
+        font-size: 13px;
+        text-transform: none;
+        letter-spacing: 0;
+        color: #15151f;
+        background: #fff;
+        border: 1px solid #33334a;
+        border-radius: 7px;
+        padding: 5px 8px;
+      }
+      header.bar label.check {
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        padding-bottom: 6px;
+      }
+      header.bar details {
+        font-size: 13px;
+        color: #d9d9ee;
+        padding-bottom: 6px;
+      }
+      header.bar details summary {
+        cursor: pointer;
+      }
+      header.bar details ul {
+        position: absolute;
+        max-width: min(34rem, calc(100vw - 48px));
+        margin: 8px 0 0;
+        padding: 12px 16px 12px 30px;
+        line-height: 1.45;
+        color: #1a1a2e;
+        background: #fff;
+        border: 1px solid #e2e2ec;
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(20, 20, 50, 0.16);
+        /* The page under the list is the chat, which does not scroll the
+           document, so a list taller than what is left of the screen scrolls
+           itself or its end is out of reach. */
+        max-height: calc(100dvh - var(--bar-h, 0px) - 16px);
+        overflow-y: auto;
+      }
+      /* On a phone the bar wraps and the summary lands mid-row, so a list hung
+         off it had half the screen's width to wrap into. Span the bar instead,
+         which is the list's containing block because it is sticky. */
+      @media (max-width: 640px) {
+        header.bar details ul {
+          left: 16px;
+          right: 16px;
+          max-width: none;
+        }
+      }
+
+      /* A page placement fills the viewport; the bar is fixed chrome the widget
+         knows nothing about, so hand it the height that is left, the same way
+         the playground does. The greeting's slot content below is the host's
+         own markup, styled from here like any slotted node. */
+      ag-ui-chat {
+        --ag-ui-viewport-inset-top: var(--bar-h, 0px);
+      }
+      .greeting-mark {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4em;
+      }
+      .greeting-mark svg {
+        width: 0.9em;
+        height: 0.9em;
+        color: #d97757;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="bar">
+      <span class="brand"
+        >ag-ui full page <a href="/">back to the playground</a></span
+      >
+      <label
+        >User name
+        <input type="text" id="cfg-user-name" value="Ada" size="8" />
+      </label>
+      <label
+        >Greeting
+        <select id="cfg-greeting">
+          <option value="" selected>default (on)</option>
+          <option value="off">off</option>
+        </select>
+      </label>
+      <label
+        >Theme
+        <select id="cfg-theme">
+          <option value="light">light</option>
+          <option value="dark">dark</option>
+          <option value="auto">auto (OS)</option>
+        </select>
+      </label>
+      <label class="check"
+        ><input type="checkbox" id="cfg-slot" /> Own greeting (slot)</label
+      >
+      <details>
+        <summary>What to try</summary>
+        <ul>
+          <li>
+            <strong>The empty page.</strong> <em>Hello, Ada</em> with the composer
+            centred under it, and the starters beneath. Type, paste a long draft or
+            attach a file: the composer grows and stays centred.
+          </li>
+          <li>
+            <strong>Send.</strong> Pick a starter or press Enter: the composer slides
+            to the foot of the page and the conversation takes the space.
+          </li>
+          <li>
+            <strong>New chat.</strong> The header's <em>+</em> snaps back to the
+            greeting, with focus in the composer. Reload on a conversation with
+            messages: it mounts docked, with no centred frame first.
+          </li>
+          <li>
+            <strong>The name.</strong> Edit <em>User name</em> on the empty page: the
+            greeting follows as you type. Clear it for <em>Hello there</em>.
+          </li>
+          <li>
+            <strong>Off, and your own.</strong> <em>Greeting: off</em> is the layout
+            from before the greeting. <em>Own greeting</em> slots host markup with a
+            mark in place of the text; the starters stay.
+          </li>
+          <li>
+            <strong>A phone.</strong> Open the address the demo server prints on
+            this network, focus the composer, and check the greeting and composer
+            stay above the on-screen keyboard.
+          </li>
+        </ul>
+      </details>
+    </header>
+
+    <!-- Its own id, because the stored conversation is keyed on it: under the
+         playground's, a conversation started there was waiting here, and this
+         route never opened on its greeting. -->
+    <ag-ui-chat
+      id="page-chat"
+      endpoint="/agent/"
+      placement="page"
+      title-text="Assistant"
+      user-name="Ada"
+      data-answer-well
+      data-text-animation="fade"
+      data-tool-display="compact"
+      data-attachments-url="/attachments/"
+      data-runs-url="/runs/"
+      data-theme-toggle=""
+      data-starters='["Draw a chart of weekly signups", "Import three rows", "Delegate this to a sub-agent", "Ask me something"]'
+    ></ag-ui-chat>
+
+    <script type="module" src="/page/page.js"></script>
+  </body>
+</html>

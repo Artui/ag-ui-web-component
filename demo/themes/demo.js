@@ -163,6 +163,27 @@ bind("cfg-placement", "placement");
 bind("cfg-text", "data-text-animation");
 bind("cfg-tools", "data-tool-display");
 
+// Absent is a value of its own here: it is what leaves the greeting to the
+// placement's default, on for page and off everywhere else.
+$("cfg-greeting").addEventListener("change", (event) => {
+  if (event.target.value === "") {
+    chat.removeAttribute("data-greeting");
+  } else {
+    chat.setAttribute("data-greeting", event.target.value);
+  }
+});
+
+// Live, like the attribute: every keystroke re-greets, and an empty field is
+// the nameless greeting rather than an empty name.
+$("cfg-user-name").addEventListener("input", (event) => {
+  const name = event.target.value;
+  if (name.trim() === "") {
+    chat.removeAttribute("user-name");
+  } else {
+    chat.userName = name;
+  }
+});
+
 // The question card needs the built-in ask_user tool offered to the agent.
 chat.askUser = true;
 

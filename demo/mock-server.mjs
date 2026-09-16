@@ -30,12 +30,17 @@ const PORT = Number(process.env.PORT ?? 5173);
 const HOST = process.env.HOST ?? "::";
 
 const HTML = "text/html; charset=utf-8";
-// The playground: a single page that flips every option live (see
-// themes/index.html). Replaces the old per-theme pages.
-const THEME_ASSETS = new Map([
+// Two pages. The playground flips every option live over an article form the
+// agent drives (see themes/index.html), and replaces the old per-theme pages.
+// The full page is the chat as a route of its own (see page/index.html), which
+// is the layout the greeting on an empty conversation is for.
+const PAGE_ASSETS = new Map([
   ["/themes/", { path: "themes/index.html", contentType: HTML }],
   ["/themes/index.html", { path: "themes/index.html", contentType: HTML }],
   ["/themes/demo.js", { path: "themes/demo.js", contentType: "text/javascript" }],
+  ["/page/", { path: "page/index.html", contentType: HTML }],
+  ["/page/index.html", { path: "page/index.html", contentType: HTML }],
+  ["/page/page.js", { path: "page/page.js", contentType: "text/javascript" }],
 ]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -557,9 +562,9 @@ const server = createServer((req, res) => {
     serveFile(res, join(ROOT, "dist", "ag-ui-web-component.bundle.js"), "text/javascript");
     return;
   }
-  const theme = req.method === "GET" && THEME_ASSETS.get(req.url);
-  if (theme) {
-    serveFile(res, join(HERE, theme.path), theme.contentType);
+  const asset = req.method === "GET" && PAGE_ASSETS.get(req.url);
+  if (asset) {
+    serveFile(res, join(HERE, asset.path), asset.contentType);
     return;
   }
   res.writeHead(404);
@@ -582,6 +587,7 @@ function networkUrls() {
 
 server.listen(PORT, HOST, () => {
   process.stdout.write(`ag-ui-web-component demo: http://localhost:${PORT}\n`);
+  process.stdout.write(`  full page: http://localhost:${PORT}/page/\n`);
   // Any wildcard bind reaches the LAN, so the addresses are worth printing for
   // both spellings rather than only the one this file happens to default to.
   if (HOST === "::" || HOST === "0.0.0.0") {
