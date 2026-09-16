@@ -1,4 +1,3 @@
-import { randomUUID } from "@ag-ui/client";
 import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
 import {
   ANNOUNCE_CLEAR_MS,
@@ -140,6 +139,7 @@ import type { UnreadDetail } from "./events/unread_detail.js";
 import type { MessageRole } from "./message_role.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunIndex } from "./run_index.js";
+import { StorageScope } from "./storage_scope.js";
 import { toolStatusFromOutcome } from "./tool_outcome.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type TranscribeHandler } from "./transcribe_audio.js";
@@ -193,22 +193,6 @@ const COLLAPSED_KEY = "ag-ui-chat:collapsed";
 
 /** Per-tab persistence key for the built-in theme toggle. */
 const THEME_KEY = "ag-ui-chat:theme";
-
-/**
- * Storage namespaces already spoken for in this document.
- *
- * Per document rather than per origin, and released on disconnect, because the
- * question it answers is "is another element on this page using these keys right
- * now" — not "has anything ever used them". A registry that never released would
- * turn every remount, and every framework re-render that moves the node, into a
- * false collision that costs the element its own conversation.
- *
- * Module-level on purpose, and the one piece of shared mutable state the
- * repository's `CLAUDE.md` exempts from its rule against it: the question is
- * about the *other* live elements, which no instance field can answer. See the
- * three conditions recorded there before adding anything beside it.
- */
-const CLAIMED_NAMESPACES = new Set<string>();
 
 /**
  * `<ag-ui-chat>` — a framework-free chat sidebar Web Component over AG-UI.
@@ -778,24 +762,14 @@ export class AgUiChat extends HTMLElement {
   // answer's first text token arrives. `null` outside a reasoning turn.
   #thoughts: ThoughtsBlock | null = null;
   #threadId = "";
-  // Per-instance suffix for the origin-scoped storage keys (collapsed / theme /
-  // size), so two instances on one origin don't clobber each other. Empty ⇒ the
-  // pre-namespacing global keys (back-compat). Resolved on connect; the
-  // conversation adds `user-key` on top of it, see #conversationNs.
-  #storageNs = "";
-  // The entry this element put in CLAIMED_NAMESPACES, to take back out on
-  // disconnect. `null` when it claimed nothing (no id, no endpoint, or it lost
-  // the claim to an element that mounted first).
-  #claimedNs: string | null = null;
-  // The fallback namespace minted when the preferred one was already claimed,
-  // with the preferred value it was minted for — so the element keeps it across
-  // remounts, but re-resolves if the host answers the warning with an `id`.
-  #generatedNs = "";
-  #generatedFor = "";
-  // The `sessionStorage`-backed store, which the element may therefore re-scope
-  // on a principal change. `null` when the host injected a store of its own
-  // kind, whose keying the element does not know and must not guess at.
-  #builtinStore: SessionStorageStore | null = null;
+  /**
+   * Which storage keys are this element's: the namespace it claims, the keys
+   * its layout preferences live under, and the built-in store scoped to them.
+   */
+  readonly #storage = new StorageScope({
+    id: () => this.id,
+    endpoint: () => this.endpoint,
+  });
   // Bumped on every #rehydrate; a replay whose generation is stale (a newer
   // thread switch started while it awaited a slow store) drops its result.
   #rehydrateGeneration = 0;
@@ -831,9 +805,9 @@ export class AgUiChat extends HTMLElement {
       collapsed: () => this.collapsed,
       collapsible: () => this.#collapsible(),
       strings: () => this.#strings,
-      readPreference: (base) => this.#readPreference(base),
-      writePreference: (base, value) => this.#writePreference(base, value),
-      clearPreference: (base) => this.#clearPreference(base),
+      readPreference: (base) => this.#storage.readPreference(base),
+      writePreference: (base, value) => this.#storage.writePreference(base, value),
+      clearPreference: (base) => this.#storage.clearPreference(base),
       announceSurfaceChange: (text, undo) => this.#announceSurfaceChange(text, undo),
     });
     this.#excerpts = new TranscriptQuoteOffer({
@@ -1523,7 +1497,7 @@ export class AgUiChat extends HTMLElement {
     // Resolve the per-instance storage namespace before any key read/write, so
     // this instance doesn't share collapsed/theme/thread state with another on
     // the same origin.
-    this.#storageNs = this.#claimNamespace();
+    this.#storage.claim();
     // Restore a dragged size before the panel paints, so it does not snap from
     // the placement default to the user's width on the first frame.
     this.#placement.restoreSize();
@@ -1543,7 +1517,7 @@ export class AgUiChat extends HTMLElement {
     // Restore a theme the built-in toggle persisted last visit (opt-in only, so
     // it never overrides a host that drives `theme` itself).
     if (this.getAttribute("data-theme-toggle") !== null) {
-      const saved = this.#readPreference(THEME_KEY);
+      const saved = this.#storage.readPreference(THEME_KEY);
       if (saved !== null) {
         this.setAttribute("theme", saved);
       }
@@ -1562,14 +1536,7 @@ export class AgUiChat extends HTMLElement {
     this.#skills.init();
     // Namespace the built-in default store too (a host-injected store is used
     // verbatim). Must precede #wireThreadStore, which wraps the current store.
-    if (this.conversationStore instanceof SessionStorageStore) {
-      const namespace = this.#conversationNs();
-      // Remembered either way: this is the element's own store, so a later
-      // `user-key` change may move it to another namespace.
-      this.#builtinStore =
-        namespace === "" ? this.conversationStore : new SessionStorageStore(namespace);
-      this.conversationStore = this.#builtinStore;
-    }
+    this.conversationStore = this.#storage.scopeStore(this.conversationStore, this.userKey);
     window.addEventListener("resize", this.#onViewportResize);
     // The visual viewport changes without the window resizing -- a keyboard
     // opening, a pinch-zoom, the URL bar collapsing -- and `scroll` is what
@@ -1652,14 +1619,7 @@ export class AgUiChat extends HTMLElement {
     window.removeEventListener("resize", this.#onViewportResize);
     window.visualViewport?.removeEventListener("resize", this.#onViewportResize);
     window.visualViewport?.removeEventListener("scroll", this.#onViewportResize);
-    // Give the namespace back. A disconnect is not necessarily a farewell — a
-    // DOM move and a framework re-render both look like one — and an element
-    // that could not reclaim its own namespace on the way back in would lose
-    // its conversation to a false collision.
-    if (this.#claimedNs !== null) {
-      CLAIMED_NAMESPACES.delete(this.#claimedNs);
-      this.#claimedNs = null;
-    }
+    this.#storage.release();
     this.#cancelRun();
     this.#excerpts.detachPageOffer();
     this.#attachments.tray?.dispose();
@@ -1904,7 +1864,7 @@ export class AgUiChat extends HTMLElement {
     } else {
       this.removeAttribute("collapsed");
     }
-    writeStoredItem(this.#storageKey(COLLAPSED_KEY), collapsed ? "1" : "0");
+    writeStoredItem(this.#storage.key(COLLAPSED_KEY), collapsed ? "1" : "0");
     // Expanding is what marks the waiting answers read; collapsing starts a
     // fresh count. Either way the badge is cleared and the host told.
     this.#setUnread(0);
@@ -1945,7 +1905,7 @@ export class AgUiChat extends HTMLElement {
    * the panel up immediately.
    */
   #startsCollapsed(): boolean {
-    const stored = this.#readScopedItem(COLLAPSED_KEY);
+    const stored = this.#storage.readScopedItem(COLLAPSED_KEY);
     if (stored !== null) {
       return stored === "1";
     }
@@ -2016,78 +1976,8 @@ export class AgUiChat extends HTMLElement {
   toggleTheme(): void {
     const next = this.getAttribute("theme") === "dark" ? "light" : "dark";
     this.setAttribute("theme", next);
-    this.#writePreference(THEME_KEY, next);
+    this.#storage.writePreference(THEME_KEY, next);
     this.#syncThemeGlyph();
-  }
-
-  /**
-   * Claim this element's storage namespace: its `id`, else its `endpoint`.
-   *
-   * The endpoint fallback exists so a lone widget restores its conversation
-   * across reloads with nothing asked of the page author. It stops working the
-   * moment there are two of them — a docked support panel and an inline page
-   * assistant against one agent mount, neither carrying an `id`, which nothing
-   * requires — because both resolve to the same string and then share a thread
-   * pointer, a drawer index and every message key. Whichever mounts second
-   * adopts the first's active thread and rehydrates its transcript into its own
-   * panel: one conversation's content inside another, on the same page.
-   *
-   * So the namespace is claimed by the first element to mount under it, and a
-   * second is given one of its own plus a warning naming the fix. The first
-   * element keeps the endpoint namespace, which is what leaves the ordinary
-   * single-element case exactly as it was.
-   *
-   * The generated namespace is random rather than derived from mount order.
-   * That costs the second element its history across reloads — the warning says
-   * so, and an `id` fixes it — which is the honest trade against an order-based
-   * name that would silently hand a stored conversation to whichever element
-   * happened to mount second on the next load.
-   */
-  #claimNamespace(): string {
-    const preferred = this.id !== "" ? this.id : this.endpoint;
-    // Nothing to key on. The pre-namespacing global keys, as before: an element
-    // with neither an id nor an endpoint cannot send anything, so what it would
-    // be claiming is an empty conversation.
-    if (preferred === "") {
-      return "";
-    }
-    // Already lost this claim once. Keep the fallback rather than drifting back
-    // onto a namespace the other element may since have released, which would
-    // swap this panel's conversation for that one's.
-    if (this.#generatedFor === preferred) {
-      return this.#generatedNs;
-    }
-    if (!CLAIMED_NAMESPACES.has(preferred)) {
-      CLAIMED_NAMESPACES.add(preferred);
-      this.#claimedNs = preferred;
-      return preferred;
-    }
-    this.#generatedFor = preferred;
-    this.#generatedNs = `${preferred}~${randomUUID()}`;
-    console.warn(
-      `<ag-ui-chat>: another element on this page already stores its ` +
-        `conversation under "${preferred}", so this one has been given a ` +
-        "throwaway namespace of its own — the two would otherwise share a " +
-        "thread pointer, a history drawer and every message. Give each " +
-        "<ag-ui-chat> its own id to keep them apart and let this one restore " +
-        "its conversation across reloads.",
-    );
-    return this.#generatedNs;
-  }
-
-  /**
-   * The conversation store's namespace: this element's, scoped to the principal
-   * {@link userKey} names.
-   *
-   * Only the conversation is principal-scoped. The panel's own collapsed / size
-   * / theme preferences stay on `#storageNs`, because they are this element's
-   * UI state rather than anyone's data — they carry no word of what was said —
-   * and because they are read once while connecting, so re-scoping them under a
-   * live element would rearrange the panel around a user who had only just
-   * signed in.
-   */
-  #conversationNs(key: string = this.userKey): string {
-    return key === "" ? this.#storageNs : `${this.#storageNs}#${key}`;
   }
 
   /**
@@ -2099,8 +1989,8 @@ export class AgUiChat extends HTMLElement {
    * the new principal is the only signal the element will ever get.
    */
   #changePrincipal(previousKey: string, nextKey: string): void {
-    const previous = this.#conversationNs(previousKey);
-    const next = this.#conversationNs(nextKey);
+    const previous = this.#storage.conversationNamespace(previousKey);
+    const next = this.#storage.conversationNamespace(nextKey);
     if (previousKey === "") {
       // Absent to present is not a handover. It is the documented late
       // configuration shape — the element mounts, an auth handshake resolves,
@@ -2136,106 +2026,12 @@ export class AgUiChat extends HTMLElement {
    * much is the element's to act on.
    */
   #rescopeStore(namespace: string): void {
-    if (this.#builtinStore === null) {
+    const store = this.#storage.rescopeStore(namespace);
+    if (store === null) {
       return;
     }
-    this.#builtinStore = new SessionStorageStore(namespace);
-    this.conversationStore = this.#builtinStore;
+    this.conversationStore = store;
     this.#wireThreadStore();
-  }
-
-  /** This instance's namespaced form of an origin-scoped storage key. */
-  #storageKey(base: string): string {
-    return this.#storageNs === "" ? base : `${base}:${this.#storageNs}`;
-  }
-
-  /**
-   * Read a namespaced origin-scoped value, falling back once to the legacy
-   * pre-namespacing global key (left in place) so an existing collapsed/theme
-   * preference survives the upgrade.
-   */
-  #readScopedItem(base: string): string | null {
-    const scoped = sessionStorage.getItem(this.#storageKey(base));
-    if (scoped !== null || this.#storageNs === "") {
-      return scoped;
-    }
-    return sessionStorage.getItem(base);
-  }
-
-  /**
-   * Read a layout preference: where the widget sits, how big it is, which
-   * theme it wears.
-   *
-   * These live in `localStorage` rather than beside the transcript, because a
-   * layout preference is not a conversation. The transcript is deliberately
-   * per-tab -- two tabs are two conversations, and closing the tab ends it --
-   * and everything else inherited that scoping without earning it. A user who
-   * dragged the panel clear of their own UI did it again in the next tab, and
-   * again after every restart.
-   *
-   * Whether the widget is *currently open* stays per-tab with the transcript.
-   * It is a statement about this tab rather than a preference: carrying it
-   * across would pop the panel open on every new tab because it was opened
-   * once, somewhere else.
-   *
-   * Falls back to the session value it used to be written to, so an existing
-   * position survives the upgrade rather than resetting once.
-   */
-  #readPreference(base: string): string | null {
-    try {
-      const stored = localStorage.getItem(this.#storageKey(base));
-      if (stored !== null) {
-        return stored;
-      }
-    } catch {
-      // Fall through to the per-tab copy below.
-    }
-    return this.#readScopedItem(base);
-  }
-
-  /**
-   * Persist a layout preference as durably as this browser allows: to
-   * `localStorage` so it outlives the tab, and to the per-tab store as well.
-   *
-   * The second write is not redundancy for its own sake. A privacy mode can
-   * deny `localStorage` while allowing `sessionStorage`, and losing the
-   * durable copy should degrade to the per-tab behaviour this replaced rather
-   * than to no persistence at all. The read above prefers the durable copy, so
-   * a tab that has both cannot be shadowed by its own stale one.
-   *
-   * Neither write is worth an exception. Losing where the panel sat is not
-   * worth a warning either -- unlike the transcript, which says so once,
-   * because losing that loses the conversation on the next reload.
-   */
-  #writePreference(base: string, value: string): void {
-    const key = this.#storageKey(base);
-    try {
-      localStorage.setItem(key, value);
-    } catch {
-      // Quota, or a store that denies writes.
-    }
-    writeStoredItem(key, value);
-  }
-
-  /**
-   * Drop a layout preference from both stores.
-   *
-   * The mirror of {@link AgUiChat.#writePreference}, and it has to clear both
-   * for the same reason that writes both: leaving either copy behind means the
-   * value comes back on the next read.
-   */
-  #clearPreference(base: string): void {
-    const key = this.#storageKey(base);
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      // A store that denies access; the per-tab copy below still goes.
-    }
-    try {
-      sessionStorage.removeItem(key);
-    } catch {
-      // Nothing left to do: the value was never persisted in the first place.
-    }
   }
 
   /** Reflect the current theme on the toggle: show the destination's glyph. */
