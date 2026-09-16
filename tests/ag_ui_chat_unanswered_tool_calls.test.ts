@@ -203,6 +203,63 @@ describe("Stop while the stream is still arriving", () => {
   });
 });
 
+describe("Stop while a frontend tool runs", () => {
+  it("does not run the round's next call, and answers it as not finished", async () => {
+    // Stop cannot abort a handler already running, but it can keep the next one
+    // in the same round from starting: a person who pressed Stop during the first
+    // of two page actions did not ask for the second.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ran: string[] = [];
+    const { el, seen } = await nextRequestAfter(
+      (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "first_step", {});
+        emit.toolCall("tc2", "second_step", {});
+      },
+      async (chat) => {
+        expect(ran).toEqual(["first_step"]);
+        stop(chat);
+        release();
+      },
+      (chat) => {
+        chat.registerTool({
+          name: "first_step",
+          description: "the first page action",
+          parameters: { type: "object" },
+          handler: async () => {
+            ran.push("first_step");
+            await gate;
+            return "one";
+          },
+        });
+        chat.registerTool({
+          name: "second_step",
+          description: "the second page action",
+          parameters: { type: "object" },
+          handler: () => {
+            ran.push("second_step");
+            return "two";
+          },
+        });
+      },
+    );
+
+    expect(ran).toEqual(["first_step"]);
+    expect(seen[0]).toEqual([
+      { role: "user", content: "go" },
+      { role: "assistant", calls: ["tc1"] },
+      { role: "assistant", calls: ["tc2"] },
+      { role: "tool", toolCallId: "tc1", content: '"one"' },
+      { role: "tool", toolCallId: "tc2", content: NOT_FINISHED },
+      { role: "user", content: "again" },
+    ]);
+    expect(card(el, 1)).toEqual({ status: "interrupted", result: NOT_FINISHED });
+  });
+});
+
 describe("Stop on a server-side approval", () => {
   function deferred(ids: readonly string[]): Script {
     return (emit, params) => {

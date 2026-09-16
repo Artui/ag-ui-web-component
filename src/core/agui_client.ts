@@ -705,6 +705,14 @@ export class AgUiClient {
       }
       let executed = false;
       for (const call of pending) {
+        // A cancel while an earlier call in this round ran lands here. That
+        // handler could not be aborted and its result is kept, but the calls
+        // after it have not started, and a person who pressed Stop during the
+        // first page action did not ask for the second. They are answered as not
+        // finished before the next request.
+        if (this.#cancelled) {
+          return;
+        }
         const result = await this.#executeTool(call);
         if (result === null) {
           continue;

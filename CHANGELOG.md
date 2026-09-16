@@ -346,6 +346,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `UiStrings.noResult` is no longer drawn and is deprecated, and a server's own
   `interrupted` outcome now renders as not finished rather than as done.
 
+- **Stop during a frontend tool no longer lets the next call in the same round
+  run.** The loop checked for Stop between rounds but not between the calls of
+  one round, so when the agent asked for two page actions at once and Stop was
+  pressed while the first ran, the second ran anyway as soon as the first
+  returned, after the person had asked for the run to end. A handler already
+  running still completes and keeps its result, since it cannot be aborted, but
+  the calls after it no longer start, and each is answered as not finished.
+
 ## [0.38.0] — 2026-09-14
 
 ### Changed

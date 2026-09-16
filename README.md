@@ -624,8 +624,9 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
   `onPersist`, so a reload shows the truncated exchange. A muted **"⏹ Stopped"** note is appended
   (`.stopped-note`) — a deliberate stop is not an error, so no bubble.
 - The run loop stops: tool calls collected before the abort are **not executed**, and no further
-  round starts. A frontend tool handler already running completes, but its result doesn't trigger
-  a re-run. Each call that did not run settles as **not finished**, and the next request answers
+  round starts. A frontend tool handler already running completes and its result is kept, but it
+  doesn't trigger a re-run, and the calls after it in the same round do not start. Each call that
+  did not run settles as **not finished**, and the next request answers
   it in those words rather than sending it without a result.
 - An **open confirmation card is declined** (`data-resolved="declined"`) — cancelling the run
   answers the pending question. Likewise an open **approval card** is denied, and the next request
