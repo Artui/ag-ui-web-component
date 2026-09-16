@@ -259,6 +259,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `console.warn`, as a failed `render` already is, and is not sent to the
   endpoint: unlike a handler's message, it was never written for the model.
 
+- **An `approvalRenderer` that throws now hands the decision to the built-in
+  approval card.** A throw, or a rejected promise, used to end the run on an
+  error bubble quoting the host's message without ever answering the server's
+  interrupt, and the sweep that settles leftover cards at the end of a run then
+  marked the gated call a green "done" -- for a call that never ran and that
+  nobody had been asked about. One failing interrupt took every other interrupt
+  in its batch down with it.
+
+  The renderer decides how the question looks, not whether it is asked, so it
+  now falls back to the built-in card for that interrupt, with a `console.warn`
+  naming the interrupt, the way a failed `render` falls back to the default.
+  Nothing runs without a click, and the run carries on as if no renderer had
+  been set. The exception is a rejection after the signal has fired, which is
+  how a renderer is expected to honour Stop: that wait resolves as denied, as
+  the built-in card does on the same signal, with no card drawn and no warning.
+
 ## [0.38.0] — 2026-09-14
 
 ### Changed

@@ -807,6 +807,12 @@ chat.approvalRenderer = (request, { signal }) =>
   myConfirmDialog(request.message ?? `Run ${request.toolName}?`, { signal });
 ```
 
+**A renderer that throws or rejects falls back to the built-in card** for that interrupt, with a
+`console.warn` naming it. The renderer decides how the question looks, not whether it is asked, so
+nothing runs without a click and the run carries on as if no renderer were set. The one exception
+is a rejection after the signal fired, which is how a renderer is expected to honour Stop: that
+wait resolves as denied, as the built-in card does on the same signal, with no card and no warning.
+
 ### Asking the user a question (`ask_user`)
 
 Set `chat.askUser = true` to offer the agent a built-in `ask_user` frontend tool. When the agent

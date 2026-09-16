@@ -378,3 +378,117 @@ describe("a confirmPredicate that throws", () => {
     },
   );
 });
+
+describe("an approvalRenderer that throws", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  /** A run that defers one gated server call, and settles it on the resume. */
+  function mountGated(): { el: AgUiChat; handle: ReturnType<typeof makeFakeAgent> } {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    const handle = makeFakeAgent({
+      script: (emit, params) => {
+        emit.runStart();
+        if (params.resume === undefined) {
+          emit.toolCall("call-1", "delete_thing", { target: "x" });
+          emit.interrupt([
+            {
+              id: "int-call-1",
+              reason: "tool_call",
+              toolCallId: "call-1",
+              message: "Delete x?",
+            } as never,
+          ]);
+          return;
+        }
+        for (const answer of params.resume as { interruptId: string; status: string }[]) {
+          if (answer.status === "resolved") {
+            emit.toolResult("call-1", "deleted x");
+          }
+        }
+        emit.runEnd();
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    return { el, handle };
+  }
+
+  const FAILS = {
+    synchronously: () => {
+      throw new Error("dialog library not loaded");
+    },
+    "by rejecting": () => Promise.reject(new Error("dialog library not loaded")),
+  };
+
+  it.each(Object.entries(FAILS))(
+    "puts the decision to the built-in card when it fails %s",
+    async (_how, renderer) => {
+      // The renderer is presentation, not a guard. When it cannot draw, the
+      // question still has to be asked, and the built-in card is the one that
+      // is always there to ask it.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const { el, handle } = mountGated();
+      el.approvalRenderer = renderer as never;
+
+      await send(el, "delete x");
+      await flush();
+
+      const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+      expect(card?.querySelector(".tool-call-approval .approval")).not.toBeNull();
+      // Still waiting on a person: not settled, not a failed run, nothing resumed.
+      expect(card?.getAttribute("data-status")).toBe("deferred");
+      expect(shadow(el).querySelector(".message--failed")).toBeNull();
+      expect(handle.runParams).toHaveLength(1);
+
+      card?.querySelector<HTMLButtonElement>(".approval-btn--approve")?.click();
+      await flush();
+
+      // The run carries on exactly as it would with no renderer set.
+      expect(handle.runParams[1]?.resume).toEqual([
+        { interruptId: "int-call-1", status: "resolved", payload: { approved: true } },
+      ]);
+      expect(card?.getAttribute("data-status")).toBe("done");
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("approvalRenderer"),
+        expect.objectContaining({ message: "dialog library not loaded" }),
+      );
+      warn.mockRestore();
+    },
+  );
+
+  it("draws no card for a wait that was already abandoned", async () => {
+    // A renderer that honours its signal the conventional way rejects once it
+    // fires. By then the user has pressed Stop, so a card asking them to decide
+    // would be a question about a run they just ended: the wait resolves as not
+    // approved, the way the built-in card resolves on the same signal.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { el, handle } = mountGated();
+    el.approvalRenderer = (_request, { signal }) =>
+      new Promise<boolean>((_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () => reject(new DOMException("The wait was abandoned.", "AbortError")),
+          { once: true },
+        );
+      });
+
+    await send(el, "delete x");
+    const stop = shadow(el).querySelector<HTMLButtonElement>(".send");
+    expect(stop?.dataset["state"]).toBe("running");
+    stop?.click();
+    await flush();
+    await flush();
+
+    const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("declined");
+    expect(shadow(el).querySelector(".approval")).toBeNull();
+    expect(handle.runParams).toHaveLength(1);
+    // Rejecting on abort is what the signal asks a renderer to do, not a fault.
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});

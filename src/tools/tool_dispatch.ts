@@ -330,29 +330,35 @@ export class ToolDispatch {
           request.args = card.args;
         }
         card?.mark(TOOL_CALL_STATUS.DEFERRED);
-        // A host-supplied renderer takes full control of the approval UI. The
-        // built-in card renders into the gated call's own card, falling back to
-        // the answer group when the interrupt names no call we hold one for.
+        // The built-in card renders into the gated call's own card, falling back
+        // to the answer group when the interrupt names no call we hold one for.
+        const builtIn = (): Promise<boolean> =>
+          requestApproval(card?.approvalSlot ?? this.#host.transcript.ensureGroup(), request, {
+            signal,
+            strings: this.#host.strings(),
+            ...(editable
+              ? {
+                  onEdit: (args: Record<string, unknown>) => {
+                    editedArgs = args;
+                  },
+                }
+              : {}),
+          });
+        // A host-supplied renderer takes full control of the approval UI.
         const renderer = this.#host.approvalRenderer();
-        const approved =
-          renderer !== null
-            ? // Called on the element, as `this.approvalRenderer(...)` always was.
-              await renderer.call(this.#host.element, request, { signal })
-            : await requestApproval(
-                card?.approvalSlot ?? this.#host.transcript.ensureGroup(),
-                request,
-                {
-                  signal,
-                  strings: this.#host.strings(),
-                  ...(editable
-                    ? {
-                        onEdit: (args: Record<string, unknown>) => {
-                          editedArgs = args;
-                        },
-                      }
-                    : {}),
-                },
-              );
+        let approved: boolean;
+        if (renderer === null) {
+          approved = await builtIn();
+        } else {
+          // Awaited here rather than inside a helper, so an answering renderer
+          // takes exactly as many turns to be heard as it always did.
+          try {
+            // Called on the element, as `this.approvalRenderer(...)` always was.
+            approved = await renderer.call(this.#host.element, request, { signal });
+          } catch (error) {
+            approved = await this.#afterRendererFailed(error, signal, interrupt.id, builtIn);
+          }
+        }
         // Same annotation as the client-side confirmation gate. Without it the
         // two gates read differently for the same act: a locally-confirmed call
         // said who let it through and a server-gated one said nothing, which is
@@ -384,6 +390,43 @@ export class ToolDispatch {
         : { status: "cancelled" };
     }
     return responses;
+  }
+
+  /**
+   * Answer an interrupt whose host renderer threw or rejected instead of
+   * answering: put it to the built-in card.
+   *
+   * The renderer is presentation, not a guard: it decides how the question
+   * looks, never whether it is asked. Uncaught, one failure rejected the whole
+   * batch, so the run ended on an error bubble quoting the host's message, the
+   * server was never answered, and the end-of-run sweep settled the gated card
+   * as a green "done" for a call that never ran. The built-in card still puts
+   * the decision to a person, so nothing runs without a click, and the run
+   * carries on as if no renderer had been set. Reported the way a failed
+   * `render` is, and for the same reason: survived is not the same as findable.
+   *
+   * Except when the wait was already abandoned. A renderer honouring its signal
+   * rejects once a Stop fires it, which is the signal working rather than the
+   * renderer failing, and a card drawn then would ask about a run the user just
+   * ended. So it resolves as not approved, which is what the built-in card
+   * resolves on the same abort, and says nothing.
+   */
+  #afterRendererFailed(
+    error: unknown,
+    signal: AbortSignal,
+    interruptId: string,
+    builtIn: () => Promise<boolean>,
+  ): Promise<boolean> {
+    if (signal.aborted) {
+      return Promise.resolve(false);
+    }
+    // Named by interrupt rather than by tool: a batch can gate several calls of
+    // one tool, and the id is the one thing that tells them apart.
+    console.warn(
+      `ag-ui-chat: approvalRenderer failed for interrupt ${interruptId}, so the built-in approval card asks instead`,
+      error,
+    );
+    return builtIn();
   }
 
   /**
