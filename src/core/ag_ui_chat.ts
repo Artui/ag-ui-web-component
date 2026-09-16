@@ -1608,6 +1608,13 @@ export class AgUiChat extends HTMLElement {
     // these would leave the previous user's conversation visible to the new one.
     this.#cancelRun();
     this.#resetState();
+    // Shared state too, and only here. New chat keeps it, because it is the
+    // page's object and the same person is still editing it; but it is also
+    // whatever the agent last wrote into it for the principal who left, and the
+    // next client is seeded from it, so it went out as `RunAgentInput.state` on
+    // the new principal's first run. A host that seeds state assigns it again
+    // for the one who arrived.
+    this.#sharedState = {};
     this.#setRunning(false);
     this.#setUnread(0);
     this.#history.adoptActiveThread();

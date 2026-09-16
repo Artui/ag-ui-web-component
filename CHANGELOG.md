@@ -354,6 +354,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running still completes and keeps its result, since it cannot be aborted, but
   the calls after it no longer start, and each is answered as not finished.
 
+- **Changing `user-key` no longer sends the previous principal's shared state
+  on the next principal's first run.** A handover purges the stored
+  conversation, the transcript and the tools waived with Always allow, but
+  `sharedState` survived it, and it holds whatever the agent last wrote into it
+  for the principal who left. The next client is seeded from it, so it went out
+  as `RunAgentInput.state` on the new principal's first request. It is now
+  cleared on the handover. New chat still keeps it, because shared state is the
+  page's object and the same person is still editing it, and the first key to
+  arrive keeps it for the same reason it keeps the conversation.
+
 ## [0.38.0] — 2026-09-14
 
 ### Changed

@@ -128,3 +128,19 @@ describe("assigning after a run has started", () => {
     expect(built.at(-1)?.agent.state).toEqual({ document: "set later" });
   });
 });
+
+describe("starting a new chat", () => {
+  it("keeps the shared state, which belongs to the page rather than the conversation", async () => {
+    // The page and the agent edit one object; a new conversation about it does
+    // not blank the document on screen. A change of principal is the reset that
+    // does clear it, in `ag_ui_chat_storage_scope.test.ts`.
+    const { el, seeded } = mount();
+    el.sharedState = { document: "the page's draft" };
+    await send(el, "hi");
+
+    el.newChat();
+    await send(el, "again");
+
+    expect(seeded).toEqual([{ document: "the page's draft" }, { document: "the page's draft" }]);
+  });
+});

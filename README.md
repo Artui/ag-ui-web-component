@@ -2055,7 +2055,10 @@ The value is any string that identifies the principal — a user id, an account 
 It joins the storage namespace, so two principals in the same tab cannot reach each other's
 conversation, and **changing it purges everything the previous principal stored**: transcript,
 history drawer index and navigation checkpoints, for this element's namespace only. The tools they
-waived with *Always allow* are forgotten with it, so the next principal is asked again.
+waived with *Always allow* are forgotten with it, so the next principal is asked again, and so is
+[`sharedState`](#host-seams-the-spa-story): whatever the agent last wrote into it for them is cleared rather than
+sent on the next principal's first run, so a host that seeds shared state assigns it again for the
+principal who arrived.
 
 Set it live, from script, as part of signing out or in:
 
@@ -2221,7 +2224,9 @@ async def write_document(ctx: RunContext[AgentDeps], body: str) -> ToolReturn:
 ```
 
 Use this when the agent and the page are editing **the same object** (a document, a form, a
-canvas). Use `registerPageState` when the agent should *ask* for a value or *request* a change —
+canvas). Because it is the page's object rather than the conversation's, **New chat keeps it**; a
+change of [`user-key`](#who-the-stored-conversation-belongs-to-user-key) clears it. Use
+`registerPageState` when the agent should *ask* for a value or *request* a change —
 the tool call is visible in the transcript and can be gated by a confirmation card, which state
 events cannot.
 
