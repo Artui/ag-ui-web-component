@@ -225,7 +225,12 @@ function observedAttributes(): { live: string[]; connectTime: string[] } {
   const getter = /static get observedAttributes\(\): string\[\] \{\s*return \[([^\]]*)\];/.exec(
     ELEMENT,
   );
-  const listed = (getter?.[1] ?? "").split(",").map((entry) => entry.trim());
+  // Filtered for the empty entry a trailing comma leaves, which the formatter
+  // writes as soon as the list is long enough to wrap onto several lines.
+  const listed = (getter?.[1] ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "");
   const spread = listed.filter((entry) => entry.startsWith("..."));
   const live = listed
     .filter((entry) => entry.startsWith('"'))

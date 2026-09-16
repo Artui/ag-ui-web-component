@@ -184,6 +184,7 @@ another origin, add `credentials="include"` too; see
 | `data-skills-url` | — | URL of a JSON skill catalog (fetched with the element's headers and cookie policy). |
 | `data-tools-url` | — | URL of a server tool-label catalog (`[{ name, summary, description? }]`), fetched with the element's headers and cookie policy; labels tool-call cards for server-side tools. |
 | `user-key` | `userKey` | Who the stored conversation belongs to — any string identifying the signed-in principal. Joins the storage namespace, and **changing it purges what the previous principal left behind**. Live (not connect-time): a logout is the host's to announce. See [Who the stored conversation belongs to](#who-the-stored-conversation-belongs-to-user-key). |
+| `user-name` | `userName` | The signed-in user's display name, for the [greeting](#the-greeting-on-an-empty-page) an empty conversation shows under `placement="page"`. Presentation only: unlike `user-key` it scopes nothing and is never sent. Absent or blank gives the nameless greeting. Live. |
 | `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
 | `data-threads-cache` | — | **On by default.** `="false"` stops mirroring message bodies into `sessionStorage` when `data-threads-url` is set, for a deployment that put history on the server so transcripts stay off the client. Only meaningful alongside `data-threads-url`. |
 | `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's ⭯ *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
@@ -206,6 +207,8 @@ another origin, add `credentials="include"` too; see
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
 | `data-dragging` | — | **Written by the element, not by you.** Stamped on whichever handle a gesture is currently using, so the styles can react and so the element knows not to re-place the widget under a drag in progress. Cleared on `pointerup` and on `pointercancel`. |
 | `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
+| `data-greeting` | — | CSS-only: `off` turns the [greeting layout](#the-greeting-on-an-empty-page) off under `placement="page"`, where it is on by default. Any other value turns it on under `placement="embedded"`. No other placement has it. |
+| `data-empty` | — | **Written by the element, not by you.** Present while the conversation has nothing in it, which is when the greeting shows. Public as a styling hook, so the chrome around a full-page chat can react to the same state, e.g. `ag-ui-chat[data-empty] ~ .page-footer { display: none }`. |
 | `data-small-viewport` | — | CSS-only: `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
 | `data-paste-attach` | — | When to turn a long text paste into an attachment instead of composer text: absent for the 5000-character default, `off` to never, or a positive number of characters. Only acts where `data-attachments-url` (or a custom `uploadHandler`) gives it somewhere to go. |
 | `data-starters` | — | JSON array of prompts offered on an empty transcript, e.g. `'["Summarise this page"]'`. Fallback content for `slot="empty"`, so slotting your own replaces them. Shares the four-prompt and 120-character limits with the suggestion chips a run pushes. Read once at connect. |
@@ -237,7 +240,7 @@ neither camp is `data-launcher-icon-url`: it is read while the element connects,
 below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
-either way: `title-text`, `placement`, `credentials`, `user-key`.
+either way: `title-text`, `placement`, `credentials`, `user-key`, `user-name`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
 all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;
@@ -256,7 +259,8 @@ The list: `data-attachments-url`, `data-attachment-accept`, `data-attachment-max
 `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
 `resolvePageTarget`, `sharedState`, plus the read-only `unread` and `unhandledActivityTypes`, and
-the attribute mirrors `endpoint` / `userKey` / `toolDisplay` / `collapsed` / `credentials`.
+the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `collapsed` /
+`credentials`.
 
 `headers` and `getHeaders` authenticate **every** request the element makes, not only the agent
 run; `getHeaders` is the one to use for a credential that rotates. See
@@ -2870,7 +2874,7 @@ component sets, so a new one cannot ship undocumented.
 
 | Feature | Parts |
 | --- | --- |
-| Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `pending`, `stopped`, `jump-latest`, and one per resize grip: `resize-handle` plus `resize-handle-top`, `resize-handle-bottom`, `resize-handle-left`, `resize-handle-right`, `resize-handle-top-left`, `resize-handle-top-right`, `resize-handle-bottom-left`, `resize-handle-bottom-right` |
+| Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `greeting`, `pending`, `stopped`, `jump-latest`, and one per resize grip: `resize-handle` plus `resize-handle-top`, `resize-handle-bottom`, `resize-handle-left`, `resize-handle-right`, `resize-handle-top-left`, `resize-handle-top-right`, `resize-handle-bottom-left`, `resize-handle-bottom-right` |
 | Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `collapse-button`, `theme-toggle` |
 | Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
@@ -2918,6 +2922,7 @@ with a matching `slot=`):
 | --- | --- |
 | `icon` | A header brand icon, before the title. |
 | `header-actions` | Extra controls between the title and the built-in buttons. |
+| `greeting` | The greeting's text, above the empty state, where the [greeting layout](#the-greeting-on-an-empty-page) is on. Replaces the text only; `empty` and the starters still render beneath it. |
 | `empty` | The empty-state shown before any message. |
 | `footer` | Below the composer. |
 | `launcher` | The collapsed widget's mark — the floating launcher, or the sidebar rail. |
@@ -2970,6 +2975,35 @@ naturally with the [answer well](#the-answer-well).
 ```html
 <ag-ui-chat endpoint="/agent/" placement="page" data-answer-well></ag-ui-chat>
 ```
+
+#### The greeting on an empty page
+
+Until the first message is sent, a page shows a greeting with the composer centred beneath it,
+and the composer moves to the foot of the page once the conversation has something in it.
+
+```html
+<ag-ui-chat endpoint="/agent/" placement="page" user-name="Ada"></ag-ui-chat>
+```
+
+- **The text** is `Hello, {name}`, filled from `user-name`, or `Hello there` when there is no
+  name. Both are string-table keys, `greeting` and `greetingNoName`, so `strings` and
+  `data-strings` translate them like everything else. `user-name` is live: a name that arrives
+  after an auth handshake replaces the greeting on screen.
+- **Your own greeting** goes in `slot="greeting"`, which replaces the text and nothing else. A
+  brand mark belongs there too. The `empty` slot and `data-starters` still render beneath it.
+- **Styling**: the `greeting` part, plus `--ag-ui-greeting-font` (default: the widget's font) and
+  `--ag-ui-greeting-size` (default `clamp(1.5rem, 4vw, 2.25rem)`, scaling with the viewport rather
+  than stepping at a breakpoint).
+- **`data-empty`** is present on the element while the conversation is empty, for chrome of your
+  own that should react to the same state.
+- **Which placements**: on by default for `page`, which is a route of its own. `data-greeting="off"`
+  restores the plain layout there. `embedded` opts in with `data-greeting` (any value but `off`),
+  for an app shell that gives the panel a page-sized box. The corner placements and the sidebar
+  never show it: a panel opened from a launcher is already mid-task.
+
+The composer's rows stay centred while you type, while a draft grows and while attachments are
+added, because the centring is two equal flexible halves either side of them and growth splits
+into both. Nothing in the DOM moves, so focus, the caret and IME composition are unaffected.
 
 ### The answer well
 

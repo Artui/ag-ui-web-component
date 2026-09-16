@@ -682,6 +682,12 @@ export class AgUiChat extends HTMLElement {
   #unread = 0;
   /** Empty-state region at the top of the message list; hidden once anything renders. */
   readonly #emptyWrap: HTMLDivElement;
+  /**
+   * The greeting's own text, the fallback content of the `greeting` slot.
+   * Rendered under every placement and shown by the stylesheet only where the
+   * greeting layout is on, so a placement switch needs nothing from script.
+   */
+  readonly #greetingText: HTMLSpanElement = document.createElement("span");
   /** Upload tray; created on connect only when `data-attachments-url` is set. */
   #attachTray: AttachmentTray | null = null;
 
@@ -981,7 +987,14 @@ export class AgUiChat extends HTMLElement {
 
   /** Attributes the element reacts to after it has been connected. */
   static get observedAttributes(): string[] {
-    return ["title-text", "placement", "credentials", "user-key", ...CONNECT_TIME_ATTRIBUTES];
+    return [
+      "title-text",
+      "placement",
+      "credentials",
+      "user-key",
+      "user-name",
+      ...CONNECT_TIME_ATTRIBUTES,
+    ];
   }
 
   attributeChangedCallback(name: string, previous: string | null, value: string | null): void {
@@ -1024,6 +1037,14 @@ export class AgUiChat extends HTMLElement {
       // before then.
       this.#title.textContent = value ?? this.#strings.title;
       this.#railLabel.textContent = this.#title.textContent;
+      return;
+    }
+    if (name === "user-name") {
+      // Display only, and live: an auth handshake that resolves after mount
+      // names the user on screen the moment it does. Before connect the string
+      // table is still the defaults, and rendering fills it again from the
+      // resolved one.
+      this.#syncGreeting();
       return;
     }
     if (name === "user-key") {
@@ -1312,6 +1333,30 @@ export class AgUiChat extends HTMLElement {
 
   set userKey(value: string) {
     this.setAttribute("user-key", value);
+  }
+
+  /**
+   * The signed-in user's display name, from the `user-name` attribute, for the
+   * greeting an empty conversation shows under `placement="page"`.
+   *
+   * Presentation only. Unlike {@link userKey} it scopes nothing and is never
+   * sent to the server. Absent or blank means the nameless greeting. Live: a
+   * name that arrives after the element connected replaces the greeting on
+   * screen.
+   */
+  get userName(): string {
+    return this.getAttribute("user-name") ?? "";
+  }
+
+  set userName(value: string) {
+    this.setAttribute("user-name", value);
+  }
+
+  /** Fill the greeting from the resolved string table and the current name. */
+  #syncGreeting(): void {
+    const name = this.userName.trim();
+    this.#greetingText.textContent =
+      name === "" ? this.#strings.greetingNoName : fillUiString(this.#strings.greeting, { name });
   }
 
   /**
@@ -3224,6 +3269,19 @@ export class AgUiChat extends HTMLElement {
     // anything renders.
     this.#emptyWrap.className = "empty";
     this.#emptyWrap.setAttribute("part", "empty");
+    // The greeting heads the empty state, in a slot of its own: a host that
+    // replaces the starters keeps the greeting, and a host that replaces the
+    // greeting keeps the starters. A div rather than a heading, because this
+    // sits inside somebody else's page, which owns the document outline.
+    const greeting = document.createElement("div");
+    greeting.className = "greeting";
+    greeting.setAttribute("part", "greeting");
+    const greetingSlot = document.createElement("slot");
+    greetingSlot.name = "greeting";
+    greetingSlot.append(this.#greetingText);
+    greeting.append(greetingSlot);
+    this.#syncGreeting();
+    this.#emptyWrap.append(greeting);
     const emptySlot = document.createElement("slot");
     emptySlot.name = "empty";
     // Fallback content, so a host that slots its own gets exactly that and
@@ -3240,6 +3298,9 @@ export class AgUiChat extends HTMLElement {
     this.#queuedRow.setAttribute("aria-label", this.#strings.queued);
     this.#queuedRow.hidden = true;
     this.#messages.append(this.#emptyWrap);
+    // Stamped from the first frame, so a page that mounts empty is laid out as
+    // empty rather than switching to it on the first change.
+    this.#updateEmptyState();
 
     const inputRow = document.createElement("div");
     inputRow.className = "input-row";
@@ -3627,9 +3688,19 @@ export class AgUiChat extends HTMLElement {
     });
   }
 
-  /** Hide the empty-state region once the message list holds anything else. */
+  /**
+   * Hide the empty-state region once the message list holds anything else, and
+   * say so on the host as `data-empty`.
+   *
+   * Stamped on the host because the layout has to answer it: where the
+   * composer sits is decided outside the list this region lives in, and no
+   * selector reaches from inside the list back up to the list's siblings. It is
+   * also a documented styling hook for a host's own chrome around a full-page
+   * chat.
+   */
   #updateEmptyState(): void {
     this.#emptyWrap.hidden = this.#messages.childElementCount > 1;
+    this.toggleAttribute("data-empty", !this.#emptyWrap.hidden);
   }
 
   /**

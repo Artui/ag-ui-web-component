@@ -254,6 +254,11 @@ export const STYLES = `
   --_max-height: var(--ag-ui-max-height, calc(var(--_viewport-height) - var(--_edge-gutter)));
   /* Reading-column width for placement="page" (full-bleed, centred content). */
   --_content-max-width: var(--ag-ui-content-max-width, 820px);
+  /* The greeting over an empty full-page conversation. The size scales with
+     the viewport between a phone and a desktop rather than stepping at a
+     breakpoint. */
+  --_greeting-font: var(--ag-ui-greeting-font, var(--_font));
+  --_greeting-size: var(--ag-ui-greeting-size, clamp(1.5rem, 4vw, 2.25rem));
   /* Slim rail the sidebar placement collapses to. Only that placement reads
      it, but it is declared here so every alias has a default in one place. */
   --_rail-width: var(--ag-ui-rail-width, 52px);
@@ -1174,6 +1179,76 @@ export const STYLES = `
 
 .empty[hidden] {
   display: none;
+}
+
+/* The greeting layout: a greeting over an empty conversation, and the
+   composer centred beneath it until the conversation has something in it.
+
+   On by default for the page placement, where a conversation is the whole
+   route; data-greeting="off" turns it off there. An embedded panel opts in
+   with any other data-greeting value. No other placement has it: a panel
+   opened from a launcher is already mid-task, and a greeting in a corner
+   panel costs space and says little.
+
+   The greeting itself renders under every placement and is hidden here, so a
+   placement switch at runtime needs nothing from script. */
+.greeting {
+  display: none;
+}
+
+:host([placement="page"]:not([data-greeting="off"])) .greeting,
+:host([placement="embedded"][data-greeting]:not([data-greeting="off"])) .greeting {
+  display: block;
+  margin-block-end: calc(var(--_space) * 2);
+  font-family: var(--_greeting-font);
+  font-size: var(--_greeting-size);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--_fg);
+  overflow-wrap: anywhere;
+}
+
+/* Centring is two equal flexible boxes either side of the composer rows: the
+   transcript above, which already grows, and this one below. Equal zero bases
+   make the two halves the same height whatever they hold, so the rows sit in
+   the middle of the panel below its header, and stay there as a draft, an
+   attachment tray or a hint grows them, because growth splits into both
+   halves at once.
+
+   A pseudo element rather than a node, so no host layout and nothing that
+   counts children can see it. It exists whether or not the conversation is
+   empty and only its growth changes, because a box that appears and
+   disappears is a box nothing can ever transition.
+
+   Only the rule that generates it names the placements. The one that grows it
+   needs nothing but the state: where the first rule does not apply there is no
+   box to grow. The box is empty, so its automatic basis is already zero, the
+   same as the transcript's; nothing here writes the flex shorthand, because
+   this selector is the more specific of the two and a shorthand would win
+   over the growth. */
+:host([placement="page"]:not([data-greeting="off"])) .chat::after,
+:host([placement="embedded"][data-greeting]:not([data-greeting="off"])) .chat::after {
+  content: "";
+}
+
+:host([data-empty]) .chat::after {
+  flex-grow: 1;
+}
+
+/* The greeting and whatever the host slotted sit at the foot of the upper
+   half, directly over the composer, rather than floating in its middle. The
+   region is hidden once the conversation has content, so this needs no state
+   of its own. */
+:host([placement="page"]:not([data-greeting="off"])) .empty,
+:host([placement="embedded"][data-greeting]:not([data-greeting="off"])) .empty {
+  margin: auto auto 0;
+}
+
+/* The rule over the composer separates it from a transcript. Over nothing it
+   is a line drawn across the middle of the page. */
+:host([placement="page"][data-empty]:not([data-greeting="off"])) .input-row,
+:host([placement="embedded"][data-greeting][data-empty]:not([data-greeting="off"])) .input-row {
+  border-block-start-color: transparent;
 }
 
 /* ── Answer group / well ─────────────────────────────────────────
