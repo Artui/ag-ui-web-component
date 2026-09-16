@@ -267,6 +267,11 @@ const QUOTE_GAP = 6;
  * now" — not "has anything ever used them". A registry that never released would
  * turn every remount, and every framework re-render that moves the node, into a
  * false collision that costs the element its own conversation.
+ *
+ * Module-level on purpose, and the one piece of shared mutable state the
+ * repository's `CLAUDE.md` exempts from its rule against it: the question is
+ * about the *other* live elements, which no instance field can answer. See the
+ * three conditions recorded there before adding anything beside it.
  */
 const CLAIMED_NAMESPACES = new Set<string>();
 
@@ -599,12 +604,6 @@ export class AgUiChat extends HTMLElement {
    */
   readonly #subagentRunDelegations = new Map<string, string>();
   /**
-   * Call ids whose card was already settled from a streamed server-side result
-   * (`TOOL_CALL_RESULT`), so the post-run executeTool sweep doesn't overwrite
-   * the real output with the generic "executed on the server" fallback.
-   */
-  /** Whether a server-pushed chart activity is drawn. Off unless asked for. */
-  /**
    * Which `activity_type`s this element can draw, by name.
    *
    * A registry rather than a branch because `activity_type` is an open string
@@ -621,6 +620,11 @@ export class AgUiChat extends HTMLElement {
   /** Chart blocks by activity message id, so an update redraws in place. */
   readonly #activityBlocks = new Map<string, HTMLElement>();
 
+  /**
+   * Call ids whose card was already settled from a streamed server-side result
+   * (`TOOL_CALL_RESULT`), so the post-run executeTool sweep doesn't overwrite
+   * the real output with the generic "executed on the server" fallback.
+   */
   readonly #serverSettled = new Set<string>();
   /**
    * Tool calls made during the current interaction, in the order they started,
@@ -628,14 +632,6 @@ export class AgUiChat extends HTMLElement {
    * Spans tool rounds and an approval interrupt; cleared when the event fires.
    */
   #runTools: { readonly id: string; readonly name: string }[] = [];
-  /**
-   * Keys announced during this interaction, de-duplicated in first-seen order.
-   *
-   * Per element, never module-level: a second mounted chat is a second run, and
-   * sharing this would tell one page to refetch on the other's writes. Reset by
-   * {@link AgUiChat.#dispatchRunFinished}, which is the one place that has read
-   * it.
-   */
   /**
    * Tool names the user waived confirmation for, for the life of this element.
    *
@@ -656,6 +652,14 @@ export class AgUiChat extends HTMLElement {
    */
   #retryOwner: HTMLElement | null = null;
 
+  /**
+   * Keys announced during this interaction, de-duplicated in first-seen order.
+   *
+   * Per element, never module-level: a second mounted chat is a second run, and
+   * sharing this would tell one page to refetch on the other's writes. Reset by
+   * {@link AgUiChat.#dispatchRunFinished}, which is the one place that has read
+   * it.
+   */
   #runInvalidated = new Set<string>();
   readonly #root: ShadowRoot;
   /** Screen-reader-only status region -- see {@link AgUiChat.#announce}. */
@@ -3812,21 +3816,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Notice a previous run that never produced a response.
-   *
-   * {@link AgUiClient.send} persists the user's message before starting the
-   * run, so a transcript ending on that user message means nothing came back.
-   * The transcript's shape alone detects it, needing no store method and no
-   * `pagehide` listener — neither of which fires on a crash or force-quit.
-   *
-   * An agent-initiated reload is not this case: a navigating tool leaves a
-   * checkpoint and resumes, so the caller returns early on one.
-   *
-   * Deliberately a notice, never a resume. AG-UI has no resume-an-aborted-run
-   * primitive, and re-sending the accumulated messages is semantically a new
-   * run, so any server-side tool already executed would run a second time.
-   */
-  /**
    * Build a round's context, recording which page it describes.
    *
    * The AG-UI client re-invokes this at the top of **every** tool round, not
@@ -3850,6 +3839,21 @@ export class AgUiChat extends HTMLElement {
     return this.#contextHref !== null && this.#contextHref !== window.location.href;
   }
 
+  /**
+   * Notice a previous run that never produced a response.
+   *
+   * {@link AgUiClient.send} persists the user's message before starting the
+   * run, so a transcript ending on that user message means nothing came back.
+   * The transcript's shape alone detects it, needing no store method and no
+   * `pagehide` listener — neither of which fires on a crash or force-quit.
+   *
+   * An agent-initiated reload is not this case: a navigating tool leaves a
+   * checkpoint and resumes, so the caller returns early on one.
+   *
+   * Deliberately a notice, never a resume. AG-UI has no resume-an-aborted-run
+   * primitive, and re-sending the accumulated messages is semantically a new
+   * run, so any server-side tool already executed would run a second time.
+   */
   #noticeIfRunUnfinished(messages: readonly Message[] | null): void {
     const last = messages?.at(-1);
     if (last === undefined || last.role !== MESSAGE_ROLE.USER) {
@@ -4393,26 +4397,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Attach the stylesheet without an inline `<style>` element.
-   *
-   * A host with a strict `style-src` and no `'unsafe-inline'` drops an injected
-   * `<style>` silently: the component mounts, functions, and renders completely
-   * unstyled, with nothing in the console to point at. `adoptedStyleSheets`
-   * carries no inline-style origin, so it is unaffected by that policy.
-   *
-   * The sheet is constructed **per instance** rather than shared at module
-   * scope. A shared sheet would additionally avoid re-parsing the stylesheet
-   * once per mounted element, which is what `adoptedStyleSheets` is usually
-   * reached for -- but a module-level singleton is exactly what this package
-   * forbids, and the CSP defect is fixed either way. Per instance is no worse
-   * than the `<style>` element it replaces, which also parsed once per mount.
-   *
-   * No fallback: constructible `CSSStyleSheet` is Chrome 73, Firefox 101 and
-   * Safari 16.4, all below this package's declared Safari 17 runtime target. A
-   * guard here would be code no supported browser can reach, and the only way
-   * to keep it would be to exempt it from the coverage gate.
-   */
-  /**
    * Say one short thing to a screen reader, without touching the transcript.
    *
    * The transcript cannot do this job. It is rewritten on every animation
@@ -4446,6 +4430,26 @@ export class AgUiChat extends HTMLElement {
     }, ANNOUNCE_CLEAR_MS);
   }
 
+  /**
+   * Attach the stylesheet without an inline `<style>` element.
+   *
+   * A host with a strict `style-src` and no `'unsafe-inline'` drops an injected
+   * `<style>` silently: the component mounts, functions, and renders completely
+   * unstyled, with nothing in the console to point at. `adoptedStyleSheets`
+   * carries no inline-style origin, so it is unaffected by that policy.
+   *
+   * The sheet is constructed **per instance** rather than shared at module
+   * scope. A shared sheet would additionally avoid re-parsing the stylesheet
+   * once per mounted element, which is what `adoptedStyleSheets` is usually
+   * reached for -- but a module-level singleton is exactly what this package
+   * forbids, and the CSP defect is fixed either way. Per instance is no worse
+   * than the `<style>` element it replaces, which also parsed once per mount.
+   *
+   * No fallback: constructible `CSSStyleSheet` is Chrome 73, Firefox 101 and
+   * Safari 16.4, all below this package's declared Safari 17 runtime target. A
+   * guard here would be code no supported browser can reach, and the only way
+   * to keep it would be to exempt it from the coverage gate.
+   */
   #adoptStyles(): void {
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(STYLES);
@@ -4587,7 +4591,6 @@ export class AgUiChat extends HTMLElement {
     this.#setUnread(this.#unread + 1);
   }
 
-  /** Hide the empty-state region once the message list holds anything else. */
   /**
    * The prompts offered on an empty transcript, from `data-starters`.
    *
@@ -4621,6 +4624,7 @@ export class AgUiChat extends HTMLElement {
     });
   }
 
+  /** Hide the empty-state region once the message list holds anything else. */
   #updateEmptyState(): void {
     this.#emptyWrap.hidden = this.#messages.childElementCount > 1;
   }
@@ -5714,16 +5718,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Fold one already-narrowed update into the delegation's panel.
-   *
-   * The join point of the two carriers, and the reason it is separate from
-   * {@link #reportSubAgent}: a `CUSTOM` step arrives as `unknown` and has to be
-   * vouched for, while a lifecycle event arrives typed off the protocol and has
-   * nothing left to check. Both end up here, so the panel has one way in and
-   * the phases stay a single state machine regardless of which wire they came
-   * from.
-   */
-  /**
    * Settle the delegation a closing lifecycle event names.
    *
    * `status` is the server's text on a failure and `null` on a success, where
@@ -5760,6 +5754,16 @@ export class AgUiChat extends HTMLElement {
       : fillUiString(this.#strings.subAgentFinished, { agent });
   }
 
+  /**
+   * Fold one already-narrowed update into the delegation's panel.
+   *
+   * The join point of the two carriers, and the reason it is separate from
+   * {@link #reportSubAgent}: a `CUSTOM` step arrives as `unknown` and has to be
+   * vouched for, while a lifecycle event arrives typed off the protocol and has
+   * nothing left to check. Both end up here, so the panel has one way in and
+   * the phases stay a single state machine regardless of which wire they came
+   * from.
+   */
   #applySubAgent(update: SubAgentUpdate): void {
     const card = this.#toolCards.get(update.delegationId);
     if (card === undefined) {
@@ -5913,19 +5917,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * The card for ``call``, creating and appending it on first sight.
-   *
-   * {@link AgUiClientHandlers.onToolCall} creates the card (pending) during the
-   * run; {@link #executeTool} later retrieves the same card to settle it.
-   */
-  /**
-   * Append an ambient run notice to the current group.
-   *
-   * Goes through {@link #ensureGroup} like a tool card so it lands *inside* the
-   * assistant turn it annotates rather than floating between turns, and shares
-   * the same pending-hide / scroll behaviour.
-   */
-  /**
    * Render a skill notice for a `load_capability` call; ``true`` when handled.
    *
    * Shared by the live stream and history replay so the transcript looks the
@@ -5942,6 +5933,10 @@ export class AgUiChat extends HTMLElement {
 
   /**
    * An inline notice about something the run did.
+   *
+   * Goes through {@link #ensureGroup} like a tool card so it lands *inside* the
+   * assistant turn it annotates rather than floating between turns, and does
+   * the same empty-state and scroll bookkeeping afterwards.
    *
    * `undo` is offered only where the agent rearranged the user's own window --
    * see {@link renderRunNotice} for why a notice may carry that one control and
@@ -6190,6 +6185,12 @@ export class AgUiChat extends HTMLElement {
     this.#scroller.follow();
   }
 
+  /**
+   * The card for ``call``, creating and appending it on first sight.
+   *
+   * {@link AgUiClientHandlers.onToolCall} creates the card (pending) during the
+   * run; {@link #executeTool} later retrieves the same card to settle it.
+   */
   #cardFor(call: AgUiToolCall): ToolCallCard {
     const existing = this.#toolCards.get(call.id);
     if (existing !== undefined) {
@@ -6238,7 +6239,6 @@ function confirmPhrase(interrupt: Interrupt): string | undefined {
   return typeof phrase === "string" && phrase.trim() !== "" ? phrase : undefined;
 }
 
-/** One tool call as a restored assistant message carries it. */
 /**
  * Why a client tool call is gated behind the confirmation card.
  *
@@ -6248,6 +6248,7 @@ function confirmPhrase(interrupt: Interrupt): string | undefined {
  */
 type ConfirmationRule = "destructive" | "predicate";
 
+/** One tool call as a restored assistant message carries it. */
 interface RestoredToolCall {
   readonly id: string;
   readonly function: { readonly name: string; readonly arguments?: unknown };

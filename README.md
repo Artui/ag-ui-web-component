@@ -639,8 +639,9 @@ chat.registerTool({
 Registering a name twice replaces the earlier handler rather than throwing, so a re-fired
 host ref or React StrictMode's double-invoke is harmless -- but two different tools sharing
 a name means the second silently wins. Each `<ag-ui-chat>` element owns its own
-registry, AG-UI client, and Shadow DOM, so **multiple instances on one page never interfere** —
-there is no module-level shared state anywhere in the package.
+registry, AG-UI client, and Shadow DOM, so **multiple instances on one page never interfere**.
+The one record they share is which storage namespace each has claimed, and it exists to keep two
+of them out of each other's conversation.
 
 **A handler's thrown message leaves the browser.** If a handler rejects, its `Error.message` is
 posted back as that call's tool result: into the conversation, on to the AG-UI endpoint, persisted
