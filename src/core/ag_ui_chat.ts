@@ -1,4 +1,4 @@
-import type { Context, Message, Tool } from "@ag-ui/core";
+import type { Context, Tool } from "@ag-ui/core";
 import {
   ATTACHMENT_EVENT,
   CHART_ACTIVITY_TYPE,
@@ -15,7 +15,6 @@ import {
   STATE_EVENT,
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
-  THREADS_DOCK_MIN_WIDTH,
   TOGGLE_EVENT,
   TOOL_DISPLAY,
   UNREAD_EVENT,
@@ -43,7 +42,8 @@ import { ComposerVoice } from "../ui/composer/composer_voice.js";
 import { SkillsMenu } from "../ui/composer/skills_menu.js";
 import { TranscriptQuoteOffer } from "../ui/excerpts/transcript_quote_offer.js";
 import { fillUiString } from "../ui/fill_ui_string.js";
-import { CheckpointMenu, type CheckpointVerb } from "../ui/history/checkpoint_menu.js";
+import { CheckpointMenu } from "../ui/history/checkpoint_menu.js";
+import { ConversationHistory } from "../ui/history/conversation_history.js";
 import type { RelativeTimeFormatter } from "../ui/history/relative_time.js";
 import { ThreadDrawer } from "../ui/history/thread_drawer.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
@@ -69,7 +69,8 @@ import type { ActivityRegistration } from "./activity_registration.js";
 import { ActivityRegistry } from "./activity_registry.js";
 import type { ActivityRenderer } from "./activity_renderer.js";
 import { AgUiClient } from "./agui_client.js";
-import { type AttachmentRef, messageAttachments } from "./attachment.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type AttachmentRef } from "./attachment.js";
 import {
   type ClientConversationStore,
   type NavigationCheckpoint,
@@ -84,14 +85,12 @@ import type { UnreadDetail } from "./events/unread_detail.js";
 import type { MessageRole } from "./message_role.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunHandlers } from "./run_handlers.js";
-import { RunIndex } from "./run_index.js";
 import { StorageScope } from "./storage_scope.js";
-import { toolStatusFromOutcome } from "./tool_outcome.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type TranscribeHandler } from "./transcribe_audio.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type UploadHandler } from "./upload_attachment.js";
-import { mintThread, warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
+import { warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
 
 /**
  * Attributes read once while connecting, to decide what chrome exists at all.
@@ -468,8 +467,13 @@ export class AgUiChat extends HTMLElement {
   readonly #drawer: ThreadDrawer;
   /** Checkpoint panel; rows load only when `data-runs-url` is set. */
   readonly #checkpoints: CheckpointMenu;
-  /** Built lazily from `data-runs-url`; `null` when the host didn't opt in. */
-  #runIndex: RunIndex | null = null;
+  /**
+   * Which conversation is on screen and how one gets there: the active thread,
+   * the restore from the store, the conversation list's verbs and the
+   * checkpoint continuation. Built in the constructor, after the drawer, the
+   * checkpoint panel and the run it continues exist.
+   */
+  readonly #history: ConversationHistory;
   /**
    * The one-line hint above the composer, cleared by the next keystroke.
    *
@@ -567,12 +571,8 @@ export class AgUiChat extends HTMLElement {
     // Docking is decided by width, so a resize can cross the threshold with
     // the drawer already open. Without this the rail keeps a narrow
     // transcript's width, the focus trap stays off, and the backdrop that
-    // would dismiss it is still display:none. Only while it is open: the two
-    // are re-decided on the way in, and a closed drawer has no layout to fix.
-    if (this.#drawer.isOpen()) {
-      this.#drawer.setModal(!this.#threadsDock());
-      this.#syncThreadsState();
-    }
+    // would dismiss it is still display:none.
+    this.#history.redockThreads();
   };
 
   /** Mic button mount point (input row); the control mounts on connect when enabled. */
@@ -621,7 +621,6 @@ export class AgUiChat extends HTMLElement {
     allowImages: () => this.allowImages,
     follow: () => this.#transcript.follow(),
   });
-  #threadId = "";
   /**
    * Which storage keys are this element's: the namespace it claims, the keys
    * its layout preferences live under, and the built-in store scoped to them.
@@ -630,10 +629,6 @@ export class AgUiChat extends HTMLElement {
     id: () => this.id,
     endpoint: () => this.endpoint,
   });
-  // Bumped on every #rehydrate; a replay whose generation is stale (a newer
-  // thread switch started while it awaited a slow store) drops its result.
-  #rehydrateGeneration = 0;
-  #initialMessages: readonly Message[] = [];
   /**
    * The skill catalog: its three sources merged into the menu, and what a pick
    * does to the composer. Built in the constructor, after the menu it fills.
@@ -686,7 +681,7 @@ export class AgUiChat extends HTMLElement {
       approvalRenderer: () => this.approvalRenderer,
       getContext: () => this.getContext(),
       conversationStore: () => this.conversationStore,
-      threadId: () => this.#threadId,
+      threadId: () => this.#history.threadId,
     });
     this.#runHandlers = new RunHandlers({
       element: this,
@@ -794,116 +789,54 @@ export class AgUiChat extends HTMLElement {
     });
     this.#drawer = new ThreadDrawer({
       onSelect: (threadId) => {
-        void this.#switchThread(threadId);
+        void this.#history.switchThread(threadId);
       },
       onNew: () => {
         this.newChat();
-        void this.#refreshDrawer();
+        void this.#history.refreshDrawer();
       },
       onRename: (threadId, title) => {
-        this.conversationStore.renameThread(threadId, title);
-        void this.#refreshDrawer();
+        this.#history.renameThread(threadId, title);
       },
       onDelete: (threadId) => {
-        this.#deleteThread(threadId);
+        this.#history.deleteThread(threadId);
       },
       onVisibility: () => {
-        this.#syncThreadsState();
+        this.#history.syncThreadsState();
       },
     });
     this.#checkpoints = new CheckpointMenu((runId, verb) => {
-      void this.#continueRun(runId, verb);
+      void this.#history.continueRun(runId, verb);
     });
-  }
-
-  /** The run index, built once from `data-runs-url`; `null` when unset. */
-  #runs(): RunIndex | null {
-    const url = this.getAttribute("data-runs-url");
-    if (url === null || url === "") {
-      return null;
-    }
-    if (this.#runIndex === null) {
-      this.#runIndex = new RunIndex(
-        url,
-        () => this.#headersFor(url),
-        () => this.#requestCredentials(),
-      );
-    }
-    return this.#runIndex;
-  }
-
-  /**
-   * Continue `runId` as a **new** run, seeded server-side from its snapshot.
-   *
-   * Uses a short-lived agent pointed at the resume / fork endpoint and seeded
-   * with no history, because those endpoints supply the prior turns from the
-   * snapshot and re-sending them would duplicate. A separate agent makes that
-   * structural — the main agent keeps its own history — and mints the fresh
-   * `run_id` the endpoints also require.
-   *
-   * Handlers are the element's own, so the continuation streams into the same
-   * transcript the user is looking at.
-   */
-  async #continueRun(runId: string, verb: CheckpointVerb): Promise<void> {
-    const index = this.#runs();
-    if (index === null) {
-      // Unreachable from the built-in control: the header button is only
-      // rendered when `#runs()` is configured, so a row to pick cannot exist
-      // without one. A host calling `openCheckpoints()` regardless gets the
-      // documented empty panel, which has no rows either. Typed, not silent.
-      return;
-    }
-    const content = this.#input.value.trim();
-    if (content === "") {
-      // A continuation sends *only* the next turn -- the snapshot supplies
-      // everything before it -- so with an empty composer there is nothing to
-      // send. Returning here was the same failure the endpoint guard above had:
-      // the row's button closes the panel before this runs, so the widget
-      // visibly reacted and then did nothing, which reads as a resume that was
-      // attempted and lost rather than one that never started.
-      //
-      // Said at the composer rather than in the transcript, because that is
-      // where the fix goes and because the hint clears itself on the first
-      // keystroke -- a transcript notice for a recoverable slip would outlive
-      // the slip. Focus follows for the same reason applying a skill moves it when
-      // a template is short of a field.
-      this.#composerHint.textContent = this.#strings.continueNeedsTurn;
-      this.#composerHint.hidden = false;
-      this.#input.focus();
-      return;
-    }
-    this.#input.value = "";
-    this.#autoGrow();
-    const endpoint = verb === "resume" ? index.resumeUrl(runId) : index.forkUrl(runId);
-    const agent = this.agentFactory({
-      endpoint,
-      headers: this.#requestHeaders(),
-      getHeaders: () => this.#requestHeaders(),
-      trustedOrigins: this.trustedOrigins,
-      ...this.#credentialsOption(),
-      threadId: this.#threadId,
-      // The seed the endpoints assume: nothing. The snapshot is the history.
-      initialMessages: [],
+    this.#history = new ConversationHistory({
+      element: this,
+      drawer: this.#drawer,
+      checkpoints: this.#checkpoints,
+      transcript: this.#transcript,
+      actions: this.#actions,
+      activities: this.#activities,
+      tools: this.#tools,
+      dispatch: this.#dispatch,
+      runHandlers: this.#runHandlers,
+      input: this.#input,
+      hint: this.#composerHint,
+      strings: () => this.#strings,
+      conversationStore: () => this.conversationStore,
+      formatRelativeTime: () => this.formatRelativeTime,
+      navigationResult: () => this.navigationResult,
+      agentFactory: () => this.agentFactory,
+      trustedOrigins: () => this.trustedOrigins,
+      requestHeaders: () => this.#requestHeaders(),
+      headersFor: (url) => this.#headersFor(url),
+      requestCredentials: () => this.#requestCredentials(),
+      credentialsOption: () => this.#credentialsOption(),
+      appendMessage: (role, content) => this.appendMessage(role, content),
+      autoGrow: () => this.#autoGrow(),
+      ensureClient: () => this.#ensureClient(),
+      cancelRun: () => this.#cancelRun(),
+      resetState: () => this.#resetState(),
+      setRunning: (running) => this.#setRunning(running),
     });
-    const client = new AgUiClient({
-      agent,
-      handlers: this.#runHandlers.forClient(),
-      getTools: () => this.#tools.advertise(),
-      getContext: () => this.#dispatch.buildContext(),
-      executeTool: (call) => this.#dispatch.execute(call),
-      resolveInterrupts: (interrupts) => this.#dispatch.resolveInterrupts(interrupts),
-      connectionLostMessage: this.#strings.connectionLost,
-    });
-    await client.send(content);
-  }
-
-  /** Load the checkpoint panel with the runs that can actually be continued. */
-  async #refreshCheckpoints(): Promise<void> {
-    const index = this.#runs();
-    // Pushed at render rather than at connect: `formatRelativeTime` is a
-    // property, so a host may set it long after the element mounted.
-    this.#checkpoints.setRelativeTimeFormatter(this.formatRelativeTime);
-    this.#checkpoints.setRuns(index === null ? [] : await index.continuable());
   }
 
   /** Attributes the element reacts to after it has been connected. */
@@ -1288,11 +1221,11 @@ export class AgUiChat extends HTMLElement {
     this.#wireThreadStore();
     this.#attachments.wire();
     this.#voice.wire();
-    this.#threadId = this.conversationStore.threadId();
+    this.#history.adoptActiveThread();
     // The catalog requests go out a microtask later, so a host configuring
     // through a framework ref still has a chance to be heard — see #startup.
     queueMicrotask(() => this.#startup());
-    void this.#rehydrate();
+    void this.#history.rehydrate();
     // Last: everything above reads (and some of it sets) attributes, and none
     // of that should trip the connect-time warning.
     this.#connected = true;
@@ -1346,7 +1279,11 @@ export class AgUiChat extends HTMLElement {
     this.#cancelRun();
     this.#resetState();
     this.#setRunning(false);
-    await Promise.all([this.#tools.fetchCatalog(), this.#skills.fetch(), this.#rehydrate()]);
+    await Promise.all([
+      this.#tools.fetchCatalog(),
+      this.#skills.fetch(),
+      this.#history.rehydrate(),
+    ]);
   }
 
   /**
@@ -1704,9 +1641,9 @@ export class AgUiChat extends HTMLElement {
     this.#resetState();
     this.#setRunning(false);
     this.#setUnread(0);
-    this.#threadId = this.conversationStore.threadId();
-    void this.#rehydrate();
-    void this.#refreshDrawer();
+    this.#history.adoptActiveThread();
+    void this.#history.rehydrate();
+    void this.#history.refreshDrawer();
   }
 
   /**
@@ -1748,48 +1685,7 @@ export class AgUiChat extends HTMLElement {
    * {@link toggleCollapsed} and {@link toggleTheme}.
    */
   openThreads(): void {
-    // Two overlapping surfaces, so opening one dismisses the other. Clicking away
-    // already covers the built-in buttons, but a host driving its own chrome
-    // through these methods raises no pointer event — and the drawer would then
-    // open *underneath* a popover still floating over it.
-    this.#checkpoints.close();
-    void this.#refreshDrawer();
-    this.#drawer.setModal(!this.#threadsDock());
-    this.#drawer.open();
-    this.#syncThreadsState();
-  }
-
-  /**
-   * Whether the conversation list docks beside the transcript rather than
-   * covering it.
-   *
-   * Only the full-page placement, and only where there is room. A dedicated
-   * route is the one surface with width to spare -- everywhere else the panel
-   * is a few hundred pixels wide, and a list docked into that leaves a column
-   * of transcript too narrow to read. The width is the panel's own rather than
-   * the window's, because an embedded host can give a full-page-sized box to
-   * something that is not a page.
-   */
-  #threadsDock(): boolean {
-    return (
-      this.getAttribute("placement") === "page" &&
-      this.getBoundingClientRect().width >= THREADS_DOCK_MIN_WIDTH
-    );
-  }
-
-  /**
-   * Stamp whether the list is showing, and how.
-   *
-   * On the host rather than inside the shell because the transcript has to move
-   * over for a docked list, and the drawer is the last child of the panel -- CSS
-   * cannot select backwards from it to the rows it needs to shift.
-   */
-  #syncThreadsState(): void {
-    if (this.#drawer.isOpen() && this.#threadsDock()) {
-      this.setAttribute("data-threads-docked", "");
-    } else {
-      this.removeAttribute("data-threads-docked");
-    }
+    this.#history.openThreads();
   }
 
   /**
@@ -1800,10 +1696,7 @@ export class AgUiChat extends HTMLElement {
    * an empty panel.
    */
   openCheckpoints(): void {
-    // The other half of the pair — see `openThreads`.
-    this.#drawer.close();
-    void this.#refreshCheckpoints();
-    this.#checkpoints.open();
+    this.#history.openCheckpoints();
   }
 
   /**
@@ -1852,14 +1745,9 @@ export class AgUiChat extends HTMLElement {
     // Stop any in-flight run first — discarding the client mid-run would
     // leave the old agent streaming into a cleared transcript.
     this.#cancelRun();
-    // A thread nothing was ever sent in has nothing to come back to, and the
-    // drawer never listed it — so reap it here rather than strand one record
-    // per press of a button whose whole use is being pressed again.
-    if (this.conversationStore.isUnsent?.(this.#threadId) === true) {
-      this.conversationStore.clear(this.#threadId);
-    }
+    this.#history.reapUnsent();
     this.#resetState();
-    this.#threadId = mintThread(this.conversationStore);
+    this.#history.startThread();
     this.#setRunning(false);
     this.#setUnread(0);
     // Whichever control started it: the header's, the history list's (which
@@ -1881,7 +1769,7 @@ export class AgUiChat extends HTMLElement {
   #resetState(): void {
     this.#client = null;
     this.#clearTranscript();
-    this.#initialMessages = [];
+    this.#history.forgetRestored();
     // The composer's own history goes with the conversation it was typed
     // into. The path that makes this more than tidiness is the `user-key`
     // rescope, which purges storage and wipes the transcript precisely so the
@@ -1951,228 +1839,10 @@ export class AgUiChat extends HTMLElement {
     // underneath the one it replaces.
     this.#clearTranscript();
     for (const message of kept) {
-      this.#renderHistoricMessage(message);
+      this.#history.replay(message);
     }
     await client.resume();
     return true;
-  }
-
-  /** Switch the active conversation to an existing thread and replay it. */
-  async #switchThread(threadId: string): Promise<void> {
-    if (threadId === this.#threadId) {
-      return;
-    }
-    this.#cancelRun();
-    this.#resetState();
-    this.conversationStore.setActiveThread(threadId);
-    this.#threadId = threadId;
-    this.#setRunning(false);
-    await this.#rehydrate();
-  }
-
-  /** Delete a thread; if it was the active one, fall back to a fresh chat. */
-  #deleteThread(threadId: string): void {
-    const wasActive = threadId === this.#threadId;
-    if (wasActive) {
-      this.#cancelRun();
-    }
-    this.conversationStore.clear(threadId);
-    if (wasActive) {
-      this.#resetState();
-      this.#threadId = this.conversationStore.threadId();
-      this.#setRunning(false);
-    }
-    void this.#refreshDrawer();
-  }
-
-  /** Reload the drawer's thread list, marking the active thread. */
-  async #refreshDrawer(): Promise<void> {
-    this.#drawer.setRelativeTimeFormatter(this.formatRelativeTime);
-    this.#drawer.setThreads(await this.conversationStore.listThreads(), this.#threadId);
-  }
-
-  /**
-   * Restore the conversation from the store on mount, then — if a navigating
-   * tool reloaded the page mid-run — resume the loop by supplying that tool's
-   * result from the page we landed on.
-   */
-  async #rehydrate(): Promise<void> {
-    // Guard against a thread-switch race: with a slow remote store, picking
-    // thread B then C would interleave both replays into one transcript. Each
-    // rehydrate claims a generation before awaiting and bails if a newer one
-    // started meanwhile (its `#resetState` already cleared the transcript).
-    this.#rehydrateGeneration += 1;
-    const generation = this.#rehydrateGeneration;
-    // Held while the store answers. A remote store answers after first paint,
-    // and a conversation it is still fetching is more likely to have messages
-    // than not, so without this the page would paint the greeting and a centred
-    // composer and then drop the composer the moment they land. The built-in
-    // store answers in a microtask, before paint, so for it this never reaches
-    // the screen. Released in `finally` so a store that rejects cannot leave the
-    // layout held for good, and only by the restore that is still current.
-    this.setAttribute("data-restoring", "");
-    let messages: readonly Message[] | null;
-    try {
-      messages = await this.conversationStore.loadMessages(this.#threadId);
-    } finally {
-      if (generation === this.#rehydrateGeneration) {
-        this.removeAttribute("data-restoring");
-      }
-    }
-    if (generation !== this.#rehydrateGeneration) {
-      return;
-    }
-    if (messages !== null) {
-      this.#initialMessages = messages;
-      for (const message of messages) {
-        this.#renderHistoricMessage(message);
-      }
-    }
-    const checkpoint = this.conversationStore.loadCheckpoint(this.#threadId);
-    if (checkpoint !== null) {
-      await this.#resumeFrom(checkpoint);
-      return;
-    }
-    this.#noticeIfRunUnfinished(messages);
-  }
-
-  /**
-   * Notice a previous run that never produced a response.
-   *
-   * {@link AgUiClient.send} persists the user's message before starting the
-   * run, so a transcript ending on that user message means nothing came back.
-   * The transcript's shape alone detects it, needing no store method and no
-   * `pagehide` listener — neither of which fires on a crash or force-quit.
-   *
-   * An agent-initiated reload is not this case: a navigating tool leaves a
-   * checkpoint and resumes, so the caller returns early on one.
-   *
-   * Deliberately a notice, never a resume. AG-UI has no resume-an-aborted-run
-   * primitive, and re-sending the accumulated messages is semantically a new
-   * run, so any server-side tool already executed would run a second time.
-   */
-  #noticeIfRunUnfinished(messages: readonly Message[] | null): void {
-    const last = messages?.at(-1);
-    if (last === undefined || last.role !== MESSAGE_ROLE.USER) {
-      return;
-    }
-    this.#transcript.appendNotice("⚠", this.#strings.runInterrupted, "interrupted");
-  }
-
-  /**
-   * Replay a restored message: text bubbles *and* tool activity. An assistant
-   * turn may carry `toolCalls` (rendered as cards) and/or text; a `tool` turn
-   * carries a result that settles the matching card. So a refreshed page shows
-   * the full transcript — tool calls and their results — not just the prose.
-   */
-  #renderHistoricMessage(message: Message): void {
-    const text = typeof message.content === "string" ? message.content : "";
-    if (message.role === MESSAGE_ROLE.USER) {
-      const attachments = messageAttachments(message);
-      if (text !== "" || attachments.length > 0) {
-        const bubble = this.appendMessage(MESSAGE_ROLE.USER, text);
-        if (attachments.length > 0) {
-          bubble.appendChild(renderAttachmentChips(attachments));
-        }
-      }
-      return;
-    }
-    if (message.role === MESSAGE_ROLE.ASSISTANT) {
-      if (text !== "") {
-        // Restored history must appear statically — entrance animations
-        // (fade / word) are for freshly-arriving messages. On reload the whole
-        // transcript mounts at once, so animating every bubble's text in
-        // parallel looks wrong. Mark it so the fade CSS skips it, and don't
-        // wrap words.
-        const restoredBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, text);
-        restoredBubble.classList.add("message--restored");
-        this.#actions.attach(restoredBubble);
-      }
-      // Narrowed rather than trusted, for the same reason `messageAttachments`
-      // narrows the neighbouring field: anything that throws in this loop aborts
-      // the replay at this message, and every later turn silently disappears from
-      // the transcript. See `restoredToolCalls`.
-      for (const call of restoredToolCalls(message.toolCalls)) {
-        const restored = {
-          id: call.id,
-          name: call.function.name,
-          args: this.#parseArgs(call.function.arguments),
-        };
-        // Restored history goes through the same interception as the live
-        // stream — otherwise a reload resurrects the raw `load_capability`
-        // card the live path deliberately replaced.
-        if (this.#transcript.noticeIfSkillLoad(restored)) {
-          continue;
-        }
-        this.#transcript.setCardElement(restored.id, this.#transcript.cardFor(restored).element);
-        // Only `render` is replayed, never `handler`. A restored transcript
-        // redraws what the call drew; it must not re-run what the call *did*.
-        // Only the renderer is handed over, never the tool. The guarantee that
-        // a reload cannot re-run a tool's *effect* is worth more than a comment
-        // saying so: this signature cannot reach `handler`, so a later
-        // maintainer adding a "no render? fall back to the handler" convenience
-        // here has to change the type first, which is exactly the moment the
-        // question should be asked.
-        const render = this.#tools.resolve(restored.name)?.render;
-        if (render !== undefined) {
-          this.#transcript.renderToolOutput(render, restored);
-        }
-      }
-      return;
-    }
-    if (message.role === "activity") {
-      // The client materialises a pushed activity as a message of its own, so a
-      // chart's data is in the transcript already and survives a reload. Only
-      // the drawing had to be put back.
-      const activity = message as unknown as { activityType?: unknown; content?: unknown };
-      if (typeof activity.activityType === "string") {
-        this.#activities.draw(message.id, activity.activityType, activity.content);
-      }
-      return;
-    }
-    if (message.role === "tool") {
-      const card = this.#transcript.card(message.toolCallId);
-      if (card !== undefined) {
-        // The outcome `AgUiClient` annotated onto the persisted message, read
-        // back through the same mapping the live path uses -- so a card that
-        // said "declined" before the reload still says it after. Narrowed off
-        // `unknown` rather than trusted, like every other field read out of the
-        // store: `Message` does not declare it, a host store may not round-trip
-        // it, and history written before this shipped has none. All three land
-        // on DONE, which is what this line did unconditionally.
-        card.settle(
-          toolStatusFromOutcome((message as { outcome?: unknown }).outcome),
-          message.content,
-        );
-      }
-    }
-  }
-
-  /** Parse a tool call's JSON `arguments` from history into an object. */
-  #parseArgs(raw: unknown): Record<string, unknown> {
-    if (typeof raw !== "string") {
-      // A restored call whose `arguments` are missing or not a string still has
-      // a name worth showing, so this renders an empty-args card rather than
-      // dropping the card.
-      return {};
-    }
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed === "object" && parsed !== null) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      // Malformed history — fall back to empty args rather than failing replay.
-    }
-    return {};
-  }
-
-  /** Complete the checkpointed navigating tool call and continue the run. */
-  async #resumeFrom(checkpoint: NavigationCheckpoint): Promise<void> {
-    this.conversationStore.saveCheckpoint(this.#threadId, null);
-    const client = this.#ensureClient();
-    client.addToolResult(checkpoint.toolCallId, JSON.stringify(this.navigationResult(checkpoint)));
-    await client.resume();
   }
 
   /**
@@ -2239,10 +1909,10 @@ export class AgUiChat extends HTMLElement {
 
     // Only offered when the server actually indexes runs — without
     // `data-runs-url` there is nothing to continue and the button would open
-    // a permanently empty panel. Asks `#runs()` rather than re-testing the
-    // attribute, so "configured" means one thing everywhere (an empty value
-    // is unset, not a relative URL to the current page).
-    if (this.#runs() !== null) {
+    // a permanently empty panel. Asks the history's run index rather than
+    // re-testing the attribute, so "configured" means one thing everywhere (an
+    // empty value is unset, not a relative URL to the current page).
+    if (this.#history.runs() !== null) {
       controls.append(history, checkpoints, newChat);
     } else {
       controls.append(history, newChat);
@@ -3033,8 +2703,8 @@ export class AgUiChat extends HTMLElement {
         getHeaders: () => this.#requestHeaders(),
         trustedOrigins: this.trustedOrigins,
         ...this.#credentialsOption(),
-        threadId: this.#threadId,
-        initialMessages: this.#initialMessages,
+        threadId: this.#history.threadId,
+        initialMessages: this.#history.restored,
         initialState: this.#sharedState,
       });
       this.#client = new AgUiClient({
@@ -3044,7 +2714,8 @@ export class AgUiChat extends HTMLElement {
         getContext: () => this.#dispatch.buildContext(),
         executeTool: (call) => this.#dispatch.execute(call),
         resolveInterrupts: (interrupts) => this.#dispatch.resolveInterrupts(interrupts),
-        onPersist: (messages) => this.conversationStore.saveMessages(this.#threadId, messages),
+        onPersist: (messages) =>
+          this.conversationStore.saveMessages(this.#history.threadId, messages),
         onStateChanged: (state) => this.#onSharedStateChanged(state),
         connectionLostMessage: this.#strings.connectionLost,
         maxToolRounds: this.#maxToolRounds(),
@@ -3174,46 +2845,6 @@ export class AgUiChat extends HTMLElement {
   get unhandledActivityTypes(): readonly string[] {
     return this.#activities.unhandledTypes();
   }
-}
-
-/** One tool call as a restored assistant message carries it. */
-interface RestoredToolCall {
-  readonly id: string;
-  readonly function: { readonly name: string; readonly arguments?: unknown };
-}
-
-/**
- * The tool calls a restored assistant turn carries, with anything shapeless dropped.
- *
- * Narrowing here rather than trusting the declared type, for three reasons that
- * point the same way.
- *
- * **`null` is a value this field really takes.** `@ag-ui/core` types `toolCalls`
- * as optional (`z.ZodOptional`), so TypeScript offers only `undefined` — but the
- * protocol's Python models declare `tool_calls: list[ToolCall] | None`, and a
- * server dumping them without `exclude_none` sends `null`. The two SDKs disagree
- * about the wire, and a client cannot afford to take either one's word for it.
- *
- * **A throw here costs the rest of the transcript.** This runs inside the replay
- * of stored history, one message at a time; an exception aborts the whole replay,
- * so a single bad entry silently truncates the conversation from that point on —
- * with no error state and nothing on screen to explain the gap.
- *
- * **Storage is untrusted anyway** — hand-edited, truncated, written by an older
- * version, or supplied by a host's own store. `messageAttachments` already takes
- * exactly this stance for the neighbouring field on the same message.
- */
-function restoredToolCalls(value: unknown): readonly RestoredToolCall[] {
-  return Array.isArray(value) ? value.filter(isRestoredToolCall) : [];
-}
-
-/** Whether an unknown history entry has enough shape to render a tool card. */
-function isRestoredToolCall(value: unknown): value is RestoredToolCall {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const call = value as { id?: unknown; function?: { name?: unknown } };
-  return typeof call.id === "string" && typeof call.function?.name === "string";
 }
 
 /** The `removed` count from a compaction activity payload, or `null` if absent. */

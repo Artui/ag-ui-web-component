@@ -103,6 +103,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     keys it invalidated, and whether it already said how it ended -- are
     `RunHandlers` in `src/core/`. The screen-reader status region the run and
     its tool calls report into is `RunAnnouncer` in `src/ui/progress/`.
+  - Which conversation is on screen and how one gets there -- the active
+    thread, restoring it from the store, switching, renaming and deleting from
+    the conversation list, and continuing a run from the checkpoint panel -- is
+    `ConversationHistory` in `src/ui/history/`, beside the list and the panel
+    it drives.
 
   Nothing a consumer can see changes. The emitted declarations are
   byte-identical to the previous release apart from the new internal modules,

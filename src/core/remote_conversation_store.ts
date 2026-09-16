@@ -165,7 +165,7 @@ export class RemoteConversationStore implements ClientConversationStore {
     }
     // A 200 whose body isn't JSON (a proxy's HTML error page, a truncated
     // stream) must not throw an unhandled rejection that the caller's
-    // `void #rehydrate()` swallows; fall back to the local cache.
+    // `void rehydrate()` swallows; fall back to the local cache.
     const body = await this.#readJson<{ messages?: readonly Message[] }>(response);
     if (body === null) {
       return this.#local.loadMessages(threadId);
