@@ -76,6 +76,7 @@ import {
   type ConfirmationRequest,
   requestConfirmation,
 } from "../ui/interrupts/confirmation_card.js";
+import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 import {
   type QuestionRenderer,
   type QuestionRequest,
@@ -714,9 +715,8 @@ export class AgUiChat extends HTMLElement {
   // was built. `null` until the first round. Compared in `#executeTool` to
   // catch a page that moved under a round still in flight.
   #contextHref: string | null = null;
-  // Aborting this dismisses (declines) an open confirmation card when the run
-  // is cancelled while the card awaits a decision. One controller per card.
-  #confirmAbort: AbortController | null = null;
+  /** The decision a run is suspended on, which a Stop abandons. */
+  readonly #decision = new PendingDecision();
   /** The assistant answer currently streaming into the transcript. */
   readonly #stream = new AnswerStream({
     openBubble: () => this.appendMessage(MESSAGE_ROLE.ASSISTANT, ""),
@@ -1240,8 +1240,7 @@ export class AgUiChat extends HTMLElement {
     }
     // The run is suspended on the card; a Stop aborts the controller, resolving
     // it with an empty answer (the run is then cancelled).
-    this.#confirmAbort = new AbortController();
-    const signal = this.#confirmAbort.signal;
+    const signal = this.#decision.open();
     this.#hidePending();
     // A host-supplied renderer takes full control of the UI; otherwise the
     // built-in inline card renders into the current answer group.
@@ -1252,7 +1251,7 @@ export class AgUiChat extends HTMLElement {
             signal,
             strings: this.#strings,
           });
-    this.#confirmAbort = null;
+    this.#decision.close();
     this.#updateEmptyState();
     this.#scroller.follow();
     return answer;
@@ -3213,7 +3212,7 @@ export class AgUiChat extends HTMLElement {
     }
     this.#queued.length = 0;
     this.#renderQueued();
-    this.#confirmAbort?.abort();
+    this.#decision.abort();
     this.#client?.cancel();
   }
 
@@ -3647,13 +3646,13 @@ export class AgUiChat extends HTMLElement {
       }
       // The run loop is suspended on this card; a Stop while it's open aborts
       // the controller, resolving the decision as declined.
-      this.#confirmAbort = new AbortController();
+      const signal = this.#decision.open();
       // Into the turn's answer group, like every other inline card. Appending
       // to the message list made it a sibling *after* the group, so anything
       // that streamed afterwards rendered above it and the prompt drifted to
       // the foot of the turn no matter when it was asked.
       const decision = requestConfirmation(this.#ensureGroup(), request, {
-        signal: this.#confirmAbort.signal,
+        signal,
         strings: this.#strings,
         // Offered only where it can be honoured -- see `#confirmationRule`.
         ...(rule === "destructive"
@@ -3663,7 +3662,7 @@ export class AgUiChat extends HTMLElement {
       this.#updateEmptyState();
       this.#scroller.follow();
       const accepted = await decision;
-      this.#confirmAbort = null;
+      this.#decision.close();
       card.recordDecision(accepted ? "approved" : "declined");
       if (!accepted) {
         const message = this.#strings.declinedAction;
@@ -3737,7 +3736,7 @@ export class AgUiChat extends HTMLElement {
    * `pending` it read "running…" while the stream was over and the server idle.
    *
    * The run is suspended on these cards. A Stop while any is open aborts the
-   * shared {@link #confirmAbort} controller, resolving every still-open card as
+   * shared pending decision, resolving every still-open card as
    * denied. An approved tool runs on the follow-up resume run and streams its
    * result into the same card (returned to `pending`, since it now really is
    * running); a denied one settles here, as no result will ever arrive.
@@ -3746,7 +3745,7 @@ export class AgUiChat extends HTMLElement {
     interrupts: readonly Interrupt[],
   ): Promise<Record<string, InterruptResponse>> {
     // One controller covers the whole batch: a single Stop denies all of them.
-    this.#confirmAbort = new AbortController();
+    const signal = this.#decision.open();
     // The run has stopped and is waiting on a person. Nothing else on screen
     // says so to a screen reader: the cards appear inside the transcript, which
     // is deliberately not a live region, so without this the run simply goes
@@ -3755,7 +3754,6 @@ export class AgUiChat extends HTMLElement {
       fillUiString(this.#strings.announceAwaitingDecision, { count: interrupts.length }),
     );
     this.#hidePending();
-    const signal = this.#confirmAbort.signal;
     const answered = await Promise.all(
       interrupts.map(async (interrupt) => {
         const card =
@@ -3815,7 +3813,7 @@ export class AgUiChat extends HTMLElement {
     );
     this.#updateEmptyState();
     this.#scroller.follow();
-    this.#confirmAbort = null;
+    this.#decision.close();
     const responses: Record<string, InterruptResponse> = {};
     for (const { id, approved, editedArgs } of answered) {
       // `editedArgs` rides only when the user actually changed something, so a
