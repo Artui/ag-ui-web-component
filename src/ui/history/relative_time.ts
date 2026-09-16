@@ -1,3 +1,4 @@
+import { fillUiString } from "../fill_ui_string.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /**
@@ -24,17 +25,17 @@ export function relativeTime(
   }
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) {
-    return strings.minutesAgo.replace("{n}", String(minutes));
+    return fillUiString(strings.minutesAgo, { n: minutes });
   }
   const hours = Math.round(minutes / 60);
   if (hours < 24) {
-    return strings.hoursAgo.replace("{n}", String(hours));
+    return fillUiString(strings.hoursAgo, { n: hours });
   }
   const days = Math.round(hours / 24);
   if (days < 7) {
-    return strings.daysAgo.replace("{n}", String(days));
+    return fillUiString(strings.daysAgo, { n: days });
   }
-  return strings.weeksAgo.replace("{n}", String(Math.round(days / 7)));
+  return fillUiString(strings.weeksAgo, { n: Math.round(days / 7) });
 }
 
 /**

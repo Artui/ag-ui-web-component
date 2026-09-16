@@ -339,6 +339,30 @@ describe("AgUiChat — attachments", () => {
     expect(shadow(el).querySelectorAll(".attachment-chip")).toHaveLength(1);
   });
 
+  it("fills the pending count everywhere a translation uses it", async () => {
+    // A string pattern fills only its first occurrence.
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.strings = { attachmentsStillUploading: "{n} left behind ({n} uploading)" };
+    el.uploadHandler = () => new Promise(() => {});
+    el.agentFactory = () => makeFakeAgent({ script: (emit: Emit) => emit.runEnd() }).agent;
+    document.body.appendChild(el);
+
+    drop(el, [file()]);
+    await flush();
+    const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
+    if (input === null) {
+      throw new Error("expected an input");
+    }
+    input.value = "here is the file";
+    shadow(el).querySelector<HTMLButtonElement>(".send")?.click();
+    await flush();
+
+    expect(shadow(el).querySelector(".run-notice--attachment-pending")?.textContent).toContain(
+      "1 left behind (1 uploading)",
+    );
+  });
+
   it("stays quiet when every attachment settled before Send", async () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
     el.setAttribute("endpoint", "/agent/");

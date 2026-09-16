@@ -204,6 +204,29 @@ describe("what a turn announces", () => {
 
     expect(seen).toContain(DEFAULT_UI_STRINGS.announceAwaitingDecision.replace("{count}", "2"));
   });
+
+  it("fills the count everywhere a translation uses it", async () => {
+    // A string pattern fills only its first occurrence.
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.strings = { announceAwaitingDecision: "{count} waiting: review {count}" };
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.interrupt([
+          { id: "i1", reason: "tool_call", toolCallId: "c1", message: "Delete it?" },
+          { id: "i2", reason: "tool_call", toolCallId: "c2", message: "Delete it?" },
+        ]);
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    const seen = recordAnnouncements(el);
+
+    await send(el, "delete both");
+
+    expect(seen).toContain("2 waiting: review 2");
+  });
 });
 
 describe("the announcer empties itself", () => {

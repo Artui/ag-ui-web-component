@@ -183,6 +183,24 @@ describe("VoiceInput", () => {
     expect(voice.element.title).toBe(DEFAULT_UI_STRINGS.recordingLimit.replace("{n}", "2"));
   });
 
+  it("fills the recording cap everywhere a translation uses it", async () => {
+    // A string pattern fills only its first occurrence.
+    vi.useFakeTimers();
+    media = installFakeMedia();
+    const voice = new VoiceInput({
+      transcribe: vi.fn().mockResolvedValue("dictated words"),
+      onText: () => {},
+      strings: { ...DEFAULT_UI_STRINGS, recordingLimit: "{n} min cap: stopped at {n} min" },
+    });
+
+    voice.element.click();
+    await flush();
+    vi.advanceTimersByTime(120_000);
+    await flush();
+
+    expect(voice.element.title).toBe("2 min cap: stopped at 2 min");
+  });
+
   it("drops the cap when a recording ends on its own terms", async () => {
     // A stale timer would stop the *next* recording early, or fire into a
     // control that has already gone idle.

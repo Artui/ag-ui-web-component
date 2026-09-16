@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { requestConfirmation } from "../src/ui/interrupts/confirmation_card.js";
+import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -145,5 +146,48 @@ describe("the session waiver", () => {
 
     expect(await decision).toBe(true);
     expect(waived).toBe(0);
+  });
+});
+
+describe("the tool name in the prompt", () => {
+  it("names a tool whose name carries a dollar pattern exactly as the server sent it", () => {
+    // A string replacement reads `$&` in the inserted value as "the matched
+    // token", so the prompt used to read `Run “drop_{tool}_rows”?`. Tool names
+    // come from whoever registered the tool; nothing keeps them to identifiers.
+    const node = host();
+    void requestConfirmation(
+      node,
+      { toolName: "drop_$&_rows", args: {} },
+      {
+        onAlwaysAllow: () => {},
+        strings: { ...DEFAULT_UI_STRINGS, confirmAlways: "Always allow {tool}" },
+      },
+    );
+
+    expect(node.querySelector(".confirm-body")?.textContent).toBe("Run “drop_$&_rows”?");
+    expect(node.querySelector(".confirm-btn--always")?.textContent).toBe(
+      "Always allow drop_$&_rows",
+    );
+  });
+
+  it("fills the tool name everywhere a translation uses it", () => {
+    const node = host();
+    void requestConfirmation(
+      node,
+      { toolName: "archive", args: {} },
+      {
+        onAlwaysAllow: () => {},
+        strings: {
+          ...DEFAULT_UI_STRINGS,
+          confirmRun: "{tool}: run {tool}?",
+          confirmAlways: "{tool}: always allow {tool}",
+        },
+      },
+    );
+
+    expect(node.querySelector(".confirm-body")?.textContent).toBe("archive: run archive?");
+    expect(node.querySelector(".confirm-btn--always")?.textContent).toBe(
+      "archive: always allow archive",
+    );
   });
 });
