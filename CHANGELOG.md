@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Internal restructuring: `ag_ui_chat.ts` is split into modules that each own
+  one concern.** The element was one class of more than six thousand lines in
+  which a single concern -- the transcript, the run handlers -- was spread over
+  a dozen separate stretches of the file. Each concern moves into a controller
+  in the directory it already belonged to, holding its own private state, and
+  the element keeps its public members as delegations with their documentation
+  unchanged.
+
+  The panel's placement moved first: the dragged launcher, the dragged header,
+  the eight resize grips, the corner the panel opens from and the persisted
+  record of all of it are now `PanelPlacement` in `src/ui/placement/`.
+
+  Nothing a consumer can see changes. The emitted declarations are
+  byte-identical to the previous release apart from the new internal modules,
+  which the package entry point does not export, and no test was edited to
+  make a move pass. The bundle is not byte-identical, and this entry is the
+  reason why: a re-vendor of this release has no host wiring to do and is still
+  a different build.
+
 ### Fixed
 
 - **Text a user or a server wrote could rewrite the label it was put into.**
