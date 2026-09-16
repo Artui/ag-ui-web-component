@@ -23,7 +23,6 @@ import {
   RUN_FINISHED_EVENT,
   STATE_EVENT,
   SUBAGENT_CUSTOM_NAME,
-  SUBAGENT_PHASE,
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
   THREADS_DOCK_MIN_WIDTH,
@@ -86,12 +85,7 @@ import { isDraggablePlacement } from "../ui/placement/is_draggable_placement.js"
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
 import { prettifyToolName } from "../ui/progress/prettify_tool_name.js";
 import { renderRunNotice } from "../ui/progress/run_notice.js";
-import {
-  SubAgentPanel,
-  type SubAgentPhase,
-  type SubAgentUpdate,
-} from "../ui/progress/subagent_panel.js";
-import { subAgentUpdate } from "../ui/progress/subagent_update.js";
+import { SubAgentProgress } from "../ui/progress/subagent_progress.js";
 import { ThoughtsBlock } from "../ui/progress/thoughts_block.js";
 import {
   ToolCallCard,
@@ -99,6 +93,7 @@ import {
   type ToolPayloadFormatter,
 } from "../ui/progress/tool_call_card.js";
 import { STYLES } from "../ui/styles.js";
+import { AnswerStream } from "../ui/transcript/answer_stream.js";
 import { renderAttachmentChips } from "../ui/transcript/attachment_chips.js";
 import {
   attachMessageActions,
@@ -106,11 +101,13 @@ import {
   messageActionButton,
 } from "../ui/transcript/message_actions.js";
 import { renderMarkdown } from "../ui/transcript/render_markdown.js";
+import { renderOrWarn } from "../ui/transcript/render_or_warn.js";
 import { wrapWords } from "../ui/transcript/reveal_words.js";
 import { createStickToBottom, type StickToBottom } from "../ui/transcript/stick_to_bottom.js";
 import { renderSuggestionChips } from "../ui/transcript/suggestion_chips.js";
 import { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "../ui/ui_strings.js";
 import type { ActivityRegistration } from "./activity_registration.js";
+import { ActivityRegistry } from "./activity_registry.js";
 import type { ActivityRenderer } from "./activity_renderer.js";
 import {
   AgUiClient,
@@ -501,43 +498,25 @@ export class AgUiChat extends HTMLElement {
   readonly #toolRegistry = new ClientToolRegistry();
   /** Tool-call cards awaiting execution, keyed by call id. */
   readonly #toolCards = new Map<string, ToolCallCard>();
+  /** A delegated sub-agent's progress, hung off the card that delegated. */
+  readonly #subagents = new SubAgentProgress({
+    card: (callId) => this.#toolCards.get(callId),
+    strings: () => this.#strings,
+    follow: () => this.#scroller.follow(),
+  });
   /**
-   * The live delegation panels, keyed by the **parent's** `delegate_task` call
-   * id — which is what the wire keys a sub-agent's progress on, so this map and
-   * {@link #toolCards} answer to the same key.
-   *
-   * Kept beside the cards rather than on them, so a card stays a card: the tool
-   * card holds the slot and this holds what went into it, the same division the
-   * approval prompt already uses.
+   * The AG-UI activities this element can draw, and the blocks it drew. A field
+   * rather than built in the constructor, because the constructor registers the
+   * built-in renderers through it.
    */
-  readonly #subagentPanels = new Map<string, SubAgentPanel>();
-  /**
-   * Which delegation each live `subagentRunId` belongs to.
-   *
-   * The protocol's closing events -- `SUBAGENT_FINISHED` and `SUBAGENT_ERROR`
-   * -- carry the child's run id and nothing else, while everything drawn here
-   * is keyed on the parent's `delegate_task` call id. `SUBAGENT_STARTED` is the
-   * one event carrying both, so the pairing is recorded there and read back on
-   * the close. A close naming a run this never saw open is dropped, which is
-   * the same refusal a step for an undrawn card gets.
-   */
-  readonly #subagentRunDelegations = new Map<string, string>();
-  /**
-   * Which `activity_type`s this element can draw, by name.
-   *
-   * A registry rather than a branch because `activity_type` is an open string
-   * the protocol does not enumerate. The two built-ins go through it like any
-   * host registration, which is the test that the seam is real.
-   */
-  readonly #activityRenderers = new Map<string, ActivityRegistration>();
-  /** Types that arrived with nobody registered to draw them. See {@link unhandledActivityTypes}. */
-  readonly #unhandledActivityTypes = new Set<string>();
+  readonly #activities = new ActivityRegistry({
+    ensureGroup: () => this.#ensureGroup(),
+    afterTranscriptGrew: () => this.#afterTranscriptGrew(),
+    appendNotice: (icon, text, kind) => this.#appendNotice(icon, text, kind),
+  });
 
   /** Card elements by call id, so a rendering handler can find its own card. */
   readonly #cardElements = new Map<string, HTMLElement>();
-
-  /** Chart blocks by activity message id, so an update redraws in place. */
-  readonly #activityBlocks = new Map<string, HTMLElement>();
 
   /**
    * Call ids whose card was already settled from a streamed server-side result
@@ -738,17 +717,12 @@ export class AgUiChat extends HTMLElement {
   // Aborting this dismisses (declines) an open confirmation card when the run
   // is cancelled while the card awaits a decision. One controller per card.
   #confirmAbort: AbortController | null = null;
-  #streamingBubble: HTMLDivElement | null = null;
-  // Text deltas applied to the current streaming bubble. >1 ⇒ the message
-  // revealed progressively as it streamed, so the word reveal must not re-animate
-  // it; ≤1 ⇒ it arrived at once and the word reveal is appropriate.
-  #streamDeltas = 0;
-  // The accumulated answer the next render will draw. Deltas overwrite it
-  // (each one carries the whole answer), so a frame always draws the latest.
-  #streamBuffer = "";
-  // The frame that render is queued on, or `null` when nothing is queued —
-  // also the flag saying a delta is still undrawn.
-  #streamFrame: number | null = null;
+  /** The assistant answer currently streaming into the transcript. */
+  readonly #stream = new AnswerStream({
+    openBubble: () => this.appendMessage(MESSAGE_ROLE.ASSISTANT, ""),
+    allowImages: () => this.allowImages,
+    follow: () => this.#scroller.follow(),
+  });
   #pending: HTMLDivElement | null = null;
   // The current assistant turn's grouping container. One `.answer`
   // wraps everything a single answer produces — streamed text, tool cards, the
@@ -2209,20 +2183,16 @@ export class AgUiChat extends HTMLElement {
     // Before the transcript goes: a render still queued would otherwise fire
     // against the wiped list and open a fresh bubble holding the discarded
     // conversation's last tokens.
-    this.#endStream();
+    this.#stream.end();
     this.#currentGroup = null;
     this.#thoughts = null;
     this.#hidePending();
     this.#toolCards.clear();
-    // The panels go with the cards they hung off. Nothing restores them: the
-    // progress rode the imperative carrier and was never persisted, which is
-    // the correct half of that split -- a delegation that was live before this
-    // transcript was wiped is not live now.
-    this.#subagentPanels.clear();
-    this.#subagentRunDelegations.clear();
+    // The panels go with the cards they hung off.
+    this.#subagents.clear();
     this.#serverSettled.clear();
     this.#cardElements.clear();
-    this.#activityBlocks.clear();
+    this.#activities.clearBlocks();
     this.#retryOwner = null;
     this.#attachments.tray?.clear();
     // Returning to an empty conversation snaps back to the centre: only the send
@@ -2466,7 +2436,7 @@ export class AgUiChat extends HTMLElement {
       // the drawing had to be put back.
       const activity = message as unknown as { activityType?: unknown; content?: unknown };
       if (typeof activity.activityType === "string") {
-        this.#drawActivity(message.id, activity.activityType, activity.content);
+        this.#activities.draw(message.id, activity.activityType, activity.content);
       }
       return;
     }
@@ -3893,11 +3863,8 @@ export class AgUiChat extends HTMLElement {
         this.#hidePending();
         // The answer has begun — fold the thoughts away so they don't crowd it.
         this.#thoughts?.collapse();
-        this.#queueStream(buffer);
-        // Counted per delta received, not per render: the word reveal asks
-        // whether the answer *arrived* progressively, which coalescing renders
-        // must not change the answer to.
-        this.#streamDeltas += 1;
+        this.#stream.queue(buffer);
+        this.#stream.countDelta();
       },
       onTextEnd: (buffer) => {
         // A text message that carried no content is a declaration, not an
@@ -3917,20 +3884,20 @@ export class AgUiChat extends HTMLElement {
         // transcript and the reloaded one disagree about the same
         // conversation, which is the harder half of the bug to notice.
         if (buffer === "") {
-          this.#endStream();
+          this.#stream.end();
           return;
         }
-        const bubble = this.#streamInto(buffer);
+        const bubble = this.#stream.into(buffer);
         // Only reveal word-by-word when the message arrived at once. If it
         // streamed across multiple deltas it already revealed progressively, so
         // wrapping it now would re-animate the whole message — the awkward
         // "finished response replays one word at a time" bug.
-        if (this.#streamDeltas <= 1) {
+        if (this.#stream.deltas <= 1) {
           this.#revealWords(bubble);
         }
         attachCopyButtons(bubble, this.#strings);
         this.#attachActions(bubble);
-        this.#endStream();
+        this.#stream.end();
         this.#noteUnread();
       },
       onToolCall: (call) => {
@@ -3949,7 +3916,7 @@ export class AgUiChat extends HTMLElement {
         this.#cardFor(call);
       },
       onActivity: (activityType, content, messageId) => {
-        this.#drawActivity(messageId, activityType, content);
+        this.#activities.draw(messageId, activityType, content);
       },
       onCustomEvent: (name, value) => {
         if (name === INVALIDATE_CUSTOM_NAME) {
@@ -3957,7 +3924,7 @@ export class AgUiChat extends HTMLElement {
           return;
         }
         if (name === SUBAGENT_CUSTOM_NAME) {
-          this.#reportSubAgent(value);
+          this.#subagents.report(value);
           return;
         }
         // Straight out to the host page, uninterpreted. This is the imperative
@@ -3976,39 +3943,13 @@ export class AgUiChat extends HTMLElement {
       // The delegation's own lifetime, on the protocol's events rather than the
       // CUSTOM channel its steps ride. Both end at the same panel.
       onSubAgentStarted: (subagentRunId, agent, parentToolCallId) => {
-        // A delegation naming no parent call names no card, and a floating
-        // panel is exactly what attaching to the card was chosen over.
-        if (parentToolCallId === null) {
-          return;
-        }
-        this.#subagentRunDelegations.set(subagentRunId, parentToolCallId);
-        this.#applySubAgent({
-          delegationId: parentToolCallId,
-          agent: agent === "" ? null : agent,
-          phase: SUBAGENT_PHASE.STARTED,
-          status: fillUiString(this.#strings.subAgentDelegatedTo, { agent }),
-          tool: null,
-        });
+        this.#subagents.start(subagentRunId, agent, parentToolCallId);
       },
       onSubAgentFinished: (subagentRunId) => {
-        this.#closeSubAgent(subagentRunId, SUBAGENT_PHASE.FINISHED, null);
+        this.#subagents.finish(subagentRunId);
       },
       onSubAgentError: (subagentRunId, message) => {
-        // The server's own words, which the contract keeps to the sub-agent's
-        // name. Passed through as the status line and set with textContent
-        // downstream, never parsed as markup.
-        //
-        // The message is required by the protocol and can still arrive empty,
-        // which would settle the row to a blank line -- a delegation that reads
-        // as having said nothing rather than as having failed. The fallback was
-        // written and documented in UiStrings and never wired up, so until now
-        // the only reader who knew it existed was the one reading the string
-        // table.
-        this.#closeSubAgent(
-          subagentRunId,
-          SUBAGENT_PHASE.FAILED,
-          message === "" ? this.#strings.subAgentFailed : message,
-        );
+        this.#subagents.fail(subagentRunId, message);
       },
       onMessagesSnapshot: () => {
         // Honoured for persistence and announced, not re-rendered.
@@ -4060,13 +4001,13 @@ export class AgUiChat extends HTMLElement {
         this.#showPending();
       },
       onActivityChanged: (messageId, activityType, content) => {
-        this.#drawActivity(messageId, activityType, content);
+        this.#activities.draw(messageId, activityType, content);
       },
       onRunEnd: () => {
         // Per-round end; the button stays on Stop until the whole interaction
         // settles — the user must be able to cancel between tool rounds.
         this.#hidePending();
-        this.#endStream();
+        this.#stream.end();
       },
       onError: (message) => {
         this.#announcedOutcome = true;
@@ -4085,7 +4026,7 @@ export class AgUiChat extends HTMLElement {
         // it stays an error and gains the control instead.
         this.#attachActions(bubble, { rateable: false });
         this.#revealWords(bubble);
-        this.#endStream();
+        this.#stream.end();
       },
       onCancelled: () => {
         // Deliberate stop, not a failure: keep whatever partial text already
@@ -4094,7 +4035,7 @@ export class AgUiChat extends HTMLElement {
         this.#announce(this.#strings.announceStopped);
         this.#hidePending();
         this.#appendStoppedNote();
-        this.#endStream();
+        this.#stream.end();
       },
       onSettled: () => {
         // Terminal guarantee: whatever path ended the run, return to rest.
@@ -4103,7 +4044,7 @@ export class AgUiChat extends HTMLElement {
         }
         this.#hidePending();
         this.#setRunning(false);
-        this.#endStream();
+        this.#stream.end();
         // Belt-and-suspenders: a tool card still pending at settle (e.g. a
         // server tool whose result never streamed because the connection
         // dropped) would hang forever — settle it to the no-result fallback.
@@ -4189,103 +4130,6 @@ export class AgUiChat extends HTMLElement {
     );
   }
 
-  /**
-   * Draw one step of a delegated sub-agent's progress, on the card that
-   * delegated.
-   *
-   * `delegationId` is the parent's own `delegate_task` tool-call id, so the
-   * attachment point is a card this element already drew on `TOOL_CALL_START`.
-   * That is the whole design: a run that hands work to a sub-agent used to read
-   * as a stall -- the card sat at "running…" for the child's entire duration --
-   * and the fix is to narrate *into* the thing that was already standing there,
-   * rather than to float a second element with the same identity.
-   *
-   * A progress event for a call this client never drew is dropped. It has no
-   * card to attach to, and inventing a floating one is precisely the alternative
-   * that was rejected: parent and child interleave in the transcript with
-   * nothing marking whose is whose, and the persisted transcript -- which never
-   * held the progress at all -- would not match what was on screen.
-   *
-   * Nothing here writes to the conversation store. `CUSTOM` never enters
-   * `agent.messages`, so a reload mid-run leaves the tool card and loses the
-   * nested detail, which is the intended behaviour rather than a gap.
-   */
-  #reportSubAgent(value: unknown): void {
-    const update = subAgentUpdate(value);
-    if (update === null) {
-      return;
-    }
-    this.#applySubAgent(update);
-  }
-
-  /**
-   * Settle the delegation a closing lifecycle event names.
-   *
-   * `status` is the server's text on a failure and `null` on a success, where
-   * the wording is this element's own -- the protocol's finish event carries no
-   * message, which is the better shape for a localised UI and the reason
-   * {@link UiStrings.subAgentFinished} exists.
-   *
-   * The pairing is deliberately not deleted on close. A panel outlives the
-   * delegation it drew, the map is cleared with the transcript alongside the
-   * panels, and forgetting the id here would only make a duplicate close draw
-   * nothing instead of drawing the same settled row again.
-   */
-  #closeSubAgent(subagentRunId: string, phase: SubAgentPhase, status: string | null): void {
-    const delegationId = this.#subagentRunDelegations.get(subagentRunId);
-    if (delegationId === undefined) {
-      // A close naming a delegation this never saw open -- the same refusal a
-      // step for an undrawn card gets, and the same reason.
-      return;
-    }
-    const agent = this.#subagentPanels.get(delegationId)?.agent ?? null;
-    this.#applySubAgent({
-      delegationId,
-      agent,
-      phase,
-      status: status === null ? this.#finishedLine(agent) : status,
-      tool: null,
-    });
-  }
-
-  /** The row's line for a delegation that completed, named if its name is known. */
-  #finishedLine(agent: string | null): string {
-    return agent === null
-      ? this.#strings.subAgentWorking
-      : fillUiString(this.#strings.subAgentFinished, { agent });
-  }
-
-  /**
-   * Fold one already-narrowed update into the delegation's panel.
-   *
-   * The join point of the two carriers, and the reason it is separate from
-   * {@link #reportSubAgent}: a `CUSTOM` step arrives as `unknown` and has to be
-   * vouched for, while a lifecycle event arrives typed off the protocol and has
-   * nothing left to check. Both end up here, so the panel has one way in and
-   * the phases stay a single state machine regardless of which wire they came
-   * from.
-   */
-  #applySubAgent(update: SubAgentUpdate): void {
-    const card = this.#toolCards.get(update.delegationId);
-    if (card === undefined) {
-      return;
-    }
-    let panel = this.#subagentPanels.get(update.delegationId);
-    if (panel === undefined) {
-      // Created on whichever phase arrives first rather than only on `started`.
-      // The contract says exactly one opens a delegation, and a client that
-      // insisted on it would answer a server that dropped one frame by showing
-      // nothing at all for the rest of the run.
-      panel = new SubAgentPanel(this.#strings);
-      this.#subagentPanels.set(update.delegationId, panel);
-      card.subagentSlot.appendChild(panel.element);
-    }
-    panel.report(update);
-    // The card grew, and the transcript is usually pinned to the foot while a
-    // run is in flight.
-    this.#scroller.follow();
-  }
-
   /** A muted "⏹ Stopped" line in the transcript (distinct from the ⚠️ error bubble). */
   #appendStoppedNote(): void {
     const note = document.createElement("div");
@@ -4343,78 +4187,6 @@ export class AgUiChat extends HTMLElement {
       this.#scroller.follow();
     }
     return this.#thoughts;
-  }
-
-  /**
-   * The bubble the current answer streams into, opening it on first sight.
-   *
-   * Opened the moment a token arrives rather than on the frame that draws it,
-   * so the answer's container replaces the pending dots straight away and the
-   * turn never shows a gap while the first render waits for a frame.
-   */
-  #openStream(): HTMLDivElement {
-    if (this.#streamingBubble === null) {
-      this.#streamingBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, "");
-      this.#streamDeltas = 0;
-    }
-    return this.#streamingBubble;
-  }
-
-  /**
-   * Queue a render of the answer so far, at most one per frame.
-   *
-   * Each `TEXT_MESSAGE_CONTENT` event carries the *whole* accumulated answer,
-   * and drawing it means marked + DOMPurify over the entire document and a
-   * wholesale replacement of the bubble's subtree. Once per token that is
-   * quadratic in the answer's length — a long answer is agent-controlled, so
-   * an ordinary run becomes a progressively stalling tab — and every rebuild
-   * takes any selection or focus inside the bubble with it.
-   *
-   * A frame is the right grain: it is the fastest anything on screen can
-   * change anyway, so a burst of tokens costs one parse and the text still
-   * appears to flow rather than in visible chunks.
-   */
-  #queueStream(buffer: string): void {
-    this.#streamBuffer = buffer;
-    this.#openStream();
-    if (this.#streamFrame !== null) {
-      return;
-    }
-    this.#streamFrame = requestAnimationFrame(() => {
-      this.#streamFrame = null;
-      this.#streamInto(this.#streamBuffer);
-    });
-  }
-
-  /** Render `buffer` into the streaming bubble now, dropping any queued frame. */
-  #streamInto(buffer: string): HTMLDivElement {
-    // A frame still queued would otherwise fire after this and repaint the
-    // bubble with whatever the last delta held — behind the buffer just drawn.
-    if (this.#streamFrame !== null) {
-      cancelAnimationFrame(this.#streamFrame);
-      this.#streamFrame = null;
-    }
-    this.#streamBuffer = buffer;
-    const bubble = this.#openStream();
-    bubble.innerHTML = renderMarkdown(buffer, { allowImages: this.allowImages });
-    this.#scroller.follow();
-    return bubble;
-  }
-
-  /**
-   * Close the current answer's streaming bubble.
-   *
-   * Draws a queued render first. A run that ends without a text end — a
-   * cancel, an error, a round boundary — leaves the last delta sitting in the
-   * queue, and simply dropping the bubble here would strand it: the partial
-   * answer the user stopped mid-sentence would lose its final tokens, or be an
-   * empty bubble above the stopped note.
-   */
-  #endStream(): void {
-    if (this.#streamFrame !== null) {
-      this.#streamInto(this.#streamBuffer);
-    }
-    this.#streamingBubble = null;
   }
 
   /**
@@ -4490,7 +4262,7 @@ export class AgUiChat extends HTMLElement {
    */
   enableCharts(routes: readonly ("tool" | "activity")[] = ["tool", "activity"]): void {
     const first =
-      !this.#activityRenderers.has(CHART_ACTIVITY_TYPE) && !this.#toolRegistry.has(CHART_TOOL_NAME);
+      !this.#activities.has(CHART_ACTIVITY_TYPE) && !this.#toolRegistry.has(CHART_TOOL_NAME);
     if (routes.includes("activity")) {
       // The chart is a registration like any host's, not a privileged branch.
       // If the built-in cannot be expressed through the seam, the seam is not
@@ -4528,18 +4300,7 @@ export class AgUiChat extends HTMLElement {
    * runs stop mattering.
    */
   #renderToolOutput(render: ChartRenderer, call: AgUiToolCall): void {
-    let node: Node | null;
-    try {
-      node = render(call.args);
-    } catch (error) {
-      // `render` is consumer code and this runs inside the history replay, where
-      // a throw abandons the loop and takes every later turn of the transcript
-      // with it -- silently, and again on every reload. A chart that fails to
-      // draw is worth losing; the rest of the conversation is not. Reported so
-      // the failure is findable rather than merely survived.
-      console.warn(`ag-ui-chat: render failed for tool ${call.name}`, error);
-      return;
-    }
+    const node = renderOrWarn(() => render(call.args), `tool ${call.name}`);
     if (node === null) {
       return;
     }
@@ -4582,8 +4343,7 @@ export class AgUiChat extends HTMLElement {
    * for what that requires of it.
    */
   registerActivityRenderer(registration: ActivityRegistration): void {
-    this.#activityRenderers.set(registration.type, registration);
-    this.#unhandledActivityTypes.delete(registration.type);
+    this.#activities.register(registration);
   }
 
   /**
@@ -4596,89 +4356,7 @@ export class AgUiChat extends HTMLElement {
    * is readable. Accumulates for the element's lifetime, across threads.
    */
   get unhandledActivityTypes(): readonly string[] {
-    return [...this.#unhandledActivityTypes];
-  }
-
-  /**
-   * Draw, replace or remove one activity, whatever kind it is.
-   *
-   * The single path for all three routes an activity arrives by -- pushed
-   * (`onActivity`), patched (`onActivityChanged`) and replayed from history --
-   * which is why the renderer contract has to be pure: the same content is
-   * drawn again on every thread load.
-   *
-   * An unregistered type draws nothing and says nothing. That is the protocol's
-   * own answer -- a client that does not know a name ignores the event -- and a
-   * warning here would fire on every well-behaved forward-compatible server,
-   * while a placeholder would put the protocol's growth in the user's face.
-   * {@link unhandledActivityTypes} is the way to find out what arrived.
-   */
-  #drawActivity(messageId: string, activityType: string, content: unknown): void {
-    const registration = this.#activityRenderers.get(activityType);
-    if (registration === undefined) {
-      this.#unhandledActivityTypes.add(activityType);
-      return;
-    }
-    let node: Node | null;
-    try {
-      node = registration.render(content);
-    } catch (error) {
-      // `render` is consumer code and this runs inside the history replay,
-      // where a throw abandons the loop and takes every later turn of the
-      // transcript with it -- silently, and again on every reload. One activity
-      // that fails to draw is worth losing; the rest of the conversation is not.
-      console.warn(`ag-ui-chat: render failed for activity ${activityType}`, error);
-      node = null;
-    }
-    if (node === null) {
-      this.#removeActivity(messageId, activityType, registration.removedNotice, content);
-      return;
-    }
-    const existing = this.#activityBlocks.get(messageId);
-    if (existing === undefined) {
-      this.#ensureGroup().appendChild(node as HTMLElement);
-    } else {
-      // Replaced rather than appended: a server redrawing under the same id
-      // means *this one changed*, and a second copy below the first would read
-      // as two measurements instead of one that moved.
-      existing.replaceWith(node);
-    }
-    this.#activityBlocks.set(messageId, node as HTMLElement);
-    this.#afterTranscriptGrew();
-  }
-
-  /**
-   * Take away an activity whose content stopped being drawable.
-   *
-   * Leaving the old one up is the worst available answer: it shows values that
-   * have been retracted, reading as current, and a reload drops it anyway
-   * because the *stored* content is the version that could not be drawn. Live
-   * and reload should agree, and both should say "gone".
-   *
-   * Removing is right; doing it in silence was not. A chart that had been drawn
-   * simply disappeared, with no `console` call anywhere on the path -- which
-   * nobody reports as a bug, they report as "the charts are flaky".
-   */
-  #removeActivity(
-    messageId: string,
-    activityType: string,
-    notice: string | undefined,
-    content: unknown,
-  ): void {
-    const had = this.#activityBlocks.has(messageId);
-    this.#activityBlocks.get(messageId)?.remove();
-    this.#activityBlocks.delete(messageId);
-    console.warn(
-      `ag-ui-chat: activity ${messageId} (${activityType}) was not drawable and has been ` +
-        "removed. A chart's points must each be a finite JSON number; a numeric column " +
-        "serialised as a string (a Decimal, typically) is rejected rather than coerced.",
-      content,
-    );
-    // Only when something was on screen: content that never drew has no
-    // disappearance to explain, and a notice for every rejected push is noise.
-    if (had && notice !== undefined) {
-      this.#appendNotice("\u{1F4C9}", notice, "chart-undrawable");
-    }
+    return this.#activities.unhandledTypes();
   }
 
   #afterTranscriptGrew(): void {
