@@ -21,6 +21,7 @@ function statusLabels(strings: UiStrings): Record<ToolCallStatus, string> {
     [TOOL_CALL_STATUS.DONE]: strings.toolDone,
     [TOOL_CALL_STATUS.ERROR]: strings.toolError,
     [TOOL_CALL_STATUS.DECLINED]: strings.toolDeclined,
+    [TOOL_CALL_STATUS.INTERRUPTED]: strings.toolInterrupted,
   };
 }
 
@@ -30,6 +31,7 @@ function resultLabels(strings: UiStrings): Record<SettledStatus, string> {
     [TOOL_CALL_STATUS.DONE]: strings.resultLabel,
     [TOOL_CALL_STATUS.ERROR]: strings.errorLabel,
     [TOOL_CALL_STATUS.DECLINED]: strings.declinedLabel,
+    [TOOL_CALL_STATUS.INTERRUPTED]: strings.interruptedLabel,
   };
 }
 

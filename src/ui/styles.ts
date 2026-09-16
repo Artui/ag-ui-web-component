@@ -90,6 +90,7 @@ export const STYLES = `
   --_tool-icon-done: var(--ag-ui-tool-icon-done, "✓");
   --_tool-icon-error: var(--ag-ui-tool-icon-error, "✕");
   --_tool-icon-declined: var(--ag-ui-tool-icon-declined, "⊘");
+  --_tool-icon-interrupted: var(--ag-ui-tool-icon-interrupted, "◌");
 
   /* Disclosure marks on every expandable row. Tokenised for the same reason
      the status icons above are: a host re-theming one set and not the other
@@ -1657,6 +1658,13 @@ export const STYLES = `
   color: var(--_muted);
 }
 
+/* Not finished: muted like declined, since nothing failed, but its own glyph,
+   since nobody refused it either. */
+.tool-call[data-status="interrupted"] .tool-call-icon::before {
+  content: var(--_tool-icon-interrupted);
+  color: var(--_muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tool-call[data-status="pending"] .tool-call-icon {
     animation: none;
@@ -1695,7 +1703,8 @@ export const STYLES = `
   color: var(--_danger);
 }
 
-.tool-call[data-status="declined"] .tool-call-status {
+.tool-call[data-status="declined"] .tool-call-status,
+.tool-call[data-status="interrupted"] .tool-call-status {
   color: var(--_muted);
 }
 

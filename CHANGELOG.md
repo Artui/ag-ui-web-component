@@ -308,8 +308,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was waiting on a person or on a frontend tool the reload interrupted, so a
   tool that was still running comes back declined too. A navigating tool's call
   is unchanged: it resumes from the page it landed on. A restored card for a
-  call that an earlier round went past without a result now settles to "No
-  result returned.", as it did live, instead of spinning.
+  call that an earlier round went past without a result now settles as not
+  finished, as it does live, instead of spinning.
 
 - **A request sent after a reload no longer carries the element's `outcome`
   labels to the server.** The label that lets a reload replay a declined or
@@ -320,6 +320,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it is seeded with and keeps them beside it, so the request carries none, the
   restored cards still settle as they did, and the next save writes each label
   back.
+
+- **A request no longer carries a tool call without a result, however the run
+  that made the call ended.** Several model providers reject such a turn, so the
+  conversation could not continue past it, and a live run left one in four ways
+  with no reload involved: Stop while the stream was still arriving, Stop on an
+  open server-side approval, a round that ended on `RUN_ERROR` after emitting
+  calls, and a call naming a tool nothing on the page owns. Each was guarded,
+  if at all, where it happened, and the guards between them left gaps.
+
+  The client now answers every call still open before each request it makes,
+  in one place, so a path nobody listed cannot send one either. The answer goes
+  at the end of the round that made the call, where a provider looks for it.
+  It says the call did not finish, in the new `callNotFinished` string, with
+  the outcome `interrupted`, pydantic-ai's word for the same thing, because
+  nobody refused it; the card settles to a new **not finished** status in the
+  same words, with its own `--ag-ui-tool-icon-interrupted` glyph, where it used
+  to claim "done" over "No result returned.". The decline stays where a person
+  declined: an approval Stop closed while it was open is answered with
+  `declinedAction`, and one already approved when Stop landed is answered as not
+  finished. The calls a resumed approval is answering are left for the server.
+  `UiStrings.noResult` is no longer drawn and is deprecated, and a server's own
+  `interrupted` outcome now renders as not finished rather than as done.
 
 ## [0.38.0] — 2026-09-14
 

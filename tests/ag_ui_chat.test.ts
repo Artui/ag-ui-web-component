@@ -535,8 +535,9 @@ describe("AgUiChat", () => {
     // No label found anywhere -> auto-prettified snake_case fallback.
     expect(card?.querySelector(".tool-call-name")?.textContent).toBe("Fill field");
     expect(card?.querySelector(".tool-call-args")?.textContent).toContain('"name": "city"');
-    // fill_field isn't registered here, so it's treated as server-executed.
-    expect(card?.getAttribute("data-status")).toBe("done");
+    // fill_field isn't registered here and no server result arrived, so the
+    // card says the call did not finish rather than claiming it ran.
+    expect(card?.getAttribute("data-status")).toBe("interrupted");
   });
 
   it("settles the tool-call card to done with the result body", async () => {
@@ -1048,12 +1049,12 @@ describe("AgUiChat", () => {
     });
     await send(el, "do server thing");
     // server_only isn't registered and no TOOL_CALL_RESULT arrived → settled
-    // with the honest "no result" fallback (not a false "executed on the
-    // server"). The indicator must NOT linger: a server tool never triggers
-    // another client round, so re-showing it would leave it stuck.
+    // as not finished (not a false "executed on the server"). The indicator
+    // must NOT linger: a server tool never triggers another client round, so
+    // re-showing it would leave it stuck.
     const card = shadow(el).querySelector(".tool-call");
-    expect(card?.getAttribute("data-status")).toBe("done");
-    expect(card?.querySelector(".tool-call-result")?.textContent).toContain("No result returned.");
+    expect(card?.getAttribute("data-status")).toBe("interrupted");
+    expect(card?.querySelector(".tool-call-result")?.textContent).toContain("Not finished");
     expect(shadow(el).querySelectorAll(".pending")).toHaveLength(0);
   });
 

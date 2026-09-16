@@ -321,7 +321,7 @@ export class ConversationHistory {
    *
    * Any other call the stored run left unanswered is settled on the way in,
    * because no run is left to answer it: the final round's calls are declined as
-   * Stop would have declined them, and older ones settle to the no-result label.
+   * Stop would have declined them, and older ones settle as not finished.
    */
   async rehydrate(): Promise<void> {
     // Guard against a thread-switch race: with a slow remote store, picking
@@ -377,11 +377,13 @@ export class ConversationHistory {
    * checkpoint is about to answer.
    *
    * The restore's half of the terminal sweep a live run does at `onSettled`, and
-   * with the same fallback, because it covers the same calls: ones the run went
+   * with the same words, because it covers the same calls: ones the run went
    * past without a result -- a name no tool here owns, or a server that sent
    * none -- which the live sweep had already settled to exactly this before the
-   * reload threw the card away. A call the reload itself abandoned never gets
-   * here; {@link answerAbandonedCalls} gave it a result for the replay to settle.
+   * reload threw the card away. Their history is not rewritten here: the client
+   * answers them on the next request, where the answer is needed. A call the
+   * reload itself abandoned never gets here; {@link answerAbandonedCalls} gave it
+   * a result for the replay to settle.
    */
   #settleUnanswered(resuming: string | undefined): void {
     // Left running, because it is: the resume path answers it next.
@@ -390,7 +392,7 @@ export class ConversationHistory {
       // A card a stored result already settled keeps that outcome: `settle`
       // ignores every call after its first.
       if (card !== resumingCard) {
-        card.settle(TOOL_CALL_STATUS.DONE, this.#host.strings().noResult);
+        card.settle(TOOL_CALL_STATUS.INTERRUPTED, this.#host.strings().callNotFinished);
       }
     }
   }
@@ -565,20 +567,21 @@ export class ConversationHistory {
  * end of history, with no user turn and no answer after them -- only results,
  * and messages such as activity that are not a turn. A call further
  * back was one the run went past, and the conversation that followed it is not
- * this restore's to rewrite -- `#settleUnanswered` stops its card spinning and
- * leaves its history as the live run left it. The checkpointed call is excluded
+ * this restore's to rewrite -- `#settleUnanswered` stops its card spinning, and
+ * the client answers it as not finished on the next request. The checkpointed call is excluded
  * too, because the resume path answers it from the page the reload landed on.
  *
  * Returns `messages` itself when nothing was abandoned, so a transcript that
  * finished cleanly is seeded exactly as it was stored.
  *
  * Every condition below is one branch arc or one conjunct, which a coverage gate
- * reports as covered with any of them deleted. Each is held by one test in
- * `ag_ui_chat_reload_mid_run.test.ts`: the answered-call check by "is restored
+ * reports as covered with any of them deleted. Each is held by one test: in
+ * `ag_ui_chat_reload_mid_run.test.ts`, the answered-call check by "is restored
  * exactly as it was stored", the checkpoint exclusion by "still resumes with the
- * landed page's result", a user turn closing the round by "settles as it did
- * live", and a turn without calls closing it by "is not reopened by a call the
- * same run answered with text".
+ * landed page's result", and a turn without calls closing the round by "is not
+ * reopened by a call the same run answered with text"; a user turn closing it by
+ * "answers each round's open call before the next round starts" in
+ * `ag_ui_chat_unanswered_tool_calls.test.ts`.
  */
 function answerAbandonedCalls(
   messages: readonly Message[],

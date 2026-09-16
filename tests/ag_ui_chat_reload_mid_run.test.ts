@@ -42,6 +42,9 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 
+const NOT_FINISHED =
+  "Not finished: the run ended or moved on before this tool call returned a result.";
+
 /** What a store holds at one instant: the transcript and the navigation checkpoint. */
 interface Snapshot {
   readonly messages: readonly Message[];
@@ -474,11 +477,11 @@ describe("the navigating tool a reload was expected by", () => {
 });
 
 describe("a call the run went past", () => {
-  it("settles as it did live, and is not rewritten into history", async () => {
+  it("is answered as not finished on the next turn, and restores as it settled", async () => {
     // A call nothing answered that the conversation then moved beyond: a name no
-    // tool here owns, whose server sent no result. Live, the run settled it to
-    // the no-result fallback and carried on. It was not abandoned by any reload,
-    // so the restore must not invent a decline for it -- only stop it spinning.
+    // tool here owns, whose server sent no result. Live, the run settled it as
+    // not finished, and the next request answered it in those words. It was not
+    // abandoned by any reload, so the restore must not invent a decline for it.
     const store = memoryStore();
     let round = 0;
     const { el } = mount(store, (emit) => {
@@ -490,7 +493,7 @@ describe("a call the run went past", () => {
     });
     sendNoWait(el, "first");
     await flush();
-    expect(cardView(el).result).toBe("No result returned.");
+    expect(cardView(el)).toMatchObject({ status: "interrupted", result: NOT_FINISHED });
     sendNoWait(el, "second");
     await flush();
 
@@ -498,8 +501,7 @@ describe("a call the run went past", () => {
     const restored = await reload(store.snapshot(), recording(seen));
     // Read before sending anything: the next run's own terminal sweep would
     // settle a card left spinning, and hide that the restore never did.
-    expect(cardView(restored.el).status).toBe("done");
-    expect(cardView(restored.el).result).toBe("No result returned.");
+    expect(cardView(restored.el)).toMatchObject({ status: "interrupted", result: NOT_FINISHED });
 
     sendNoWait(restored.el, "third");
     await flush();
@@ -507,6 +509,7 @@ describe("a call the run went past", () => {
     expect(seen[0]).toEqual([
       { role: "user", content: "first" },
       { role: "assistant", calls: ["tc-x"] },
+      { role: "tool", toolCallId: "tc-x", content: NOT_FINISHED },
       { role: "user", content: "second" },
       { role: "user", content: "third" },
     ]);
@@ -573,13 +576,15 @@ describe("a round that finished", () => {
 
     const seen: unknown[][] = [];
     const restored = await reload(store.snapshot(), recording(seen));
-    expect(cardView(restored.el)).toMatchObject({ status: "done", result: "No result returned." });
+    expect(cardView(restored.el)).toMatchObject({ status: "interrupted", result: NOT_FINISHED });
     sendNoWait(restored.el, "thanks");
     await flush();
 
+    // Answered where the call was made, ahead of the text that moved past it.
     expect(seen[0]).toEqual([
       { role: "user", content: "do the thing" },
       { role: "assistant", calls: ["tc-s"] },
+      { role: "tool", toolCallId: "tc-s", content: NOT_FINISHED },
       { role: "assistant", calls: [] },
       { role: "user", content: "thanks" },
     ]);

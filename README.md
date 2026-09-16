@@ -570,9 +570,10 @@ pydantic-ai's own `ToolReturnPart` vocabulary — read the values off `TOOL_OUTC
 | `success` | done | The same thing, stated. |
 | `failed` | error | The call ran and failed. |
 | `denied` | declined | A person or a guard refused it, so it never ran. |
+| `interrupted` | not finished | It produced no result because the run ended first, and nobody refused it. |
 
 **Absent is a success, and anything unrecognised is too** — including a value from a later protocol
-version, and pydantic-ai's own `interrupted`. A card is a claim about what happened, and refusing to
+version. A card is a claim about what happened, and refusing to
 recognise a word is not grounds for claiming failure. So no server has to change to keep the
 rendering it has today, and a server that adds the field gets the truth on screen instead of a
 green card with a refusal folded inside it.
@@ -591,10 +592,23 @@ Either way the outcome is **persisted beside the tool message**, so a reload rep
 settled rather than as a plain result. See
 [MPA durability](#mpa-durability-surviving-full-page-reloads).
 
+**Every request carries a result for every tool call in it.** Several model providers reject a
+turn holding a tool call with no result, and a run can leave one open in more ways than one: Stop
+while the stream is still arriving, a round that ends on `RUN_ERROR`, a call naming a tool nothing
+here owns, a server that never streamed the result. So before each request the client answers
+every call still open with the `callNotFinished` string (by default `Not finished: the run ended
+or moved on before this tool call returned a result.`) and the outcome `interrupted`, placed at the
+end of the round that made the call, and the card settles to **not finished** in the same words.
+That result blames nobody, because nobody declined: `declinedAction` is kept for a call a person
+was asked about and turned down — a confirmation card or an approval they declined, or one Stop
+closed while it was open. The calls a resumed approval is answering are left alone, because the
+resume is their answer.
+
 The catalog a run advertises is also the set that run can execute. Override `getTools` to scope
 what a page offers — say, exposing `delete_record` only where deleting makes sense — and a call
 naming a tool you withheld is treated exactly as a call naming a tool you never registered: no
-handler runs, and the card settles with the no-result label. Withholding is per run, so the
+handler runs, the card settles as not finished, and the next request answers the call in those
+words. Withholding is per run, so the
 mount-wide registry can stay complete. Hosts that leave `getTools` alone advertise the built-ins
 plus everything registered, which is precisely what dispatch could reach anyway.
 
@@ -611,10 +625,13 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
   (`.stopped-note`) — a deliberate stop is not an error, so no bubble.
 - The run loop stops: tool calls collected before the abort are **not executed**, and no further
   round starts. A frontend tool handler already running completes, but its result doesn't trigger
-  a re-run.
+  a re-run. Each call that did not run settles as **not finished**, and the next request answers
+  it in those words rather than sending it without a result.
 - An **open confirmation card is declined** (`data-resolved="declined"`) — cancelling the run
-  answers the pending question. Likewise an open **approval card** is denied and an open
-  **question card** (`ask_user`) resolves with an empty answer. Reloading the page while a card is
+  answers the pending question. Likewise an open **approval card** is denied, and the next request
+  carries that decline as the call's result; a call already approved when Stop lands was declined
+  by nobody, so it is answered as not finished instead. An open **question card** (`ask_user`)
+  resolves with an empty answer. Reloading the page while a card is
   open lands in the same place; see [MPA durability](#mpa-durability-surviving-full-page-reloads).
 - The new `onCancelled()` handler fires instead of `onError()`; `onSettled()` still follows
   (the terminal-rest guarantee), returning the button to **Send**.
@@ -1440,9 +1457,10 @@ If a tool's schema carries an `x-summary` string (use `X_SUMMARY_KEY`), the card
 label instead of the raw tool name.
 
 Every card leads with a **status icon** drawn entirely in CSS — a spinning ring while the call
-runs, then a check / cross / slash on success / error / decline. Re-theme it via custom
-properties (or the `tool-card-icon` part): `--ag-ui-tool-icon-done`, `--ag-ui-tool-icon-error`,
-`--ag-ui-tool-icon-declined` (quoted-string glyphs) and `--ag-ui-tool-spin-duration` (spinner
+runs, then a check / cross / slash / dotted ring on success / error / decline / not finished.
+Re-theme it via custom properties (or the `tool-card-icon` part): `--ag-ui-tool-icon-done`,
+`--ag-ui-tool-icon-error`, `--ag-ui-tool-icon-declined`, `--ag-ui-tool-icon-interrupted`
+(quoted-string glyphs) and `--ag-ui-tool-spin-duration` (spinner
 speed; the spin respects `prefers-reduced-motion`).
 
 ```html

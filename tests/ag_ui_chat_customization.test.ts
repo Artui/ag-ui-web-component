@@ -372,8 +372,10 @@ describe("AgUiChat — UX & customization", () => {
       expect(error).toBeDefined();
       // and the orphaned tool card is settled rather than stuck on "running…".
       const card = root.querySelector(".tool-call");
-      expect(card?.getAttribute("data-status")).toBe("done");
-      expect(card?.querySelector(".tool-call-result")?.textContent).toBe("No result returned.");
+      expect(card?.getAttribute("data-status")).toBe("interrupted");
+      expect(card?.querySelector(".tool-call-result")?.textContent).toBe(
+        "Not finished: the run ended or moved on before this tool call returned a result.",
+      );
     });
   });
 

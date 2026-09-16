@@ -2565,6 +2565,8 @@ export class AgUiChat extends HTMLElement {
         : {}),
       onStateChanged: (state) => this.#onSharedStateChanged(state),
       connectionLostMessage: this.#strings.connectionLost,
+      unfinishedMessage: this.#strings.callNotFinished,
+      declinedMessage: this.#strings.declinedAction,
       maxToolRounds: readMaxToolRounds(this),
     });
   }

@@ -6,9 +6,10 @@ import {
   randomUUID,
 } from "@ag-ui/client";
 import type { Context, Interrupt, Message, ResumeEntry, Tool } from "@ag-ui/core";
-import { MAX_TOOL_ROUNDS } from "../constants.js";
+import { MAX_TOOL_ROUNDS, TOOL_OUTCOME } from "../constants.js";
 import type { AttachmentRef } from "./attachment.js";
 import type { ToolOutcome } from "./tool_outcome.js";
+import { answerUnansweredCalls } from "./utils.js";
 
 /** A tool call surfaced to the host by {@link AgUiClient}. */
 export interface AgUiToolCall {
@@ -232,6 +233,22 @@ export interface AgUiClientConfig extends AgUiRunInputs {
    */
   connectionLostMessage?: string;
   /**
+   * Result content for a tool call the conversation moved past without one: a
+   * Stop while the stream was arriving, a round that ended on `RUN_ERROR`, a
+   * call no {@link executeTool} answered, or history restored with a call still
+   * open. Sent to the agent, so it says only that the call did not finish --
+   * nobody refused it. Defaults to an English sentence; the host passes its
+   * localized string.
+   */
+  unfinishedMessage?: string;
+  /**
+   * Result content for a server-side approval that Stop closed while it was
+   * open, which the host's {@link resolveInterrupts} answers as declined.
+   * Defaults to `"User declined the action."`; the host passes its localized
+   * string.
+   */
+  declinedMessage?: string;
+  /**
    * Upper bound on frontend tool-call to re-run rounds within one
    * {@link AgUiClient.send}. Defaults to {@link MAX_TOOL_ROUNDS}.
    *
@@ -307,6 +324,8 @@ export class AgUiClient {
    */
   readonly #outcomes = new Map<string, unknown>();
   readonly #connectionLostMessage: string;
+  readonly #unfinishedMessage: string;
+  readonly #declinedMessage: string;
   readonly #maxToolRounds: number;
   // Set by cancel(); reset at the top of each #run(). Checked by the loop so
   // a cancel between frontend-tool rounds doesn't start another round.
@@ -321,6 +340,10 @@ export class AgUiClient {
     this.#resolveInterrupts = config.resolveInterrupts ?? null;
     this.#onPersist = config.onPersist ?? (() => {});
     this.#connectionLostMessage = config.connectionLostMessage ?? "Connection lost";
+    this.#unfinishedMessage =
+      config.unfinishedMessage ??
+      "Not finished: the run ended or moved on before this tool call returned a result.";
+    this.#declinedMessage = config.declinedMessage ?? "User declined the action.";
     // Validated here rather than at each caller, so the element's attribute and
     // a direct consumer get the same answer. A bound below one -- or a NaN from
     // an unparseable attribute -- is not a smaller budget but a send that runs
@@ -516,6 +539,74 @@ export class AgUiClient {
   }
 
   /**
+   * Give every tool call in history a result, before a request carries it.
+   *
+   * Called ahead of every `runAgent`, which makes it the one place the rule is
+   * kept for every way a call can be left open -- a live run's Stop or
+   * `RUN_ERROR`, a name no tool here owns, a server that sent no result -- and
+   * for a client seeded with a restored history just the same. The answer says
+   * the call did not finish rather than that anyone declined it: a person
+   * declined only where they were asked, and those answers are already here by
+   * the time this runs (see {@link #answerStoppedApprovals}).
+   *
+   * `resuming` names the calls the request is itself answering: a resumed
+   * approval runs or denies them server-side, and a result here would answer
+   * them twice.
+   *
+   * The labels go to {@link #outcomes}, never onto the messages, because these
+   * messages are the request.
+   */
+  #answerUnansweredCalls(resuming: ReadonlySet<string>): void {
+    const messages = this.#agent.messages;
+    const answered = answerUnansweredCalls(
+      messages,
+      (toolCallId) => {
+        this.#outcomes.set(toolCallId, TOOL_OUTCOME.INTERRUPTED);
+        return { id: randomUUID(), role: "tool", content: this.#unfinishedMessage, toolCallId };
+      },
+      resuming,
+    );
+    if (answered !== messages) {
+      this.#agent.setMessages([...answered]);
+      this.#persist();
+    }
+  }
+
+  /**
+   * Answer, as declined, every approval that Stop closed as declined.
+   *
+   * Stop cancels the resume that would have told the server, so the decline the
+   * approval recorded reaches no one unless history carries it. Only calls the
+   * host's resolver answered `cancelled` are declined: a person who approved a
+   * call and then pressed Stop did not decline it, and
+   * {@link #answerUnansweredCalls} answers that one on the next request as not
+   * finished.
+   *
+   * The status check is held by "does not call an approved call declined, since
+   * nobody declined it" in `ag_ui_chat_unanswered_tool_calls.test.ts`; the
+   * `toolCallId` check is held by the type checker, since a result needs an id
+   * to answer.
+   */
+  #answerStoppedApprovals(
+    interrupts: readonly Interrupt[],
+    responses: Readonly<Record<string, InterruptResponse>>,
+  ): void {
+    for (const interrupt of interrupts) {
+      const toolCallId = interrupt.toolCallId;
+      if (toolCallId !== undefined && responses[interrupt.id]?.status === "cancelled") {
+        this.#outcomes.set(toolCallId, TOOL_OUTCOME.DENIED);
+        this.#agent.addMessage({
+          id: randomUUID(),
+          role: "tool",
+          content: this.#declinedMessage,
+          toolCallId,
+        });
+      }
+    }
+    this.#persist();
+  }
+
+  /**
    * Hand the transcript to the host's store, annotated with what {@link #outcomes}
    * knows about how each tool call ended.
    *
@@ -553,6 +644,7 @@ export class AgUiClient {
     // continues an unfinished frontend-tool round after a page load; this stays
     // inside one #run().
     let resume: ResumeEntry[] | undefined;
+    let resuming: ReadonlySet<string> = new Set();
     for (let round = 0; round < this.#maxToolRounds; round += 1) {
       // A cancel during the previous round's tool execution lands here: the
       // running handler completed, but no further round starts.
@@ -568,8 +660,10 @@ export class AgUiClient {
       if (resume !== undefined) {
         params.resume = resume;
       }
+      this.#answerUnansweredCalls(resuming);
       await this.#agent.runAgent(params, this.#buildSubscriber(pending, runState));
       resume = undefined;
+      resuming = new Set();
       this.#persist();
       // Cancelled mid-stream: don't execute the tool calls collected before the
       // abort.
@@ -599,9 +693,11 @@ export class AgUiClient {
         }
         const responses = await this.#resolveInterrupts(runState.interrupts);
         if (this.#cancelled) {
+          this.#answerStoppedApprovals(runState.interrupts, responses);
           return;
         }
         resume = buildResumeArray(runState.interrupts, responses);
+        resuming = new Set(runState.interrupts.flatMap(({ toolCallId }) => toolCallId ?? []));
         continue;
       }
       if (this.#executeTool === null || pending.length === 0) {

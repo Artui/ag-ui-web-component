@@ -30,11 +30,10 @@ describe("toolStatusFromOutcome", () => {
     expect(toolStatusFromOutcome(TOOL_OUTCOME.DENIED)).toBe(TOOL_CALL_STATUS.DECLINED);
   });
 
-  it("reads pydantic-ai's interrupted as a success rather than a failure", () => {
-    // A real value from the vocabulary this one is drawn from, which this
-    // release deliberately does not carry. Claiming failure for a word we do
-    // not know would put a red card in front of a user over a parsing gap.
-    expect(toolStatusFromOutcome("interrupted")).toBe(TOOL_CALL_STATUS.DONE);
+  it("reads interrupted as a call that did not finish, neither success nor failure", () => {
+    // pydantic-ai's word for a call its history repair answered, and the one the
+    // element writes for a call its own run left open.
+    expect(toolStatusFromOutcome(TOOL_OUTCOME.INTERRUPTED)).toBe(TOOL_CALL_STATUS.INTERRUPTED);
   });
 
   it("reads anything unrecognised as a success", () => {

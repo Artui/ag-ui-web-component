@@ -207,12 +207,23 @@ describe("a server-side tool's outcome", () => {
   });
 
   it("renders an outcome it does not recognise as done", async () => {
-    // Forward compatibility beats completeness: a later protocol version, or
-    // pydantic-ai's own `interrupted`, must not turn every card red.
-    const el = mountWithAgent(memoryStore(), serverTool("stopped part-way", "interrupted"));
+    // Forward compatibility beats completeness: a word from a later protocol
+    // version must not turn every card red.
+    const el = mountWithAgent(memoryStore(), serverTool("stopped part-way", "expired"));
     await send(el, "book me a flight");
 
     expect(cardStatus(el)).toBe("done");
+  });
+
+  it("renders pydantic-ai's interrupted as a call that did not finish", async () => {
+    // Neither a success nor a failure: the server's own history repair says the
+    // call produced no result, which is the state the element gives a call its
+    // own run left open.
+    const el = mountWithAgent(memoryStore(), serverTool("stopped part-way", "interrupted"));
+    await send(el, "book me a flight");
+
+    expect(cardStatus(el)).toBe("interrupted");
+    expect(cardResult(el)).toBe("stopped part-way");
   });
 
   it("does not send the outcome back to the server on the next run", async () => {
@@ -312,7 +323,7 @@ describe("replaying a tool result from history", () => {
   });
 
   it("replays an unrecognised outcome as done", async () => {
-    const el = mountRestoring(seeded("interrupted"));
+    const el = mountRestoring(seeded("expired"));
     await flush();
 
     expect(cardStatus(el)).toBe("done");

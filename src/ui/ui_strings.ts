@@ -77,8 +77,21 @@ export interface UiStrings {
   stopped: string;
   /** Error shown when the stream drops without a terminal AG-UI event. */
   connectionLost: string;
-  /** Fallback when a tool call produced no result. */
+  /**
+   * Formerly the card text for a tool call that produced no result.
+   *
+   * @deprecated No longer drawn: such a call is now answered with
+   * {@link callNotFinished}, on its card and in the conversation alike. Kept so a
+   * string table that sets it still type-checks.
+   */
   noResult: string;
+  /**
+   * Tool-result content (and card text) for a call that never produced a result
+   * and that nobody refused: the run was stopped or failed first, the page
+   * reloaded, or no tool here answered it. Sent to the agent, so it must not say
+   * a person declined.
+   */
+  callNotFinished: string;
   /** Tool-result content when the user declines a confirmed action. */
   declinedAction: string;
   /** Tool-result content (and card text) when `confirmPredicate` threw, so the call was refused. */
@@ -143,6 +156,8 @@ export interface UiStrings {
   toolError: string;
   /** Status pill on a declined call. */
   toolDeclined: string;
+  /** Status pill on a call that ended without a result nobody refused. */
+  toolInterrupted: string;
   /** Accessible label on the panel resize handle. */
   resizePanel: string;
   /** Note on a tool card whose call a human approved. */
@@ -157,6 +172,8 @@ export interface UiStrings {
   errorLabel: string;
   /** Heading over a tool card's result region when the call was declined. */
   declinedLabel: string;
+  /** Heading over a tool card's result region when the call did not finish. */
+  interruptedLabel: string;
   /** Label on the toggle that expands a tool card's body. */
   details: string;
 
@@ -350,6 +367,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   stopped: "⏹ Stopped",
   connectionLost: "Connection lost",
   noResult: "No result returned.",
+  callNotFinished:
+    "Not finished: the run ended or moved on before this tool call returned a result.",
   declinedAction: "User declined the action.",
   confirmCheckFailed:
     "Not run: the check that decides whether this action needs the user's confirmation failed.",
@@ -384,6 +403,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   toolDone: "✓ done",
   toolError: "⚠ error",
   toolDeclined: "⊘ declined",
+  toolInterrupted: "◌ not finished",
   resizePanel: "Resize the chat panel",
   decisionApproved: "approved by you",
   decisionDeclined: "declined by you",
@@ -391,6 +411,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   resultLabel: "Result",
   errorLabel: "Error",
   declinedLabel: "Declined",
+  interruptedLabel: "Not finished",
   details: "Details",
 
   subAgentWorking: "Working…",
