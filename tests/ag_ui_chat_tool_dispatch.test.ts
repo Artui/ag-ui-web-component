@@ -308,3 +308,73 @@ describe("an Always allow waiver and the principal who granted it", () => {
     expect(shadow(el).querySelector(".confirm")).toBeNull();
   });
 });
+
+describe("a confirmPredicate that throws", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  const THROWS = {
+    synchronously: () => {
+      throw new Error("policy service unreachable at 10.0.0.7");
+    },
+    "by rejecting": () => Promise.reject(new Error("policy service unreachable at 10.0.0.7")),
+  };
+
+  it.each(Object.entries(THROWS))(
+    "refuses the call and carries on when it throws %s",
+    async (_how, predicate) => {
+      // The predicate is documented as authoritative, and for a tool with no
+      // `x-destructive` flag it is the only thing standing between the model and
+      // the handler. A guard that cannot answer has not said the call is safe.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const handler = vi.fn(() => "sent");
+      let round = 0;
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      const handle = makeFakeAgent({
+        script: (emit) => {
+          emit.runStart();
+          if (round === 0) {
+            emit.toolCall("call-1", "send_invoice", { id: 7 });
+          }
+          round += 1;
+          emit.runEnd();
+        },
+      });
+      el.agentFactory = () => handle.agent;
+      document.body.appendChild(el);
+      el.confirmPredicate = predicate;
+      el.registerTool({
+        name: "send_invoice",
+        description: "Send an invoice",
+        parameters: { type: "object" },
+        handler,
+      });
+
+      await send(el, "send invoice 7");
+
+      const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+      expect(card?.getAttribute("data-status")).toBe("declined");
+      expect(handler).not.toHaveBeenCalled();
+      // Nobody was asked, so the card must not say a person declined.
+      expect(card?.hasAttribute("data-decision")).toBe(false);
+      expect(shadow(el).querySelector(".confirm")).toBeNull();
+      // The run went on to its next round with the refusal as the tool result,
+      // as it does after a decline, rather than ending on an error bubble.
+      expect(handle.runParams).toHaveLength(2);
+      expect(shadow(el).querySelector(".message--failed")).toBeNull();
+      const result = handle.messages.find((message) => message.role === "tool");
+      expect(result?.content).toBe(card?.querySelector(".tool-call-result")?.textContent);
+      // The host's own message is a detail of its infrastructure: it goes to the
+      // console, never to the endpoint or the model.
+      expect(result?.content).not.toContain("10.0.0.7");
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("confirmPredicate"),
+        expect.objectContaining({ message: "policy service unreachable at 10.0.0.7" }),
+      );
+      warn.mockRestore();
+    },
+  );
+});

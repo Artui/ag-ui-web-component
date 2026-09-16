@@ -243,6 +243,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transcript. The first key to arrive keeps them, for the same reason it keeps
   the conversation on screen: it names the user who was already there.
 
+- **A `confirmPredicate` that throws now refuses the call, and the run carries
+  on.** A throw, or a rejected promise, used to end the whole run on an error
+  bubble quoting the host's own message, and left that call's tool card reading
+  "running..." for good, because dispatch had already taken the card out of the
+  sweep that settles leftovers when a run ends. The handler did not run, but
+  nothing on screen said so and the agent was never told.
+
+  The call now fails closed: no confirmation card, no handler, the tool card
+  settles as declined, and the agent receives the new `confirmCheckFailed`
+  string as the result and goes on to its next round, as it does after a
+  decline. It is refused rather than put to a card because for a tool with no
+  `x-destructive` flag the predicate is the only guard, and one click would run
+  what the host's policy could not vouch for. The error is reported with
+  `console.warn`, as a failed `render` already is, and is not sent to the
+  endpoint: unlike a handler's message, it was never written for the model.
+
 ## [0.38.0] — 2026-09-14
 
 ### Changed

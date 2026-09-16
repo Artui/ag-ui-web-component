@@ -180,6 +180,16 @@ export class ToolDispatch {
       return { content: `Error: ${message}`, error: message, outcome: TOOL_OUTCOME.FAILED };
     }
     const rule = await this.#confirmationRule(call, tool);
+    if (rule === "unanswered") {
+      // Settled as a refusal and returned as one, so the run carries on to its
+      // next round the way it does after a decline and the agent can say what
+      // happened. Not recorded as a decision: no person was asked, and "declined
+      // by you" would be a claim about someone who never saw a card.
+      const message = this.#host.strings().confirmCheckFailed;
+      card.settle(TOOL_CALL_STATUS.DECLINED, message);
+      this.#host.transcript.showPending();
+      return { content: message, outcome: TOOL_OUTCOME.DENIED };
+    }
     if (rule !== null) {
       const request: ConfirmationRequest = { toolName: call.name, args: call.args };
       const confirmText = tool.parameters[X_CONFIRM_KEY];
@@ -377,7 +387,8 @@ export class ToolDispatch {
   }
 
   /**
-   * Which rule gates `call`, or `null` when it runs straight through.
+   * Which rule gates `call`, or `null` when it runs straight through, or
+   * `"unanswered"` when the host's predicate threw instead of deciding.
    *
    * The rule, rather than a bare boolean, because it decides whether the user
    * may *waive* the prompt for the rest of the session. Only the default
@@ -393,10 +404,30 @@ export class ToolDispatch {
     }
     const predicate = this.#host.confirmPredicate();
     if (predicate !== null) {
-      // Called on the element, as `this.confirmPredicate(...)` always was.
-      return (await predicate.call(this.#host.element, call.name, call.args)) === true
-        ? "predicate"
-        : null;
+      try {
+        // Called on the element, as `this.confirmPredicate(...)` always was.
+        return (await predicate.call(this.#host.element, call.name, call.args)) === true
+          ? "predicate"
+          : null;
+      } catch (error) {
+        // A guard that cannot answer has not said the call is safe, and for a
+        // tool with no `x-destructive` flag the predicate is the only guard
+        // there is. So it fails closed: the call is refused outright, rather
+        // than run, and rather than put to a card whose one click would run
+        // what the host's own policy could not vouch for.
+        //
+        // Uncaught, the throw ended the run on an error bubble quoting the
+        // host's message and left this call's card reading "running…" for
+        // good, since dispatch had already taken it out of the settle sweep.
+        // The message goes to the console instead, where a render failure is
+        // reported, and not on to the endpoint: unlike a handler's, it was
+        // never written for the model to read.
+        console.warn(
+          `ag-ui-chat: confirmPredicate failed for tool ${call.name}, so the call was refused`,
+          error,
+        );
+        return "unanswered";
+      }
     }
     if (this.#sessionApproved.has(call.name)) {
       return null;
@@ -435,10 +466,12 @@ function confirmPhrase(interrupt: Interrupt): string | undefined {
 }
 
 /**
- * Why a client tool call is gated behind the confirmation card.
+ * Why a client tool call is gated behind the confirmation card, or refused
+ * before one is drawn.
  *
  * Only `"destructive"` -- the default `x-destructive` gate -- may be waived for
  * the session. `confirmPredicate` is documented as authoritative, so a call it
- * gates keeps asking.
+ * gates keeps asking. `"unanswered"` is a predicate that threw instead of
+ * answering, and the call it was asked about is refused without a card.
  */
-type ConfirmationRule = "destructive" | "predicate";
+type ConfirmationRule = "destructive" | "predicate" | "unanswered";

@@ -680,7 +680,10 @@ Whether a call is gated is decided in this order:
 1. If `chat.autoConfirm === true`, the call **never** prompts (an "autopilot" toggle).
 2. Else if `chat.confirmPredicate` is set, its boolean return is authoritative — given the tool
    name + parsed args it decides per-call (so one tool can be instant for some args and confirmed
-   for others, which a static flag can't express).
+   for others, which a static flag can't express). **A predicate that throws or rejects refuses
+   the call**: no card, the handler does not run, the tool card settles as declined, and the agent
+   gets the `confirmCheckFailed` string as the result and carries on, as after a decline. The
+   error goes to the console, never to the endpoint.
 3. Else if the user has waived this tool name for the session, the call runs.
 4. Else the element falls back to [`isDestructive(parameters)`](src/tools/is_destructive.ts),
    which reads the `x-destructive` JSON-Schema flag.
