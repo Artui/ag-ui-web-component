@@ -3163,17 +3163,26 @@ export const STYLES = `
   inset: 0;
   z-index: 5;
   display: flex;
-  transition: visibility var(--_motion) var(--_ease);
+  /* Visible at once on the way in. Opening moves focus to the list in the
+     same task that unhides it, and an element still hidden cannot take focus:
+     a transition on visibility starts at its first value, so easing it in
+     left the drawer hidden at exactly that instant and the focus call was
+     dropped at every placement. Reduced motion shortens the transition
+     without removing it, so it had the same first frame. */
+  transition: visibility 0s;
 }
 
 /* Closed. The overlay keeps its box (display, not none) so the backdrop and
    panel inside it stay rendered and can transition both ways; visibility is
    what takes the whole subtree out of the tab order, the a11y tree and hit
-   testing at rest, and it holds off until the slide has finished. */
+   testing at rest. On the way out it is delayed rather than eased, so it
+   flips only once the slide has finished. A transition is read from the
+   state being entered, which is what lets the two directions differ. */
 .drawer[hidden] {
   display: flex;
   visibility: hidden;
   pointer-events: none;
+  transition: visibility 0s var(--_motion);
 }
 
 .drawer[hidden] .drawer-backdrop {
@@ -3202,20 +3211,29 @@ export const STYLES = `
   /* Scrolling past the end of this must not scroll the page behind it. */
   overscroll-behavior: contain;
   transform-origin: top center;
+  /* Visibility flips at once on the way in, for the drawer's reason: opening
+     focuses the panel in the same task that unhides it, and an element still
+     hidden cannot take focus. The fade and the scale still ease in. */
   transition:
     opacity var(--_motion) var(--_ease),
     transform var(--_motion) var(--_ease),
-    visibility var(--_motion) var(--_ease);
+    visibility 0s;
 }
 
 /* Same idiom as the drawer: laid out at rest, hidden by visibility, so the
-   popover can animate open and closed. */
+   popover can animate open and closed. The whole list is restated because a
+   transition is read from the state being entered; only visibility differs,
+   delayed rather than eased so it flips once the exit has played. */
 .checkpoints[hidden] {
   display: flex;
   visibility: hidden;
   pointer-events: none;
   opacity: 0;
   transform: scale(0.96) translateY(-6px);
+  transition:
+    opacity var(--_motion) var(--_ease),
+    transform var(--_motion) var(--_ease),
+    visibility 0s var(--_motion);
 }
 
 .checkpoints-title {

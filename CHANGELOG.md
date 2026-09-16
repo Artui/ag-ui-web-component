@@ -179,6 +179,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   padding. Measured in Chromium, which is where the new tests live, because
   happy-dom lays out no boxes and reports both as zero either way.
 
+- **Opening the conversation list or the checkpoints panel did not move focus
+  into it.** Each asks for focus as it opens -- the list on *New chat*, the
+  checkpoints panel on its first row or itself -- but both eased their
+  visibility in so the exit could play, and a transition starts at its first
+  value: at the instant of the call the panel was still hidden, so the browser
+  dropped it and focus stayed wherever it had been, at every placement and under
+  reduced motion. A keyboard user opened a modal dialog they were not in.
+  Visibility now changes at once on the way in and is delayed on the way out, so
+  the list's slide and the panel's fade are unchanged. happy-dom computes no
+  transitions, which is why the unit tests of the same calls passed; the new
+  tests are in Chromium.
+
 ## [0.38.0] — 2026-09-14
 
 ### Changed
