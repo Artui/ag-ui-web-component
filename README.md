@@ -2384,6 +2384,12 @@ Picking a row with an empty composer says so above the input and puts the caret
 there, rather than closing the panel over nothing: a continuation sends **only**
 the new turn, so with nothing typed there is nothing to send.
 
+Picking a row while an answer is still streaming — the conversation's own, or
+another continuation's — is refused the same way: the hint asks you to wait or
+stop it, and what you typed stays in the composer for the pick after. The run in
+flight is not cancelled for you, since a continuation starting over it would
+leave two answers streaming into one transcript with Stop reaching only one.
+
 ### One URL, three endpoints
 
 `data-runs-url` is the only thing to configure. `resume/<id>/` and `fork/<id>/`
@@ -2401,7 +2407,7 @@ The component satisfies that structurally rather than by remembering a rule. A
 continuation runs on its own short-lived agent, built pointing at the resume
 endpoint and seeded with **no** history — so "only the new turn" is the only
 thing it *can* send, and the fresh run id comes free because a new agent mints
-one. Your main agent's history is never touched.
+one. Nothing of the conversation's history goes out on its request.
 
 A resumed run is a normal run in every other respect: frontend tools execute,
 approval interrupts render their card, `headers` are re-read per request so
@@ -2411,9 +2417,14 @@ a rotated CSRF token or JWT still reaches the endpoint, it carries and updates
 construction as the conversation's own, differing only in the endpoint and the
 empty seed.
 
-It does not write the conversation store. Its agent holds only the new turn and
-the answer, and a store keeps one message list per thread, so saving that would
-replace the stored conversation with its last exchange.
+The continued exchange joins the conversation. Its agent holds only the new turn
+and the answer, and a store keeps one message list per thread, so each save
+writes the conversation as it stood when you picked the row with the exchange
+after it — through the same `saveMessages` as any other run, and as far as it
+got if it was stopped. A reload then replays the exchange, and the next message
+you send, now to `endpoint` again, carries it together with the shared state the
+continuation left. What is saved is what the transcript shows: a fork's exchange
+follows the conversation it was picked from, in that same thread.
 
 If the index can't be reached, the panel shows its empty state rather than an
 error — a history affordance that fails is empty, not broken.
@@ -2961,7 +2972,7 @@ component sets, so a new one cannot ship undocumented.
 | Typed question | `question`, `question-body`, `question-options`, `question-choice`, `question-choice-text`, `question-radio`, `question-input`, `question-actions`, `question-button` |
 | Composer | `composer`, `composer-surface`, `composer-tools`, `input`, `send`, `attach-button`, `voice-button` |
 | Attachments | `attachment-tray`, `attachment-chips` (the read-only chips on sent bubbles), and the shared chip parts `attachment-chip`, `attachment-chip-icon`, `attachment-chip-name`, `attachment-chip-size`, `attachment-chip-bar`, `attachment-chip-bar-fill`, `attachment-chip-retry`, `attachment-chip-remove` |
-| Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the composer hint: a skill’s missing placeholders, and a run continuation with nothing typed) |
+| Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the composer hint: a skill’s missing placeholders, and a run continuation picked with nothing typed or while a run is in flight) |
 | Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-close`, `drawer-filter`, `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
 | Charts | `chart-block`, `chart-title`, `chart-legend` |
 | Checkpoints panel | `checkpoints`, `checkpoints-header`, `checkpoints-title`, `checkpoints-list`, `checkpoints-empty`, `checkpoint-row`, `checkpoint-label`, `checkpoint-time`, `checkpoint-id`, `checkpoint-branch`, `checkpoint-action` (plus `checkpoint-resume`, `checkpoint-fork`) |

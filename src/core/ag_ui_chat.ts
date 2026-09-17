@@ -1,4 +1,4 @@
-import type { Context, Message, Tool } from "@ag-ui/core";
+import type { Context, Tool } from "@ag-ui/core";
 import {
   ATTACHMENT_EVENT,
   CHART_ACTIVITY_TYPE,
@@ -589,7 +589,10 @@ export class AgUiChat extends HTMLElement {
   #client: AgUiClient | null = null;
   // Seed for the next client. Once one exists it owns the live value (the
   // agent applies STATE_SNAPSHOT / STATE_DELTA into it), so this is only the
-  // starting point — `sharedState` reads through to the client when present.
+  // starting point — `sharedState` reads through to the client when present,
+  // and to a running checkpoint continuation before that. Every client mirrors
+  // its changes here, which is what the client built after a continuation is
+  // seeded from.
   #sharedState: Record<string, unknown> = {};
   // Whether an interaction is in flight (first onRunStart → onSettled). Drives
   // the Send⇄Stop button: `agent.isRunning` is false between frontend-tool
@@ -827,8 +830,13 @@ export class AgUiChat extends HTMLElement {
       requestCredentials: () => this.#requestCredentials(),
       appendMessage: (role, content) => this.appendMessage(role, content),
       autoGrow: () => autoGrow(this.#input),
+      client: () => this.#client,
       ensureClient: () => this.#ensureClient(),
       buildClient: (seed) => this.#buildClient(seed),
+      releaseClient: () => {
+        this.#client = null;
+      },
+      running: () => this.#running,
       cancelRun: () => this.#cancelRun(),
       resetState: () => this.#resetState(),
       setRunning: (running) => this.#setRunning(running),
@@ -952,14 +960,38 @@ export class AgUiChat extends HTMLElement {
    * from {@link registerPageState}, which exposes host state as ordinary tools.
    */
   get sharedState(): Readonly<Record<string, unknown>> {
-    return this.#client?.state ?? this.#sharedState;
+    return this.#liveClient()?.state ?? this.#sharedState;
   }
 
   set sharedState(state: Readonly<Record<string, unknown>>) {
     this.#sharedState = { ...state };
     // A client already exists for this conversation — push it through so the
     // next run sends it, rather than silently waiting for a new conversation.
-    this.#client?.setState(this.#sharedState);
+    // A continuation in flight is that client while it runs: its next round
+    // sends what it holds, and the getter reads it back from there.
+    this.#liveClient()?.setState(this.#sharedState);
+  }
+
+  /**
+   * The client holding the conversation's live shared state: a checkpoint
+   * continuation while one runs, otherwise the conversation's own client, and
+   * `null` before either exists.
+   *
+   * The continuation first, because the state it streams is applied to its own
+   * agent. Reading the conversation's client alone returned what the state was
+   * before the continuation began, for as long as that client lived.
+   *
+   * It now lives no longer than the continuation's first save, which hands the
+   * conversation to the next client built, seeded from the mirror every client
+   * writes -- so the next run sends what the continuation left. That release
+   * alone makes the getter's fallback give the same answer, and no test can
+   * tell the two apart; reading the continuation keeps the getter right
+   * without depending on when the other client is let go. The setter has no
+   * such fallback, and is held by "reads the shared state it changed while it
+   * runs, not the conversation's" in `ag_ui_chat_checkpoints.test.ts`.
+   */
+  #liveClient(): AgUiClient | null {
+    return this.#history.continuation ?? this.#client;
   }
 
   /** Bind a piece of host page state to `read_<name>` / `set_<name>` tools. */
@@ -2522,7 +2554,8 @@ export class AgUiChat extends HTMLElement {
       this.#client = this.#buildClient({
         endpoint: this.endpoint,
         initialMessages: this.#history.restored,
-        persist: true,
+        // Its history is the whole conversation, so nothing goes ahead of it.
+        follows: [],
       });
     }
     return this.#client;
@@ -2564,12 +2597,15 @@ export class AgUiChat extends HTMLElement {
       getContext: () => this.#dispatch.buildContext(),
       executeTool: (call) => this.#dispatch.execute(call),
       resolveInterrupts: (interrupts) => this.#dispatch.resolveInterrupts(interrupts),
-      ...(seed.persist
-        ? {
-            onPersist: (messages: readonly Message[]) =>
-              this.conversationStore.saveMessages(threadId, messages),
-          }
-        : {}),
+      // Every client saves the whole conversation, because a store keeps one
+      // list per thread. For the conversation's own client that is its
+      // history; a continuation holds only what it adds, and writes the
+      // conversation it continues ahead of that.
+      onPersist: (messages) => {
+        const conversation = [...seed.follows, ...messages];
+        this.conversationStore.saveMessages(threadId, conversation);
+        seed.onSaved?.(conversation);
+      },
       onStateChanged: (state) => this.#onSharedStateChanged(state),
       connectionLostMessage: this.#strings.connectionLost,
       unfinishedMessage: this.#strings.callNotFinished,
