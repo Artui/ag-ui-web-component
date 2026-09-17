@@ -3050,6 +3050,14 @@ export const STYLES = `
   box-shadow: 0 8px 24px rgba(20, 20, 50, 0.16);
 }
 
+/* Closed nearly all of the time and mounted on every element. The display
+   above beats the user-agent rule for the hidden attribute, so without this a
+   closed palette still painted its margin, border and shadow as a line over
+   the composer. */
+.skill-palette[hidden] {
+  display: none;
+}
+
 .skill-item {
   display: flex;
   flex-direction: column;
@@ -3344,6 +3352,13 @@ export const STYLES = `
   flex-wrap: wrap;
   gap: var(--_space);
   padding: 0 var(--_pad) var(--_space);
+}
+
+/* Empty whenever no run is in flight, and hidden then. Same reason as the
+   palette: the display above would otherwise keep the bottom padding as dead
+   space over the composer. */
+.queued[hidden] {
+  display: none;
 }
 
 .queued-chip {

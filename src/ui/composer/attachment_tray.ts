@@ -2,6 +2,7 @@ import { randomUUID } from "@ag-ui/client";
 import { ATTACHMENT_STATUS } from "../../constants.js";
 import type { AttachmentRef } from "../../core/attachment.js";
 import type { UploadHandler } from "../../core/upload_attachment.js";
+import { fillUiString } from "../fill_ui_string.js";
 import { formatBytes, iconFor } from "../transcript/attachment_chips.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
@@ -141,7 +142,7 @@ export class AttachmentTray {
   /** The size/type rejection reason for a file, or `null` when accepted. */
   #reject(file: File): string | null {
     if (this.#config.maxBytes > 0 && file.size > this.#config.maxBytes) {
-      return this.#strings.tooLarge.replace("{size}", formatBytes(this.#config.maxBytes));
+      return fillUiString(this.#strings.tooLarge, { size: formatBytes(this.#config.maxBytes) });
     }
     if (!accepts(this.#config.accept, file)) {
       return this.#strings.fileTypeNotAllowed;

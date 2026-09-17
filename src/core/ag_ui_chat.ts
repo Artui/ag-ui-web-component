@@ -71,6 +71,7 @@ import { attachCopyButtons } from "../ui/excerpts/attach_copy_buttons.js";
 import { copyPayload } from "../ui/excerpts/copy_payload.js";
 import { attachQuoteOffer, type PageQuoteOffer } from "../ui/excerpts/page_quote_offer.js";
 import { asQuote, quotableSelection } from "../ui/excerpts/quote_selection.js";
+import { fillUiString } from "../ui/fill_ui_string.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/history/checkpoint_menu.js";
 import type { RelativeTimeFormatter } from "../ui/history/relative_time.js";
 import { ThreadDrawer } from "../ui/history/thread_drawer.js";
@@ -969,7 +970,7 @@ export class AgUiChat extends HTMLElement {
           ? null
           : renderRunNotice(
               "\u{1F5DC}",
-              this.#strings.historyCompacted.replace("{count}", String(removed)),
+              fillUiString(this.#strings.historyCompacted, { count: removed }),
               "compaction",
             );
       },
@@ -2274,9 +2275,10 @@ export class AgUiChat extends HTMLElement {
       // keystroke replaces it. Blocking with a hint alone left whatever the
       // user had typed to open the palette — a lone "/" — sitting there, which
       // says nothing about what the skill wanted or how to give it.
-      this.#composerHint.textContent = this.#strings.skillNeeds
-        .replace("{title}", skill.title)
-        .replace("{fields}", missing.join(", "));
+      this.#composerHint.textContent = fillUiString(this.#strings.skillNeeds, {
+        title: skill.title,
+        fields: missing.join(", "),
+      });
       this.#composerHint.hidden = false;
       this.#input.value = text;
       this.#autoGrow();
@@ -4540,7 +4542,7 @@ export class AgUiChat extends HTMLElement {
     this.#badge.hidden = unread === 0 || !this.#badgeEnabled();
     const label = this.#badge.hidden
       ? this.#strings.expand
-      : this.#strings.expandUnread.replace("{count}", String(unread));
+      : fillUiString(this.#strings.expandUnread, { count: unread });
     this.#launcher.setAttribute("aria-label", label);
     this.#launcher.title = label;
   }
@@ -4784,7 +4786,7 @@ export class AgUiChat extends HTMLElement {
       chip.className = "queued-chip";
       chip.setAttribute("part", "queued-chip");
       chip.textContent = text;
-      chip.title = this.#strings.removeQueued.replace("{text}", text);
+      chip.title = fillUiString(this.#strings.removeQueued, { text });
       chip.setAttribute("aria-label", chip.title);
       chip.addEventListener("click", () => {
         this.#queued.splice(index, 1);
@@ -4855,10 +4857,9 @@ export class AgUiChat extends HTMLElement {
     if (this.#attachTray?.hasPending() === true) {
       this.#appendNotice(
         "\u{1F4CE}",
-        this.#strings.attachmentsStillUploading.replace(
-          "{n}",
-          String(this.#attachTray.pendingCount()),
-        ),
+        fillUiString(this.#strings.attachmentsStillUploading, {
+          n: this.#attachTray.pendingCount(),
+        }),
         "attachment-pending",
       );
     }
@@ -5276,7 +5277,7 @@ export class AgUiChat extends HTMLElement {
     // is deliberately not a live region, so without this the run simply goes
     // quiet and the user has no reason to go looking.
     this.#announce(
-      this.#strings.announceAwaitingDecision.replace("{count}", String(interrupts.length)),
+      fillUiString(this.#strings.announceAwaitingDecision, { count: interrupts.length }),
     );
     this.#hidePending();
     const signal = this.#confirmAbort.signal;
@@ -5480,7 +5481,7 @@ export class AgUiChat extends HTMLElement {
           delegationId: parentToolCallId,
           agent: agent === "" ? null : agent,
           phase: SUBAGENT_PHASE.STARTED,
-          status: this.#strings.subAgentDelegatedTo.replace("{agent}", agent),
+          status: fillUiString(this.#strings.subAgentDelegatedTo, { agent }),
           tool: null,
         });
       },
@@ -5756,7 +5757,7 @@ export class AgUiChat extends HTMLElement {
   #finishedLine(agent: string | null): string {
     return agent === null
       ? this.#strings.subAgentWorking
-      : this.#strings.subAgentFinished.replace("{agent}", agent);
+      : fillUiString(this.#strings.subAgentFinished, { agent });
   }
 
   #applySubAgent(update: SubAgentUpdate): void {
@@ -5935,7 +5936,7 @@ export class AgUiChat extends HTMLElement {
     if (skill === null) {
       return false;
     }
-    this.#appendNotice("✨", this.#strings.usingSkill.replace("{name}", skill), "skill");
+    this.#appendNotice("✨", fillUiString(this.#strings.usingSkill, { name: skill }), "skill");
     return true;
   }
 

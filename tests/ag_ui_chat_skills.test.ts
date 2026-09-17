@@ -125,6 +125,20 @@ describe("AgUiChat skills", () => {
     expect(hint?.hidden).toBe(true);
   });
 
+  it("names the skill and its missing fields exactly as written", () => {
+    // The hint was two chained replacements. A title carrying `{fields}` was
+    // filled by the second one, and `$&` in the title was read as "the matched
+    // token" by the first.
+    const el = mount({
+      "data-skills": embed([{ ...FIND, name: "odd", title: "Fill {fields} for $&" }]),
+      "data-prompt-chips": "true",
+    });
+    shadow(el).querySelector<HTMLButtonElement>(".skill-chip")?.click();
+    expect(shadow(el).querySelector<HTMLElement>(".skill-hint")?.textContent).toBe(
+      "“Fill {fields} for $&” needs q — fill it in below, then send.",
+    );
+  });
+
   it("fills placeholders from skillContext", () => {
     const el = mount({
       "data-skills": embed([{ ...FIND, sendImmediately: false }]),

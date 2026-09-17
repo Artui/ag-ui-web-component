@@ -13,13 +13,18 @@ import { COMPACTION_ACTIVITY_TYPE, ELEMENT_TAG, LOAD_CAPABILITY_TOOL } from "../
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { SessionStorageStore } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { UiStrings } from "../src/ui/ui_strings.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 defineAgUiChat();
 
-function mountWithAgent(script: (emit: Emit) => void | Promise<void>): AgUiChat {
+function mountWithAgent(
+  script: (emit: Emit) => void | Promise<void>,
+  strings: Partial<UiStrings> = {},
+): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
+  el.strings = strings;
   const handle = makeFakeAgent({ script });
   el.agentFactory = () => handle.agent;
   document.body.appendChild(el);
@@ -61,6 +66,20 @@ describe("compaction notices", () => {
     });
     await send(el, "hi");
     expect(shadow(el).querySelector(".run-notice--compaction")?.textContent).toContain("8");
+  });
+
+  it("fills the count everywhere a translation uses it", async () => {
+    // A string pattern fills only its first occurrence.
+    const el = mountWithAgent(
+      (emit) => {
+        emit.activity(COMPACTION_ACTIVITY_TYPE, { removed: 8, before: 10, after: 2 });
+      },
+      { historyCompacted: "{count} condensed ({count} removed)" },
+    );
+    await send(el, "hi");
+    expect(shadow(el).querySelector(".run-notice--compaction")?.textContent).toContain(
+      "8 condensed (8 removed)",
+    );
   });
 
   it("ignores an activity event of another type", async () => {
@@ -132,6 +151,22 @@ describe("agent-skill notices", () => {
     });
     await send(el, "hi");
     expect(shadow(el).querySelector(".run-notice--skill")?.textContent).toContain("summarise");
+  });
+
+  it("names a skill whose id carries a dollar pattern exactly as the model sent it", async () => {
+    // A string replacement reads `$&` in the inserted value as the matched
+    // token, which printed "Using skill {name}" for a skill with one in its id.
+    let round = 0;
+    const el = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.toolCall("c1", LOAD_CAPABILITY_TOOL, { id: "costs_$&_more" });
+      }
+      round += 1;
+    });
+    await send(el, "hi");
+    expect(shadow(el).querySelector(".run-notice--skill")?.textContent).toContain(
+      "Using skill costs_$&_more",
+    );
   });
 
   it("does not also render a tool card for it", async () => {

@@ -455,6 +455,30 @@ describe("AgUiChat", () => {
       expect(launcher?.getAttribute("aria-label")).toBe("Expand");
     });
 
+    it("fills the unread count everywhere a translation uses it", async () => {
+      // A string pattern fills only its first occurrence.
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      el.setAttribute("data-start-open", "");
+      el.strings = { expandUnread: "Expand ({count}) - {count} unread" };
+      const handle = makeFakeAgent({
+        script: (emit) => {
+          emit.runStart();
+          emit.textEnd("an answer");
+          emit.runEnd();
+        },
+      });
+      el.agentFactory = () => handle.agent;
+      document.body.appendChild(el);
+      el.setCollapsed(true);
+
+      await answer(el);
+
+      expect(shadow(el).querySelector(".launcher")?.getAttribute("aria-label")).toBe(
+        "Expand (1) - 1 unread",
+      );
+    });
+
     it("emits ag-ui-unread on every change, so a host can render its own", async () => {
       const el = mountAnswering();
       const seen: number[] = [];

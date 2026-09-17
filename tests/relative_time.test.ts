@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { relativeTime } from "../src/ui/history/relative_time.js";
 import { ThreadDrawer } from "../src/ui/history/thread_drawer.js";
+import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 
 const NOW = 1_000_000_000_000;
 const SECOND = 1000;
@@ -18,6 +19,22 @@ describe("relativeTime", () => {
     expect(relativeTime(NOW - 3 * HOUR, NOW)).toBe("3h ago");
     expect(relativeTime(NOW - 2 * DAY, NOW)).toBe("2d ago");
     expect(relativeTime(NOW - 21 * DAY, NOW)).toBe("3w ago");
+  });
+
+  it("fills a unit word's token everywhere a translation uses it", () => {
+    // A string pattern fills only its first occurrence, so a translation that
+    // repeats the number was left half filled.
+    const strings = {
+      ...DEFAULT_UI_STRINGS,
+      minutesAgo: "{n}m ({n} min)",
+      hoursAgo: "{n}h ({n} hr)",
+      daysAgo: "{n}d ({n} dy)",
+      weeksAgo: "{n}w ({n} wk)",
+    };
+    expect(relativeTime(NOW - 5 * MINUTE, NOW, strings)).toBe("5m (5 min)");
+    expect(relativeTime(NOW - 3 * HOUR, NOW, strings)).toBe("3h (3 hr)");
+    expect(relativeTime(NOW - 2 * DAY, NOW, strings)).toBe("2d (2 dy)");
+    expect(relativeTime(NOW - 21 * DAY, NOW, strings)).toBe("3w (3 wk)");
   });
 
   it("treats a future timestamp (clock skew) as 'just now'", () => {

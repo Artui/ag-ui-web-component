@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AttachmentRef } from "../src/core/attachment.js";
 import { AttachmentTray, type AttachmentTrayConfig } from "../src/ui/composer/attachment_tray.js";
+import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -98,6 +99,17 @@ describe("AttachmentTray", () => {
     expect(calls).toHaveLength(0);
     const chip = tray.element.querySelector(".attachment-chip--error");
     expect(chip?.querySelector(".attachment-chip-size")?.textContent).toContain("Too large");
+  });
+
+  it("fills the size limit everywhere a translation uses it", () => {
+    // A string pattern fills only its first occurrence.
+    const { tray } = makeTray({
+      maxBytes: 5,
+      strings: { ...DEFAULT_UI_STRINGS, tooLarge: "Over {size} (limit {size})" },
+    });
+    tray.add(file("big.txt", "text/plain", 10));
+    const chip = tray.element.querySelector(".attachment-chip--error");
+    expect(chip?.querySelector(".attachment-chip-size")?.textContent).toBe("Over 5 B (limit 5 B)");
   });
 
   it("rejects a disallowed type into an error chip", () => {

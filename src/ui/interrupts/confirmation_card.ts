@@ -1,3 +1,4 @@
+import { fillUiString } from "../fill_ui_string.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /** What the inline confirmation card displays. */
@@ -77,7 +78,8 @@ export function requestConfirmation(
     const body = document.createElement("div");
     body.className = "confirm-body";
     body.setAttribute("part", "confirm-body");
-    body.textContent = request.message ?? strings.confirmRun.replace("{tool}", request.toolName);
+    body.textContent =
+      request.message ?? fillUiString(strings.confirmRun, { tool: request.toolName });
 
     const args = document.createElement("pre");
     args.className = "confirm-args";
@@ -94,7 +96,7 @@ export function requestConfirmation(
     const always =
       options.onAlwaysAllow === undefined
         ? null
-        : actionButton("always", strings.confirmAlways.replace("{tool}", request.toolName));
+        : actionButton("always", fillUiString(strings.confirmAlways, { tool: request.toolName }));
     const confirm = actionButton("confirm", strings.confirm);
 
     let settled = false;

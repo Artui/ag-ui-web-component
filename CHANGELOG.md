@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Text a user or a server wrote could rewrite the label it was put into.**
+  Every string-table template was filled with `template.replace("{token}",
+  value)`, and a string replacement interprets dollar patterns in the value: `$&`
+  inserts the matched token and `` $` `` and `$'` the text either side of it. So a
+  queued message reading `costs $& more` was labelled
+  `Do not send "costs {text} more"`, and the same went for a tool name in the
+  confirmation prompt, a skill id in the "Using skill" notice and an agent name
+  on a delegation row. The skill hint was two replacements chained, so a skill
+  titled with `{fields}` in it was filled twice.
+
+  A string pattern also fills only its first occurrence, so a translation that
+  used a token twice was left half filled. That one reached every fill, the
+  numeric ones included.
+
+  Every fill -- seventeen, across the element, the confirmation card, the
+  attachment tray, the voice button and the relative timestamps -- now goes
+  through one helper that fills every occurrence in a single pass with a replacer
+  function, whose return value is never interpreted. Each file that filled has a
+  test that failed against the old fill.
+
+- **A closed slash-command palette and an empty queued-messages row still took
+  up space.** Both set the hidden attribute and both declare their own
+  `display`, which beats the browser's rule for hidden elements -- the defect the
+  attachment tray's own hidden rule was written for. The palette is mounted on
+  every element and closed nearly all of the time, so it painted 2px of border
+  and its shadow as a line above the composer; the queued row kept 10px of
+  padding. Measured in Chromium, which is where the new tests live, because
+  happy-dom lays out no boxes and reports both as zero either way.
+
 ## [0.38.0] — 2026-09-14
 
 ### Changed

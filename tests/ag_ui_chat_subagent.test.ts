@@ -367,6 +367,31 @@ describe("a delegated sub-agent's progress", () => {
     expect(panel.getAttribute("data-phase")).toBe("finished");
   });
 
+  it("names a delegated agent whose name carries a dollar pattern as the server sent it", async () => {
+    // A string replacement reads `$&` in the inserted value as the matched
+    // token, so the row printed the placeholder where the name belonged.
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("call-1", "delegate_task", { agent_name: "re$&searcher" });
+      emit.subAgentStarted("subagent-call-1", "re$&searcher", "call-1");
+    });
+    await send(el);
+    const panel = shadow(el).querySelector<HTMLElement>(".subagent") as HTMLElement;
+    expect(rowOf(panel).textContent).toBe("Delegated to re$&searcher");
+  });
+
+  it("names a finished agent whose name carries a dollar pattern as the server sent it", async () => {
+    const finished = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("call-1", "delegate_task", { agent_name: "re$&searcher" });
+      emit.subAgentStarted("subagent-call-1", "re$&searcher", "call-1");
+      emit.subAgentFinished("subagent-call-1");
+    });
+    await send(finished);
+    const done = shadow(finished).querySelector<HTMLElement>(".subagent") as HTMLElement;
+    expect(rowOf(done).textContent).toBe("re$&searcher finished");
+  });
+
   it("names a failure the server left blank", async () => {
     // `message` is required by the protocol but not required to carry words.
     // An empty one used to settle the row to nothing at all, which reads as a

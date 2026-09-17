@@ -151,6 +151,24 @@ describe("messages typed during a run", () => {
     expect(bubbles.some((text) => text.includes("actually no"))).toBe(false);
   });
 
+  it("labels a waiting message with its own text, dollar patterns and all", async () => {
+    // The label was a string replacement, which reads `$&` in the inserted
+    // text as "the matched token": a message reading `costs $& more` was
+    // labelled `Do not send "costs {text} more"`. This is the one fill whose
+    // value the user typed.
+    const { el, release } = mountWithHeldRun();
+    enter(el, "first");
+    await flush();
+    enter(el, "costs $& more, $` and $' too");
+
+    const chip = el.shadowRoot?.querySelector(".queued-chip");
+    expect(chip?.getAttribute("title")).toBe('Do not send "costs $& more, $` and $\' too"');
+    expect(chip?.getAttribute("aria-label")).toBe('Do not send "costs $& more, $` and $\' too"');
+
+    release();
+    await flush();
+  });
+
   it("throws the queue away when the run is stopped", async () => {
     // Sending into a conversation the user has just stopped is the opposite of
     // what stopping meant, and it would arrive after they turned away.

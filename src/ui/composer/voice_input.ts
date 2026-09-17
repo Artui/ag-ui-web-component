@@ -1,5 +1,6 @@
 import { ICON_VOICE } from "../../constants.js";
 import type { TranscribeHandler } from "../../core/transcribe_audio.js";
+import { fillUiString } from "../fill_ui_string.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 
 /** Lifecycle of the mic button, reflected on its `data-state` for CSS. */
@@ -164,10 +165,9 @@ export class VoiceInput {
         // #setState has just reset the tooltip to the idle label, so this goes
         // after it. It says why the mic went quiet on its own — the transcript
         // below is the proof nothing was thrown away.
-        this.element.title = this.#strings.recordingLimit.replace(
-          "{n}",
-          String(MAX_RECORDING_MS / 60_000),
-        );
+        this.element.title = fillUiString(this.#strings.recordingLimit, {
+          n: MAX_RECORDING_MS / 60_000,
+        });
       }
       if (text !== "") {
         this.#onText(text);
