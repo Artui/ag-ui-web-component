@@ -614,7 +614,8 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
   a re-run.
 - An **open confirmation card is declined** (`data-resolved="declined"`) — cancelling the run
   answers the pending question. Likewise an open **approval card** is denied and an open
-  **question card** (`ask_user`) resolves with an empty answer.
+  **question card** (`ask_user`) resolves with an empty answer. Reloading the page while a card is
+  open lands in the same place; see [MPA durability](#mpa-durability-surviving-full-page-reloads).
 - The new `onCancelled()` handler fires instead of `onError()`; `onSettled()` still follows
   (the terminal-rest guarantee), returning the button to **Send**.
 
@@ -2002,6 +2003,17 @@ triggers a full reload. Before the handler navigates, the element writes a check
 3. and resumes the run loop from there.
 
 The MPA round-trip becomes a clean observation point instead of a dropped conversation.
+
+**A reload the run did not expect is settled the way Stop settles it.** A round's history is saved
+when its stream ends, before the element asks about a gated call, runs a frontend tool or collects a
+server-side approval, so a reload in that window finds the round's calls with no result and no run
+left to produce one. On restore, each such call in the final round (other than a checkpointed
+navigating call) is declined: its card settles as `declined`, and the restored conversation gains
+the same result Stop records (`User declined the action.`, outcome `denied`), so the next request
+carries a result for every call and a later reload still shows the decline. The saved history
+cannot tell a call waiting on a person from a frontend tool the reload interrupted, so both come back
+declined. A card for a call an earlier round went past without a result settles to the no-result
+label, as it did when the run was live.
 
 ### Who the stored conversation belongs to (`user-key`)
 
