@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] — 2026-09-17
+
 ### Changed
 
 - **An empty conversation under `placement="page"` now greets the user, with the
@@ -3971,7 +3973,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.35.2...v0.36.0
