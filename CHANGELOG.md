@@ -94,6 +94,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     reasoning region, the tool cards and the scroller that follows the foot --
     is `Transcript` in `src/ui/transcript/`, and the action row under a
     finished answer is `AnswerActions` beside it.
+  - Running the frontend tool calls a round produced and answering the
+    server's interrupts -- the page each round's context described, the
+    confirmation gate and the tools the user waived it for, and the approval
+    cards -- is `ToolDispatch` in `src/tools/`.
 
   Nothing a consumer can see changes. The emitted declarations are
   byte-identical to the previous release apart from the new internal modules,
