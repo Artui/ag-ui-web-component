@@ -98,6 +98,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     server's interrupts -- the page each round's context described, the
     confirmation gate and the tools the user waived it for, and the approval
     cards -- is `ToolDispatch` in `src/tools/`.
+  - The AG-UI event handlers a run is drawn by, and what one interaction
+    accumulates for the host until it settles -- the tool calls it made, the
+    keys it invalidated, and whether it already said how it ended -- are
+    `RunHandlers` in `src/core/`. The screen-reader status region the run and
+    its tool calls report into is `RunAnnouncer` in `src/ui/progress/`.
 
   Nothing a consumer can see changes. The emitted declarations are
   byte-identical to the previous release apart from the new internal modules,

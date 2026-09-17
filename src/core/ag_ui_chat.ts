@@ -1,6 +1,5 @@
 import type { Context, Message, Tool } from "@ag-ui/core";
 import {
-  ANNOUNCE_CLEAR_MS,
   ATTACHMENT_EVENT,
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
@@ -11,18 +10,13 @@ import {
   ICON_SEND,
   ICON_STOP,
   ICON_SUN,
-  INVALIDATE_CUSTOM_NAME,
-  INVALIDATE_EVENT,
   MAX_TOOL_ROUNDS,
   MESSAGE_ROLE,
-  RUN_FINISHED_EVENT,
   STATE_EVENT,
-  SUBAGENT_CUSTOM_NAME,
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
   THREADS_DOCK_MIN_WIDTH,
   TOGGLE_EVENT,
-  TOOL_CALL_STATUS,
   TOOL_DISPLAY,
   UNREAD_EVENT,
 } from "../constants.js";
@@ -47,7 +41,6 @@ import { CHART_TOOL_NAME, createChartTool } from "../ui/charts/chart_tool.js";
 import { ComposerAttachments } from "../ui/composer/composer_attachments.js";
 import { ComposerVoice } from "../ui/composer/composer_voice.js";
 import { SkillsMenu } from "../ui/composer/skills_menu.js";
-import { attachCopyButtons } from "../ui/excerpts/attach_copy_buttons.js";
 import { TranscriptQuoteOffer } from "../ui/excerpts/transcript_quote_offer.js";
 import { fillUiString } from "../ui/fill_ui_string.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/history/checkpoint_menu.js";
@@ -60,6 +53,7 @@ import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
 import { isDraggablePlacement } from "../ui/placement/is_draggable_placement.js";
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
+import { RunAnnouncer } from "../ui/progress/run_announcer.js";
 import { renderRunNotice } from "../ui/progress/run_notice.js";
 import { SubAgentProgress } from "../ui/progress/subagent_progress.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
@@ -74,7 +68,7 @@ import { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "../ui/ui_str
 import type { ActivityRegistration } from "./activity_registration.js";
 import { ActivityRegistry } from "./activity_registry.js";
 import type { ActivityRenderer } from "./activity_renderer.js";
-import { AgUiClient, type AgUiClientHandlers } from "./agui_client.js";
+import { AgUiClient } from "./agui_client.js";
 import { type AttachmentRef, messageAttachments } from "./attachment.js";
 import {
   type ClientConversationStore,
@@ -83,16 +77,13 @@ import {
   writeStoredItem,
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
-import type { CustomAgentDetail } from "./events/custom_agent_detail.js";
-import type { InvalidateDetail } from "./events/invalidate_detail.js";
-import type { RunFinishedDetail } from "./events/run_finished_detail.js";
 import type { StateDetail } from "./events/state_detail.js";
 import type { SubmitDetail } from "./events/submit_detail.js";
 import type { ToggleDetail } from "./events/toggle_detail.js";
-import type { ToolRun } from "./events/tool_run.js";
 import type { UnreadDetail } from "./events/unread_detail.js";
 import type { MessageRole } from "./message_role.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
+import { RunHandlers } from "./run_handlers.js";
 import { RunIndex } from "./run_index.js";
 import { StorageScope } from "./storage_scope.js";
 import { toolStatusFromOutcome } from "./tool_outcome.js";
@@ -437,13 +428,6 @@ export class AgUiChat extends HTMLElement {
     appendNotice: (icon, text, kind) => this.#transcript.appendNotice(icon, text, kind),
   });
 
-  /**
-   * Tool calls made during the current interaction, in the order they started,
-   * so {@link RUN_FINISHED_EVENT} can report them once the whole thing settles.
-   * Spans tool rounds and an approval interrupt; cleared when the event fires.
-   */
-  #runTools: { readonly id: string; readonly name: string }[] = [];
-
   /** The action row under each finished answer, and the one row holding Retry. */
   readonly #actions = new AnswerActions({
     element: this,
@@ -453,18 +437,9 @@ export class AgUiChat extends HTMLElement {
     },
   });
 
-  /**
-   * Keys announced during this interaction, de-duplicated in first-seen order.
-   *
-   * Per element, never module-level: a second mounted chat is a second run, and
-   * sharing this would tell one page to refetch on the other's writes. Reset by
-   * {@link AgUiChat.#dispatchRunFinished}, which is the one place that has read
-   * it.
-   */
-  #runInvalidated = new Set<string>();
   readonly #root: ShadowRoot;
-  /** Screen-reader-only status region -- see {@link AgUiChat.#announce}. */
-  readonly #announcer = document.createElement("div");
+  /** The screen-reader-only status region the run and its tool calls report into. */
+  readonly #announcer = new RunAnnouncer();
   /** Return-to-foot affordance, shown only once something has been missed. */
   readonly #jumpButton = document.createElement("button");
   /**
@@ -484,18 +459,6 @@ export class AgUiChat extends HTMLElement {
    * only box whose foot *is* the transcript's foot.
    */
   readonly #messagesWrap = document.createElement("div");
-  /** Pending clear of {@link AgUiChat.#announcer}; see why it is cleared at all. */
-  #announceTimer: ReturnType<typeof setTimeout> | null = null;
-  /**
-   * Whether this turn already announced how it ended.
-   *
-   * `onSettled` is the terminal guarantee and fires however the run ended, so
-   * it is the only place that can promise the user hears *something*. But a
-   * stopped or failed run has already said the truer thing from `onCancelled`
-   * or `onError`, and "assistant answered" after "response stopped" is worse
-   * than silence.
-   */
-  #announcedOutcome = false;
   readonly #chat: HTMLDivElement;
   readonly #messages: HTMLDivElement;
   readonly #input: HTMLTextAreaElement;
@@ -545,6 +508,12 @@ export class AgUiChat extends HTMLElement {
    * interrupts. Built in the constructor, after the transcript it draws in.
    */
   readonly #dispatch: ToolDispatch;
+  /**
+   * The AG-UI event handlers every client this element builds is given, and
+   * what one interaction accumulates for the host until it settles. Built in
+   * the constructor, after the transcript it draws in.
+   */
+  readonly #runHandlers: RunHandlers;
   /**
    * The greeting's own text, the fallback content of the `greeting` slot.
    * Rendered under every placement and shown by the stylesheet only where the
@@ -708,7 +677,7 @@ export class AgUiChat extends HTMLElement {
       tools: this.#tools,
       decision: this.#decision,
       strings: () => this.#strings,
-      announce: (message) => this.#announce(message),
+      announce: (message) => this.#announcer.announce(message),
       autoConfirm: () => this.autoConfirm,
       confirmPredicate: () => this.confirmPredicate,
       getPageMap: () => this.getPageMap,
@@ -718,6 +687,20 @@ export class AgUiChat extends HTMLElement {
       getContext: () => this.getContext(),
       conversationStore: () => this.conversationStore,
       threadId: () => this.#threadId,
+    });
+    this.#runHandlers = new RunHandlers({
+      element: this,
+      transcript: this.#transcript,
+      stream: this.#stream,
+      actions: this.#actions,
+      activities: this.#activities,
+      subagents: this.#subagents,
+      announcer: this.#announcer,
+      strings: () => this.#strings,
+      running: () => this.#running,
+      setRunning: (running) => this.#setRunning(running),
+      appendMessage: (role, content) => this.appendMessage(role, content),
+      noteUnread: () => this.#noteUnread(),
     });
     this.#placement = new PanelPlacement({
       element: this,
@@ -904,7 +887,7 @@ export class AgUiChat extends HTMLElement {
     });
     const client = new AgUiClient({
       agent,
-      handlers: this.#handlers(),
+      handlers: this.#runHandlers.forClient(),
       getTools: () => this.#tools.advertise(),
       getContext: () => this.#dispatch.buildContext(),
       executeTool: (call) => this.#dispatch.execute(call),
@@ -1383,10 +1366,7 @@ export class AgUiChat extends HTMLElement {
     this.#attachments.tray?.dispose();
     this.#voice.dispose();
     this.#transcript.disposeScroller();
-    if (this.#announceTimer !== null) {
-      clearTimeout(this.#announceTimer);
-      this.#announceTimer = null;
-    }
+    this.#announcer.dispose();
   }
 
   /**
@@ -2311,12 +2291,7 @@ export class AgUiChat extends HTMLElement {
     // and the observer has to have something to observe.
     this.#transcript.mountScroller(this.#jumpButton);
 
-    this.#announcer.className = "sr-only";
-    this.#announcer.setAttribute("role", "status");
-    this.#announcer.setAttribute("aria-live", "polite");
-    // Atomic: each announcement replaces the last and is read whole. Without
-    // it a reader may announce only the changed words between two statuses.
-    this.#announcer.setAttribute("aria-atomic", "true");
+    this.#announcer.mount();
 
     // Empty-state region: a host slot at the top of the list, hidden as soon as
     // anything renders.
@@ -2510,41 +2485,7 @@ export class AgUiChat extends HTMLElement {
     const probe = this.#placement.probe;
     probe.className = "viewport-probe";
     probe.setAttribute("aria-hidden", "true");
-    this.#root.append(probe, this.#announcer, this.#chat, this.#launcher);
-  }
-
-  /**
-   * Say one short thing to a screen reader, without touching the transcript.
-   *
-   * The transcript cannot do this job. It is rewritten on every animation
-   * frame while an answer streams, so as a live region it re-announced the
-   * whole answer tens of times per turn -- not merely unhelpful but actively
-   * hostile. The published fix for this exact bug (Microsoft's Bot Framework
-   * WebChat #3236) is architectural rather than a matter of tuning attributes:
-   * demote the visible transcript out of live-region duty and put one
-   * synthesised status per event into a separate invisible region. MDN and
-   * Scott O'Hara prescribe the same empty-region-then-inject shape.
-   *
-   * Roughly four calls land per turn -- responding, answered, a card is waiting,
-   * stopped or failed -- so the user is told what happened and reads the answer
-   * itself by navigating the log, at their own pace, rather than having it
-   * shouted at them a token at a time.
-   *
-   * **The clear is load-bearing, twice.** A reader announces a live region when
-   * its content *changes*, so setting the same string twice running -- two turns
-   * in a row both starting -- is not a change and is silently not announced.
-   * Emptying first makes the next set a change again. It also stops a stale
-   * status being read out when a reader later lands on the region.
-   */
-  #announce(message: string): void {
-    if (this.#announceTimer !== null) {
-      clearTimeout(this.#announceTimer);
-    }
-    this.#announcer.textContent = message;
-    this.#announceTimer = setTimeout(() => {
-      this.#announceTimer = null;
-      this.#announcer.textContent = "";
-    }, ANNOUNCE_CLEAR_MS);
+    this.#root.append(probe, this.#announcer.region, this.#chat, this.#launcher);
   }
 
   /**
@@ -3098,7 +3039,7 @@ export class AgUiChat extends HTMLElement {
       });
       this.#client = new AgUiClient({
         agent,
-        handlers: this.#handlers(),
+        handlers: this.#runHandlers.forClient(),
         getTools: () => this.#tools.advertise(),
         getContext: () => this.#dispatch.buildContext(),
         executeTool: (call) => this.#dispatch.execute(call),
@@ -3118,302 +3059,6 @@ export class AgUiChat extends HTMLElement {
     this.dispatchEvent(
       new CustomEvent<StateDetail>(STATE_EVENT, {
         detail: { state: this.#sharedState },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  #handlers(): AgUiClientHandlers {
-    return {
-      onRunStart: () => {
-        // Per *round*, so guard on the turn: a run that calls three tools fires
-        // this three times and the user needs telling once.
-        if (!this.#running) {
-          this.#announcedOutcome = false;
-          this.#announce(this.#strings.announceResponding);
-        }
-        this.#setRunning(true);
-        // Open the answer group on the turn's first run so the pending
-        // indicator (and everything after) lands inside the well. Idempotent:
-        // later rounds of the same turn reuse it.
-        this.#transcript.ensureGroup();
-        this.#transcript.showPending();
-      },
-      onReasoningStart: () => {
-        // The model is thinking: swap the pending dots for a live thoughts
-        // region at the top of the turn's answer group.
-        this.#transcript.hidePending();
-        this.#transcript.showThoughts();
-      },
-      onReasoningDelta: (buffer) => {
-        this.#transcript.showThoughts().stream(buffer);
-      },
-      onReasoningEnd: () => {
-        // Leave the region expanded until the answer text starts — it collapses
-        // on the first text delta (onTextDelta).
-      },
-      onTextDelta: (buffer) => {
-        this.#transcript.hidePending();
-        // The answer has begun — fold the thoughts away so they don't crowd it.
-        this.#transcript.collapseThoughts();
-        this.#stream.queue(buffer);
-        this.#stream.countDelta();
-      },
-      onTextEnd: (buffer) => {
-        // A text message that carried no content is a declaration, not an
-        // answer, and drawing one puts an empty bubble above every tool call.
-        //
-        // `TOOL_CALL_START` names the assistant message a call belongs to, and
-        // a response whose first part is a tool call has no text to open that
-        // message with. pydantic-ai 2.37 started opening and closing an empty
-        // one there so the id names a message the stream actually announced --
-        // before that it named one no event carried, which a client could only
-        // answer by inventing an id of its own that matches nothing echoed
-        // back. So this envelope is a correctness fix upstream, it is legal
-        // AG-UI, and any server may send one.
-        //
-        // `#renderHistoricMessage` already declines to draw a bubble for an
-        // assistant message with no text. Without the same rule here the live
-        // transcript and the reloaded one disagree about the same
-        // conversation, which is the harder half of the bug to notice.
-        if (buffer === "") {
-          this.#stream.end();
-          return;
-        }
-        const bubble = this.#stream.into(buffer);
-        // Only reveal word-by-word when the message arrived at once. If it
-        // streamed across multiple deltas it already revealed progressively, so
-        // wrapping it now would re-animate the whole message — the awkward
-        // "finished response replays one word at a time" bug.
-        if (this.#stream.deltas <= 1) {
-          this.#transcript.revealWords(bubble);
-        }
-        attachCopyButtons(bubble, this.#strings);
-        this.#actions.attach(bubble);
-        this.#stream.end();
-        this.#noteUnread();
-      },
-      onToolCall: (call) => {
-        this.#transcript.hidePending();
-        // A skill activation is an ordinary `load_capability` tool call — the
-        // deferred-capability mechanism pydantic-ai already uses — so it arrives
-        // here rather than on a channel of its own. Render it as a notice and
-        // *return*: falling through would show a raw tool card beside the chip,
-        // which is worse than the card alone.
-        if (this.#transcript.noticeIfSkillLoad(call)) {
-          return;
-        }
-        // Recorded after the skill-load return: a capability load is the agent
-        // arranging itself, not work a host's data could have moved under.
-        this.#runTools.push({ id: call.id, name: call.name });
-        this.#transcript.cardFor(call);
-      },
-      onActivity: (activityType, content, messageId) => {
-        this.#activities.draw(messageId, activityType, content);
-      },
-      onCustomEvent: (name, value) => {
-        if (name === INVALIDATE_CUSTOM_NAME) {
-          this.#dispatchInvalidation(value);
-          return;
-        }
-        if (name === SUBAGENT_CUSTOM_NAME) {
-          this.#subagents.report(value);
-          return;
-        }
-        // Straight out to the host page, uninterpreted. This is the imperative
-        // carrier: whatever it means, it means it to the page, not to the
-        // transcript -- so it is dispatched and deliberately not rendered,
-        // persisted or replayed. A host that does not know the name simply has
-        // no listener, which is the graceful outcome the open field is for.
-        this.dispatchEvent(
-          new CustomEvent<CustomAgentDetail>(CUSTOM_AGENT_EVENT, {
-            detail: { name, value },
-            bubbles: true,
-            composed: true,
-          }),
-        );
-      },
-      // The delegation's own lifetime, on the protocol's events rather than the
-      // CUSTOM channel its steps ride. Both end at the same panel.
-      onSubAgentStarted: (subagentRunId, agent, parentToolCallId) => {
-        this.#subagents.start(subagentRunId, agent, parentToolCallId);
-      },
-      onSubAgentFinished: (subagentRunId) => {
-        this.#subagents.finish(subagentRunId);
-      },
-      onSubAgentError: (subagentRunId, message) => {
-        this.#subagents.fail(subagentRunId, message);
-      },
-      onMessagesSnapshot: () => {
-        // Honoured for persistence and announced, not re-rendered.
-        //
-        // The store follows the server, because the server is authoritative
-        // about what the conversation *is* -- and it would follow it anyway:
-        // `@ag-ui/client` replaces `agent.messages` before any subscriber runs,
-        // and the run loop persists `agent.messages`. What was wrong was that
-        // it happened in silence, so the screen and the store disagreed and
-        // nobody found out until a reload served a transcript they had never
-        // seen. That is not reportable as a bug; it is reportable as "the chat
-        // lost my messages".
-        //
-        // Re-rendering from the snapshot was the other candidate and is
-        // declined: a snapshot can land mid-run, and rebuilding the transcript
-        // then would destroy the in-flight run's own UI state -- the streaming
-        // bubble, the open answer group, and every tool card keyed by call id,
-        // some of which are still waiting on results. Telling the reader costs
-        // none of that, and this is the same answer the same question already
-        // got for compaction, one handler up.
-        this.#transcript.appendNotice(
-          "\u{1F504}",
-          this.#strings.historyReplaced,
-          "history-replaced",
-        );
-      },
-      onToolResult: (toolCallId, content, outcome) => {
-        const card = this.#transcript.card(toolCallId);
-        if (card === undefined) {
-          return;
-        }
-        // Settled as the server says it ended, not as "it ended". This path used
-        // to pass DONE unconditionally, so a refusal arrived as a green card
-        // with the reason folded inside it -- a booking the server declined
-        // read, at a glance, as a booking that was made. An absent or
-        // unrecognised outcome still means DONE, so every server written before
-        // the field existed renders exactly as it did.
-        card.settle(toolStatusFromOutcome(outcome), content);
-        this.#transcript.markServerSettled(toolCallId);
-        // The card stops being the live thing the moment it settles, and the
-        // server goes straight back to the model with the result -- a wait with
-        // nothing on screen to own it, and the longest one in a run when the
-        // result is a large inlined attachment being re-sent with every request.
-        // The dots go back where ``onToolCall`` took them from, after the card,
-        // and whatever comes next clears them: reasoning, the first text delta,
-        // the round ending, or ``onSettled``'s terminal guarantee.
-        //
-        // Not the same case as the one ``ToolDispatch.execute`` refuses to show
-        // them for. That runs after the run has ended, so there is nothing left to
-        // clear them and they would hang -- which is what happened before 0.2.1
-        // and is why they were removed from here too. The terminal guarantee
-        // that shipped in the same release is what makes showing them safe now.
-        this.#transcript.showPending();
-      },
-      onActivityChanged: (messageId, activityType, content) => {
-        this.#activities.draw(messageId, activityType, content);
-      },
-      onRunEnd: () => {
-        // Per-round end; the button stays on Stop until the whole interaction
-        // settles — the user must be able to cancel between tool rounds.
-        this.#transcript.hidePending();
-        this.#stream.end();
-      },
-      onError: (message) => {
-        this.#announcedOutcome = true;
-        this.#announce(this.#strings.announceFailed);
-        this.#transcript.hidePending();
-        const bubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`);
-        bubble.classList.add("message--failed");
-        // A failure is the one message whose action row is only worth having
-        // for Retry: there is nothing here worth copying and nothing to rate.
-        // A dropped connection with no way back was the whole of the gap --
-        // uploads had a retry and runs did not.
-        //
-        // Not a `run-notice`: that element's contract is that it "never
-        // settles, takes no action, and carries no controls", and is explicitly
-        // "distinct from an error, which is a failure". This is a failure, so
-        // it stays an error and gains the control instead.
-        this.#actions.attach(bubble, { rateable: false });
-        this.#transcript.revealWords(bubble);
-        this.#stream.end();
-      },
-      onCancelled: () => {
-        // Deliberate stop, not a failure: keep whatever partial text already
-        // streamed and add a muted note instead of an error bubble.
-        this.#announcedOutcome = true;
-        this.#announce(this.#strings.announceStopped);
-        this.#transcript.hidePending();
-        this.#transcript.appendStoppedNote();
-        this.#stream.end();
-      },
-      onSettled: () => {
-        // Terminal guarantee: whatever path ended the run, return to rest.
-        if (!this.#announcedOutcome) {
-          this.#announce(this.#strings.announceAnswerReady);
-        }
-        this.#transcript.hidePending();
-        this.#setRunning(false);
-        this.#stream.end();
-        // Belt-and-suspenders: a tool card still pending at settle (e.g. a
-        // server tool whose result never streamed because the connection
-        // dropped) would hang forever — settle it to the no-result fallback.
-        for (const card of this.#transcript.cards()) {
-          if (!card.settled) {
-            card.settle(TOOL_CALL_STATUS.DONE, this.#strings.noResult);
-          }
-        }
-        this.#transcript.closeGroup();
-        this.#dispatchRunFinished();
-      },
-    };
-  }
-
-  /**
-   * Tell the host the interaction is over and what ran in it.
-   *
-   * Last thing in `onSettled`, so a listener that refetches sees a transcript
-   * that has already stopped changing. `side` is read from the streamed-result
-   * bookkeeping rather than from the tool list: whether a call executed on the
-   * server is a fact about the run, and a name can appear on both sides across a
-   * conversation.
-   */
-  #dispatchRunFinished(): void {
-    const tools: ToolRun[] = this.#runTools.map(({ id, name }) => ({
-      name,
-      side: this.#transcript.isServerSettled(id) ? "server" : "client",
-    }));
-    this.#runTools = [];
-    const invalidated = [...this.#runInvalidated];
-    this.#runInvalidated = new Set<string>();
-    this.dispatchEvent(
-      new CustomEvent<RunFinishedDetail>(RUN_FINISHED_EVENT, {
-        detail: { tools, invalidated },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  /**
-   * Route one invalidation to the host, and remember it for the run summary.
-   *
-   * Dispatched immediately rather than only at the end, because that is what
-   * makes a long multi-step run feel live -- the list refreshes as the third of
-   * eight writes lands. The accumulated set rides
-   * {@link RUN_FINISHED_EVENT} as well, so a host that would rather refetch once
-   * upgrades by reading one extra field instead of adding a listener.
-   *
-   * Nothing is rendered, persisted or replayed. An invalidation is an
-   * imperative: it has no place in the transcript and no meaning once acted on,
-   * and replaying one on every thread load would be a refetch storm. That is the
-   * whole reason the server sends it as `CUSTOM` rather than as an activity.
-   */
-  #dispatchInvalidation(value: unknown): void {
-    const payload = (value ?? {}) as { keys?: unknown; reason?: unknown };
-    // Defensive about the payload, not about the name: `value` is typed
-    // `unknown` by the protocol, so a server can put anything there, and a
-    // malformed announcement must not take the run down with it.
-    const keys = Array.isArray(payload.keys)
-      ? payload.keys.filter((key): key is string => typeof key === "string")
-      : [];
-    if (keys.length === 0) {
-      return;
-    }
-    for (const key of keys) {
-      this.#runInvalidated.add(key);
-    }
-    this.dispatchEvent(
-      new CustomEvent<InvalidateDetail>(INVALIDATE_EVENT, {
-        detail: { keys, reason: typeof payload.reason === "string" ? payload.reason : null },
         bubbles: true,
         composed: true,
       }),
