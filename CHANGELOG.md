@@ -80,6 +80,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   address bar: 40px on the iPhone measured, with a docked composer in it. The
   fallback is now `100dvh`, the screen with the bars as they are.
 
+- **An element removed from the document and inserted again is one element.**
+  Every insertion built the chrome again into the same shadow root, so a
+  re-inserted `<ag-ui-chat>` had two headers, two composers, a second set of
+  resize grips, and the conversation drawn a second time beneath the first. The
+  listeners on its long-lived parts were added again too:
+  - one click on Stop cancelled the run three times;
+  - one press of the built-in theme toggle flipped it twice, so it appeared to
+    do nothing;
+  - a dropped or pasted file was added twice;
+  - one arrow press moved the launcher two steps.
+
+  With `data-threads-url`, a second remote store wrapped the first, so every
+  rename and delete reached the server twice. Frameworks do this without being
+  asked (a portal, a keyed list, a move between containers), and removing and
+  re-inserting is the documented way to apply a connect-time attribute written
+  late.
+
+  Connecting now builds the chrome in place of the last connection's, and ties
+  every listener on a long-lived part to the connection, so leaving the document
+  removes them. The upload tray and the mic are mounted afresh. The thread store
+  is wrapped once, and a `data-threads-url` removed while detached takes its
+  remote store away. The transcript is rebuilt from history, as `reload()`
+  rebuilds it. The composer's recall history is kept. Re-inserting still applies
+  the attributes as they stand when the element comes back. A host that called
+  `offerQuoteInPage()` calls it again after re-inserting, as before.
+
 ## [0.39.0] — 2026-09-17
 
 ### Changed

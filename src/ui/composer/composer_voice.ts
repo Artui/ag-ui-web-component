@@ -44,8 +44,13 @@ export class ComposerVoice {
    * built-in POST endpoint. The control records via `MediaRecorder` and drops
    * the transcript into the composer; with neither configured the mic stays
    * hidden and the chat is text-only.
+   *
+   * Called on every connect, so it starts by taking down the mic the last
+   * connection mounted, which was released when the element left.
    */
   wire(): void {
+    this.#voice?.element.remove();
+    this.#voice = null;
     const url = this.#host.element.getAttribute("data-transcribe-url");
     const transcribe = this.#host.transcribeHandler() ?? this.#defaultTranscribeHandler(url);
     if (transcribe === null) {

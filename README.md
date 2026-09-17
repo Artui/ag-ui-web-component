@@ -253,6 +253,11 @@ The list: `data-attachments-url`, `data-attachment-accept`, `data-attachment-max
 `data-skills-url`, `data-skills`, `data-prompt-chips`, `data-slash-commands`, `data-theme-toggle`,
 `data-strings`, `data-icon-url`.
 
+What re-inserting costs: the chrome is built again from the attributes as they stand, a run in
+progress is cancelled, and the conversation is redrawn from its stored history — the same rebuild
+`reload()` performs, and the reason that method exists for a host that can only configure the
+element after the fact.
+
 **Properties** (JS only, not attributes): `headers`, `getHeaders`, `trustedOrigins`, `allowImages`,
 `autoConfirm`, `confirmPredicate`, `askUser`, `askUserRenderer`, `approvalRenderer`,
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
