@@ -451,3 +451,124 @@ describe("a visible area the browser has panned (real browser)", () => {
     expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
   });
 });
+
+/**
+ * The layout viewport, read the way iOS Safari reports it mid-pan.
+ *
+ * Measured on an iPhone with the keyboard up on a full-page chat: while the
+ * visible area was panned 275.7px down, `innerHeight` read 499 -- the layout
+ * height less the pan -- for as long as the pan lasted, while
+ * `document.documentElement.clientHeight` read the layout height, 775, before
+ * and after. A window `scroll` later put `innerHeight` back, and the element
+ * does not listen for that. So every measurement taken on a `visualViewport`
+ * event during a pan saw the shorter number.
+ *
+ * Two things follow from it. The band hidden below the visible area came out
+ * as nothing, where it was 73px. And at the deepest pan the browser can make,
+ * which is where it goes to show a composer docked at the foot of the screen,
+ * the shorter number *equals* the visible height, so the element read the two
+ * viewports as agreeing and took every measurement back: the panel returned to
+ * the layout top at full height, with its header above the screen.
+ *
+ * The stand-in reports `innerHeight` by that same rule, and the two page cases
+ * are sized to the phone's readings: 430 by 775, a 124px bar, and a 426px
+ * visible area.
+ */
+describe("the layout viewport while the browser pans (real browser)", () => {
+  const PHONE_READING = { width: 430, height: 775, bar: 124, visible: 426 } as const;
+
+  let innerHeight: PropertyDescriptor | undefined;
+
+  /** Report `innerHeight` as iOS Safari does while the visible area is panned. */
+  const reportInnerHeightLessThePan = (viewport: FakeVisualViewport): void => {
+    innerHeight = Object.getOwnPropertyDescriptor(window, "innerHeight");
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      get: () => document.documentElement.clientHeight - Math.round(viewport.offsetTop),
+    });
+  };
+
+  const frame = (): Promise<unknown> =>
+    new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(async () => {
+    for (const el of document.querySelectorAll(ELEMENT_TAG)) {
+      el.remove();
+    }
+    if (innerHeight !== undefined) {
+      Object.defineProperty(window, "innerHeight", innerHeight);
+      innerHeight = undefined;
+    }
+    if (original !== undefined) {
+      Object.defineProperty(window, "visualViewport", original);
+    }
+    await page.viewport(1280, 800);
+  });
+
+  it("keeps a page panel on the visible area at the deepest pan", async () => {
+    await page.viewport(PHONE_READING.width, PHONE_READING.height);
+    const viewport = installFakeViewport();
+    reportInnerHeightLessThePan(viewport);
+    const el = mount("page");
+    el.style.setProperty("--ag-ui-viewport-inset-top", `${PHONE_READING.bar}px`);
+    await frame();
+
+    const layout = document.documentElement.clientHeight;
+    const pan = layout - PHONE_READING.visible;
+    viewport.panTo(pan, PHONE_READING.visible);
+    await frame();
+
+    // The browser's own reading at this pan, which is what made the element
+    // take its measurements back: the stand-in is only worth anything if it
+    // reproduces it.
+    expect(window.innerHeight).toBe(PHONE_READING.visible);
+    const box = el.getBoundingClientRect();
+    expect(box.top).toBeCloseTo(pan, 0);
+    expect(box.bottom).toBeCloseTo(layout, 0);
+    const header = el.shadowRoot?.querySelector(".header") as HTMLElement;
+    expect(header.getBoundingClientRect().top).toBeGreaterThanOrEqual(pan);
+  });
+
+  it("measures the band below the visible area from the layout viewport", async () => {
+    // The phone's reading, number for number.
+    await page.viewport(PHONE_READING.width, PHONE_READING.height);
+    const viewport = installFakeViewport();
+    reportInnerHeightLessThePan(viewport);
+    const el = mount("page");
+    el.style.setProperty("--ag-ui-viewport-inset-top", `${PHONE_READING.bar}px`);
+    await frame();
+
+    viewport.panTo(275.7, PHONE_READING.visible);
+    await frame();
+
+    expect(window.innerHeight).toBe(499);
+    expect(el.style.getPropertyValue("--ag-ui-visual-viewport-inset-bottom")).toBe("73px");
+    // And where the phone drew the panel, which this reading already had right.
+    const box = el.getBoundingClientRect();
+    expect(box.top).toBeCloseTo(276, 0);
+    expect(box.bottom).toBeCloseTo(702, 0);
+  });
+
+  it("lifts a bottom-anchored panel clear of the keyboard during a pan", async () => {
+    // What the band below is for. A corner panel at desktop width is anchored
+    // at the bottom and rises by that band, so reading it as nothing left the
+    // panel at the foot of the layout viewport, behind the keyboard.
+    const viewport = installFakeViewport();
+    reportInnerHeightLessThePan(viewport);
+    const el = mount("floating");
+    el.setAttribute("data-start-open", "");
+    await frame();
+
+    const visible = document.documentElement.clientHeight - KEYBOARD_PX;
+    viewport.panTo(PAN_PX, visible);
+    await frame();
+
+    const box = el.getBoundingClientRect();
+    expect(box.bottom).toBeLessThanOrEqual(PAN_PX + visible);
+    expect(box.bottom).toBeGreaterThan(PAN_PX + visible - 64);
+  });
+});

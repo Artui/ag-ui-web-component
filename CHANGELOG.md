@@ -63,6 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the bar stayed in the position and left the height. The height is now the
   host's box cut to the visible area.
 
+  At the deepest pan, the one that shows a composer docked at the foot of the
+  screen, the panel still went back to the top of the page at full height. The
+  element read the page's height from `innerHeight`, which iOS Safari reports
+  less the pan for as long as the pan lasts; at that depth it equals the visible
+  height, so the element took the two viewports to agree and withdrew its
+  measurements. The band below the visible area came out as nothing at any pan
+  too, leaving a bottom-anchored panel behind the keyboard. The page's height
+  is now read from the root element's `clientHeight`, which an iPhone reported
+  unchanged through the pan.
+
 ## [0.39.0] — 2026-09-17
 
 ### Changed
