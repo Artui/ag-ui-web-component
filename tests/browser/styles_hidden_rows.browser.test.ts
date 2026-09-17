@@ -14,8 +14,11 @@ import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
  * messages waiting for a run to finish, which is empty almost all of the time.
  *
  * A closed palette painted its margin, its 2px of border and its shadow as a
- * line above the composer, and an empty queued row kept its bottom padding.
- * Both read as nothing over a transcript, which is how they survived.
+ * line above the composer, an empty queued row kept its bottom padding, and an
+ * empty skill row kept 20px of it -- a band of panel background between the
+ * transcript and the composer, on every element and every placement, whether
+ * or not the host offers any skills. All three read as nothing over a
+ * transcript, which is how they survived.
  *
  * happy-dom lays out no boxes and answers 0 for every height, so it reports
  * the leaking row and the collapsed one identically. Each case also shows the
@@ -69,5 +72,28 @@ describe("a hidden composer row takes no space", () => {
 
     queued.hidden = false;
     expect(queued.getBoundingClientRect().height).toBeGreaterThan(0);
+  });
+
+  it("collapses the empty row of skill chips", () => {
+    const el = mount();
+    const chips = part(el, ".skill-chips");
+
+    expect(chips.hidden).toBe(true);
+    expect(chips.getBoundingClientRect().height).toBe(0);
+    expect(getComputedStyle(chips).display).toBe("none");
+
+    chips.hidden = false;
+    expect(chips.getBoundingClientRect().height).toBeGreaterThan(0);
+  });
+
+  it("leaves nothing between the transcript and the composer", () => {
+    // What the three of them added up to, measured where it shows: the row
+    // above the composer is the one the eye reads as the gap under the last
+    // thing in the transcript.
+    const el = mount();
+
+    const transcript = part(el, ".messages-wrap").getBoundingClientRect();
+    const composer = part(el, ".input-row").getBoundingClientRect();
+    expect(composer.top - transcript.bottom).toBeLessThanOrEqual(1);
   });
 });

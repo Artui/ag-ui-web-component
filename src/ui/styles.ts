@@ -3165,6 +3165,15 @@ export const STYLES = `
   padding: 10px 12px;
 }
 
+/* The row is hidden whenever the host offers no skills, which is most elements
+   most of the time, and an author display beats the user-agent rule for the
+   hidden attribute. Without this it kept its padding: 20px of panel between
+   the transcript and the composer, under every placement, reading as the gap
+   under whatever the transcript ends with. */
+.skill-chips[hidden] {
+  display: none;
+}
+
 .skill-chip {
   border: 1px solid var(--_border);
   border-radius: 999px;

@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An empty row of skill chips stops taking space above the composer.** The
+  row is hidden whenever the host offers no skills, which is most elements most
+  of the time, but it declares its own `display`, and an author display beats
+  the user-agent rule for the hidden attribute. So it kept its 20px of padding
+  under every placement: a band of panel between the transcript and the
+  composer, reading as the gap under whatever the transcript ended with. The
+  palette and the queued row beside it were fixed for this reason already; this
+  was the third row with its own display and no rule for being hidden.
+
 - **A checkpoint continuation waits for the run in flight.** Picking Resume or
   Fork while an answer was streaming started a second run beside it, and an
   earlier continuation kept streaming where Stop no longer reached it. The pick
