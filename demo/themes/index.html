@@ -33,7 +33,8 @@
         font-weight: 700;
         margin-right: 6px;
       }
-      header.bar .brand small {
+      header.bar .brand small,
+      header.bar .brand a {
         color: #b6b6d8;
         font-weight: 400;
       }
@@ -46,7 +47,8 @@
         letter-spacing: 0.04em;
         color: #b6b6d8;
       }
-      header.bar select {
+      header.bar select,
+      header.bar input[type="text"] {
         font: inherit;
         font-size: 13px;
         text-transform: none;
@@ -237,7 +239,10 @@
   </head>
   <body>
     <header class="bar">
-      <span class="brand">ag-ui playground <small>· flip a control to reconfigure live</small></span>
+      <span class="brand"
+        >ag-ui playground <small>· flip a control to reconfigure live ·</small>
+        <a href="/page/">full page</a></span
+      >
       <label
         >Theme
         <select id="cfg-theme">
@@ -273,6 +278,20 @@
             <option value="full">full</option>
           </optgroup>
         </select>
+      </label>
+      <!-- The greeting layout is on by default for page and opt-in for embedded;
+           "default" removes the attribute so the placement's own default shows. -->
+      <label
+        >Greeting
+        <select id="cfg-greeting">
+          <option value="" selected>default (page only)</option>
+          <option value="on">on (embedded too)</option>
+          <option value="off">off</option>
+        </select>
+      </label>
+      <label
+        >User name
+        <input type="text" id="cfg-user-name" value="Ada" size="8" />
       </label>
       <label
         >Text animation
@@ -364,6 +383,18 @@
               Watch the request — the wording is never in this page.
             </li>
             <li>
+              <strong>Greeting.</strong> The <a href="/page/">full page</a> demo is the
+              chat as a route of its own, greeting on arrival. Here, switch
+              <em>Placement</em> to <em>page</em> and
+              press the header's <em>New chat</em>: the empty page greets
+              <em>User name</em> with the composer centred under it. Typing and a
+              growing draft leave it centred; sending slides it to the foot. Edit the
+              name to see it follow live, clear it for the nameless greeting, and set
+              <em>Greeting</em> to <em>off</em> for the old layout, or to <em>on</em> with
+              <em>embedded</em> to opt that placement in. On a phone, focus the composer
+              to check it stays centred above the on-screen keyboard.
+            </li>
+            <li>
               <strong>Collapse.</strong> Hit the header's <em>—</em>: the panel
               scales into the round launcher in the corner, and the launcher
               expands it again. <em>sidebar</em> slides to an edge rail instead;
@@ -431,6 +462,7 @@
           id="chat"
           endpoint="/agent/"
           title-text="Admin Copilot"
+          user-name="Ada"
           data-start-open
           data-text-animation="fade"
           data-tool-display="compact"
