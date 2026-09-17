@@ -32,8 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   room, and the composer was left halfway up what remained with an empty band
   under it, which is the part of the screen a thumb is already on. At 600px wide
   and below it now stays at the foot, directly over the keyboard, and the
-  greeting takes the space above it. `data-small-viewport="off"` keeps the
-  centred shape at every width, as it keeps the rest of the desktop layout.
+  greeting takes the space above it. The prompts in `data-starters`, or
+  whatever a host slots as `empty`, go to the foot with it and sit against the
+  composer: a prompt chip is a way into the conversation, and next to the field
+  it starts it reads as one. The greeting takes the middle of what they leave,
+  and the middle of the transcript where there are none.
+  `data-small-viewport="off"` keeps the centred shape at every width, as it
+  keeps the rest of the desktop layout.
 
 ### Fixed
 

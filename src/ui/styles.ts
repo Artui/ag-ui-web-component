@@ -1304,11 +1304,33 @@ export const STYLES = `
     flex-grow: 0;
   }
 
-  /* Centred in the transcript, which is now everything above the composer,
-     rather than at the foot of an upper half that no longer exists. */
-  :host([placement="page"]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty,
-  :host([placement="embedded"][data-greeting]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty {
-    margin: auto;
+  /* The empty region fills the transcript instead of being centred in it as a
+     block, so the two things in it can go to different places: the prompts the
+     host offers to the foot, against the composer, and the greeting to the
+     middle of what they leave.
+
+     A prompt chip is a way into the conversation. Against the field it starts,
+     it reads as one; under the greeting halfway up the panel, with the field
+     at the foot, it reads as decoration next to something else. Nothing here
+     moves them on a screen where the composer is still centred: there the
+     whole region hangs at the foot of the upper half, directly over the
+     composer, and the prompts are already against it.
+
+     Auto block margins on the greeting are what centre it, and they take the
+     free space whether or not there are prompts below to leave any, so a host
+     that offers none gets a greeting in the middle of the transcript rather
+     than one clinging to the composer. */
+  :host([placement="page"][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty,
+  :host([placement="embedded"][data-greeting][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty {
+    margin: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  :host([placement="page"][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .greeting,
+  :host([placement="embedded"][data-greeting][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .greeting {
+    margin-block: auto;
   }
 }
 

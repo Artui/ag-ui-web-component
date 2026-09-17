@@ -74,6 +74,22 @@ const TRANSPARENT = "rgba(0, 0, 0, 0)";
 const STARTERS = JSON.stringify(["Summarise this page"]);
 
 /**
+ * The transcript's content box, inside its own padding, which is what the
+ * empty region is laid out in.
+ */
+function transcriptBox(el: AgUiChat): { top: number; bottom: number } {
+  const messages = part(el, ".messages");
+  const style = getComputedStyle(messages);
+  const box = messages.getBoundingClientRect();
+  return {
+    top: box.top + Number.parseFloat(style.paddingTop),
+    bottom: box.bottom - Number.parseFloat(style.paddingBottom),
+  };
+}
+
+const middleOf = (box: { top: number; bottom: number }): number => (box.top + box.bottom) / 2;
+
+/**
  * How far the empty region sits from the middle of the transcript. Zero is
  * where it has always been without a greeting; the greeting layout moves it
  * down to sit over the composer.
@@ -215,15 +231,30 @@ describe("the greeting layout on a phone", () => {
     await page.viewport(DESKTOP.width, DESKTOP.height);
   });
 
-  it("docks the composer at the foot, with the greeting over the space above it", async () => {
+  it("docks the composer at the foot, with the prompts against it", async () => {
+    const el = mount({ placement: "page", "user-name": "Ada", "data-starters": STARTERS });
+    await settle();
+
+    expect(halves(el).below).toBeLessThanOrEqual(1);
+    // A prompt chip is a way into the conversation, so it goes next to the
+    // field it starts rather than under the greeting halfway up the panel.
+    const starters = part(el, ".suggestions").getBoundingClientRect();
+    const transcript = transcriptBox(el);
+    expect(Math.abs(starters.bottom - transcript.bottom)).toBeLessThanOrEqual(1);
+    // And the greeting takes the middle of what the prompts leave.
+    const greeting = part(el, ".greeting").getBoundingClientRect();
+    expect(
+      Math.abs(middleOf(greeting) - middleOf({ top: transcript.top, bottom: starters.top })),
+    ).toBeLessThanOrEqual(1);
+  });
+
+  it("centres the greeting in the transcript when no prompts are offered", async () => {
     const el = mount({ placement: "page", "user-name": "Ada" });
     await settle();
 
-    expect(greetingShown(el)).toBe(true);
     expect(halves(el).below).toBeLessThanOrEqual(1);
-    // In the middle of what is left, rather than at the foot of an upper half
-    // that no longer exists.
-    expect(emptyOffCentre(el)).toBeLessThanOrEqual(1);
+    const greeting = part(el, ".greeting").getBoundingClientRect();
+    expect(Math.abs(middleOf(greeting) - middleOf(transcriptBox(el)))).toBeLessThanOrEqual(1);
   });
 
   it("keeps it at the foot when the visible area shortens under a keyboard", async () => {
@@ -242,24 +273,38 @@ describe("the greeting layout on a phone", () => {
   });
 
   it("docks an embedded panel that opted in, within its own box", async () => {
-    const el = mount({ placement: "embedded", "data-greeting": "" });
+    const el = mount({ placement: "embedded", "data-greeting": "", "data-starters": STARTERS });
     el.style.height = "560px";
     await settle();
 
     expect(greetingShown(el)).toBe(true);
     expect(halves(el).below).toBeLessThanOrEqual(1);
-    expect(emptyOffCentre(el)).toBeLessThanOrEqual(1);
+    const starters = part(el, ".suggestions").getBoundingClientRect();
+    expect(Math.abs(starters.bottom - transcriptBox(el).bottom)).toBeLessThanOrEqual(1);
   });
 
   it("leaves the centred composer to a host that keeps its desktop shape", async () => {
     // The breakpoint's own opt-out, which is the only way to reach a media
     // query from outside the shadow root.
-    const el = mount({ placement: "page", "data-small-viewport": "off" });
+    const el = mount({
+      placement: "page",
+      "data-starters": STARTERS,
+      "data-small-viewport": "off",
+    });
     await settle();
 
     const { above, below } = halves(el);
     expect(below).toBeGreaterThan(150);
     expect(Math.abs(above - below)).toBeLessThanOrEqual(1);
+    // Prompts and greeting stay one block hanging at the foot of the upper
+    // half. Docked, the greeting is centred over the prompts instead, so the
+    // gap above it is what tells the two shapes apart -- the prompts are
+    // against the transcript's foot either way.
+    const starters = part(el, ".suggestions").getBoundingClientRect();
+    const greeting = part(el, ".greeting").getBoundingClientRect();
+    expect(greeting.top - transcriptBox(el).top).toBeGreaterThan(
+      starters.top - greeting.bottom + 50,
+    );
   });
 });
 

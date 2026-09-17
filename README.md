@@ -2771,8 +2771,8 @@ only you know whether that column should become the whole screen.
 The [greeting layout](#the-greeting-on-an-empty-page) changes shape here too, and
 it is the one part of this that `embedded` gets as well, because it moves nothing
 about the box you placed: an empty conversation keeps its composer at the foot of
-the panel, with the greeting over the space above it, instead of centring the two
-together.
+the panel, with the starters against it and the greeting over the space above
+them, instead of centring all three together.
 
 The corner placements still rest at their launcher, so a full-bleed panel is
 something the user opens rather than something they are given.
@@ -3113,10 +3113,12 @@ phone it starts at the foot, for the reason below.
   restores the plain layout there. `embedded` opts in with `data-greeting` (any value but `off`),
   for an app shell that gives the panel a page-sized box. The corner placements and the sidebar
   never show it: a panel opened from a launcher is already mid-task.
-- **On a phone** the composer stays at the foot and the greeting takes the space above it.
-  Centring is a shape for a screen with room to spare; at
+- **On a phone** the composer stays at the foot, the starters (or your own `empty` content) sit
+  against it, and the greeting takes the middle of what they leave — the middle of the
+  transcript when there are none. Centring is a shape for a screen with room to spare; at
   [600px wide and below](#small-viewports) the room is what the on-screen keyboard takes, and a
-  composer centred over an empty band sits halfway up what is left of the screen.
+  composer centred over an empty band sits halfway up what is left of the screen, with the
+  prompts that start a conversation nowhere near the field that sends one.
   `data-small-viewport="off"` keeps the centred shape at every width, as it keeps the rest of
   the desktop layout.
 
