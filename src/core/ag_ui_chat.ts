@@ -242,6 +242,8 @@ export class AgUiChat extends HTMLElement {
    * Optional full replacement for the `ask_user` question UI, resolving with
    * the answer; the same seam as {@link approvalRenderer}, styled via `strings`
    * and the `question*` `::part()`s when left unset. Requires {@link askUser}.
+   * A renderer that throws or rejects hands the question to the built-in card,
+   * as a failing {@link approvalRenderer} does, unless Stop already fired.
    */
   askUserRenderer: QuestionRenderer | null = null;
 

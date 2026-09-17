@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **An `askUserRenderer` that throws now hands the question to the built-in
+  question card.** A throw, or a rejected promise, used to escape the `ask_user`
+  tool: its card settled as an error quoting the host's message, that message
+  went on to the agent as the tool result although it was never written for the
+  model, and the pending wait was never closed, so the next Stop aborted the
+  signal of a question that had already ended.
+
+  The renderer decides how the question looks, not whether it is asked -- the
+  same rule `approvalRenderer` follows -- so it now falls back to the built-in
+  card, with a `console.warn` naming the tool call, and the run carries on as if
+  no renderer had been set. The exception is a rejection after the signal has
+  fired, which is how a renderer is expected to honour Stop: that wait resolves
+  with an empty answer, as the built-in card does on the same signal, with no
+  card drawn and no warning.
+
+### Fixed
+
+- **A checkpoint continuation waits for the run in flight.** Picking Resume or
+  Fork while an answer was streaming started a second run beside it, and an
+  earlier continuation kept streaming where Stop no longer reached it. The pick
+  is now refused with a composer hint, as Retry is; the run in flight is left
+  alone and the typed turn stays in the composer. `continueWhileRunning` is new
+  in the string table.
+
+- **A continued exchange is kept with its conversation.** It was never saved,
+  so a reload lost it, and the next message went out without it and with the
+  shared state from before the continuation. Each save now writes the
+  conversation with the exchange after it, through the existing `saveMessages`
+  -- `ClientConversationStore` is unchanged -- and the next message carries
+  both. After continuing from an earlier run, what is saved is what the
+  transcript shows, not only the turns up to that run. `sharedState` reads a
+  running continuation, and `AgUiClient.annotatedMessages` is new: the history
+  in the form a save writes it, with how each tool call ended.
+
 ## [0.39.0] — 2026-09-17
 
 ### Changed
