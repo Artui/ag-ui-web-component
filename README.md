@@ -869,6 +869,13 @@ chat.askUserRenderer = (request, { signal }) =>
   myModal.ask(request.question, request.options, { allowCustom: request.allowCustom, signal });
 ```
 
+**A renderer that throws or rejects falls back to the built-in card** for that call, with a
+`console.warn` naming the tool call. As with `approvalRenderer`, the renderer decides how the
+question looks, not whether it is asked, so the run carries on as if no renderer were set. The one
+exception is a rejection after the signal fired, which is how a renderer is expected to honour Stop:
+that wait resolves with an empty answer, as the built-in card does on the same signal, with no card
+and no warning.
+
 ### DOM-driver and animation primitives
 
 So the agent can visibly drive the host page, the package ships generic, framework-free
