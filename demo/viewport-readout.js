@@ -11,6 +11,10 @@
 // line, so a session reading the server log gets the numbers without anyone
 // transcribing a screenshot.
 //
+// `?readout=log` measures and posts the same way without drawing the overlay,
+// for a screenshot of the layout itself: drawn at the top of the visible area,
+// the overlay covers the panel's header, which is one of the things to judge.
+//
 // Demo only. Nothing here ships: the package publishes dist/ and src/.
 
 const params = new URLSearchParams(location.search);
@@ -55,19 +59,72 @@ function start() {
     paddingTop: "env(safe-area-inset-top, 0px)",
     paddingBottom: "env(safe-area-inset-bottom, 0px)",
   });
-  document.body.append(box, probe);
+  // Which frame getBoundingClientRect answers in. On the phone, one reading
+  // put the panel at 0 and the next at 276 with nothing moved, while scrollY
+  // and innerHeight changed under them. A fixed probe at top 0 sits at the top
+  // of the layout viewport, and an absolute one at the top of the document, so
+  // their rects give the origin of whatever frame the browser reported in, and
+  // every other rect can be put back into the layout viewport's.
+  const fixedOrigin = document.createElement("div");
+  Object.assign(fixedOrigin.style, {
+    position: "fixed",
+    top: "0",
+    left: "0",
+    width: "0",
+    height: "0",
+    visibility: "hidden",
+  });
+  const documentOrigin = document.createElement("div");
+  Object.assign(documentOrigin.style, {
+    position: "absolute",
+    top: "0",
+    left: "0",
+    width: "0",
+    height: "0",
+    visibility: "hidden",
+  });
+
+  // What each viewport-percentage height resolves to, in pixels. The panel's
+  // fallback height is one of these, and which of them iOS Safari resolves to
+  // the space above its bars is the question a desktop cannot answer.
+  const units = ["vh", "svh", "dvh", "lvh"];
+  const unitProbes = units.map((unit) => {
+    const el = document.createElement("div");
+    Object.assign(el.style, {
+      position: "fixed",
+      top: "0",
+      left: "0",
+      width: "0",
+      height: `100${unit}`,
+      visibility: "hidden",
+      pointerEvents: "none",
+    });
+    return el;
+  });
+  const drawn = params.get("readout") !== "log";
+  document.body.append(...(drawn ? [box] : []), probe, fixedOrigin, documentOrigin, ...unitProbes);
 
   let lastEvent = "load";
   let lastPosted = "";
   let postTimer = 0;
 
   const round = (n) => (typeof n === "number" ? Math.round(n * 10) / 10 : n);
-  const rect = (el) => {
+  // Raw, as getBoundingClientRect reported it, and in the layout viewport's
+  // frame: the raw top less the fixed probe's, which is the layout top in the
+  // same frame. Subtract visual.offsetTop from a layout top for its place on
+  // the visible area.
+  const rect = (el, origin) => {
     if (!el) {
       return null;
     }
     const r = el.getBoundingClientRect();
-    return { top: round(r.top), bottom: round(r.bottom), height: round(r.height) };
+    return {
+      top: round(r.top),
+      bottom: round(r.bottom),
+      height: round(r.height),
+      layoutTop: round(r.top - origin),
+      layoutBottom: round(r.bottom - origin),
+    };
   };
 
   const read = () => {
@@ -75,6 +132,7 @@ function start() {
     const style = chat ? getComputedStyle(chat) : null;
     const probeStyle = getComputedStyle(probe);
     const active = root?.activeElement ?? document.activeElement;
+    const origin = fixedOrigin.getBoundingClientRect().top;
     return {
       route: location.pathname,
       event: lastEvent,
@@ -83,6 +141,7 @@ function start() {
       innerWidth: window.innerWidth,
       innerHeight: window.innerHeight,
       clientHeight: document.documentElement.clientHeight,
+      documentHeight: document.documentElement.scrollHeight,
       scrollY: round(window.scrollY),
       visual: visual
         ? {
@@ -92,6 +151,13 @@ function start() {
             scale: round(visual.scale),
           }
         : null,
+      frame: {
+        layoutTop: round(origin),
+        documentTop: round(documentOrigin.getBoundingClientRect().top),
+      },
+      units: Object.fromEntries(
+        units.map((unit, i) => [unit, round(unitProbes[i].getBoundingClientRect().height)]),
+      ),
       safeArea: {
         top: probeStyle.paddingTop,
         bottom: probeStyle.paddingBottom,
@@ -100,25 +166,32 @@ function start() {
         visualViewportHeight: chat?.style.getPropertyValue("--ag-ui-visual-viewport-height") || "",
         visualViewportInsetBottom:
           chat?.style.getPropertyValue("--ag-ui-visual-viewport-inset-bottom") || "",
+        visualViewportInsetTop: chat?.style.getPropertyValue("--ag-ui-visual-viewport-inset-top") || "",
       },
-      panel: rect(root?.querySelector(".chat")),
-      header: rect(root?.querySelector(".header")),
-      composer: rect(root?.querySelector(".input-row")),
-      send: rect(root?.querySelector(".send")),
+      panel: rect(root?.querySelector(".chat"), origin),
+      header: rect(root?.querySelector(".header"), origin),
+      composer: rect(root?.querySelector(".input-row"), origin),
+      send: rect(root?.querySelector(".send"), origin),
       hostPosition: style?.position ?? null,
     };
   };
 
   const render = (r) => {
     const v = r.visual ?? {};
+    // Layout-frame numbers on screen; the raw ones are in the posted reading.
     const line = (label, box) =>
-      box ? `${label} top ${box.top}  bottom ${box.bottom}  h ${box.height}` : `${label} -`;
+      box
+        ? `${label} top ${box.layoutTop}  bottom ${box.layoutBottom}  h ${box.height}`
+        : `${label} -`;
     return [
       `${r.route}  ${r.placement}  on ${r.event}`,
-      `inner ${r.innerWidth}x${r.innerHeight}  client h ${r.clientHeight}  scrollY ${r.scrollY}`,
+      `inner ${r.innerWidth}x${r.innerHeight}  client h ${r.clientHeight}  doc h ${r.documentHeight}  scrollY ${r.scrollY}`,
       `visual h ${v.height}  offsetTop ${v.offsetTop}  pageTop ${v.pageTop}  scale ${v.scale}`,
+      `units vh ${r.units.vh}  svh ${r.units.svh}  dvh ${r.units.dvh}  lvh ${r.units.lvh}`,
+      `rect frame: layout top at ${r.frame.layoutTop}  document top at ${r.frame.documentTop}`,
       `safe-area top ${r.safeArea.top}  bottom ${r.safeArea.bottom}`,
-      `written vv-height ${r.written.visualViewportHeight || "-"}  inset-bottom ${r.written.visualViewportInsetBottom || "-"}`,
+      `written vv-height ${r.written.visualViewportHeight || "-"}  inset-top ${r.written.visualViewportInsetTop || "-"}  inset-bottom ${r.written.visualViewportInsetBottom || "-"}`,
+      "rects below in the layout viewport's frame",
       line("panel   ", r.panel),
       line("header  ", r.header),
       line("composer", r.composer),
