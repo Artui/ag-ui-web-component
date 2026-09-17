@@ -19,6 +19,7 @@ function harness(enabled = true) {
   const clicks: string[] = [];
   let live = enabled;
   let box = START;
+  const connection = new AbortController();
   launcher.addEventListener("click", () => clicks.push("expand"));
   enableLauncherDrag(launcher, {
     enabled: () => live,
@@ -29,6 +30,7 @@ function harness(enabled = true) {
       box = { ...box, left, top };
     },
     commit: (left, top) => committed.push({ left, top }),
+    signal: connection.signal,
   });
   document.body.appendChild(launcher);
   return {
@@ -36,6 +38,7 @@ function harness(enabled = true) {
     applied,
     committed,
     clicks,
+    disconnect: () => connection.abort(),
     setEnabled: (next: boolean) => {
       live = next;
     },
@@ -221,6 +224,20 @@ describe("enableLauncherDrag", () => {
 
     h.launcher.dispatchEvent(new FocusEvent("blur"));
 
+    expect(h.committed).toEqual([]);
+  });
+
+  it("stops moving the launcher once its signal is aborted", () => {
+    // The element aborts it on leaving the document and wires the launcher
+    // again on coming back, so a listener that outlived it moved one arrow
+    // press two steps.
+    const h = harness();
+    h.disconnect();
+
+    key(h.launcher, "ArrowLeft");
+    drag(h.launcher, [948, 748], [648, 348]);
+
+    expect(h.applied).toEqual([]);
     expect(h.committed).toEqual([]);
   });
 });

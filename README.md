@@ -246,7 +246,9 @@ either way: `title-text`, `placement`, `credentials`, `user-key`, `user-name`.
 all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;
 the element logs a console warning naming the attribute rather than failing silently, because the
 symptom is an affordance that never appears and that reads as a broken component. Set them before
-the element enters the DOM, or remove and re-insert it. See
+the element enters the DOM, or remove and re-insert it. Re-inserting builds the chrome again from
+the attributes as they stand, cancels a run in progress, and redraws the conversation from its
+stored history, as `reload()` does. See
 [Framework hosts](#framework-hosts-configure-before-you-insert), where the boundary bites hardest.
 The list: `data-attachments-url`, `data-attachment-accept`, `data-attachment-max-bytes`,
 `data-transcribe-url`, `data-threads-url`, `data-threads-cache`, `data-tools-url`,

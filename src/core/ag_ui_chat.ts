@@ -585,6 +585,30 @@ export class AgUiChat extends HTMLElement {
   readonly #voice: ComposerVoice;
   /** Whether the element is currently in the DOM; gates the connect-time warning. */
   #connected = false;
+  /**
+   * Aborted when the element leaves the document, and replaced when it comes
+   * back.
+   *
+   * Every listener connecting adds to an element that outlives the connection
+   * -- the composer, Send, the launcher, the shell -- is added under this
+   * signal. Connecting runs again on every insertion, so a listener added
+   * without it is a second listener the next time: one click on Stop stopped
+   * the run three times, and one press of the built-in theme toggle flipped it
+   * twice, back to where it started.
+   */
+  #connection = new AbortController();
+  /**
+   * Whether the element has connected before, which makes this connection a
+   * re-insertion: there is a transcript on screen from last time, and the
+   * history replay would draw the conversation a second time beneath it.
+   */
+  #connectedBefore = false;
+  /**
+   * The remote store `data-threads-url` wrapped around the conversation store,
+   * and the store inside it, so connecting again can wrap that store rather
+   * than the wrapper.
+   */
+  #threadStore: { remote: RemoteConversationStore; inner: ClientConversationStore } | null = null;
 
   #client: AgUiClient | null = null;
   // Seed for the next client. Once one exists it owns the live value (the
@@ -1164,6 +1188,18 @@ export class AgUiChat extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // A fresh signal per connection: disconnecting aborted the last one, and
+    // with it every listener the last connection added.
+    this.#connection = new AbortController();
+    // Coming back is a reload, not a merge, for the reason `reload()` is: the
+    // run was cancelled on the way out, and the transcript is rebuilt below
+    // from persisted history -- which could only be appended to what is still
+    // showing. The composer's recall history is kept, because a move is not a
+    // farewell and disconnecting put the queued messages there on purpose.
+    if (this.#connectedBefore) {
+      this.#resetConversation();
+    }
+    this.#connectedBefore = true;
     // Resolve the per-instance storage namespace before any key read/write, so
     // this instance doesn't share collapsed/theme/thread state with another on
     // the same origin.
@@ -1206,7 +1242,7 @@ export class AgUiChat extends HTMLElement {
     this.#skills.init();
     // Namespace the built-in default store too (a host-injected store is used
     // verbatim). Must precede #wireThreadStore, which wraps the current store.
-    this.conversationStore = this.#storage.scopeStore(this.conversationStore, this.userKey);
+    this.conversationStore = this.#storage.scopeStore(this.#unwrappedStore(), this.userKey);
     window.addEventListener("resize", this.#onViewportResize);
     // The visual viewport changes without the window resizing -- a keyboard
     // opening, a pinch-zoom, the URL bar collapsing -- and `scroll` is what
@@ -1215,7 +1251,7 @@ export class AgUiChat extends HTMLElement {
     window.visualViewport?.addEventListener("scroll", this.#onViewportResize);
     this.#placement.publishVisualViewport();
     this.#wireThreadStore();
-    this.#attachments.wire();
+    this.#attachments.wire(this.#connection.signal);
     this.#voice.wire();
     this.#history.adoptActiveThread();
     // The catalog requests go out a microtask later, so a host configuring
@@ -1290,6 +1326,7 @@ export class AgUiChat extends HTMLElement {
    */
   disconnectedCallback(): void {
     this.#connected = false;
+    this.#connection.abort();
     window.removeEventListener("resize", this.#onViewportResize);
     window.visualViewport?.removeEventListener("resize", this.#onViewportResize);
     window.visualViewport?.removeEventListener("scroll", this.#onViewportResize);
@@ -1410,16 +1447,36 @@ export class AgUiChat extends HTMLElement {
    * thread id, the navigation checkpoint) keep their local store either way.
    */
   #wireThreadStore(): void {
+    this.#threadStore = null;
     const url = this.getAttribute("data-threads-url");
     if (url !== null) {
-      this.conversationStore = new RemoteConversationStore(
+      const inner = this.conversationStore;
+      const remote = new RemoteConversationStore(
         url,
         () => this.#headersFor(url),
-        this.conversationStore,
+        inner,
         () => this.#requestCredentials(),
         this.getAttribute("data-threads-cache") !== "false",
       );
+      this.#threadStore = { remote, inner };
+      this.conversationStore = remote;
     }
+  }
+
+  /**
+   * The conversation store without the remote this element wrapped it in.
+   *
+   * An element removed and inserted again connects again, and wrapping the
+   * wrapper stacked a second remote on the first, so every rename and delete
+   * reached the server twice. Unwrapping first also lets a `data-threads-url`
+   * removed while detached take the remote away. A store the host assigned
+   * since is theirs, and comes back as it is.
+   */
+  #unwrappedStore(): ClientConversationStore {
+    const wrapped = this.#threadStore;
+    return wrapped !== null && this.conversationStore === wrapped.remote
+      ? wrapped.inner
+      : this.conversationStore;
   }
 
   /**
@@ -1737,6 +1794,24 @@ export class AgUiChat extends HTMLElement {
 
   /** Drop the in-memory run + transcript, leaving the thread id untouched. */
   #resetState(): void {
+    this.#resetConversation();
+    // The composer's own history goes with the conversation it was typed
+    // into. The path that makes this more than tidiness is the `user-key`
+    // rescope, which purges storage and wipes the transcript precisely so the
+    // previous principal's words are not visible to the next one -- and would
+    // otherwise leave every one of them a single ArrowUp away.
+    this.#sentDrafts.length = 0;
+    this.#recallIndex = null;
+  }
+
+  /**
+   * Drop the in-memory run and transcript, and nothing the user typed.
+   *
+   * Split from {@link #resetState} for re-insertion, which rebuilds the
+   * conversation from history but is not a new one, so the composer's recall
+   * history stays.
+   */
+  #resetConversation(): void {
     this.#client = null;
     // Every path here has just cancelled the run, but a cancelled run ends
     // later: once its request closes, or once a host tool's handler returns.
@@ -1746,13 +1821,6 @@ export class AgUiChat extends HTMLElement {
     this.#runHandlers.detach();
     this.#clearTranscript();
     this.#history.forgetRestored();
-    // The composer's own history goes with the conversation it was typed
-    // into. The path that makes this more than tidiness is the `user-key`
-    // rescope, which purges storage and wipes the transcript precisely so the
-    // previous principal's words are not visible to the next one -- and would
-    // otherwise leave every one of them a single ArrowUp away.
-    this.#sentDrafts.length = 0;
-    this.#recallIndex = null;
   }
 
   /**
@@ -1835,7 +1903,19 @@ export class AgUiChat extends HTMLElement {
     return this.#transcript.append(role, content);
   }
 
+  /**
+   * Build the chrome, from the attributes as they stand.
+   *
+   * Runs on every connect, not once, because removing and re-inserting the
+   * element is the documented way to apply a connect-time attribute written
+   * late. So it has to build the same element the second time as the first:
+   * the elements made here are new each time, the long-lived ones it fills
+   * are filled with `replaceChildren` rather than appended to, and every
+   * listener on a long-lived one goes under the connection's signal. Appending
+   * gave a re-inserted element two headers and two composers.
+   */
   #render(): void {
+    const { signal } = this.#connection;
     this.#chat.className = "chat";
     this.#chat.setAttribute("part", "panel");
 
@@ -1901,7 +1981,7 @@ export class AgUiChat extends HTMLElement {
       this.#themeToggle.setAttribute("part", "header-button theme-toggle");
       this.#themeToggle.title = this.#strings.toggleTheme;
       this.#themeToggle.setAttribute("aria-label", this.#strings.toggleTheme);
-      this.#themeToggle.addEventListener("click", () => this.toggleTheme());
+      this.#themeToggle.addEventListener("click", () => this.toggleTheme(), { signal });
       this.#syncThemeGlyph();
       controls.append(this.#themeToggle);
     }
@@ -1931,11 +2011,11 @@ export class AgUiChat extends HTMLElement {
     this.#jumpButton.textContent = this.#strings.jumpToLatest;
 
     // The quote offer, and the transcript's settled selections it listens for.
-    this.#excerpts.mount();
+    this.#excerpts.mount(signal);
 
     // Built here rather than at field initialisation: the viewport has to exist
     // and the observer has to have something to observe.
-    this.#transcript.mountScroller(this.#jumpButton);
+    this.#transcript.mountScroller(this.#jumpButton, signal);
 
     this.#announcer.mount();
 
@@ -1955,7 +2035,6 @@ export class AgUiChat extends HTMLElement {
     greetingSlot.append(this.#greetingText);
     greeting.append(greetingSlot);
     this.#syncGreeting();
-    this.#emptyWrap.append(greeting);
     const emptySlot = document.createElement("slot");
     emptySlot.name = "empty";
     // Fallback content, so a host that slots its own gets exactly that and
@@ -1967,7 +2046,7 @@ export class AgUiChat extends HTMLElement {
     if (starters !== null) {
       emptySlot.append(starters);
     }
-    this.#emptyWrap.append(emptySlot);
+    this.#emptyWrap.replaceChildren(greeting, emptySlot);
     this.#queuedRow.className = "queued";
     this.#queuedRow.setAttribute("part", "queued");
     this.#queuedRow.setAttribute("role", "group");
@@ -1997,8 +2076,8 @@ export class AgUiChat extends HTMLElement {
     this.#input.setAttribute("aria-label", this.#strings.message);
     this.#input.rows = 1;
     this.#input.placeholder = this.#strings.inputPlaceholder;
-    this.#input.addEventListener("keydown", (event) => this.#onKeydown(event));
-    this.#input.addEventListener("input", () => this.#onInput());
+    this.#input.addEventListener("keydown", (event) => this.#onKeydown(event), { signal });
+    this.#input.addEventListener("input", () => this.#onInput(), { signal });
 
     // Icon-only, with both glyphs mounted at once and CSS showing the one the
     // state calls for — swapping a single glyph would leave a host that slotted
@@ -2006,22 +2085,26 @@ export class AgUiChat extends HTMLElement {
     this.#send.className = "send";
     this.#send.type = "button";
     this.#send.setAttribute("part", "send");
-    this.#send.append(
+    this.#send.replaceChildren(
       glyphSlot("icon-send", "send-send", ICON_SEND),
       glyphSlot("icon-stop", "send-stop", ICON_STOP),
     );
     this.#send.title = this.#strings.send;
     this.#send.setAttribute("aria-label", this.#strings.send);
     this.#send.dataset["state"] = "idle";
-    this.#send.addEventListener("click", () => {
-      // One button, two states: Send while idle, Stop while a run is in
-      // flight (no layout change).
-      if (this.#running) {
-        this.#cancelRun();
-        return;
-      }
-      void this.#submit();
-    });
+    this.#send.addEventListener(
+      "click",
+      () => {
+        // One button, two states: Send while idle, Stop while a run is in
+        // flight (no layout change).
+        if (this.#running) {
+          this.#cancelRun();
+          return;
+        }
+        void this.#submit();
+      },
+      { signal },
+    );
 
     this.#composerHint.className = "skill-hint";
     this.#composerHint.setAttribute("part", "skill-hint");
@@ -2033,17 +2116,19 @@ export class AgUiChat extends HTMLElement {
     this.#attachButton.className = "attach-btn";
     this.#attachButton.type = "button";
     this.#attachButton.setAttribute("part", "attach-button");
-    this.#attachButton.append(glyphSlot("icon-attach", "attach-glyph", ICON_ATTACH));
+    this.#attachButton.replaceChildren(glyphSlot("icon-attach", "attach-glyph", ICON_ATTACH));
     this.#attachButton.title = this.#strings.attachFiles;
     this.#attachButton.setAttribute("aria-label", this.#strings.attachFiles);
     this.#attachButton.hidden = true;
-    this.#attachButton.addEventListener("click", () => this.#fileInput.click());
+    this.#attachButton.addEventListener("click", () => this.#fileInput.click(), { signal });
 
     this.#fileInput.className = "attach-input";
     this.#fileInput.type = "file";
     this.#fileInput.multiple = true;
     this.#fileInput.hidden = true;
-    this.#fileInput.addEventListener("change", () => this.#attachments.onFilesPicked());
+    this.#fileInput.addEventListener("change", () => this.#attachments.onFilesPicked(), {
+      signal,
+    });
 
     this.#attachSlot.className = "attachment-slot";
 
@@ -2063,9 +2148,9 @@ export class AgUiChat extends HTMLElement {
     this.#messagesWrap.className = "messages-wrap";
     // Sibling of the list inside a shared box, not a child of it: the
     // affordance offering to scroll must not scroll away with the content.
-    this.#messagesWrap.append(this.#messages, this.#jumpButton, this.#excerpts.button);
+    this.#messagesWrap.replaceChildren(this.#messages, this.#jumpButton, this.#excerpts.button);
 
-    this.#chat.append(
+    this.#chat.replaceChildren(
       header,
       this.#messagesWrap,
       this.#skillsMenu.palette,
@@ -2087,16 +2172,20 @@ export class AgUiChat extends HTMLElement {
     // button's own click, so closing here and toggling there would land back open.
     // Composed path rather than `target`, because the event is retargeted at the
     // shadow boundary and every one of these nodes is inside it.
-    this.#chat.addEventListener("pointerdown", (event) => {
-      if (!this.#checkpoints.open_) {
-        return;
-      }
-      const path = event.composedPath();
-      if (path.includes(this.#checkpoints.element) || path.includes(checkpoints)) {
-        return;
-      }
-      this.#checkpoints.close();
-    });
+    this.#chat.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (!this.#checkpoints.open_) {
+          return;
+        }
+        const path = event.composedPath();
+        if (path.includes(this.#checkpoints.element) || path.includes(checkpoints)) {
+          return;
+        }
+        this.#checkpoints.close();
+      },
+      { signal },
+    );
 
     // What a collapsed widget shrinks to: a round floating button, or the slim
     // edge rail under `placement="sidebar"` — one element, shaped by CSS.
@@ -2120,20 +2209,20 @@ export class AgUiChat extends HTMLElement {
     this.#railLabel.setAttribute("part", "rail-label");
     this.#railLabel.setAttribute("aria-hidden", "true");
     this.#railLabel.textContent = this.getAttribute("title-text") ?? this.#strings.title;
-    this.#launcher.append(
+    this.#launcher.replaceChildren(
       iconElement("launcher", "launcher-icon", ICON_LAUNCHER, readLauncherIconUrl(this)),
       this.#railLabel,
       this.#badge,
     );
-    this.#launcher.addEventListener("click", () => this.setCollapsed(false));
-    this.#placement.enableLauncherDrag();
+    this.#launcher.addEventListener("click", () => this.setCollapsed(false), { signal });
+    this.#placement.enableLauncherDrag(signal);
 
     this.#placement.mountResizeGrips(this.#chat);
     adoptStyles(this.#root);
     const probe = this.#placement.probe;
     probe.className = "viewport-probe";
     probe.setAttribute("aria-hidden", "true");
-    this.#root.append(probe, this.#announcer.region, this.#chat, this.#launcher);
+    this.#root.replaceChildren(probe, this.#announcer.region, this.#chat, this.#launcher);
   }
 
   /**

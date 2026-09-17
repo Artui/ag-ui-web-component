@@ -99,8 +99,13 @@ export class TranscriptQuoteOffer {
     this.#pageQuote = null;
   }
 
-  /** Build the offer and listen for settled selections in the transcript. */
-  mount(): void {
+  /**
+   * Build the offer and listen for settled selections in the transcript.
+   *
+   * The button and the transcript outlive a connection, so the listeners go
+   * under `signal`, which the element aborts when it leaves the document.
+   */
+  mount(signal: AbortSignal): void {
     const button = this.button;
     button.className = "quote-selection";
     button.type = "button";
@@ -111,23 +116,31 @@ export class TranscriptQuoteOffer {
     // selection first, and by the time a click lands there is nothing left to
     // quote. Preventing the default keeps the selection alive long enough to
     // read it.
-    button.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-    });
-    button.addEventListener("click", () => {
-      this.#host.quote(this.#quoting);
-      window.getSelection()?.removeAllRanges();
-      this.#hide();
-    });
+    button.addEventListener(
+      "mousedown",
+      (event) => {
+        event.preventDefault();
+      },
+      { signal },
+    );
+    button.addEventListener(
+      "click",
+      () => {
+        this.#host.quote(this.#quoting);
+        window.getSelection()?.removeAllRanges();
+        this.#hide();
+      },
+      { signal },
+    );
 
     // A settled selection, by either input. `mouseup` rather than
     // `selectionchange` so the offer does not chase the pointer mid-drag; the
     // second half of the same gesture, `mousedown`, retires the previous offer
     // before the new selection exists.
     const messages = this.#host.messages;
-    messages.addEventListener("mouseup", (event) => this.#onSelectionSettled(event));
-    messages.addEventListener("keyup", () => this.#onSelectionSettled());
-    messages.addEventListener("mousedown", () => this.#hide());
+    messages.addEventListener("mouseup", (event) => this.#onSelectionSettled(event), { signal });
+    messages.addEventListener("keyup", () => this.#onSelectionSettled(), { signal });
+    messages.addEventListener("mousedown", () => this.#hide(), { signal });
   }
 
   /** Whether the transcript offers to quote what the user selects. */
