@@ -1,7 +1,8 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG, PASTE_ATTACH_CHARS } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import { type FakeXhrController, installFakeXhr } from "./helpers/fake_xhr.js";
 
 /**
  * A very long paste becomes an attachment rather than a wall of text.
@@ -50,14 +51,28 @@ const chips = (el: AgUiChat): string[] =>
   );
 
 describe("pasting a long block of text", () => {
+  let xhr: FakeXhrController;
+
   beforeAll(() => {
     defineAgUiChat();
+  });
+
+  beforeEach(() => {
+    // An attached paste starts uploading at once, through the built-in
+    // XMLHttpRequest upload. Left real, that request goes to a localhost port
+    // nobody listens on and is still open when the teardown below disconnects
+    // the tray, which aborts it -- and happy-dom prints every aborted request
+    // as a "socket hang up" trace no test owns. What is asserted here is the
+    // chip, which appears before any byte is sent, so a request that never
+    // answers is the faithful stand-in.
+    xhr = installFakeXhr();
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
     sessionStorage.clear();
     vi.restoreAllMocks();
+    xhr.restore();
   });
 
   it("leaves an ordinary paste alone", () => {
