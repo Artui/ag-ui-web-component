@@ -153,8 +153,8 @@ export class RunHandlers {
         // back. So this envelope is a correctness fix upstream, it is legal
         // AG-UI, and any server may send one.
         //
-        // The element's `#renderHistoricMessage` already declines to draw a
-        // bubble for an assistant message with no text. Without the same rule
+        // `ConversationHistory.replay` already declines to draw a bubble for
+        // an assistant message with no text. Without the same rule
         // here the live transcript and the reloaded one disagree about the
         // same conversation, which is the harder half of the bug to notice.
         if (buffer === "") {
