@@ -77,6 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The composer's attachments (the tray and the picker, drop and paste routes
     into it) and its mic are `ComposerAttachments` and `ComposerVoice` in
     `src/ui/composer/`.
+  - Which storage keys are the element's -- the namespace it claims in the
+    document, the keys its layout preferences live under, and the built-in
+    conversation store scoped to them -- is `StorageScope` in `src/core/`.
 
   Nothing a consumer can see changes. The emitted declarations are
   byte-identical to the previous release apart from the new internal modules,

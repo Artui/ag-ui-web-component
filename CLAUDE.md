@@ -140,7 +140,7 @@ not interfere.
 ### The one registry that is shared, and the test it passes
 
 `CLAIMED_NAMESPACES` -- the set of storage namespaces the elements in a document have
-claimed, written by `#claimNamespace` and released in `disconnectedCallback` -- is a
+claimed, added to when an element connects and released when it disconnects -- is a
 module-level `Set`, deliberately. It is not a loophole in the rule above; it is how the
 rule's last sentence is kept. Its question is whether *another* live element in this
 document already stores its conversation under the same namespace, and no per-instance
@@ -156,8 +156,8 @@ cite this one:
 2. **It holds only what live instances hold.** Every entry is added by the element that
    owns it and removed in that element's `disconnectedCallback`, so nothing outlives the
    elements it describes and a remounted element competes on the same terms as a new one.
-3. **One path writes it and one path releases it**, both on the element, and nothing else
-   reads it.
+3. **One path writes it and one path releases it**, both in the storage scope each element
+   owns, and nothing else reads it.
 
 Other homes were considered and rejected as the same state spelled differently. A `static`
 class field is shared exactly as widely and only looks per-instance. A property on
