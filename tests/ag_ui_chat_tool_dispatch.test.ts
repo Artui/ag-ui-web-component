@@ -492,3 +492,113 @@ describe("an approvalRenderer that throws", () => {
     warn.mockRestore();
   });
 });
+
+describe("an askUserRenderer that throws", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  /** A run whose first round asks the user a question, and whose next round ends. */
+  function mountAsking(): { el: AgUiChat; handle: ReturnType<typeof makeFakeAgent> } {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    let round = 0;
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        if (round === 0) {
+          emit.toolCall("q1", "ask_user", { question: "Which colour?", options: ["red", "blue"] });
+        }
+        round += 1;
+        emit.runEnd();
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    el.askUser = true;
+    return { el, handle };
+  }
+
+  const FAILS = {
+    synchronously: () => {
+      throw new Error("modal library not loaded");
+    },
+    "by rejecting": () => Promise.reject(new Error("modal library not loaded")),
+  };
+
+  it.each(Object.entries(FAILS))(
+    "puts the question to the built-in card when it fails %s",
+    async (_how, renderer) => {
+      // The renderer decides how the question looks, not whether it is asked,
+      // exactly as `approvalRenderer` does for approvals. When it cannot draw,
+      // the agent still asked something, and the built-in card is the one that
+      // is always there to put it to the user.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const { el, handle } = mountAsking();
+      el.askUserRenderer = renderer as never;
+
+      await send(el, "ask me");
+
+      const question = shadow(el).querySelector<HTMLElement>(".question");
+      expect(question?.querySelector(".question-body")?.textContent).toBe("Which colour?");
+      // Still waiting on a person: the call is running, the host's message has
+      // not been handed to the agent as the answer, and nothing has resumed.
+      const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+      expect(card?.getAttribute("data-status")).toBe("pending");
+      expect(handle.messages.find((message) => message.role === "tool")).toBeUndefined();
+      expect(handle.runParams).toHaveLength(1);
+
+      const blue = question?.querySelectorAll<HTMLInputElement>(".question-choice input")[1];
+      blue?.click();
+      blue?.dispatchEvent(new Event("change"));
+      question?.querySelector<HTMLButtonElement>(".question-btn")?.click();
+      await flush();
+
+      // The run carries on exactly as it would with no renderer set.
+      expect(handle.messages.find((message) => message.role === "tool")?.content).toBe('"blue"');
+      expect(handle.runParams).toHaveLength(2);
+      expect(card?.getAttribute("data-status")).toBe("done");
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("askUserRenderer"),
+        expect.objectContaining({ message: "modal library not loaded" }),
+      );
+      warn.mockRestore();
+    },
+  );
+
+  it("draws no card for a wait that was already abandoned", async () => {
+    // A renderer that honours its signal the conventional way rejects once it
+    // fires. By then the user has pressed Stop, so a card asking them a question
+    // would be about a run they just ended: the wait resolves with the empty
+    // answer the built-in card resolves with on the same signal.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { el, handle } = mountAsking();
+    el.askUserRenderer = (_request, { signal }) =>
+      new Promise<string>((_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () => reject(new DOMException("The wait was abandoned.", "AbortError")),
+          { once: true },
+        );
+      });
+
+    await send(el, "ask me");
+    const stop = shadow(el).querySelector<HTMLButtonElement>(".send");
+    expect(stop?.dataset["state"]).toBe("running");
+    stop?.click();
+    await flush();
+    await flush();
+
+    expect(shadow(el).querySelector(".question")).toBeNull();
+    // What a Stop on the built-in card leaves: the call answered with nothing,
+    // rather than failed with the rejection's message.
+    const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("done");
+    expect(handle.messages.find((message) => message.role === "tool")?.content).toBe('""');
+    expect(handle.runParams).toHaveLength(1);
+    // Rejecting on abort is what the signal asks a renderer to do, not a fault.
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
