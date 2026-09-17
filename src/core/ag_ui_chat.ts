@@ -36,24 +36,21 @@ import {
 } from "../constants.js";
 import type { Skill } from "../skills/skill.js";
 import { SkillCatalog } from "../skills/skill_catalog.js";
-import {
-  type ChatCorner,
-  type ChatSurfaceReport,
-  createChatSurfaceTools,
-} from "../tools/chat_surface_tools.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type ChatCorner, type ChatSurfaceReport } from "../tools/chat_surface_tools.js";
 import type { ChartRenderer } from "../tools/client_tool_registry.js";
-import { type ClientTool, ClientToolRegistry } from "../tools/client_tool_registry.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type ClientTool } from "../tools/client_tool_registry.js";
 import { isDestructive } from "../tools/is_destructive.js";
 import { isNavigates } from "../tools/is_navigates.js";
-import {
-  createPageActionTools,
-  PAGE_ACTIONS,
-  type ResolvePageTarget,
-} from "../tools/page_action_tools.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type ResolvePageTarget } from "../tools/page_action_tools.js";
 import { createPageMapContext, type PageMap } from "../tools/page_map.js";
-import { createPageStateTools, type PageState } from "../tools/page_state.js";
-import { parseToolCatalog, type ToolCatalogEntry } from "../tools/parse_tool_catalog.js";
-import { createRouteTools, type RouteMap } from "../tools/route_map.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type PageState } from "../tools/page_state.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type RouteMap } from "../tools/route_map.js";
+import { ToolCatalog } from "../tools/tool_catalog.js";
 import { renderChart } from "../ui/charts/chart_block.js";
 import { chartSpecFrom } from "../ui/charts/chart_spec_from.js";
 import { CHART_TOOL_NAME, createChartTool } from "../ui/charts/chart_tool.js";
@@ -76,11 +73,9 @@ import {
   type ConfirmationRequest,
   requestConfirmation,
 } from "../ui/interrupts/confirmation_card.js";
-import {
-  type QuestionRenderer,
-  type QuestionRequest,
-  requestQuestion,
-} from "../ui/interrupts/question_card.js";
+import { PendingDecision } from "../ui/interrupts/pending_decision.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
 import { isDraggablePlacement } from "../ui/placement/is_draggable_placement.js";
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
 import { prettifyToolName } from "../ui/progress/prettify_tool_name.js";
@@ -142,7 +137,7 @@ import { toolStatusFromOutcome } from "./tool_outcome.js";
 import { type TranscribeHandler } from "./transcribe_audio.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type UploadHandler } from "./upload_attachment.js";
-import { mintThread, warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
+import { commaTokens, mintThread, warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
 
 /**
  * Attributes read once while connecting, to decide what chrome exists at all.
@@ -331,14 +326,7 @@ export class AgUiChat extends HTMLElement {
    * via {@link registerTool} / {@link registerPageState}; override to supply a
    * fully custom catalog.
    */
-  getTools: () => Tool[] = () => [
-    ...this.#builtinTools().map((t) => ({
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
-    })),
-    ...this.#toolRegistry.tools(),
-  ];
+  getTools: () => Tool[] = () => this.#tools.defaultTools();
 
   /**
    * Per-run context provider. Defaults to the compact page map, when a
@@ -461,15 +449,6 @@ export class AgUiChat extends HTMLElement {
   resolvePageTarget: ResolvePageTarget = (target) => document.querySelector<HTMLElement>(target);
 
   /**
-   * The server tool catalog fetched from `data-tools-url`, keyed by tool
-   * name. Cards label themselves from each entry's `summary`, the base
-   * layer behind {@link toolSummaries}: an explicit entry in `toolSummaries`
-   * wins, this fills the rest. Held as whole entries rather than labels so a
-   * field the server sent is not lost on the way in. Populated once on connect.
-   */
-  #toolCatalog: Record<string, ToolCatalogEntry> = {};
-
-  /**
    * Foreign origins already reported, so the notice is once per origin per
    * element rather than once per request. Per-element rather than module-level,
    * because two elements on one page are two separate configurations.
@@ -478,24 +457,6 @@ export class AgUiChat extends HTMLElement {
   /** The resolved string table (defaults ← `data-strings` ← `strings`). */
   #strings: UiStrings = DEFAULT_UI_STRINGS;
 
-  /**
-   * The tool names the current round handed the agent, captured as the catalog
-   * went out.
-   *
-   * The registry is mount-wide but {@link getTools} is per-run, so a host is
-   * free to scope what a given page offers — and a call naming a tool this run
-   * withheld must not reach the handler that is merely still registered.
-   * Snapshotted rather than re-asked at dispatch: a provider is a function, and
-   * calling it again asks a question the run already answered, which is exactly
-   * the window a scoped catalog exists to close.
-   *
-   * Empty until the first round advertises, which cannot precede a call: the
-   * client builds `RunAgentInput.tools` at the top of every round, before the
-   * calls that round produces are executed.
-   */
-  #advertisedTools: ReadonlySet<string> = new Set();
-
-  readonly #toolRegistry = new ClientToolRegistry();
   /** Tool-call cards awaiting execution, keyed by call id. */
   readonly #toolCards = new Map<string, ToolCallCard>();
   /** A delegated sub-agent's progress, hung off the card that delegated. */
@@ -714,9 +675,30 @@ export class AgUiChat extends HTMLElement {
   // was built. `null` until the first round. Compared in `#executeTool` to
   // catch a page that moved under a round still in flight.
   #contextHref: string | null = null;
-  // Aborting this dismisses (declines) an open confirmation card when the run
-  // is cancelled while the card awaits a decision. One controller per card.
-  #confirmAbort: AbortController | null = null;
+  /** The decision a run is suspended on, which a Stop abandons. */
+  readonly #decision = new PendingDecision();
+  /**
+   * The frontend tools the agent is offered, what the current round advertised,
+   * and the server's labels for its own tools. A field, because the tool
+   * registry it holds is reachable from the moment the element exists.
+   */
+  readonly #tools = new ToolCatalog({
+    element: this,
+    routeMap: () => this.routeMap,
+    navigate: () => this.navigate,
+    getPageMap: () => this.getPageMap,
+    resolvePageTarget: (target) => this.resolvePageTarget(target),
+    getTools: () => this.getTools(),
+    askUser: () => this.askUser,
+    askUserRenderer: () => this.askUserRenderer,
+    decision: this.#decision,
+    ensureGroup: () => this.#ensureGroup(),
+    strings: () => this.#strings,
+    hidePending: () => this.#hidePending(),
+    updateEmptyState: () => this.#updateEmptyState(),
+    follow: () => this.#scroller.follow(),
+    fetchInit: (url) => this.#fetchInit(url),
+  });
   /** The assistant answer currently streaming into the transcript. */
   readonly #stream = new AnswerStream({
     openBubble: () => this.appendMessage(MESSAGE_ROLE.ASSISTANT, ""),
@@ -957,7 +939,7 @@ export class AgUiChat extends HTMLElement {
     const client = new AgUiClient({
       agent,
       handlers: this.#handlers(),
-      getTools: () => this.#advertiseTools(),
+      getTools: () => this.#tools.advertise(),
       getContext: () => this.#buildContext(),
       executeTool: (call) => this.#executeTool(call),
       resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
@@ -1079,7 +1061,7 @@ export class AgUiChat extends HTMLElement {
    * message you would be content for the model to read, and log the detail.
    */
   registerTool(tool: ClientTool): void {
-    this.#toolRegistry.register(tool);
+    this.#tools.register(tool);
   }
 
   /**
@@ -1104,9 +1086,7 @@ export class AgUiChat extends HTMLElement {
 
   /** Bind a piece of host page state to `read_<name>` / `set_<name>` tools. */
   registerPageState(binding: PageState): void {
-    for (const tool of createPageStateTools(binding)) {
-      this.#toolRegistry.register(tool);
-    }
+    this.#tools.registerPageState(binding);
   }
 
   /**
@@ -1116,168 +1096,6 @@ export class AgUiChat extends HTMLElement {
    */
   registerStateHook(binding: PageState): void {
     this.registerPageState(binding);
-  }
-
-  /** The built-in `route.*` tools, present only when a route map is set. */
-  #routeTools(): ClientTool[] {
-    if (this.routeMap.length === 0) {
-      return [];
-    }
-    return createRouteTools(
-      () => this.routeMap,
-      () => this.navigate,
-    );
-  }
-
-  /**
-   * The built-in `read_page` tool, present only when a {@link getPageMap}
-   * provider is set. A *pull* the agent can call mid-turn to see the page after
-   * it has acted (the auto-injected context is a send-time snapshot).
-   */
-  #pageTools(): ClientTool[] {
-    const getPageMap = this.getPageMap;
-    if (getPageMap === null) {
-      return [];
-    }
-    return [
-      {
-        name: READ_PAGE_TOOL,
-        description:
-          "Read the current page's structure (fields, buttons, route). Call after " +
-          "acting to observe the result within the same turn.",
-        parameters: {
-          type: "object",
-          properties: {},
-          required: [],
-          [X_SUMMARY_KEY]: "Read the page",
-        },
-        handler: () => getPageMap(),
-      },
-    ];
-  }
-
-  /**
-   * Opt-in page-action tools (`scroll_to` / `drag_and_drop`), enabled per token
-   * via the `data-page-actions` attribute (e.g. `"scroll,drag"`). Targets resolve
-   * through {@link resolvePageTarget} so a host controls the agent's interaction
-   * surface; absent attribute ⇒ no tools registered.
-   */
-  #pageActionTools(): ClientTool[] {
-    const attr = this.getAttribute("data-page-actions");
-    if (attr === null) {
-      return [];
-    }
-    const enabled = new Set(
-      attr
-        .split(",")
-        .map((token) => token.trim())
-        .filter((token) => token !== ""),
-    );
-    return [
-      ...createPageActionTools(enabled, (target) => this.resolvePageTarget(target)),
-      ...(enabled.has(PAGE_ACTIONS.CHAT) ? createChatSurfaceTools(this) : []),
-    ];
-  }
-
-  /** All built-in (route + page + page-action + ask_user) frontend tools. */
-  #builtinTools(): ClientTool[] {
-    return [
-      ...this.#routeTools(),
-      ...this.#pageTools(),
-      ...this.#pageActionTools(),
-      ...this.#askUserTool(),
-    ];
-  }
-
-  /**
-   * The built-in `ask_user` frontend tool, or `[]` when {@link askUser} is off.
-   *
-   * The agent calls it, the client executes it locally through the normal
-   * frontend-tool path by rendering a {@link requestQuestion} card, and the
-   * answer flows back as the tool result. No new protocol.
-   */
-  #askUserTool(): ClientTool[] {
-    if (!this.askUser) {
-      return [];
-    }
-    return [
-      {
-        name: "ask_user",
-        description:
-          "Ask the user a question and wait for their answer. Provide `options` for a " +
-          "multiple-choice prompt; set `allow_custom` to also accept a free-text answer.",
-        parameters: {
-          type: "object",
-          properties: {
-            question: { type: "string", description: "The question to ask the user." },
-            options: {
-              type: "array",
-              items: { type: "string" },
-              description: "Preset choices offered as radio buttons.",
-            },
-            allow_custom: {
-              type: "boolean",
-              description: "Allow a free-text answer in addition to any options.",
-            },
-          },
-          required: ["question"],
-        },
-        handler: (args) => this.#askUser(args),
-      },
-    ];
-  }
-
-  /** Render the `ask_user` question card and resolve with the user's answer. */
-  async #askUser(args: Record<string, unknown>): Promise<string> {
-    const question = typeof args["question"] === "string" ? args["question"] : "";
-    const request: QuestionRequest = { question };
-    const rawOptions = args["options"];
-    if (Array.isArray(rawOptions)) {
-      request.options = rawOptions.filter((option): option is string => typeof option === "string");
-    }
-    if (args["allow_custom"] === true) {
-      request.allowCustom = true;
-    }
-    // The run is suspended on the card; a Stop aborts the controller, resolving
-    // it with an empty answer (the run is then cancelled).
-    this.#confirmAbort = new AbortController();
-    const signal = this.#confirmAbort.signal;
-    this.#hidePending();
-    // A host-supplied renderer takes full control of the UI; otherwise the
-    // built-in inline card renders into the current answer group.
-    const answer =
-      this.askUserRenderer !== null
-        ? await this.askUserRenderer(request, { signal })
-        : await requestQuestion(this.#ensureGroup(), request, {
-            signal,
-            strings: this.#strings,
-          });
-    this.#confirmAbort = null;
-    this.#updateEmptyState();
-    this.#scroller.follow();
-    return answer;
-  }
-
-  /**
-   * The catalog for the round about to start, remembering what it offered.
-   *
-   * Every path to a frontend tool goes through here first — the client asks
-   * for `RunAgentInput.tools` at the top of each round — so this is the one
-   * place that can know what the agent was actually told about.
-   */
-  #advertiseTools(): Tool[] {
-    const tools = this.getTools();
-    this.#advertisedTools = new Set(tools.map((tool) => tool.name));
-    return tools;
-  }
-
-  /** Resolve a tool by name: built-in tools first, then the registry. */
-  #resolveTool(name: string): ClientTool | null {
-    const builtin = this.#builtinTools().find((t) => t.name === name);
-    if (builtin !== undefined) {
-      return builtin;
-    }
-    return this.#toolRegistry.has(name) ? this.#toolRegistry.get(name) : null;
   }
 
   /** The AG-UI endpoint URL, read from the `endpoint` attribute. */
@@ -1558,7 +1376,7 @@ export class AgUiChat extends HTMLElement {
     if (!this.#connected) {
       return;
     }
-    void this.#fetchToolCatalog();
+    void this.#tools.fetchCatalog();
     void this.#skills.fetch();
   }
 
@@ -1579,7 +1397,7 @@ export class AgUiChat extends HTMLElement {
     this.#cancelRun();
     this.#resetState();
     this.#setRunning(false);
-    await Promise.all([this.#fetchToolCatalog(), this.#skills.fetch(), this.#rehydrate()]);
+    await Promise.all([this.#tools.fetchCatalog(), this.#skills.fetch(), this.#rehydrate()]);
   }
 
   /**
@@ -1736,12 +1554,7 @@ export class AgUiChat extends HTMLElement {
     if (attr === null) {
       return new Set([MESSAGE_ACTIONS.COPY, MESSAGE_ACTIONS.RETRY]);
     }
-    return new Set(
-      attr
-        .split(",")
-        .map((token) => token.trim())
-        .filter((token) => token !== ""),
-    );
+    return new Set(commaTokens(attr));
   }
 
   /**
@@ -1765,20 +1578,6 @@ export class AgUiChat extends HTMLElement {
         () => this.#requestCredentials(),
         this.getAttribute("data-threads-cache") !== "false",
       );
-    }
-  }
-
-  /** Fetch the server tool-label catalog from `data-tools-url`, if set. */
-  async #fetchToolCatalog(): Promise<void> {
-    const url = this.getAttribute("data-tools-url");
-    if (url === null) {
-      return;
-    }
-    try {
-      const response = await fetch(url, this.#fetchInit(url));
-      this.#toolCatalog = parseToolCatalog(await response.json());
-    } catch {
-      // Network/parse failure: cards fall back to toolSummaries / raw names.
     }
   }
 
@@ -2423,7 +2222,7 @@ export class AgUiChat extends HTMLElement {
         // maintainer adding a "no render? fall back to the handler" convenience
         // here has to change the type first, which is exactly the moment the
         // question should be asked.
-        const render = this.#resolveTool(restored.name)?.render;
+        const render = this.#tools.resolve(restored.name)?.render;
         if (render !== undefined) {
           this.#renderToolOutput(render, restored);
         }
@@ -3213,7 +3012,7 @@ export class AgUiChat extends HTMLElement {
     }
     this.#queued.length = 0;
     this.#renderQueued();
-    this.#confirmAbort?.abort();
+    this.#decision.abort();
     this.#client?.cancel();
   }
 
@@ -3464,7 +3263,7 @@ export class AgUiChat extends HTMLElement {
       this.#client = new AgUiClient({
         agent,
         handlers: this.#handlers(),
-        getTools: () => this.#advertiseTools(),
+        getTools: () => this.#tools.advertise(),
         getContext: () => this.#buildContext(),
         executeTool: (call) => this.#executeTool(call),
         resolveInterrupts: (interrupts) => this.#resolveInterrupts(interrupts),
@@ -3601,7 +3400,7 @@ export class AgUiChat extends HTMLElement {
     // mount-wide. Treated exactly as an unknown name rather than as a refusal:
     // withholding a tool and never registering it are the same statement, and
     // the branch below already says the honest thing for both.
-    const tool = this.#advertisedTools.has(call.name) ? this.#resolveTool(call.name) : null;
+    const tool = this.#tools.wasAdvertised(call.name) ? this.#tools.resolve(call.name) : null;
     if (tool === null) {
       // Not a client tool. A server-side tool's real output arrives via
       // `onToolResult` (TOOL_CALL_RESULT) and already settled the card — only
@@ -3647,13 +3446,13 @@ export class AgUiChat extends HTMLElement {
       }
       // The run loop is suspended on this card; a Stop while it's open aborts
       // the controller, resolving the decision as declined.
-      this.#confirmAbort = new AbortController();
+      const signal = this.#decision.open();
       // Into the turn's answer group, like every other inline card. Appending
       // to the message list made it a sibling *after* the group, so anything
       // that streamed afterwards rendered above it and the prompt drifted to
       // the foot of the turn no matter when it was asked.
       const decision = requestConfirmation(this.#ensureGroup(), request, {
-        signal: this.#confirmAbort.signal,
+        signal,
         strings: this.#strings,
         // Offered only where it can be honoured -- see `#confirmationRule`.
         ...(rule === "destructive"
@@ -3663,7 +3462,7 @@ export class AgUiChat extends HTMLElement {
       this.#updateEmptyState();
       this.#scroller.follow();
       const accepted = await decision;
-      this.#confirmAbort = null;
+      this.#decision.close();
       card.recordDecision(accepted ? "approved" : "declined");
       if (!accepted) {
         const message = this.#strings.declinedAction;
@@ -3737,7 +3536,7 @@ export class AgUiChat extends HTMLElement {
    * `pending` it read "running…" while the stream was over and the server idle.
    *
    * The run is suspended on these cards. A Stop while any is open aborts the
-   * shared {@link #confirmAbort} controller, resolving every still-open card as
+   * shared pending decision, resolving every still-open card as
    * denied. An approved tool runs on the follow-up resume run and streams its
    * result into the same card (returned to `pending`, since it now really is
    * running); a denied one settles here, as no result will ever arrive.
@@ -3746,7 +3545,7 @@ export class AgUiChat extends HTMLElement {
     interrupts: readonly Interrupt[],
   ): Promise<Record<string, InterruptResponse>> {
     // One controller covers the whole batch: a single Stop denies all of them.
-    this.#confirmAbort = new AbortController();
+    const signal = this.#decision.open();
     // The run has stopped and is waiting on a person. Nothing else on screen
     // says so to a screen reader: the cards appear inside the transcript, which
     // is deliberately not a live region, so without this the run simply goes
@@ -3755,7 +3554,6 @@ export class AgUiChat extends HTMLElement {
       fillUiString(this.#strings.announceAwaitingDecision, { count: interrupts.length }),
     );
     this.#hidePending();
-    const signal = this.#confirmAbort.signal;
     const answered = await Promise.all(
       interrupts.map(async (interrupt) => {
         const card =
@@ -3815,7 +3613,7 @@ export class AgUiChat extends HTMLElement {
     );
     this.#updateEmptyState();
     this.#scroller.follow();
-    this.#confirmAbort = null;
+    this.#decision.close();
     const responses: Record<string, InterruptResponse> = {};
     for (const { id, approved, editedArgs } of answered) {
       // `editedArgs` rides only when the user actually changed something, so a
@@ -4261,8 +4059,7 @@ export class AgUiChat extends HTMLElement {
    * arrives is not something to switch on for everybody.
    */
   enableCharts(routes: readonly ("tool" | "activity")[] = ["tool", "activity"]): void {
-    const first =
-      !this.#activities.has(CHART_ACTIVITY_TYPE) && !this.#toolRegistry.has(CHART_TOOL_NAME);
+    const first = !this.#activities.has(CHART_ACTIVITY_TYPE) && !this.#tools.has(CHART_TOOL_NAME);
     if (routes.includes("activity")) {
       // The chart is a registration like any host's, not a privileged branch.
       // If the built-in cannot be expressed through the seam, the seam is not
@@ -4378,12 +4175,12 @@ export class AgUiChat extends HTMLElement {
     // Prefer the tool's own `x-summary`; then an explicit `toolSummaries`
     // entry; then the fetched server catalog (`data-tools-url`). All cover
     // server-side tools whose schema never reached the browser.
-    const labelled = this.#resolveTool(call.name)?.parameters[X_SUMMARY_KEY];
+    const labelled = this.#tools.resolve(call.name)?.parameters[X_SUMMARY_KEY];
     const summary =
       typeof labelled === "string"
         ? labelled
         : (this.toolSummaries[call.name] ??
-          this.#toolCatalog[call.name]?.summary ??
+          this.#tools.summary(call.name) ??
           prettifyToolName(call.name));
     const card = new ToolCallCard(call.name, call.args, summary, this.#strings, {
       // A thunk over the live property, not the property itself: the card keeps

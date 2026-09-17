@@ -96,3 +96,17 @@ export function warnOnCrossOriginCredentials(
       "silence this notice. Reported once per origin.",
   );
 }
+
+/**
+ * The tokens of a comma-separated attribute value, trimmed, with empty ones
+ * dropped -- so `"scroll, drag,"` is `["scroll", "drag"]`.
+ *
+ * Shared by every attribute that names a set of opt-ins, so each one reads a
+ * stray space or a trailing comma the same way.
+ */
+export function commaTokens(value: string): string[] {
+  return value
+    .split(",")
+    .map((token) => token.trim())
+    .filter((token) => token !== "");
+}
