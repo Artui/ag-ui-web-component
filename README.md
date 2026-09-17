@@ -246,14 +246,17 @@ either way: `title-text`, `placement`, `credentials`, `user-key`, `user-name`.
 all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;
 the element logs a console warning naming the attribute rather than failing silently, because the
 symptom is an affordance that never appears and that reads as a broken component. Set them before
-the element enters the DOM, or remove and re-insert it. Re-inserting builds the chrome again from
-the attributes as they stand, cancels a run in progress, and redraws the conversation from its
-stored history, as `reload()` does. See
+the element enters the DOM, or remove and re-insert it. See
 [Framework hosts](#framework-hosts-configure-before-you-insert), where the boundary bites hardest.
 The list: `data-attachments-url`, `data-attachment-accept`, `data-attachment-max-bytes`,
 `data-transcribe-url`, `data-threads-url`, `data-threads-cache`, `data-tools-url`,
 `data-skills-url`, `data-skills`, `data-prompt-chips`, `data-slash-commands`, `data-theme-toggle`,
 `data-strings`, `data-icon-url`.
+
+What re-inserting costs: the chrome is built again from the attributes as they stand, a run in
+progress is cancelled, and the conversation is redrawn from its stored history — the same rebuild
+`reload()` performs, and the reason that method exists for a host that can only configure the
+element after the fact.
 
 **Properties** (JS only, not attributes): `headers`, `getHeaders`, `trustedOrigins`, `allowImages`,
 `autoConfirm`, `confirmPredicate`, `askUser`, `askUserRenderer`, `approvalRenderer`,
