@@ -169,9 +169,25 @@ describe("STYLES", () => {
   it("animates the chat-history drawer in and out from its hidden attribute", () => {
     // The closed drawer keeps its box so both halves stay transitionable;
     // visibility is what takes the subtree out of hit testing and the a11y tree.
-    expect(STYLES).toContain("transition: visibility var(--_motion) var(--_ease);");
+    // It flips at once on the way in, so the focus call made on open lands, and
+    // is held for the slide on the way out. Whether focus really lands is a
+    // computed style at one instant, so that is measured in Chromium, in
+    // history_panels_focus.browser.test.ts; this pins which rule carries which.
+    expect(STYLES).toMatch(/\.drawer \{[^}]*transition: visibility 0s;/);
+    expect(STYLES).toMatch(/\.drawer\[hidden\] \{[^}]*transition: visibility 0s var\(--_motion\);/);
     expect(STYLES).toContain(".drawer[hidden] .drawer-panel");
     expect(STYLES).toContain(".drawer[hidden] .drawer-backdrop");
+  });
+
+  it("shows the checkpoints panel at once and hides it only after its exit", () => {
+    // The drawer's split, for the same focus call. The fade and the scale ease
+    // both ways; only visibility is instant in and delayed out.
+    expect(STYLES).toMatch(
+      /\.checkpoints \{[^}]*transform var\(--_motion\) var\(--_ease\),\s*visibility 0s;/,
+    );
+    expect(STYLES).toMatch(
+      /\.checkpoints\[hidden\] \{[^}]*transform var\(--_motion\) var\(--_ease\),\s*visibility 0s var\(--_motion\);/,
+    );
   });
 
   it("badges the launcher with what arrived while it was collapsed", () => {

@@ -1,5 +1,5 @@
 import type { Message } from "@ag-ui/core";
-import { MESSAGE_ROLE, THREADS_DOCK_MIN_WIDTH } from "../../constants.js";
+import { MESSAGE_ROLE } from "../../constants.js";
 import type { ActivityRegistry } from "../../core/activity_registry.js";
 import { AgUiClient } from "../../core/agui_client.js";
 import { messageAttachments } from "../../core/attachment.js";
@@ -177,9 +177,7 @@ export class ConversationHistory {
     // open *underneath* a popover still floating over it.
     this.#host.checkpoints.close();
     void this.refreshDrawer();
-    this.#host.drawer.setModal(!this.#threadsDock());
     this.#host.drawer.open();
-    this.syncThreadsState();
   }
 
   /** Open the checkpoint panel, dismissing the conversation list. */
@@ -188,52 +186,6 @@ export class ConversationHistory {
     this.#host.drawer.close();
     void this.#refreshCheckpoints();
     this.#host.checkpoints.open();
-  }
-
-  /**
-   * Whether the conversation list docks beside the transcript rather than
-   * covering it.
-   *
-   * Only the full-page placement, and only where there is room. A dedicated
-   * route is the one surface with width to spare -- everywhere else the panel
-   * is a few hundred pixels wide, and a list docked into that leaves a column
-   * of transcript too narrow to read. The width is the panel's own rather than
-   * the window's, because an embedded host can give a full-page-sized box to
-   * something that is not a page.
-   */
-  #threadsDock(): boolean {
-    return (
-      this.#host.element.getAttribute("placement") === "page" &&
-      this.#host.element.getBoundingClientRect().width >= THREADS_DOCK_MIN_WIDTH
-    );
-  }
-
-  /**
-   * Stamp whether the list is showing, and how.
-   *
-   * On the host rather than inside the shell because the transcript has to move
-   * over for a docked list, and the drawer is the last child of the panel -- CSS
-   * cannot select backwards from it to the rows it needs to shift.
-   */
-  syncThreadsState(): void {
-    if (this.#host.drawer.isOpen() && this.#threadsDock()) {
-      this.#host.element.setAttribute("data-threads-docked", "");
-    } else {
-      this.#host.element.removeAttribute("data-threads-docked");
-    }
-  }
-
-  /**
-   * Re-decide an open conversation list's docking after the panel changed size.
-   *
-   * Only while it is open: the two are re-decided on the way in, and a closed
-   * drawer has no layout to fix.
-   */
-  redockThreads(): void {
-    if (this.#host.drawer.isOpen()) {
-      this.#host.drawer.setModal(!this.#threadsDock());
-      this.syncThreadsState();
-    }
   }
 
   /** Switch the active conversation to an existing thread and replay it. */

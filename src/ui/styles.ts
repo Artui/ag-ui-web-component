@@ -262,8 +262,6 @@ export const STYLES = `
   /* Slim rail the sidebar placement collapses to. Only that placement reads
      it, but it is declared here so every alias has a default in one place. */
   --_rail-width: var(--ag-ui-rail-width, 52px);
-  /* Width of the docked conversation list on a full-page chat. */
-  --_threads-rail-width: var(--ag-ui-threads-rail-width, 280px);
 
   position: var(--_position);
   inset: var(--_inset);
@@ -960,48 +958,6 @@ export const STYLES = `
 :host([collapsed][placement="embedded"]) .skill-palette,
 :host([collapsed][placement="embedded"]) .skill-hint {
   display: none;
-}
-
-/* A docked conversation list: beside the transcript rather than over it.
-
-   A full-page chat is the one surface with width to spare, and covering the
-   conversation to show the list of conversations is the wrong trade there --
-   it hides the thing you are trying to get back to. Everywhere else the panel
-   is a few hundred pixels wide and a docked list would leave a column of
-   transcript narrower than the messages in it, so this is the only placement
-   that gets it.
-
-   The transcript is moved by padding on the shell rather than by making the
-   list a flex sibling: the drawer is the last child of the panel, and no
-   selector reaches backwards from it to the rows that have to shift. That is
-   also why the state is stamped on the host. */
-:host([data-threads-docked]) .drawer {
-  /* Not a scrim: the page behind it is still the user's to work in. */
-  pointer-events: none;
-}
-
-:host([data-threads-docked]) .drawer-backdrop {
-  display: none;
-}
-
-:host([data-threads-docked]) .drawer-panel {
-  width: var(--_threads-rail-width);
-  pointer-events: auto;
-  border-inline-end: 1px solid var(--_border);
-  box-shadow: none;
-}
-
-:host([data-threads-docked]) .messages,
-:host([data-threads-docked]) .input-row,
-:host([data-threads-docked]) .skill-chips,
-:host([data-threads-docked]) .attachment-tray {
-  padding-inline-start: calc(
-    var(--_threads-rail-width) + max(var(--_pad), (100% - var(--_content-max-width)) / 2)
-  );
-}
-
-:host([data-threads-docked]) .header {
-  padding-inline-start: calc(var(--_threads-rail-width) + var(--_pad));
 }
 
 /* The page placement has no collapsed state, so it offers no control for one.
@@ -3207,17 +3163,26 @@ export const STYLES = `
   inset: 0;
   z-index: 5;
   display: flex;
-  transition: visibility var(--_motion) var(--_ease);
+  /* Visible at once on the way in. Opening moves focus to the list in the
+     same task that unhides it, and an element still hidden cannot take focus:
+     a transition on visibility starts at its first value, so easing it in
+     left the drawer hidden at exactly that instant and the focus call was
+     dropped at every placement. Reduced motion shortens the transition
+     without removing it, so it had the same first frame. */
+  transition: visibility 0s;
 }
 
 /* Closed. The overlay keeps its box (display, not none) so the backdrop and
    panel inside it stay rendered and can transition both ways; visibility is
    what takes the whole subtree out of the tab order, the a11y tree and hit
-   testing at rest, and it holds off until the slide has finished. */
+   testing at rest. On the way out it is delayed rather than eased, so it
+   flips only once the slide has finished. A transition is read from the
+   state being entered, which is what lets the two directions differ. */
 .drawer[hidden] {
   display: flex;
   visibility: hidden;
   pointer-events: none;
+  transition: visibility 0s var(--_motion);
 }
 
 .drawer[hidden] .drawer-backdrop {
@@ -3246,20 +3211,29 @@ export const STYLES = `
   /* Scrolling past the end of this must not scroll the page behind it. */
   overscroll-behavior: contain;
   transform-origin: top center;
+  /* Visibility flips at once on the way in, for the drawer's reason: opening
+     focuses the panel in the same task that unhides it, and an element still
+     hidden cannot take focus. The fade and the scale still ease in. */
   transition:
     opacity var(--_motion) var(--_ease),
     transform var(--_motion) var(--_ease),
-    visibility var(--_motion) var(--_ease);
+    visibility 0s;
 }
 
 /* Same idiom as the drawer: laid out at rest, hidden by visibility, so the
-   popover can animate open and closed. */
+   popover can animate open and closed. The whole list is restated because a
+   transition is read from the state being entered; only visibility differs,
+   delayed rather than eased so it flips once the exit has played. */
 .checkpoints[hidden] {
   display: flex;
   visibility: hidden;
   pointer-events: none;
   opacity: 0;
   transform: scale(0.96) translateY(-6px);
+  transition:
+    opacity var(--_motion) var(--_ease),
+    transform var(--_motion) var(--_ease),
+    visibility 0s var(--_motion);
 }
 
 .checkpoints-title {

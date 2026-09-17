@@ -576,11 +576,6 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     this.#placement.restoreLauncherPosition();
-    // Docking is decided by width, so a resize can cross the threshold with
-    // the drawer already open. Without this the rail keeps a narrow
-    // transcript's width, the focus trap stays off, and the backdrop that
-    // would dismiss it is still display:none.
-    this.#history.redockThreads();
   };
 
   /** Mic button mount point (input row); the control mounts on connect when enabled. */
@@ -808,9 +803,6 @@ export class AgUiChat extends HTMLElement {
       },
       onDelete: (threadId) => {
         this.#history.deleteThread(threadId);
-      },
-      onVisibility: () => {
-        this.#history.syncThreadsState();
       },
     });
     this.#checkpoints = new CheckpointMenu((runId, verb) => {
@@ -1675,13 +1667,7 @@ export class AgUiChat extends HTMLElement {
     this.#history.openCheckpoints();
   }
 
-  /**
-   * Close the conversation list, if it is open.
-   *
-   * No state sync here: the drawer reports every close through `onVisibility`,
-   * including the four that never reach this method, and doing it twice would
-   * be a second place to keep right.
-   */
+  /** Close the conversation list, if it is open. */
   closeThreads(): void {
     this.#drawer.close();
   }

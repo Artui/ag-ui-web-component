@@ -164,20 +164,6 @@ describe("the greeting layout on a full page", () => {
     expect(Math.abs(above - below)).toBeLessThanOrEqual(1);
   });
 
-  it("centres in the column beside a docked conversation list", async () => {
-    const el = mount({ placement: "page" });
-    el.openThreads();
-    await settle();
-
-    expect(el.hasAttribute("data-threads-docked")).toBe(true);
-    const { above, below } = halves(el);
-    expect(below).toBeGreaterThan(200);
-    expect(Math.abs(above - below)).toBeLessThanOrEqual(1);
-    // And clear of the rail, like the transcript.
-    const rail = part(el, ".drawer-panel").getBoundingClientRect();
-    expect(part(el, ".greeting").getBoundingClientRect().left).toBeGreaterThanOrEqual(rail.right);
-  });
-
   it("recentres in a viewport the host reports as shorter, as an on-screen keyboard makes it", async () => {
     const el = mount({ placement: "page" }, { "--ag-ui-viewport-height": "480px" });
     await settle();
