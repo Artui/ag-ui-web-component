@@ -137,6 +137,35 @@ module-level mutable singletons, caches, or "warned-once" flags. Each `<ag-ui-ch
 owns its own tool registry, AG-UI client, and Shadow DOM. Multiple instances on one page must
 not interfere.
 
+### The one registry that is shared, and the test it passes
+
+`CLAIMED_NAMESPACES` -- the set of storage namespaces the elements in a document have
+claimed, written by `#claimNamespace` and released in `disconnectedCallback` -- is a
+module-level `Set`, deliberately. It is not a loophole in the rule above; it is how the
+rule's last sentence is kept. Its question is whether *another* live element in this
+document already stores its conversation under the same namespace, and no per-instance
+field can answer a question about the other instances. Without it, two elements with no
+`id` against one endpoint share a thread pointer, a history drawer and every message.
+
+It qualifies on three conditions, and a future candidate has to meet all three rather than
+cite this one:
+
+1. **Its subject is the relation between live instances**, not a convenience. A cache, a
+   memoised value or a once-per-page warning is state one instance could hold for itself,
+   and still is not allowed here.
+2. **It holds only what live instances hold.** Every entry is added by the element that
+   owns it and removed in that element's `disconnectedCallback`, so nothing outlives the
+   elements it describes and a remounted element competes on the same terms as a new one.
+3. **One path writes it and one path releases it**, both on the element, and nothing else
+   reads it.
+
+Other homes were considered and rejected as the same state spelled differently. A `static`
+class field is shared exactly as widely and only looks per-instance. A property on
+`document` is shared with the host page as well, which can read and overwrite it. And
+querying the document for other `<ag-ui-chat>` elements cannot see one rendered inside
+another shadow root, which is where a framework usually puts it -- so it would miss exactly
+the collision the registry exists to catch.
+
 ## Tests
 
 - `make test` runs Vitest with 100% line + branch + function + statement coverage (thresholds

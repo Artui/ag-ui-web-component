@@ -87,19 +87,38 @@ const LIFECYCLE_CALLBACKS = new Set([
   "attributeChangedCallback",
 ]);
 
-/** Attributes the element reads that are its own, not a host's to set. */
+/**
+ * Attribute reads that are not a host's to set: each is read off a node this
+ * package drew itself, or off the host page's own markup it is handed.
+ *
+ * The attribute scan reads the whole package rather than the element's file,
+ * so the element's implementation can live in more than one module without its
+ * reads falling out of the scan. What that costs is this list: a read anywhere
+ * in `src/` is presumed to be of the element's own attributes until it is named
+ * here, which makes a new internal read a decision rather than a silence.
+ */
 const INTERNAL_ATTRIBUTES = new Set([
   // Stamped on a tool-call card by the card itself, read back to find it again.
   "data-tool-name",
+  // A card's and a delegation row's own disclosure state, read back on toggle.
+  "data-expanded",
+  "aria-expanded",
+  // A feedback button's own pressed state, read back on click.
+  "aria-pressed",
+  // On the nodes of rendered markdown, while sanitising them.
+  "href",
+  "class",
 ]);
 
 /**
  * How many attribute reads take their name from a variable rather than stating
- * it. Two — the `#flag` helper and `#readJsonAttribute` — and both are reached
- * only through call sites that state the name, which `attributesRead` matches by
- * helper name so the scan still sees every attribute. A third would hide a name
- * from this file, which is why the count is asserted rather than assumed; adding
- * one means teaching that matcher about it, not raising this number alone.
+ * it, anywhere in the package. Two — the `flag` helper and `readJsonAttribute`
+ * — and both are reached only through call sites that state the name, which
+ * `attributesRead` matches by helper name (as a private member or through a
+ * host object) so the scan still sees every attribute. A third would hide a
+ * name from this file, which is why the count is asserted rather than assumed;
+ * adding one means teaching that matcher about it, not raising this number
+ * alone.
  */
 const VARIABLE_ATTRIBUTE_READS = 2;
 
@@ -182,11 +201,19 @@ function publicMethods(): string[] {
   );
 }
 
-/** Every attribute name the element reads, from a literal. */
+/**
+ * Every attribute name the element reads, from a literal.
+ *
+ * Read across all of `src/` rather than the element's own file. The element
+ * delegates to controllers that hold its private state, and a read that moves
+ * into one would otherwise leave this scan without a sound: the check below
+ * compares documented rows against a set that has quietly shrunk, finds nothing
+ * missing, and stays green for an attribute nobody documented.
+ */
 function attributesRead(): string[] {
   const names = new Set<string>();
-  for (const match of ELEMENT.matchAll(
-    /(?:getAttribute|hasAttribute|#flag|#readJsonAttribute)\("([a-z][a-z0-9-]*)"\)/g,
+  for (const match of SOURCE.matchAll(
+    /(?:getAttribute|hasAttribute|\bflag|\breadJsonAttribute)\("([a-z][a-z0-9-]*)"\)/g,
   )) {
     names.add(match[1] ?? "");
   }
@@ -560,11 +587,11 @@ describe("the README's element reference", () => {
 
   it("accounts for every attribute read whose name it cannot see", () => {
     // The literal scan cannot see `getAttribute(name)`. Two such reads exist —
-    // the `#flag` and `#readJsonAttribute` helpers — and both are reached only
-    // through literal call sites, which the scan does read. A third would go
-    // undocumented in silence.
-    const reads = [...ELEMENT.matchAll(/(?:getAttribute|hasAttribute)\(/g)].length;
-    const literal = [...ELEMENT.matchAll(/(?:getAttribute|hasAttribute)\("/g)].length;
+    // the `flag` and `readJsonAttribute` helpers — and both are reached only
+    // through literal call sites, which the scan does read. A third, in any
+    // module, would go undocumented in silence.
+    const reads = [...SOURCE.matchAll(/(?:getAttribute|hasAttribute)\(/g)].length;
+    const literal = [...SOURCE.matchAll(/(?:getAttribute|hasAttribute)\("/g)].length;
 
     expect(reads - literal).toBe(VARIABLE_ATTRIBUTE_READS);
   });
