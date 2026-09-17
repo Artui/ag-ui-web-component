@@ -149,8 +149,9 @@ export class PanelPlacement {
    * away and unclickable behind the open panel, so a drag there would move
    * something nobody can see.
    */
-  enableLauncherDrag(): void {
+  enableLauncherDrag(signal: AbortSignal): void {
     enableLauncherDrag(this.#host.launcher, {
+      signal,
       enabled: () => this.#host.collapsed() && this.#launcherDraggable(),
       rect: () => this.#launcherBox(),
       viewport: () => this.#viewport(),

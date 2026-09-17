@@ -57,8 +57,15 @@ export class ComposerAttachments {
    * built-in multipart endpoint: reveal the 📎 button, wire the hidden file
    * input + drag-and-drop, and mount the tray. With neither, the affordance
    * stays hidden and the chat degrades to text-only.
+   *
+   * Called on every connect, so it starts by taking down the tray the last
+   * connection mounted: that one was disposed when the element left, and the
+   * attributes that decide whether there is a tray at all may have changed
+   * since. The shell outlives a connection, so its listeners go under `signal`.
    */
-  wire(): void {
+  wire(signal: AbortSignal): void {
+    this.#tray?.element.remove();
+    this.#tray = null;
     const url = this.#host.element.getAttribute("data-attachments-url");
     const upload = this.#host.uploadHandler() ?? this.#defaultUploadHandler(url);
     if (upload === null) {
@@ -82,8 +89,8 @@ export class ComposerAttachments {
     this.#host.slot.appendChild(this.#tray.element);
     this.#host.fileInput.accept = accept;
     this.#host.button.hidden = false;
-    this.#enableDragAndDrop();
-    this.#enablePaste(tray);
+    this.#enableDragAndDrop(signal);
+    this.#enablePaste(tray, signal);
   }
 
   /** The queueing behind `AgUiChat.attachFile`, whose doc is the contract. */
@@ -136,25 +143,37 @@ export class ComposerAttachments {
   }
 
   /** Accept files dropped anywhere on the chat shell into the tray. */
-  #enableDragAndDrop(): void {
+  #enableDragAndDrop(signal: AbortSignal): void {
     const chat = this.#host.chat;
-    chat.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      chat.classList.add("chat--dragover");
-    });
-    chat.addEventListener("dragleave", () => {
-      chat.classList.remove("chat--dragover");
-    });
-    chat.addEventListener("drop", (event) => {
-      event.preventDefault();
-      chat.classList.remove("chat--dragover");
-      const files = event.dataTransfer?.files;
-      if (files !== undefined) {
-        for (const file of Array.from(files)) {
-          this.#tray?.add(file);
+    chat.addEventListener(
+      "dragover",
+      (event) => {
+        event.preventDefault();
+        chat.classList.add("chat--dragover");
+      },
+      { signal },
+    );
+    chat.addEventListener(
+      "dragleave",
+      () => {
+        chat.classList.remove("chat--dragover");
+      },
+      { signal },
+    );
+    chat.addEventListener(
+      "drop",
+      (event) => {
+        event.preventDefault();
+        chat.classList.remove("chat--dragover");
+        const files = event.dataTransfer?.files;
+        if (files !== undefined) {
+          for (const file of Array.from(files)) {
+            this.#tray?.add(file);
+          }
         }
-      }
-    });
+      },
+      { signal },
+    );
   }
 
   /**
@@ -228,27 +247,31 @@ export class ComposerAttachments {
    * clipboard, and swallowing the words someone meant to paste in order to
    * attach a picture they did not is the worse of the two failures.
    */
-  #enablePaste(tray: AttachmentTray): void {
-    this.#host.chat.addEventListener("paste", (event: ClipboardEvent) => {
-      // Nullish rather than a null check: the property is typed as nullable,
-      // and an engine that fires a plain Event for a paste leaves it absent
-      // instead, which is not the same value and is the same situation.
-      const clipboard = event.clipboardData ?? null;
-      if (clipboard === null) {
-        return;
-      }
-      const files = Array.from(clipboard.files);
-      if (files.length === 0) {
-        this.#pasteLongTextAsFile(event, clipboard, tray);
-        return;
-      }
-      if (clipboard.getData("text/plain") === "") {
-        event.preventDefault();
-      }
-      for (const file of files) {
-        this.#tray?.add(named(file));
-      }
-    });
+  #enablePaste(tray: AttachmentTray, signal: AbortSignal): void {
+    this.#host.chat.addEventListener(
+      "paste",
+      (event: ClipboardEvent) => {
+        // Nullish rather than a null check: the property is typed as nullable,
+        // and an engine that fires a plain Event for a paste leaves it absent
+        // instead, which is not the same value and is the same situation.
+        const clipboard = event.clipboardData ?? null;
+        if (clipboard === null) {
+          return;
+        }
+        const files = Array.from(clipboard.files);
+        if (files.length === 0) {
+          this.#pasteLongTextAsFile(event, clipboard, tray);
+          return;
+        }
+        if (clipboard.getData("text/plain") === "") {
+          event.preventDefault();
+        }
+        for (const file of files) {
+          this.#tray?.add(named(file));
+        }
+      },
+      { signal },
+    );
   }
 
   /** Tell the host what the tray now holds — see {@link ATTACHMENT_EVENT}. */
