@@ -5,19 +5,15 @@ import {
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
-  FEEDBACK_EVENT,
   ICON_ATTACH,
   ICON_LAUNCHER,
   ICON_MOON,
-  ICON_RETRY,
   ICON_SEND,
   ICON_STOP,
   ICON_SUN,
   INVALIDATE_CUSTOM_NAME,
   INVALIDATE_EVENT,
-  LOAD_CAPABILITY_TOOL,
   MAX_TOOL_ROUNDS,
-  MESSAGE_ACTIONS,
   MESSAGE_ROLE,
   READ_PAGE_TOOL,
   RUN_FINISHED_EVENT,
@@ -32,13 +28,12 @@ import {
   TOOL_OUTCOME,
   UNREAD_EVENT,
   X_CONFIRM_KEY,
-  X_SUMMARY_KEY,
 } from "../constants.js";
 import type { Skill } from "../skills/skill.js";
 import { SkillCatalog } from "../skills/skill_catalog.js";
+import { skillNameFrom } from "../skills/skill_name_from.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type ChatCorner, type ChatSurfaceReport } from "../tools/chat_surface_tools.js";
-import type { ChartRenderer } from "../tools/client_tool_registry.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type ClientTool } from "../tools/client_tool_registry.js";
 import { isDestructive } from "../tools/is_destructive.js";
@@ -58,7 +53,6 @@ import { ComposerAttachments } from "../ui/composer/composer_attachments.js";
 import { ComposerVoice } from "../ui/composer/composer_voice.js";
 import { SkillsMenu } from "../ui/composer/skills_menu.js";
 import { attachCopyButtons } from "../ui/excerpts/attach_copy_buttons.js";
-import { copyPayload } from "../ui/excerpts/copy_payload.js";
 import { TranscriptQuoteOffer } from "../ui/excerpts/transcript_quote_offer.js";
 import { fillUiString } from "../ui/fill_ui_string.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/history/checkpoint_menu.js";
@@ -78,28 +72,16 @@ import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
 import { isDraggablePlacement } from "../ui/placement/is_draggable_placement.js";
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
-import { prettifyToolName } from "../ui/progress/prettify_tool_name.js";
 import { renderRunNotice } from "../ui/progress/run_notice.js";
 import { SubAgentProgress } from "../ui/progress/subagent_progress.js";
-import { ThoughtsBlock } from "../ui/progress/thoughts_block.js";
-import {
-  ToolCallCard,
-  type ToolDisplayMode,
-  type ToolPayloadFormatter,
-} from "../ui/progress/tool_call_card.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type ToolDisplayMode, type ToolPayloadFormatter } from "../ui/progress/tool_call_card.js";
 import { STYLES } from "../ui/styles.js";
+import { AnswerActions } from "../ui/transcript/answer_actions.js";
 import { AnswerStream } from "../ui/transcript/answer_stream.js";
 import { renderAttachmentChips } from "../ui/transcript/attachment_chips.js";
-import {
-  attachMessageActions,
-  messageActionBar,
-  messageActionButton,
-} from "../ui/transcript/message_actions.js";
-import { renderMarkdown } from "../ui/transcript/render_markdown.js";
-import { renderOrWarn } from "../ui/transcript/render_or_warn.js";
-import { wrapWords } from "../ui/transcript/reveal_words.js";
-import { createStickToBottom, type StickToBottom } from "../ui/transcript/stick_to_bottom.js";
 import { renderSuggestionChips } from "../ui/transcript/suggestion_chips.js";
+import { Transcript } from "../ui/transcript/transcript.js";
 import { DEFAULT_UI_STRINGS, mergeUiStrings, type UiStrings } from "../ui/ui_strings.js";
 import type { ActivityRegistration } from "./activity_registration.js";
 import { ActivityRegistry } from "./activity_registry.js";
@@ -120,7 +102,6 @@ import {
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import type { CustomAgentDetail } from "./events/custom_agent_detail.js";
-import type { FeedbackDetail } from "./events/feedback_detail.js";
 import type { InvalidateDetail } from "./events/invalidate_detail.js";
 import type { RunFinishedDetail } from "./events/run_finished_detail.js";
 import type { StateDetail } from "./events/state_detail.js";
@@ -137,7 +118,7 @@ import { toolStatusFromOutcome } from "./tool_outcome.js";
 import { type TranscribeHandler } from "./transcribe_audio.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type UploadHandler } from "./upload_attachment.js";
-import { commaTokens, mintThread, warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
+import { mintThread, warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
 
 /**
  * Attributes read once while connecting, to decide what chrome exists at all.
@@ -457,13 +438,11 @@ export class AgUiChat extends HTMLElement {
   /** The resolved string table (defaults ← `data-strings` ← `strings`). */
   #strings: UiStrings = DEFAULT_UI_STRINGS;
 
-  /** Tool-call cards awaiting execution, keyed by call id. */
-  readonly #toolCards = new Map<string, ToolCallCard>();
   /** A delegated sub-agent's progress, hung off the card that delegated. */
   readonly #subagents = new SubAgentProgress({
-    card: (callId) => this.#toolCards.get(callId),
+    card: (callId) => this.#transcript.card(callId),
     strings: () => this.#strings,
-    follow: () => this.#scroller.follow(),
+    follow: () => this.#transcript.follow(),
   });
   /**
    * The AG-UI activities this element can draw, and the blocks it drew. A field
@@ -471,20 +450,11 @@ export class AgUiChat extends HTMLElement {
    * built-in renderers through it.
    */
   readonly #activities = new ActivityRegistry({
-    ensureGroup: () => this.#ensureGroup(),
-    afterTranscriptGrew: () => this.#afterTranscriptGrew(),
-    appendNotice: (icon, text, kind) => this.#appendNotice(icon, text, kind),
+    ensureGroup: () => this.#transcript.ensureGroup(),
+    afterTranscriptGrew: () => this.#transcript.afterGrew(),
+    appendNotice: (icon, text, kind) => this.#transcript.appendNotice(icon, text, kind),
   });
 
-  /** Card elements by call id, so a rendering handler can find its own card. */
-  readonly #cardElements = new Map<string, HTMLElement>();
-
-  /**
-   * Call ids whose card was already settled from a streamed server-side result
-   * (`TOOL_CALL_RESULT`), so the post-run executeTool sweep doesn't overwrite
-   * the real output with the generic "executed on the server" fallback.
-   */
-  readonly #serverSettled = new Set<string>();
   /**
    * Tool calls made during the current interaction, in the order they started,
    * so {@link RUN_FINISHED_EVENT} can report them once the whole thing settles.
@@ -500,16 +470,14 @@ export class AgUiChat extends HTMLElement {
    */
   readonly #sessionApproved = new Set<string>();
 
-  /**
-   * The one action row currently carrying Retry, if any.
-   *
-   * Retry belongs to the **last** turn only: re-running an older one is
-   * branching, and for a page-driving agent editing a past turn is not neutral
-   * -- those turns clicked buttons, and re-running turn 3 does not un-save what
-   * turn 5 saved. Holding a single owner is what keeps exactly one offer on
-   * screen without per-bubble bookkeeping.
-   */
-  #retryOwner: HTMLElement | null = null;
+  /** The action row under each finished answer, and the one row holding Retry. */
+  readonly #actions = new AnswerActions({
+    element: this,
+    strings: () => this.#strings,
+    retry: () => {
+      void this.retryLastTurn();
+    },
+  });
 
   /**
    * Keys announced during this interaction, de-duplicated in first-seen order.
@@ -542,8 +510,6 @@ export class AgUiChat extends HTMLElement {
    * only box whose foot *is* the transcript's foot.
    */
   readonly #messagesWrap = document.createElement("div");
-  /** Follows the foot of the transcript, and stops when the reader scrolls away. */
-  #scroller!: StickToBottom;
   /** Pending clear of {@link AgUiChat.#announcer}; see why it is cleared at all. */
   #announceTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -594,6 +560,12 @@ export class AgUiChat extends HTMLElement {
   #unread = 0;
   /** Empty-state region at the top of the message list; hidden once anything renders. */
   readonly #emptyWrap: HTMLDivElement;
+  /**
+   * The transcript: bubbles, the open answer group, the pending dots, the
+   * reasoning region, the tool cards and the scroller. Built in the
+   * constructor, once the list and its empty-state region exist.
+   */
+  readonly #transcript: Transcript;
   /**
    * The greeting's own text, the fallback content of the `greeting` slot.
    * Rendered under every placement and shown by the stylesheet only where the
@@ -692,31 +664,19 @@ export class AgUiChat extends HTMLElement {
     askUser: () => this.askUser,
     askUserRenderer: () => this.askUserRenderer,
     decision: this.#decision,
-    ensureGroup: () => this.#ensureGroup(),
+    ensureGroup: () => this.#transcript.ensureGroup(),
     strings: () => this.#strings,
-    hidePending: () => this.#hidePending(),
-    updateEmptyState: () => this.#updateEmptyState(),
-    follow: () => this.#scroller.follow(),
+    hidePending: () => this.#transcript.hidePending(),
+    updateEmptyState: () => this.#transcript.updateEmptyState(),
+    follow: () => this.#transcript.follow(),
     fetchInit: (url) => this.#fetchInit(url),
   });
   /** The assistant answer currently streaming into the transcript. */
   readonly #stream = new AnswerStream({
     openBubble: () => this.appendMessage(MESSAGE_ROLE.ASSISTANT, ""),
     allowImages: () => this.allowImages,
-    follow: () => this.#scroller.follow(),
+    follow: () => this.#transcript.follow(),
   });
-  #pending: HTMLDivElement | null = null;
-  // The current assistant turn's grouping container. One `.answer`
-  // wraps everything a single answer produces — streamed text, tool cards, the
-  // pending indicator — so it can be boxed as one "well" by CSS. Opened on the
-  // turn's first run start, closed at settle, so it spans the whole multi-round
-  // frontend-tool loop (which is several AG-UI runs), not one run. `null`
-  // between turns; user bubbles never enter it.
-  #currentGroup: HTMLDivElement | null = null;
-  // The current turn's streamed-reasoning region, shown at the top of
-  // the answer group while a reasoning model thinks and collapsed once the
-  // answer's first text token arrives. `null` outside a reasoning turn.
-  #thoughts: ThoughtsBlock | null = null;
   #threadId = "";
   /**
    * Which storage keys are this element's: the namespace it claims, the keys
@@ -753,6 +713,20 @@ export class AgUiChat extends HTMLElement {
     this.#launcher = document.createElement("button");
     this.#badge = document.createElement("span");
     this.#emptyWrap = document.createElement("div");
+    this.#transcript = new Transcript({
+      element: this,
+      messages: this.#messages,
+      emptyWrap: this.#emptyWrap,
+      strings: () => this.#strings,
+      allowImages: () => this.allowImages,
+      resolveTool: (name) => this.#tools.resolve(name),
+      toolSummaries: () => this.toolSummaries,
+      serverSummary: (name) => this.#tools.summary(name),
+      // A thunk over the live property, not the property itself: the card keeps
+      // this for the life of the call, and the result region is filled when the
+      // tool settles -- which can be long after a host set the hook.
+      formatToolPayload: (payload) => this.formatToolPayload?.(payload) ?? null,
+    });
     this.#placement = new PanelPlacement({
       element: this,
       launcher: this.#launcher,
@@ -1416,7 +1390,7 @@ export class AgUiChat extends HTMLElement {
     this.#excerpts.detachPageOffer();
     this.#attachments.tray?.dispose();
     this.#voice.dispose();
-    this.#scroller.dispose();
+    this.#transcript.disposeScroller();
     if (this.#announceTimer !== null) {
       clearTimeout(this.#announceTimer);
       this.#announceTimer = null;
@@ -1529,32 +1503,6 @@ export class AgUiChat extends HTMLElement {
   #maxToolRounds(): number {
     const attr = this.getAttribute("data-max-tool-rounds");
     return attr === null ? MAX_TOOL_ROUNDS : Number.parseInt(attr, 10);
-  }
-
-  /**
-   * Which message actions a finished bubble offers, from
-   * `data-message-actions`.
-   *
-   * **Absent means copy and retry, not all three.** Those two work with nothing
-   * wired: copy reads the DOM, retry drives this element. The rating pair does
-   * not -- it fires `ag-ui-feedback` and stores nothing by design, because a
-   * rating belongs to whatever the host already uses for product signal. With no
-   * listener the buttons still latch `aria-pressed`, so a reader is told their
-   * rating was taken and a screen reader announces it, while nothing recorded
-   * anything. This README has always said two buttons that lead nowhere are
-   * worse than none; shipping them by default was that sentence being false.
-   *
-   * A host with a listener asks for them: `data-message-actions="copy,retry,feedback"`.
-   * A value names the survivors, which makes `data-message-actions="false"` --
-   * the spelling its sibling `data-quote-selection` uses -- an empty set by
-   * falling out of the same rule rather than by a case of its own.
-   */
-  #messageActions(): ReadonlySet<string> {
-    const attr = this.getAttribute("data-message-actions");
-    if (attr === null) {
-      return new Set([MESSAGE_ACTIONS.COPY, MESSAGE_ACTIONS.RETRY]);
-    }
-    return new Set(commaTokens(attr));
   }
 
   /**
@@ -1983,16 +1931,12 @@ export class AgUiChat extends HTMLElement {
     // against the wiped list and open a fresh bubble holding the discarded
     // conversation's last tokens.
     this.#stream.end();
-    this.#currentGroup = null;
-    this.#thoughts = null;
-    this.#hidePending();
-    this.#toolCards.clear();
+    this.#transcript.releaseTurn();
     // The panels go with the cards they hung off.
     this.#subagents.clear();
-    this.#serverSettled.clear();
-    this.#cardElements.clear();
+    this.#transcript.forgetCards();
     this.#activities.clearBlocks();
-    this.#retryOwner = null;
+    this.#actions.forget();
     this.#attachments.tray?.clear();
     // Returning to an empty conversation snaps back to the centre: only the send
     // that left it travels. And whatever restore was holding the layout back is
@@ -2001,8 +1945,7 @@ export class AgUiChat extends HTMLElement {
     this.removeAttribute("data-composer-settling");
     this.removeAttribute("data-restoring");
     // Keep the empty-state region; everything else clears.
-    this.#messages.replaceChildren(this.#emptyWrap);
-    this.#updateEmptyState();
+    this.#transcript.empty();
   }
 
   /**
@@ -2165,7 +2108,7 @@ export class AgUiChat extends HTMLElement {
     if (last === undefined || last.role !== MESSAGE_ROLE.USER) {
       return;
     }
-    this.#appendNotice("⚠", this.#strings.runInterrupted, "interrupted");
+    this.#transcript.appendNotice("⚠", this.#strings.runInterrupted, "interrupted");
   }
 
   /**
@@ -2195,7 +2138,7 @@ export class AgUiChat extends HTMLElement {
         // wrap words.
         const restoredBubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, text);
         restoredBubble.classList.add("message--restored");
-        this.#attachActions(restoredBubble);
+        this.#actions.attach(restoredBubble);
       }
       // Narrowed rather than trusted, for the same reason `messageAttachments`
       // narrows the neighbouring field: anything that throws in this loop aborts
@@ -2210,10 +2153,10 @@ export class AgUiChat extends HTMLElement {
         // Restored history goes through the same interception as the live
         // stream — otherwise a reload resurrects the raw `load_capability`
         // card the live path deliberately replaced.
-        if (this.#noticeIfSkillLoad(restored)) {
+        if (this.#transcript.noticeIfSkillLoad(restored)) {
           continue;
         }
-        this.#cardElements.set(restored.id, this.#cardFor(restored).element);
+        this.#transcript.setCardElement(restored.id, this.#transcript.cardFor(restored).element);
         // Only `render` is replayed, never `handler`. A restored transcript
         // redraws what the call drew; it must not re-run what the call *did*.
         // Only the renderer is handed over, never the tool. The guarantee that
@@ -2224,7 +2167,7 @@ export class AgUiChat extends HTMLElement {
         // question should be asked.
         const render = this.#tools.resolve(restored.name)?.render;
         if (render !== undefined) {
-          this.#renderToolOutput(render, restored);
+          this.#transcript.renderToolOutput(render, restored);
         }
       }
       return;
@@ -2240,7 +2183,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     if (message.role === "tool") {
-      const card = this.#toolCards.get(message.toolCallId);
+      const card = this.#transcript.card(message.toolCallId);
       if (card !== undefined) {
         // The outcome `AgUiClient` annotated onto the persisted message, read
         // back through the same mapping the live path uses -- so a card that
@@ -2276,16 +2219,6 @@ export class AgUiChat extends HTMLElement {
     return {};
   }
 
-  /**
-   * Word-by-word reveal for the `word` text-animation mode, applied to a
-   * completed assistant bubble. `fade` is pure CSS (no JS); `none` is a no-op.
-   */
-  #revealWords(bubble: HTMLDivElement): void {
-    if (this.getAttribute("data-text-animation") === "word") {
-      wrapWords(bubble);
-    }
-  }
-
   /** Complete the checkpointed navigating tool call and continue the run. */
   async #resumeFrom(checkpoint: NavigationCheckpoint): Promise<void> {
     this.conversationStore.saveCheckpoint(this.#threadId, null);
@@ -2305,49 +2238,7 @@ export class AgUiChat extends HTMLElement {
    * well wrapping only the assistant turn.
    */
   appendMessage(role: MessageRole, content: string): HTMLDivElement {
-    const bubble = document.createElement("div");
-    bubble.className = `message message--${role}`;
-    bubble.setAttribute("part", `message message-${role}`);
-    if (role === MESSAGE_ROLE.ASSISTANT) {
-      bubble.innerHTML = renderMarkdown(content, { allowImages: this.allowImages });
-      // A finished bubble: rehydrated history, or a whole message appended at
-      // once. The streaming bubble gets its buttons in onTextEnd instead.
-      attachCopyButtons(bubble, this.#strings);
-      this.#ensureGroup().appendChild(bubble);
-    } else {
-      this.#currentGroup = null;
-      bubble.textContent = content;
-      this.#messages.appendChild(bubble);
-    }
-    this.#updateEmptyState();
-    // A user bubble means someone just pressed Send, which is as deliberate as
-    // pressing the jump button -- so it goes to the bottom even if they had
-    // scrolled away to re-read something before typing.
-    if (role === MESSAGE_ROLE.USER) {
-      this.#scroller.jump();
-    } else {
-      this.#scroller.follow();
-    }
-    return bubble;
-  }
-
-  /**
-   * The open answer group, creating and appending it on first use. Everything a
-   * single assistant turn renders (text, tool cards, the pending indicator)
-   * goes inside it, so the opt-in `data-answer-well` styling can box the whole
-   * turn. Idempotent across the turn's runs — it persists until {@link #handlers}'
-   * `onSettled` nulls it.
-   */
-  #ensureGroup(): HTMLDivElement {
-    if (this.#currentGroup === null) {
-      const group = document.createElement("div");
-      group.className = "answer";
-      group.setAttribute("part", "answer");
-      this.#currentGroup = group;
-      this.#messages.appendChild(group);
-      this.#updateEmptyState();
-    }
-    return this.#currentGroup;
+    return this.#transcript.append(role, content);
   }
 
   #render(): void {
@@ -2444,21 +2335,13 @@ export class AgUiChat extends HTMLElement {
     this.#jumpButton.type = "button";
     this.#jumpButton.setAttribute("part", "jump-latest");
     this.#jumpButton.textContent = this.#strings.jumpToLatest;
-    this.#jumpButton.addEventListener("click", () => {
-      this.#scroller.jump();
-    });
 
     // The quote offer, and the transcript's settled selections it listens for.
     this.#excerpts.mount();
 
     // Built here rather than at field initialisation: the viewport has to exist
     // and the observer has to have something to observe.
-    this.#scroller = createStickToBottom({
-      viewport: this.#messages,
-      onMissedContent: (missed) => {
-        this.#jumpButton.dataset["missed"] = String(missed);
-      },
-    });
+    this.#transcript.mountScroller(this.#jumpButton);
 
     this.#announcer.className = "sr-only";
     this.#announcer.setAttribute("role", "status");
@@ -2502,7 +2385,7 @@ export class AgUiChat extends HTMLElement {
     this.#messages.append(this.#emptyWrap);
     // Stamped from the first frame, so a page that mounts empty is laid out as
     // empty rather than switching to it on the first change.
-    this.#updateEmptyState();
+    this.#transcript.updateEmptyState();
 
     const inputRow = document.createElement("div");
     inputRow.className = "input-row";
@@ -2891,21 +2774,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Hide the empty-state region once the message list holds anything else, and
-   * say so on the host as `data-empty`.
-   *
-   * Stamped on the host because the layout has to answer it: where the
-   * composer sits is decided outside the list this region lives in, and no
-   * selector reaches from inside the list back up to the list's siblings. It is
-   * also a documented styling hook for a host's own chrome around a full-page
-   * chat.
-   */
-  #updateEmptyState(): void {
-    this.#emptyWrap.hidden = this.#messages.childElementCount > 1;
-    this.toggleAttribute("data-empty", !this.#emptyWrap.hidden);
-  }
-
-  /**
    * Forward input changes to the skills palette and clear any stale hint.
    *
    * Typing is the answer to every hint that surface carries -- a skill short of
@@ -3135,7 +3003,7 @@ export class AgUiChat extends HTMLElement {
     // tell theirs had been left behind. Say it before dropping the chips,
     // while `hasPending()` still describes this send.
     if (this.#attachments.tray?.hasPending() === true) {
-      this.#appendNotice(
+      this.#transcript.appendNotice(
         "\u{1F4CE}",
         fillUiString(this.#strings.attachmentsStillUploading, {
           n: this.#attachments.tray.pendingCount(),
@@ -3174,7 +3042,7 @@ export class AgUiChat extends HTMLElement {
     // and snaps. Armed before the bubble lands so both writes reach the same
     // style recalculation, which is what makes the change a transition rather
     // than a jump.
-    if (!this.#emptyWrap.hidden) {
+    if (this.#transcript.isEmpty()) {
       this.setAttribute("data-composer-settling", "");
     }
     const bubble = this.appendMessage(MESSAGE_ROLE.USER, content);
@@ -3239,7 +3107,7 @@ export class AgUiChat extends HTMLElement {
           'endpoint attribute (endpoint="/agent/"), or assign chat.endpoint ' +
           "before sending.",
       );
-      this.#appendNotice("⚠", this.#strings.notConnected, "not-connected");
+      this.#transcript.appendNotice("⚠", this.#strings.notConnected, "not-connected");
       return;
     }
     await this.#ensureClient().send(content, attachments);
@@ -3289,73 +3157,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Give a finished assistant bubble its action row, and hand it Retry.
-   *
-   * Every finished bubble gets copy and feedback -- both are safe on a message
-   * of any age. Retry moves to the newest, because it is the only one where
-   * re-running answers the same question rather than rewriting history.
-   *
-   * `data-message-actions` subtracts from that. The row is built only when
-   * something survives to go in it: an empty row still takes its margin, still
-   * answers to the `message-actions` part, and still reads to a screen reader
-   * as a group of actions with none in it.
-   */
-  #attachActions(bubble: HTMLDivElement, options: { rateable?: boolean } = {}): void {
-    const enabled = this.#messageActions();
-    const copyable = enabled.has(MESSAGE_ACTIONS.COPY);
-    // A failed run is copyable -- error text is what people paste into a bug
-    // report -- but not rateable: a rating is a statement about an *answer*,
-    // and mixing "the connection dropped" into that signal makes the host's
-    // feedback data say less than it did before.
-    const rateable = options.rateable !== false && enabled.has(MESSAGE_ACTIONS.FEEDBACK);
-    if (copyable || rateable) {
-      attachMessageActions(bubble, {
-        strings: this.#strings,
-        // Read at click time, not captured: a bubble rendered from markdown
-        // holds its text in the DOM, and that is what the user sees and means
-        // to copy. Serialised rather than read off `textContent`, which welds
-        // a table into one run of digits and picks up the code blocks' own
-        // copy buttons on the way past.
-        ...(copyable
-          ? {
-              text: () => copyPayload(bubble).text,
-              html: () => copyPayload(bubble).html,
-            }
-          : {}),
-        ...(rateable
-          ? {
-              onFeedback: (rating: "up" | "down") => {
-                this.dispatchEvent(
-                  new CustomEvent<FeedbackDetail>(FEEDBACK_EVENT, {
-                    detail: { content: copyPayload(bubble).text, rating },
-                    bubbles: true,
-                    composed: true,
-                  }),
-                );
-              },
-            }
-          : {}),
-      });
-    }
-    if (enabled.has(MESSAGE_ACTIONS.RETRY)) {
-      this.#moveRetryTo(messageActionBar(bubble, this.#strings));
-    }
-  }
-
-  /** Move the Retry button onto `bar`, taking it off whoever held it. */
-  #moveRetryTo(bar: HTMLElement): void {
-    this.#retryOwner?.querySelector(".message-action--retry")?.remove();
-    const retry = messageActionButton("retry", this.#strings.retryMessage, ICON_RETRY);
-    retry.addEventListener("click", () => {
-      void this.retryLastTurn();
-    });
-    // First in the row: it is the action a reader reaches for when the answer
-    // was wrong, which is when they are least inclined to hunt for a control.
-    bar.prepend(retry);
-    this.#retryOwner = bar;
-  }
-
-  /**
    * Which rule gates `call`, or `null` when it runs straight through.
    *
    * The rule, rather than a bare boolean, because it decides whether the user
@@ -3386,12 +3187,12 @@ export class AgUiChat extends HTMLElement {
     if (skillNameFrom(call) !== null) {
       return null;
     }
-    const card = this.#cardFor(call);
-    this.#toolCards.delete(call.id);
-    // Kept after the card leaves `#toolCards`: a tool that renders into the
+    const card = this.#transcript.cardFor(call);
+    this.#transcript.forgetCard(call.id);
+    // Kept after the card leaves the awaiting cards: a tool that renders into the
     // transcript places itself against its own card, and by the time it runs the
     // card is no longer reachable by id.
-    this.#cardElements.set(call.id, card.element);
+    this.#transcript.setCardElement(call.id, card.element);
     // Scoped out of this round's catalog ⇒ not a frontend tool of ours, for
     // this round. A host that offers `delete_record` only on the page where
     // deleting makes sense has said something about *this* run, and a call
@@ -3409,7 +3210,7 @@ export class AgUiChat extends HTMLElement {
       // honestly rather than claiming server execution. We do NOT show the
       // pending indicator: nothing here triggers another client round, so it
       // would hang after the run ended.
-      if (!this.#serverSettled.has(call.id)) {
+      if (!this.#transcript.isServerSettled(call.id)) {
         card.settle(TOOL_CALL_STATUS.DONE, this.#strings.noResult);
       }
       return null;
@@ -3432,7 +3233,7 @@ export class AgUiChat extends HTMLElement {
     ) {
       const message = this.#strings.pageMoved;
       card.settle(TOOL_CALL_STATUS.ERROR, message);
-      this.#showPending();
+      this.#transcript.showPending();
       // Stated so a reload settles this card the same way. The card's own status
       // lives only in the DOM, and the DOM is what a reload throws away.
       return { content: `Error: ${message}`, error: message, outcome: TOOL_OUTCOME.FAILED };
@@ -3451,7 +3252,7 @@ export class AgUiChat extends HTMLElement {
       // to the message list made it a sibling *after* the group, so anything
       // that streamed afterwards rendered above it and the prompt drifted to
       // the foot of the turn no matter when it was asked.
-      const decision = requestConfirmation(this.#ensureGroup(), request, {
+      const decision = requestConfirmation(this.#transcript.ensureGroup(), request, {
         signal,
         strings: this.#strings,
         // Offered only where it can be honoured -- see `#confirmationRule`.
@@ -3459,15 +3260,15 @@ export class AgUiChat extends HTMLElement {
           ? { onAlwaysAllow: () => this.#sessionApproved.add(call.name) }
           : {}),
       });
-      this.#updateEmptyState();
-      this.#scroller.follow();
+      this.#transcript.updateEmptyState();
+      this.#transcript.follow();
       const accepted = await decision;
       this.#decision.close();
       card.recordDecision(accepted ? "approved" : "declined");
       if (!accepted) {
         const message = this.#strings.declinedAction;
         card.settle(TOOL_CALL_STATUS.DECLINED, message);
-        this.#showPending();
+        this.#transcript.showPending();
         // The one outcome with no error text and no server involvement at all:
         // a person said no in this browser. Nothing else records that, so
         // without the annotation the reload showed a green card for an action
@@ -3491,7 +3292,7 @@ export class AgUiChat extends HTMLElement {
       // Drawn from the arguments rather than the result, so the live path and
       // the replay path render the same thing from the same input.
       if (tool.render !== undefined) {
-        this.#renderToolOutput(tool.render, call);
+        this.#transcript.renderToolOutput(tool.render, call);
       }
       if (navigates) {
         card.settle(TOOL_CALL_STATUS.DONE, this.#strings.navigating);
@@ -3499,7 +3300,7 @@ export class AgUiChat extends HTMLElement {
       }
       const content = JSON.stringify(result ?? null);
       card.settle(TOOL_CALL_STATUS.DONE, content);
-      this.#showPending();
+      this.#transcript.showPending();
       return { content };
     } catch (error) {
       if (navigates) {
@@ -3514,7 +3315,7 @@ export class AgUiChat extends HTMLElement {
       // invisible from the host's side and is not one it can take back.
       const message = error instanceof Error ? error.message : String(error);
       card.settle(TOOL_CALL_STATUS.ERROR, message);
-      this.#showPending();
+      this.#transcript.showPending();
       return { content: `Error: ${message}`, error: message, outcome: TOOL_OUTCOME.FAILED };
     }
   }
@@ -3553,12 +3354,12 @@ export class AgUiChat extends HTMLElement {
     this.#announce(
       fillUiString(this.#strings.announceAwaitingDecision, { count: interrupts.length }),
     );
-    this.#hidePending();
+    this.#transcript.hidePending();
     const answered = await Promise.all(
       interrupts.map(async (interrupt) => {
         const card =
           interrupt.toolCallId !== undefined
-            ? this.#toolCards.get(interrupt.toolCallId)
+            ? this.#transcript.card(interrupt.toolCallId)
             : undefined;
         const request: ApprovalRequest = {};
         const phrase = confirmPhrase(interrupt) ?? interrupt.message;
@@ -3584,7 +3385,7 @@ export class AgUiChat extends HTMLElement {
         const approved =
           this.approvalRenderer !== null
             ? await this.approvalRenderer(request, { signal })
-            : await requestApproval(card?.approvalSlot ?? this.#ensureGroup(), request, {
+            : await requestApproval(card?.approvalSlot ?? this.#transcript.ensureGroup(), request, {
                 signal,
                 strings: this.#strings,
                 ...(editable
@@ -3611,8 +3412,8 @@ export class AgUiChat extends HTMLElement {
         return { id: interrupt.id, approved, editedArgs };
       }),
     );
-    this.#updateEmptyState();
-    this.#scroller.follow();
+    this.#transcript.updateEmptyState();
+    this.#transcript.follow();
     this.#decision.close();
     const responses: Record<string, InterruptResponse> = {};
     for (const { id, approved, editedArgs } of answered) {
@@ -3641,26 +3442,26 @@ export class AgUiChat extends HTMLElement {
         // Open the answer group on the turn's first run so the pending
         // indicator (and everything after) lands inside the well. Idempotent:
         // later rounds of the same turn reuse it.
-        this.#ensureGroup();
-        this.#showPending();
+        this.#transcript.ensureGroup();
+        this.#transcript.showPending();
       },
       onReasoningStart: () => {
         // The model is thinking: swap the pending dots for a live thoughts
         // region at the top of the turn's answer group.
-        this.#hidePending();
-        this.#showThoughts();
+        this.#transcript.hidePending();
+        this.#transcript.showThoughts();
       },
       onReasoningDelta: (buffer) => {
-        this.#showThoughts().stream(buffer);
+        this.#transcript.showThoughts().stream(buffer);
       },
       onReasoningEnd: () => {
         // Leave the region expanded until the answer text starts — it collapses
         // on the first text delta (onTextDelta).
       },
       onTextDelta: (buffer) => {
-        this.#hidePending();
+        this.#transcript.hidePending();
         // The answer has begun — fold the thoughts away so they don't crowd it.
-        this.#thoughts?.collapse();
+        this.#transcript.collapseThoughts();
         this.#stream.queue(buffer);
         this.#stream.countDelta();
       },
@@ -3691,27 +3492,27 @@ export class AgUiChat extends HTMLElement {
         // wrapping it now would re-animate the whole message — the awkward
         // "finished response replays one word at a time" bug.
         if (this.#stream.deltas <= 1) {
-          this.#revealWords(bubble);
+          this.#transcript.revealWords(bubble);
         }
         attachCopyButtons(bubble, this.#strings);
-        this.#attachActions(bubble);
+        this.#actions.attach(bubble);
         this.#stream.end();
         this.#noteUnread();
       },
       onToolCall: (call) => {
-        this.#hidePending();
+        this.#transcript.hidePending();
         // A skill activation is an ordinary `load_capability` tool call — the
         // deferred-capability mechanism pydantic-ai already uses — so it arrives
         // here rather than on a channel of its own. Render it as a notice and
         // *return*: falling through would show a raw tool card beside the chip,
         // which is worse than the card alone.
-        if (this.#noticeIfSkillLoad(call)) {
+        if (this.#transcript.noticeIfSkillLoad(call)) {
           return;
         }
         // Recorded after the skill-load return: a capability load is the agent
         // arranging itself, not work a host's data could have moved under.
         this.#runTools.push({ id: call.id, name: call.name });
-        this.#cardFor(call);
+        this.#transcript.cardFor(call);
       },
       onActivity: (activityType, content, messageId) => {
         this.#activities.draw(messageId, activityType, content);
@@ -3768,10 +3569,14 @@ export class AgUiChat extends HTMLElement {
         // some of which are still waiting on results. Telling the reader costs
         // none of that, and this is the same answer the same question already
         // got for compaction, one handler up.
-        this.#appendNotice("\u{1F504}", this.#strings.historyReplaced, "history-replaced");
+        this.#transcript.appendNotice(
+          "\u{1F504}",
+          this.#strings.historyReplaced,
+          "history-replaced",
+        );
       },
       onToolResult: (toolCallId, content, outcome) => {
-        const card = this.#toolCards.get(toolCallId);
+        const card = this.#transcript.card(toolCallId);
         if (card === undefined) {
           return;
         }
@@ -3782,7 +3587,7 @@ export class AgUiChat extends HTMLElement {
         // unrecognised outcome still means DONE, so every server written before
         // the field existed renders exactly as it did.
         card.settle(toolStatusFromOutcome(outcome), content);
-        this.#serverSettled.add(toolCallId);
+        this.#transcript.markServerSettled(toolCallId);
         // The card stops being the live thing the moment it settles, and the
         // server goes straight back to the model with the result -- a wait with
         // nothing on screen to own it, and the longest one in a run when the
@@ -3796,7 +3601,7 @@ export class AgUiChat extends HTMLElement {
         // clear them and they would hang -- which is what happened before 0.2.1
         // and is why they were removed from here too. The terminal guarantee
         // that shipped in the same release is what makes showing them safe now.
-        this.#showPending();
+        this.#transcript.showPending();
       },
       onActivityChanged: (messageId, activityType, content) => {
         this.#activities.draw(messageId, activityType, content);
@@ -3804,13 +3609,13 @@ export class AgUiChat extends HTMLElement {
       onRunEnd: () => {
         // Per-round end; the button stays on Stop until the whole interaction
         // settles — the user must be able to cancel between tool rounds.
-        this.#hidePending();
+        this.#transcript.hidePending();
         this.#stream.end();
       },
       onError: (message) => {
         this.#announcedOutcome = true;
         this.#announce(this.#strings.announceFailed);
-        this.#hidePending();
+        this.#transcript.hidePending();
         const bubble = this.appendMessage(MESSAGE_ROLE.ASSISTANT, `⚠️ ${message}`);
         bubble.classList.add("message--failed");
         // A failure is the one message whose action row is only worth having
@@ -3822,8 +3627,8 @@ export class AgUiChat extends HTMLElement {
         // settles, takes no action, and carries no controls", and is explicitly
         // "distinct from an error, which is a failure". This is a failure, so
         // it stays an error and gains the control instead.
-        this.#attachActions(bubble, { rateable: false });
-        this.#revealWords(bubble);
+        this.#actions.attach(bubble, { rateable: false });
+        this.#transcript.revealWords(bubble);
         this.#stream.end();
       },
       onCancelled: () => {
@@ -3831,8 +3636,8 @@ export class AgUiChat extends HTMLElement {
         // streamed and add a muted note instead of an error bubble.
         this.#announcedOutcome = true;
         this.#announce(this.#strings.announceStopped);
-        this.#hidePending();
-        this.#appendStoppedNote();
+        this.#transcript.hidePending();
+        this.#transcript.appendStoppedNote();
         this.#stream.end();
       },
       onSettled: () => {
@@ -3840,26 +3645,18 @@ export class AgUiChat extends HTMLElement {
         if (!this.#announcedOutcome) {
           this.#announce(this.#strings.announceAnswerReady);
         }
-        this.#hidePending();
+        this.#transcript.hidePending();
         this.#setRunning(false);
         this.#stream.end();
         // Belt-and-suspenders: a tool card still pending at settle (e.g. a
         // server tool whose result never streamed because the connection
         // dropped) would hang forever — settle it to the no-result fallback.
-        for (const card of this.#toolCards.values()) {
+        for (const card of this.#transcript.cards()) {
           if (!card.settled) {
             card.settle(TOOL_CALL_STATUS.DONE, this.#strings.noResult);
           }
         }
-        // Close the turn's answer group. Drop it if the turn rendered nothing
-        // (e.g. a server-only round that streamed no text/card) so an opted-in
-        // well leaves no empty box behind.
-        if (this.#currentGroup !== null && this.#currentGroup.childElementCount === 0) {
-          this.#currentGroup.remove();
-          this.#updateEmptyState();
-        }
-        this.#currentGroup = null;
-        this.#thoughts = null;
+        this.#transcript.closeGroup();
         this.#dispatchRunFinished();
       },
     };
@@ -3877,7 +3674,7 @@ export class AgUiChat extends HTMLElement {
   #dispatchRunFinished(): void {
     const tools: ToolRun[] = this.#runTools.map(({ id, name }) => ({
       name,
-      side: this.#serverSettled.has(id) ? "server" : "client",
+      side: this.#transcript.isServerSettled(id) ? "server" : "client",
     }));
     this.#runTools = [];
     const invalidated = [...this.#runInvalidated];
@@ -3928,102 +3725,6 @@ export class AgUiChat extends HTMLElement {
     );
   }
 
-  /** A muted "⏹ Stopped" line in the transcript (distinct from the ⚠️ error bubble). */
-  #appendStoppedNote(): void {
-    const note = document.createElement("div");
-    note.className = "stopped-note";
-    note.setAttribute("part", "stopped");
-    note.setAttribute("role", "status");
-    note.textContent = this.#strings.stopped;
-    this.#ensureGroup().appendChild(note);
-    this.#updateEmptyState();
-    this.#scroller.follow();
-  }
-
-  /**
-   * Show a "thinking" indicator while the agent is being awaited — both the
-   * silent stretch before the first token and the gap after a tool result
-   * while the next round is requested. Idempotent.
-   */
-  #showPending(): void {
-    if (this.#pending !== null) {
-      return;
-    }
-    const pending = document.createElement("div");
-    pending.className = "pending";
-    pending.setAttribute("part", "pending");
-    pending.setAttribute("role", "status");
-    pending.setAttribute("aria-label", this.#strings.thinking);
-    for (let i = 0; i < 3; i += 1) {
-      const dot = document.createElement("span");
-      dot.className = "pending-dot";
-      pending.appendChild(dot);
-    }
-    this.#pending = pending;
-    this.#ensureGroup().appendChild(pending);
-    this.#updateEmptyState();
-    this.#scroller.follow();
-  }
-
-  /** Remove the pending indicator if shown. */
-  #hidePending(): void {
-    this.#pending?.remove();
-    this.#pending = null;
-  }
-
-  /**
-   * The current turn's thoughts region, creating it (at the top of the answer
-   * group, above any streamed text or tool cards) on first sight. Idempotent
-   * across a turn's reasoning tokens.
-   */
-  #showThoughts(): ThoughtsBlock {
-    if (this.#thoughts === null) {
-      this.#thoughts = new ThoughtsBlock(this.#strings);
-      const group = this.#ensureGroup();
-      group.insertBefore(this.#thoughts.element, group.firstChild);
-      this.#updateEmptyState();
-      this.#scroller.follow();
-    }
-    return this.#thoughts;
-  }
-
-  /**
-   * Render a skill notice for a `load_capability` call; ``true`` when handled.
-   *
-   * Shared by the live stream and history replay so the transcript looks the
-   * same before and after a reload.
-   */
-  #noticeIfSkillLoad(call: AgUiToolCall): boolean {
-    const skill = skillNameFrom(call);
-    if (skill === null) {
-      return false;
-    }
-    this.#appendNotice("✨", fillUiString(this.#strings.usingSkill, { name: skill }), "skill");
-    return true;
-  }
-
-  /**
-   * An inline notice about something the run did.
-   *
-   * Goes through {@link #ensureGroup} like a tool card so it lands *inside* the
-   * assistant turn it annotates rather than floating between turns, and does
-   * the same empty-state and scroll bookkeeping afterwards.
-   *
-   * `undo` is offered only where the agent rearranged the user's own window --
-   * see {@link renderRunNotice} for why a notice may carry that one control and
-   * nothing else.
-   */
-  #appendNotice(
-    icon: string,
-    text: string,
-    kind: string,
-    undo?: { readonly label: string; readonly onActivate: () => void },
-  ): void {
-    this.#ensureGroup().appendChild(renderRunNotice(icon, text, kind, undo));
-    this.#updateEmptyState();
-    this.#scroller.follow();
-  }
-
   /**
    * Say that the agent rearranged the user's window, and offer the way back.
    *
@@ -4032,7 +3733,7 @@ export class AgUiChat extends HTMLElement {
    * mid-conversation is the case where a panel appears to move on its own.
    */
   #announceSurfaceChange(text: string, undo: (() => void) | null): void {
-    this.#appendNotice(
+    this.#transcript.appendNotice(
       "⤢",
       text,
       "surface",
@@ -4087,28 +3788,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Place a tool's rendered node against its own card.
-   *
-   * Anchored rather than appended because a client tool's handler does not run
-   * until the round is over: appending would put the node after everything the
-   * model said next, visibly detached from the call that produced it, and in a
-   * different order than the same transcript takes on reload. The card was
-   * created inline, in the right place, so anchoring makes *when* the handler
-   * runs stop mattering.
-   */
-  #renderToolOutput(render: ChartRenderer, call: AgUiToolCall): void {
-    const node = renderOrWarn(() => render(call.args), `tool ${call.name}`);
-    if (node === null) {
-      return;
-    }
-    // `after` rather than an insert-or-append branch: both callers set the card
-    // element immediately before calling, and a parentless anchor makes `after`
-    // a no-op, so the alternative would be a branch nothing can reach.
-    this.#cardElements.get(call.id)?.after(node);
-    this.#afterTranscriptGrew();
-  }
-
-  /**
    * Teach this element to draw one kind of AG-UI activity.
    *
    * `activity_type` is one of exactly two fields the protocol leaves an open
@@ -4154,45 +3833,6 @@ export class AgUiChat extends HTMLElement {
    */
   get unhandledActivityTypes(): readonly string[] {
     return this.#activities.unhandledTypes();
-  }
-
-  #afterTranscriptGrew(): void {
-    this.#updateEmptyState();
-    this.#scroller.follow();
-  }
-
-  /**
-   * The card for ``call``, creating and appending it on first sight.
-   *
-   * {@link AgUiClientHandlers.onToolCall} creates the card (pending) during the
-   * run; {@link #executeTool} later retrieves the same card to settle it.
-   */
-  #cardFor(call: AgUiToolCall): ToolCallCard {
-    const existing = this.#toolCards.get(call.id);
-    if (existing !== undefined) {
-      return existing;
-    }
-    // Prefer the tool's own `x-summary`; then an explicit `toolSummaries`
-    // entry; then the fetched server catalog (`data-tools-url`). All cover
-    // server-side tools whose schema never reached the browser.
-    const labelled = this.#tools.resolve(call.name)?.parameters[X_SUMMARY_KEY];
-    const summary =
-      typeof labelled === "string"
-        ? labelled
-        : (this.toolSummaries[call.name] ??
-          this.#tools.summary(call.name) ??
-          prettifyToolName(call.name));
-    const card = new ToolCallCard(call.name, call.args, summary, this.#strings, {
-      // A thunk over the live property, not the property itself: the card keeps
-      // this for the life of the call, and the result region is filled when the
-      // tool settles -- which can be long after a host set the hook.
-      formatPayload: (payload) => this.formatToolPayload?.(payload) ?? null,
-    });
-    this.#toolCards.set(call.id, card);
-    this.#ensureGroup().appendChild(card.element);
-    this.#updateEmptyState();
-    this.#scroller.follow();
-    return card;
   }
 }
 
@@ -4262,23 +3902,6 @@ function isRestoredToolCall(value: unknown): value is RestoredToolCall {
   }
   const call = value as { id?: unknown; function?: { name?: unknown } };
   return typeof call.id === "string" && typeof call.function?.name === "string";
-}
-
-/**
- * The skill name a `load_capability` call activated, or `null` when the call is
- * something else.
- *
- * Every deferred capability loads through this one tool, so the id is a skill
- * name only when the project wired agent skills; another project's capability
- * id surfaces here too. Acceptable for a muted notice, and better than a
- * parallel signal — the id is exactly what the model selected.
- */
-function skillNameFrom(call: AgUiToolCall): string | null {
-  if (call.name !== LOAD_CAPABILITY_TOOL) {
-    return null;
-  }
-  const id = (call.args as { id?: unknown } | null | undefined)?.id;
-  return typeof id === "string" && id !== "" ? id : null;
 }
 
 /** The `removed` count from a compaction activity payload, or `null` if absent. */

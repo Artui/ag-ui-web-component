@@ -90,6 +90,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The frontend tools the agent is offered -- the host's, the built-ins, the
     `ask_user` question, what the current round advertised, and the server's
     labels for its own tools -- are `ToolCatalog` in `src/tools/`.
+  - The transcript -- its bubbles, the open answer group, the pending dots, the
+    reasoning region, the tool cards and the scroller that follows the foot --
+    is `Transcript` in `src/ui/transcript/`, and the action row under a
+    finished answer is `AnswerActions` beside it.
 
   Nothing a consumer can see changes. The emitted declarations are
   byte-identical to the previous release apart from the new internal modules,
