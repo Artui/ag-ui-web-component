@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ELEMENT_TAG } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import { makeFakeAgent } from "./helpers/fake_agent.js";
 
 /**
  * Walking back through what you have already sent, on the arrow keys.
@@ -15,6 +16,14 @@ function mount(): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
   el.setAttribute("data-start-open", "");
+  // Every test here sends, so every test runs the agent. Without a fake the
+  // element builds a real HttpAgent, which under happy-dom posts to a localhost
+  // port nobody listens on: each run fails behind the test's back, and happy-dom
+  // prints the refused connection -- unattributed, dozens of times -- into
+  // every run of the suite. Recall does not depend on how a run ends, so a run
+  // that simply finishes is the honest stand-in.
+  const handle = makeFakeAgent();
+  el.agentFactory = () => handle.agent;
   document.body.appendChild(el);
   return el;
 }
