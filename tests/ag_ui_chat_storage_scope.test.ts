@@ -11,7 +11,7 @@
  *   lost preference, never a broken conversation.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG, MESSAGE_ROLE } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import {
@@ -88,6 +88,33 @@ async function flush(): Promise<void> {
 
 const ALICE_SECRET = "alice's account balance is 12345";
 
+/** An SSE body for one run, carrying `events` between its start and its finish. */
+function sseRun(events: readonly Record<string, unknown>[] = []): Response {
+  const all = [
+    { type: "RUN_STARTED", threadId: "t1", runId: "r1" },
+    ...events,
+    { type: "RUN_FINISHED", threadId: "t1", runId: "r1" },
+  ];
+  const body = all.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+  return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+}
+
+/** Drain real tasks, which a streamed response body needs and microtasks alone do not reach. */
+async function settle(): Promise<void> {
+  for (let index = 0; index < 5; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+function send(el: AgUiChat, text: string): void {
+  const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
+  if (input === null) {
+    throw new Error("expected an input");
+  }
+  input.value = text;
+  shadow(el).querySelector<HTMLButtonElement>(".send")?.click();
+}
+
 function transcript(text: string): never[] {
   return [{ id: "m1", role: "user", content: text }] as never;
 }
@@ -102,7 +129,57 @@ describe("client state scoping", () => {
     sessionStorage.clear();
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   describe("user-key", () => {
+    it("does not send the previous principal's shared state on the next principal's first run", async () => {
+      // Read off the body of the real request: shared state is sent as
+      // `RunAgentInput.state` on every run, so the question is what goes out.
+      const bodies: { state?: unknown }[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: unknown, init?: RequestInit) => {
+          bodies.push(JSON.parse(String(init?.body)) as { state?: unknown });
+          // Alice's run is where the agent writes her data into shared state.
+          return Promise.resolve(
+            sseRun(
+              bodies.length === 1
+                ? [{ type: "STATE_SNAPSHOT", snapshot: { balance: ALICE_SECRET } }]
+                : [],
+            ),
+          );
+        }),
+      );
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      send(el, "what is my balance?");
+      await settle();
+      // The control: her state really reached the element.
+      expect(el.sharedState).toEqual({ balance: ALICE_SECRET });
+
+      el.setAttribute("user-key", "bob");
+      await settle();
+      send(el, "hello");
+      await settle();
+
+      expect(bodies).toHaveLength(2);
+      expect(JSON.stringify(bodies[1])).not.toContain(ALICE_SECRET);
+      expect(bodies[1]?.state).toEqual({});
+      expect(el.sharedState).toEqual({});
+    });
+
+    it("keeps shared state when the key first arrives, as it keeps the conversation", async () => {
+      // Not a handover: the person on screen is the one the key now names.
+      const el = mount({ endpoint: "/agent/" });
+      el.sharedState = { document: "draft before auth resolved" };
+
+      el.setAttribute("user-key", "alice");
+      await flush();
+
+      expect(el.sharedState).toEqual({ document: "draft before auth resolved" });
+    });
+
     it("does not carry a transcript across a principal change in the same tab", async () => {
       const el = mount({ endpoint: "/agent/", "user-key": "alice" });
       const alice = el.conversationStore;

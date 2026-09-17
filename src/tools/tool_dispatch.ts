@@ -122,7 +122,7 @@ export class ToolDispatch {
   async execute(call: AgUiToolCall): Promise<ToolExecution | null> {
     // A skill load already rendered as a notice on the stream; it is never a
     // client tool and its result is pydantic-ai's business, so it must not
-    // acquire a card here on the way to the no-result fallback below.
+    // acquire a card here on the way to the not-finished fallback below.
     if (skillNameFrom(call) !== null) {
       return null;
     }
@@ -147,12 +147,13 @@ export class ToolDispatch {
       // Not a client tool. A server-side tool's real output arrives via
       // `onToolResult` (TOOL_CALL_RESULT) and already settled the card — only
       // fall back when it didn't. When no result ever arrived, the call wasn't
-      // executed by either side (no handler, no server result), so say so
-      // honestly rather than claiming server execution. We do NOT show the
-      // pending indicator: nothing here triggers another client round, so it
-      // would hang after the run ended.
+      // executed by either side (no handler, no server result), so the card says
+      // it did not finish -- the same words the client sends the agent for it on
+      // the next request -- rather than claiming a success nothing achieved. We
+      // do NOT show the pending indicator: nothing here triggers another client
+      // round, so it would hang after the run ended.
       if (!this.#host.transcript.isServerSettled(call.id)) {
-        card.settle(TOOL_CALL_STATUS.DONE, this.#host.strings().noResult);
+        card.settle(TOOL_CALL_STATUS.INTERRUPTED, this.#host.strings().callNotFinished);
       }
       return null;
     }

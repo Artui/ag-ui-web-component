@@ -244,7 +244,13 @@ export const MESSAGE_ACTIONS = {
 
 /**
  * Lifecycle status of a rendered tool-call card. A card opens as `PENDING`
- * while the call runs, then settles to `DONE`, `ERROR`, or `DECLINED`.
+ * while the call runs, then settles to `DONE`, `ERROR`, `DECLINED` or
+ * `INTERRUPTED`.
+ *
+ * `INTERRUPTED` is a call that never produced a result and that nobody refused:
+ * the run was stopped or failed before it finished, or no tool here answered it.
+ * Neither of the older terminal states is true of it. `DONE` claimed a success
+ * nothing achieved, and `DECLINED` says a person or a guard refused.
  *
  * `DEFERRED` is the one non-terminal state that is not "running": a server-side
  * tool a `ToolGuard` gated never executed, the run finished on an interrupt, and
@@ -261,6 +267,7 @@ export const TOOL_CALL_STATUS = {
   DONE: "done",
   ERROR: "error",
   DECLINED: "declined",
+  INTERRUPTED: "interrupted",
 } as const;
 
 /**
@@ -276,10 +283,14 @@ export const TOOL_CALL_STATUS = {
  * annotation on the event and not a required one. `FAILED` is a call that ran
  * and failed; `DENIED` is one a person or a guard refused, so it never ran at
  * all. The two are worth distinguishing on screen because only the second is
- * something the user did.
+ * something the user did. `INTERRUPTED` is a call that produced no result because
+ * the run ended first: pydantic-ai writes it when it repairs a history a
+ * cancelled stream left, and the element writes it for the same reason when a
+ * run ends with a call still unanswered, so the next request carries a result
+ * for every call without claiming anyone refused one.
  *
- * Anything *else* on the wire — a value from a later protocol version, or
- * pydantic-ai's own `interrupted` — is read as a success rather than rejected.
+ * Anything *else* on the wire — a value from a later protocol version — is read
+ * as a success rather than rejected.
  * A card is a claim about what happened, and "I do not know this word" is not
  * grounds for claiming failure. `toolStatusFromOutcome` is where that is done.
  */
@@ -287,6 +298,7 @@ export const TOOL_OUTCOME = {
   SUCCESS: "success",
   FAILED: "failed",
   DENIED: "denied",
+  INTERRUPTED: "interrupted",
 } as const;
 
 /**

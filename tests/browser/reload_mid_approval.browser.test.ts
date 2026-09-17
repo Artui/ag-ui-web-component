@@ -107,6 +107,8 @@ describe("a tool card restored from a reload mid-approval (real browser)", () =>
     await settle();
 
     expect(getComputedStyle(part(second, ".tool-call-icon")).animationName).toBe("none");
-    expect(part(second, ".tool-call").getAttribute("data-status")).toBe("declined");
+    expect(part(second, ".tool-call").getAttribute("data-status")).toBe("interrupted");
+    // Its own glyph, rather than the decline's: nobody declined this call.
+    expect(getComputedStyle(part(second, ".tool-call-icon"), "::before").content).toBe('"◌"');
   });
 });

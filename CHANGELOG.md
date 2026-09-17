@@ -293,23 +293,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the built-in card does on the same signal, with no card drawn and no warning.
 
 - **Reloading the page while a tool call waits for approval now shows that call
-  declined, where it showed a spinner that never stopped.** The run loop saves a
-  round's history when its stream ends, which is before it asks about a gated
-  call, runs a frontend tool or collects a server-side approval. A reload in that
-  window left the call stored with no result, and the request that would have
-  produced one had died with the page, so the restored card had no Approve or
-  Decline and nothing left to settle it. The next message then went out carrying
-  a tool call with no result, which several model providers reject.
+  as not finished, where it showed a spinner that never stopped.** The run loop
+  saves a round's history when its stream ends, which is before it asks about a
+  gated call, runs a frontend tool or collects a server-side approval. A reload in
+  that window left the call stored with no result, and the request that would
+  have produced one had died with the page, so the restored card had no Approve
+  or Decline and nothing left to settle it. The next message then went out
+  carrying a tool call with no result, which several model providers reject.
 
-  A reload now lands where Stop does, since Stop is the other way to abandon
-  that wait: the card is declined, and the conversation carries the same declined
-  result Stop records, so the next request is a valid turn and a later reload
-  still shows the decline. The saved history looks the same whether the round
-  was waiting on a person or on a frontend tool the reload interrupted, so a
-  tool that was still running comes back declined too. A navigating tool's call
-  is unchanged: it resumes from the page it landed on. A restored card for a
-  call that an earlier round went past without a result now settles to "No
-  result returned.", as it did live, instead of spinning.
+  The card now settles as not finished, and the conversation carries the same
+  not-finished result the client gives any call a run left open, so the next
+  request is a valid turn and a later reload shows the same. It is not declined,
+  although Stop declines an open card, because Stop is a person answering the
+  question and a reload is not: the saved history looks the same whether the
+  round was waiting on a person or on a frontend tool the reload killed, so a
+  decline would be unproven for the first and false for the second, and "not
+  finished" is true of both. A server-side approval left open by a
+  reload comes back the same way. A navigating tool's call is unchanged: it
+  resumes from the page it landed on. A restored card for a call that an earlier
+  round went past without a result settles as not finished too, and the restore
+  now gives that call its result as well, at the end of its own round.
+
+- **A request sent after a reload no longer carries the element's `outcome`
+  labels to the server.** The label that lets a reload replay a declined or
+  failed card is written onto the stored copy of a tool message only, and the
+  README promises it is never sent. A restore seeds the next agent from that
+  stored copy, though, so every tool message restored with a label went out
+  with it on the next request. The client now takes the labels off the history
+  it is seeded with and keeps them beside it, so the request carries none, the
+  restored cards still settle as they did, and the next save writes each label
+  back.
+
+- **A request no longer carries a tool call without a result, however the run
+  that made the call ended.** Several model providers reject such a turn, so the
+  conversation could not continue past it, and a live run left one in four ways
+  with no reload involved: Stop while the stream was still arriving, Stop on an
+  open server-side approval, a round that ended on `RUN_ERROR` after emitting
+  calls, and a call naming a tool nothing on the page owns. Each was guarded,
+  if at all, where it happened, and the guards between them left gaps.
+
+  The client now answers every call still open before each request it makes,
+  in one place, so a path nobody listed cannot send one either. The answer goes
+  at the end of the round that made the call, where a provider looks for it.
+  It says the call did not finish, in the new `callNotFinished` string, with
+  the outcome `interrupted`, pydantic-ai's word for the same thing, because
+  nobody refused it; the card settles to a new **not finished** status in the
+  same words, with its own `--ag-ui-tool-icon-interrupted` glyph, where it used
+  to claim "done" over "No result returned.". The decline stays where a person
+  declined: an approval Stop closed while it was open is answered with
+  `declinedAction`, and one already approved when Stop landed is answered as not
+  finished. The calls a resumed approval is answering are left for the server.
+  `UiStrings.noResult` is no longer drawn and is deprecated, and a server's own
+  `interrupted` outcome now renders as not finished rather than as done.
+
+- **Stop during a frontend tool no longer lets the next call in the same round
+  run.** The loop checked for Stop between rounds but not between the calls of
+  one round, so when the agent asked for two page actions at once and Stop was
+  pressed while the first ran, the second ran anyway as soon as the first
+  returned, after the person had asked for the run to end. A handler already
+  running still completes and keeps its result, since it cannot be aborted, but
+  the calls after it no longer start, and each is answered as not finished.
+
+- **Changing `user-key` no longer sends the previous principal's shared state
+  on the next principal's first run.** A handover purges the stored
+  conversation, the transcript and the tools waived with Always allow, but
+  `sharedState` survived it, and it holds whatever the agent last wrote into it
+  for the principal who left. The next client is seeded from it, so it went out
+  as `RunAgentInput.state` on the new principal's first request. It is now
+  cleared on the handover. New chat still keeps it, because shared state is the
+  page's object and the same person is still editing it, and the first key to
+  arrive keeps it for the same reason it keeps the conversation.
 
 ## [0.38.0] — 2026-09-14
 

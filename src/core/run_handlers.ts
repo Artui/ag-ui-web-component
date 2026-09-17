@@ -419,12 +419,15 @@ export class RunHandlers {
         this.#host.transcript.hidePending();
         this.#host.setRunning(false);
         this.#host.stream.end();
-        // Belt-and-suspenders: a tool card still pending at settle (e.g. a
-        // server tool whose result never streamed because the connection
-        // dropped) would hang forever — settle it to the no-result fallback.
+        // A tool card still pending at settle would hang forever: a call Stop or
+        // RUN_ERROR ended before it ran, a server tool whose result never
+        // streamed because the connection dropped, an approved call Stop kept
+        // from resuming. None of them finished and nobody refused them, so the
+        // card says exactly that, in the words the client sends the agent for
+        // the same call on the next request.
         for (const card of this.#host.transcript.cards()) {
           if (!card.settled) {
-            card.settle(TOOL_CALL_STATUS.DONE, this.#host.strings().noResult);
+            card.settle(TOOL_CALL_STATUS.INTERRUPTED, this.#host.strings().callNotFinished);
           }
         }
         this.#host.transcript.closeGroup();

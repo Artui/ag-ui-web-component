@@ -10,11 +10,12 @@
  * good: it came back as a spinner with no Approve or Decline, and the next send
  * carried a tool call with no result, which several providers reject outright.
  *
- * The reference for the right answer is Stop, which is the other way to abandon
- * an approval. Stop declines the open decision, and the loop records that as a
- * result -- so a stopped approval is a declined card on screen and a denied
- * result in history. A reload has to land in the same place, or the two ways out
- * of one prompt disagree about what happened.
+ * The answer has to be true as well as present. Stop is a person answering the
+ * open decision, so a stopped approval is a declined card and a declined result.
+ * A reload answers nothing: the stored shape is the same whether the round was
+ * waiting on a person or on a handler the reload killed, and neither was
+ * refused. So every call a reload abandoned comes back as not finished, on the
+ * card and in the result the next request carries.
  *
  * Every stored state here is captured from a real run at the moment a reload
  * would find it, never written by hand: the question is what *this element*
@@ -41,6 +42,9 @@ beforeEach(() => {
   document.body.innerHTML = "";
   sessionStorage.clear();
 });
+
+const NOT_FINISHED =
+  "Not finished: the run ended or moved on before this tool call returned a result.";
 
 /** What a store holds at one instant: the transcript and the navigation checkpoint. */
 interface Snapshot {
@@ -252,33 +256,34 @@ describe("reloading while a confirmation card is open", () => {
     expect(checkpoint).toBeNull();
   });
 
-  it("restores the card declined rather than running", async () => {
+  it("restores the card as not finished rather than running, or declined", async () => {
     const { store } = await atConfirmation();
 
     const { el } = await reload(store.snapshot());
 
-    expect(cardView(el).status).toBe("declined");
-    expect(cardView(el).result).toBe("User declined the action.");
+    expect(cardView(el)).toEqual({
+      status: "interrupted",
+      result: NOT_FINISHED,
+      label: "Not finished",
+    });
   });
 
-  it("lands where Stop would have", async () => {
+  it("does not claim the decline Stop records, since nobody answered the card", async () => {
     const stopped = await atConfirmation();
     stop(stopped.el);
     await flush();
     const afterStop = await reload(stopped.store.snapshot());
-    const stopView = cardView(afterStop.el);
 
     const reloaded = await atConfirmation();
     const afterReload = await reload(reloaded.store.snapshot());
 
-    expect(stopView.status).toBe("declined");
-    expect(cardView(afterReload.el)).toEqual(stopView);
+    expect(cardView(afterStop.el).status).toBe("declined");
+    expect(cardView(afterReload.el).status).toBe("interrupted");
   });
 
-  it("sends a result for the call on the next turn, as Stop does", async () => {
-    // A tool call with no result is a malformed turn to several providers. Stop
-    // never produces one here, because the loop records the decline -- so the
-    // next request after a reload has to carry the same result Stop's does.
+  it("sends a not-finished result for the call on the next turn, where Stop sends its decline", async () => {
+    // A tool call with no result is a malformed turn to several providers. Both
+    // ways out of the prompt send one, and each says what actually happened.
     const stopSeen: unknown[][] = [];
     const store = memoryStore();
     let round = 0;
@@ -308,13 +313,18 @@ describe("reloading while a confirmation card is open", () => {
     expect(seen[0]).toEqual([
       { role: "user", content: "delete user 7" },
       { role: "assistant", calls: ["tc1"] },
+      { role: "tool", toolCallId: "tc1", content: NOT_FINISHED },
+      { role: "user", content: "never mind" },
+    ]);
+    expect(stopSeen[0]).toEqual([
+      { role: "user", content: "delete user 7" },
+      { role: "assistant", calls: ["tc1"] },
       { role: "tool", toolCallId: "tc1", content: "User declined the action." },
       { role: "user", content: "never mind" },
     ]);
-    expect(seen[0]).toEqual(stopSeen[0]);
   });
 
-  it("stores the decline, so a second reload still shows it", async () => {
+  it("stores the answer, so a second reload shows the same", async () => {
     const { store } = await atConfirmation();
     const first = await reload(store.snapshot());
     sendNoWait(first.el, "never mind");
@@ -323,15 +333,15 @@ describe("reloading while a confirmation card is open", () => {
     const stored = first.store
       .snapshot()
       .messages.find((m) => m.role === "tool" && m.toolCallId === "tc1");
-    expect((stored as { outcome?: unknown } | undefined)?.outcome).toBe(TOOL_OUTCOME.DENIED);
+    expect((stored as { outcome?: unknown } | undefined)?.outcome).toBe(TOOL_OUTCOME.INTERRUPTED);
 
     const second = await reload(first.store.snapshot());
-    expect(cardView(second.el).status).toBe("declined");
+    expect(cardView(second.el).status).toBe("interrupted");
   });
 
   it("does not report the run as interrupted", async () => {
-    // The declined card says what happened. The interrupted-run notice is for a
-    // turn that ended on the user's own message, which this one did not.
+    // The card says what happened. The interrupted-run notice is for a turn that
+    // ended on the user's own message, which this one did not.
     const { store } = await atConfirmation();
 
     const { el } = await reload(store.snapshot());
@@ -343,9 +353,9 @@ describe("reloading while a confirmation card is open", () => {
 describe("reloading while a frontend tool is still running", () => {
   it("does not leave its card running either", async () => {
     // The same stored shape as an open confirmation -- the round's history is
-    // written before either the question or the handler -- so the restore cannot
-    // tell the two apart, and a handler the reload killed has no result coming
-    // any more than an unanswered question does.
+    // written before either the question or the handler -- and a handler the
+    // reload killed has no result coming any more than an unanswered question
+    // does. Declined would be a plain falsehood here: the call was running.
     const store = memoryStore();
     let round = 0;
     const { el } = mount(store, (emit) => {
@@ -371,7 +381,7 @@ describe("reloading while a frontend tool is still running", () => {
 
     const restored = await reload(store.snapshot());
 
-    expect(cardView(restored.el).status).toBe("declined");
+    expect(cardView(restored.el)).toMatchObject({ status: "interrupted", result: NOT_FINISHED });
   });
 });
 
@@ -394,15 +404,15 @@ describe("reloading while a server-side approval is open", () => {
     return { el, store };
   }
 
-  it("restores the card declined, where it waited deferred", async () => {
+  it("restores the card as not finished, where it waited deferred", async () => {
     const { store } = await atApproval();
 
     const { el } = await reload(store.snapshot());
 
-    expect(cardView(el).status).toBe("declined");
+    expect(cardView(el)).toMatchObject({ status: "interrupted", result: NOT_FINISHED });
   });
 
-  it("lands where Stop and then a reload would have", async () => {
+  it("keeps the decline Stop gave it, and does not invent one for a reload", async () => {
     const stopped = await atApproval();
     stop(stopped.el);
     await flush();
@@ -413,7 +423,47 @@ describe("reloading while a server-side approval is open", () => {
     const afterReload = await reload(reloaded.store.snapshot());
 
     expect(cardView(afterStop.el).status).toBe("declined");
-    expect(cardView(afterReload.el)).toEqual(cardView(afterStop.el));
+    expect(cardView(afterReload.el).status).toBe("interrupted");
+  });
+
+  it("answers every approval it abandoned on the next turn, with no label on the wire", async () => {
+    // Several approvals open at once, as a real page leaves them.
+    const store = memoryStore();
+    const { el } = mount(store, (emit, params) => {
+      emit.runStart();
+      if (params.resume === undefined) {
+        const ids = ["call-1", "call-2", "call-3"];
+        for (const id of ids) {
+          emit.toolCall(id, "delete_thing", { target: id });
+        }
+        emit.interrupt(
+          ids.map((id) => ({ id: `int-${id}`, reason: "tool_call", toolCallId: id })) as never,
+        );
+      }
+    });
+    sendNoWait(el, "delete them");
+    await flush();
+
+    const sent: unknown[][] = [];
+    const seen: unknown[][] = [];
+    const restored = await reload(store.snapshot(), (emit, params, history) => {
+      recording(seen)(emit, params, history);
+      sent.push([...history()]);
+    });
+    sendNoWait(restored.el, "never mind");
+    await flush();
+
+    expect(seen[0]).toEqual([
+      { role: "user", content: "delete them" },
+      { role: "assistant", calls: ["call-1"] },
+      { role: "assistant", calls: ["call-2"] },
+      { role: "assistant", calls: ["call-3"] },
+      { role: "tool", toolCallId: "call-1", content: NOT_FINISHED },
+      { role: "tool", toolCallId: "call-2", content: NOT_FINISHED },
+      { role: "tool", toolCallId: "call-3", content: NOT_FINISHED },
+      { role: "user", content: "never mind" },
+    ]);
+    expect(sent[0]?.filter((message) => "outcome" in (message as object))).toEqual([]);
   });
 });
 
@@ -474,11 +524,11 @@ describe("the navigating tool a reload was expected by", () => {
 });
 
 describe("a call the run went past", () => {
-  it("settles as it did live, and is not rewritten into history", async () => {
+  it("is answered as not finished on the next turn, and restores as it settled", async () => {
     // A call nothing answered that the conversation then moved beyond: a name no
-    // tool here owns, whose server sent no result. Live, the run settled it to
-    // the no-result fallback and carried on. It was not abandoned by any reload,
-    // so the restore must not invent a decline for it -- only stop it spinning.
+    // tool here owns, whose server sent no result. Live, the run settled it as
+    // not finished, and the next request answered it in those words. It was not
+    // abandoned by any reload, so the restore must not invent a decline for it.
     const store = memoryStore();
     let round = 0;
     const { el } = mount(store, (emit) => {
@@ -490,7 +540,7 @@ describe("a call the run went past", () => {
     });
     sendNoWait(el, "first");
     await flush();
-    expect(cardView(el).result).toBe("No result returned.");
+    expect(cardView(el)).toMatchObject({ status: "interrupted", result: NOT_FINISHED });
     sendNoWait(el, "second");
     await flush();
 
@@ -498,8 +548,7 @@ describe("a call the run went past", () => {
     const restored = await reload(store.snapshot(), recording(seen));
     // Read before sending anything: the next run's own terminal sweep would
     // settle a card left spinning, and hide that the restore never did.
-    expect(cardView(restored.el).status).toBe("done");
-    expect(cardView(restored.el).result).toBe("No result returned.");
+    expect(cardView(restored.el)).toMatchObject({ status: "interrupted", result: NOT_FINISHED });
 
     sendNoWait(restored.el, "third");
     await flush();
@@ -507,6 +556,7 @@ describe("a call the run went past", () => {
     expect(seen[0]).toEqual([
       { role: "user", content: "first" },
       { role: "assistant", calls: ["tc-x"] },
+      { role: "tool", toolCallId: "tc-x", content: NOT_FINISHED },
       { role: "user", content: "second" },
       { role: "user", content: "third" },
     ]);
@@ -573,13 +623,15 @@ describe("a round that finished", () => {
 
     const seen: unknown[][] = [];
     const restored = await reload(store.snapshot(), recording(seen));
-    expect(cardView(restored.el)).toMatchObject({ status: "done", result: "No result returned." });
+    expect(cardView(restored.el)).toMatchObject({ status: "interrupted", result: NOT_FINISHED });
     sendNoWait(restored.el, "thanks");
     await flush();
 
+    // Answered where the call was made, ahead of the text that moved past it.
     expect(seen[0]).toEqual([
       { role: "user", content: "do the thing" },
       { role: "assistant", calls: ["tc-s"] },
+      { role: "tool", toolCallId: "tc-s", content: NOT_FINISHED },
       { role: "assistant", calls: [] },
       { role: "user", content: "thanks" },
     ]);

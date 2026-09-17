@@ -21,9 +21,8 @@ export type ToolOutcome = (typeof TOOL_OUTCOME)[keyof typeof TOOL_OUTCOME];
  * expected to be successes, but because the alternative is worse in the
  * direction that matters: a card claiming a call failed when it did not is a
  * lie the user acts on, while a card claiming success has at least the result
- * text under it for them to read. `interrupted` is the concrete case today --
- * pydantic-ai emits it, this vocabulary does not carry it, and a future release
- * may add more. Forward compatibility is the point of the open field.
+ * text under it for them to read. A future release may add words, and forward
+ * compatibility is the point of the open field.
  */
 export function toolStatusFromOutcome(outcome: unknown): SettledStatus {
   if (outcome === TOOL_OUTCOME.FAILED) {
@@ -31,6 +30,9 @@ export function toolStatusFromOutcome(outcome: unknown): SettledStatus {
   }
   if (outcome === TOOL_OUTCOME.DENIED) {
     return TOOL_CALL_STATUS.DECLINED;
+  }
+  if (outcome === TOOL_OUTCOME.INTERRUPTED) {
+    return TOOL_CALL_STATUS.INTERRUPTED;
   }
   return TOOL_CALL_STATUS.DONE;
 }

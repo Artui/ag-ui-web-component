@@ -570,9 +570,10 @@ pydantic-ai's own `ToolReturnPart` vocabulary — read the values off `TOOL_OUTC
 | `success` | done | The same thing, stated. |
 | `failed` | error | The call ran and failed. |
 | `denied` | declined | A person or a guard refused it, so it never ran. |
+| `interrupted` | not finished | It produced no result because the run ended first, and nobody refused it. |
 
 **Absent is a success, and anything unrecognised is too** — including a value from a later protocol
-version, and pydantic-ai's own `interrupted`. A card is a claim about what happened, and refusing to
+version. A card is a claim about what happened, and refusing to
 recognise a word is not grounds for claiming failure. So no server has to change to keep the
 rendering it has today, and a server that adds the field gets the truth on screen instead of a
 green card with a refusal folded inside it.
@@ -591,10 +592,23 @@ Either way the outcome is **persisted beside the tool message**, so a reload rep
 settled rather than as a plain result. See
 [MPA durability](#mpa-durability-surviving-full-page-reloads).
 
+**Every request carries a result for every tool call in it.** Several model providers reject a
+turn holding a tool call with no result, and a run can leave one open in more ways than one: Stop
+while the stream is still arriving, a round that ends on `RUN_ERROR`, a call naming a tool nothing
+here owns, a server that never streamed the result. So before each request the client answers
+every call still open with the `callNotFinished` string (by default `Not finished: the run ended
+or moved on before this tool call returned a result.`) and the outcome `interrupted`, placed at the
+end of the round that made the call, and the card settles to **not finished** in the same words.
+That result blames nobody, because nobody declined: `declinedAction` is kept for a call a person
+was asked about and turned down — a confirmation card or an approval they declined, or one Stop
+closed while it was open. The calls a resumed approval is answering are left alone, because the
+resume is their answer.
+
 The catalog a run advertises is also the set that run can execute. Override `getTools` to scope
 what a page offers — say, exposing `delete_record` only where deleting makes sense — and a call
 naming a tool you withheld is treated exactly as a call naming a tool you never registered: no
-handler runs, and the card settles with the no-result label. Withholding is per run, so the
+handler runs, the card settles as not finished, and the next request answers the call in those
+words. Withholding is per run, so the
 mount-wide registry can stay complete. Hosts that leave `getTools` alone advertise the built-ins
 plus everything registered, which is precisely what dispatch could reach anyway.
 
@@ -610,12 +624,17 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
   `onPersist`, so a reload shows the truncated exchange. A muted **"⏹ Stopped"** note is appended
   (`.stopped-note`) — a deliberate stop is not an error, so no bubble.
 - The run loop stops: tool calls collected before the abort are **not executed**, and no further
-  round starts. A frontend tool handler already running completes, but its result doesn't trigger
-  a re-run.
+  round starts. A frontend tool handler already running completes and its result is kept, but it
+  doesn't trigger a re-run, and the calls after it in the same round do not start. Each call that
+  did not run settles as **not finished**, and the next request answers
+  it in those words rather than sending it without a result.
 - An **open confirmation card is declined** (`data-resolved="declined"`) — cancelling the run
-  answers the pending question. Likewise an open **approval card** is denied and an open
-  **question card** (`ask_user`) resolves with an empty answer. Reloading the page while a card is
-  open lands in the same place; see [MPA durability](#mpa-durability-surviving-full-page-reloads).
+  answers the pending question. Likewise an open **approval card** is denied, and the next request
+  carries that decline as the call's result; a call already approved when Stop lands was declined
+  by nobody, so it is answered as not finished instead. An open **question card** (`ask_user`)
+  resolves with an empty answer. Reloading the page while a card is open does not decline it,
+  because nobody answered: the call comes back not finished; see
+  [MPA durability](#mpa-durability-surviving-full-page-reloads).
 - The new `onCancelled()` handler fires instead of `onError()`; `onSettled()` still follows
   (the terminal-rest guarantee), returning the button to **Send**.
 
@@ -1440,9 +1459,10 @@ If a tool's schema carries an `x-summary` string (use `X_SUMMARY_KEY`), the card
 label instead of the raw tool name.
 
 Every card leads with a **status icon** drawn entirely in CSS — a spinning ring while the call
-runs, then a check / cross / slash on success / error / decline. Re-theme it via custom
-properties (or the `tool-card-icon` part): `--ag-ui-tool-icon-done`, `--ag-ui-tool-icon-error`,
-`--ag-ui-tool-icon-declined` (quoted-string glyphs) and `--ag-ui-tool-spin-duration` (spinner
+runs, then a check / cross / slash / dotted ring on success / error / decline / not finished.
+Re-theme it via custom properties (or the `tool-card-icon` part): `--ag-ui-tool-icon-done`,
+`--ag-ui-tool-icon-error`, `--ag-ui-tool-icon-declined`, `--ag-ui-tool-icon-interrupted`
+(quoted-string glyphs) and `--ag-ui-tool-spin-duration` (spinner
 speed; the spin respects `prefers-reduced-motion`).
 
 ```html
@@ -1988,7 +2008,9 @@ does not declare the field, exactly as it does not declare the `attachments` an 
 user message; the default store round-trips both through `JSON.stringify`. **A store that drops
 unknown fields loses only the distinction** — the card falls back to *done*, which is what it did
 before. It is written onto the copy handed to the store and never onto `agent.messages`, so it is
-not sent back to the server on the next run.
+not sent back to the server on the next run. That holds after a restore too: the client seeded from
+a stored conversation takes the field off every message it is seeded with and writes it back on the
+next save.
 
 **3. Resumable loop (`x-navigates` + `navigationResult`).** A tool whose schema carries
 `x-navigates: true` (use `X_NAVIGATES_KEY`; read back by [`isNavigates`](src/tools/is_navigates.ts))
@@ -2004,16 +2026,19 @@ triggers a full reload. Before the handler navigates, the element writes a check
 
 The MPA round-trip becomes a clean observation point instead of a dropped conversation.
 
-**A reload the run did not expect is settled the way Stop settles it.** A round's history is saved
-when its stream ends, before the element asks about a gated call, runs a frontend tool or collects a
-server-side approval, so a reload in that window finds the round's calls with no result and no run
-left to produce one. On restore, each such call in the final round (other than a checkpointed
-navigating call) is declined: its card settles as `declined`, and the restored conversation gains
-the same result Stop records (`User declined the action.`, outcome `denied`), so the next request
-carries a result for every call and a later reload still shows the decline. The saved history
-cannot tell a call waiting on a person from a frontend tool the reload interrupted, so both come back
-declined. A card for a call an earlier round went past without a result settles to the no-result
-label, as it did when the run was live.
+**A reload the run did not expect settles every open call as not finished.** A round's history is
+saved when its stream ends, before the element asks about a gated call, runs a frontend tool or
+collects a server-side approval, so a reload in that window finds the round's calls with no result
+and no run left to produce one. On restore, every call without a result (other than a checkpointed
+navigating call) is answered the way the client answers an open call before a request: its card
+settles as `interrupted` ("not finished"), and the restored conversation gains the `callNotFinished`
+result with the outcome `interrupted`, so the next request carries a result for every call and a
+later reload shows the same.
+
+It is not declined, although Stop declines an open card. Pressing Stop is a person answering the
+question; a reload answers nothing. The saved history is the same whether the round was waiting on a
+person or on a frontend tool the reload killed, so a decline would be unproven for one and false for
+the other, and "not finished" is true of both. The same goes for a server-side approval left open.
 
 ### Who the stored conversation belongs to (`user-key`)
 
@@ -2030,7 +2055,10 @@ The value is any string that identifies the principal — a user id, an account 
 It joins the storage namespace, so two principals in the same tab cannot reach each other's
 conversation, and **changing it purges everything the previous principal stored**: transcript,
 history drawer index and navigation checkpoints, for this element's namespace only. The tools they
-waived with *Always allow* are forgotten with it, so the next principal is asked again.
+waived with *Always allow* are forgotten with it, so the next principal is asked again, and so is
+[`sharedState`](#host-seams-the-spa-story): whatever the agent last wrote into it for them is cleared rather than
+sent on the next principal's first run, so a host that seeds shared state assigns it again for the
+principal who arrived.
 
 Set it live, from script, as part of signing out or in:
 
@@ -2196,7 +2224,9 @@ async def write_document(ctx: RunContext[AgentDeps], body: str) -> ToolReturn:
 ```
 
 Use this when the agent and the page are editing **the same object** (a document, a form, a
-canvas). Use `registerPageState` when the agent should *ask* for a value or *request* a change —
+canvas). Because it is the page's object rather than the conversation's, **New chat keeps it**; a
+change of [`user-key`](#who-the-stored-conversation-belongs-to-user-key) clears it. Use
+`registerPageState` when the agent should *ask* for a value or *request* a change —
 the tool call is visible in the transcript and can be gated by a confirmation card, which state
 events cannot.
 
