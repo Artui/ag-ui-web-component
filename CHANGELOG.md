@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An empty conversation under `placement="page"` now greets the user, with the
+  composer centred beneath the greeting.** A full-page chat used to open on a
+  blank transcript with the composer at the foot of the screen, which is the
+  layout of a conversation in progress rather than one waiting to start. The
+  page now shows *Hello, {name}* over a centred composer until the conversation
+  has something in it, then lays out as before.
+
+  This changes what any existing `page` host shows on upgrade, which is why it
+  is listed here. **`data-greeting="off"` restores the previous layout.** No
+  other placement changes by default; `embedded` opts in with `data-greeting`,
+  and the corner placements and the sidebar never show it, because a panel
+  opened from a launcher is already mid-task.
+
+  The surface it adds:
+
+  - `user-name` / `userName`, a live attribute for the name. Presentation only:
+    unlike `user-key` it scopes nothing and is never sent. Absent or blank gives
+    *Hello there*.
+  - `greeting` and `greetingNoName` in the string table.
+  - A `greeting` slot and part, so a host can replace or restyle the text; the
+    `empty` slot and `data-starters` still render beneath it.
+  - `--ag-ui-greeting-font` and `--ag-ui-greeting-size`.
+  - `data-empty`, stamped on the element while the conversation is empty, and
+    documented as a styling hook for the chrome around a full-page chat.
+
+  The centring is two equal flexible halves either side of the composer's rows,
+  so the rows stay centred as a draft or an attachment tray grows them, and
+  nothing in the DOM moves: focus, the caret and IME composition are untouched.
+  Every condition in its selectors is held by a Chromium test that fails with
+  that condition removed, since a stylesheet has no coverage to fall back on.
+
 - **Internal restructuring: `ag_ui_chat.ts` is split into modules that each own
   one concern.** The element was one class of more than six thousand lines in
   which a single concern -- the transcript, the run handlers -- was spread over

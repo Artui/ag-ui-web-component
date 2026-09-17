@@ -47,6 +47,13 @@ export interface UiStrings {
   toggleTheme: string;
 
   // ── Messages region ─────────────────────────────────────────────────────────
+  /**
+   * The greeting over an empty conversation under `placement="page"` (or an
+   * `embedded` panel that opted in). Token: `{name}`, the `user-name` attribute.
+   */
+  greeting: string;
+  /** The same greeting when the host named nobody: no `user-name`, or a blank one. */
+  greetingNoName: string;
   /** `aria-label` of the scrolling message log. */
   conversation: string;
   /** The button offering to return to the foot of the transcript. */
@@ -327,6 +334,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   forkRun: "Fork",
   forkedRun: "branched",
 
+  greeting: "Hello, {name}",
+  greetingNoName: "Hello there",
   conversation: "Conversation",
   jumpToLatest: "Jump to latest",
   announceResponding: "Assistant is responding",
