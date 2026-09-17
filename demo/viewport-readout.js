@@ -162,6 +162,15 @@ function start() {
         top: probeStyle.paddingTop,
         bottom: probeStyle.paddingBottom,
       },
+      // What the page is never given. The screen is the whole display in CSS
+      // pixels; the layout viewport is the tallest box the page can ever have,
+      // keyboard or no keyboard. The difference is browser interface, and it
+      // is the answer to "is the empty strip under the panel ours".
+      screen: {
+        height: round(window.screen.height),
+        availHeight: round(window.screen.availHeight),
+        outerHeight: round(window.outerHeight),
+      },
       written: {
         visualViewportHeight: chat?.style.getPropertyValue("--ag-ui-visual-viewport-height") || "",
         visualViewportInsetBottom:
@@ -190,6 +199,7 @@ function start() {
       `units vh ${r.units.vh}  svh ${r.units.svh}  dvh ${r.units.dvh}  lvh ${r.units.lvh}`,
       `rect frame: layout top at ${r.frame.layoutTop}  document top at ${r.frame.documentTop}`,
       `safe-area top ${r.safeArea.top}  bottom ${r.safeArea.bottom}`,
+      `screen h ${r.screen.height}  avail ${r.screen.availHeight}  outer ${r.screen.outerHeight}  browser ui ${r.screen.height - r.clientHeight}`,
       `written vv-height ${r.written.visualViewportHeight || "-"}  inset-top ${r.written.visualViewportInsetTop || "-"}  inset-bottom ${r.written.visualViewportInsetBottom || "-"}`,
       "rects below in the layout viewport's frame",
       line("panel   ", r.panel),
