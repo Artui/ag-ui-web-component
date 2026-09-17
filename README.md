@@ -2849,6 +2849,13 @@ widget measures the hidden band and publishes it as
 `--ag-ui-visual-viewport-inset-bottom`; state this one instead to outrank that
 measurement, or set it to `0px` to opt out of the lift entirely.
 
+`--ag-ui-keyboard-inset-top` does the same at the top. To show a field a
+keyboard would cover, a mobile browser pans the visible area down the page, and
+a panel anchored at the top of the screen (`page`, `full`, `side`, `sidebar`, and
+every placement at phone width) moves down with it. The widget publishes how far
+as `--ag-ui-visual-viewport-inset-top`; state this one to outrank it, or `0px` to
+keep the panel at the top of the page.
+
 `--ag-ui-viewport-height` and `--ag-ui-viewport-width` state the usable box
 outright, for the case where no viewport-percentage length describes it. An
 on-screen keyboard is the one that matters: it changes neither `vh` nor `dvh` nor

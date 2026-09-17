@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { page } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
@@ -25,6 +26,12 @@ const KEYBOARD_PX = 260;
 
 /** A keyboard shallow enough to leave a band taller than the default panel. */
 const SHALLOW_KEYBOARD_PX = 180;
+
+/** How far the browser pans the page down to bring the focused field into view. */
+const PAN_PX = 140;
+
+/** A phone in portrait: below the 600px width where a floating panel becomes the screen. */
+const PHONE = { width: 375, height: 812 } as const;
 
 class FakeVisualViewport extends EventTarget {
   width: number;
@@ -59,6 +66,18 @@ class FakeVisualViewport extends EventTarget {
     this.height = height;
     this.dispatchEvent(new Event("resize"));
   }
+
+  /**
+   * Shrink the visible area and pan it down the layout viewport together, which
+   * is what iOS Safari does when a keyboard opens under a field it has to scroll
+   * into view. It reports the two as separate events.
+   */
+  panTo(offsetTop: number, height: number): void {
+    this.height = height;
+    this.dispatchEvent(new Event("resize"));
+    this.offsetTop = offsetTop;
+    this.dispatchEvent(new Event("scroll"));
+  }
 }
 
 let original: PropertyDescriptor | undefined;
@@ -71,9 +90,11 @@ function installFakeViewport(): FakeVisualViewport {
   return fake;
 }
 
-function mount(placement: string): AgUiChat {
+function mount(placement: string | null): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
-  el.setAttribute("placement", placement);
+  if (placement !== null) {
+    el.setAttribute("placement", placement);
+  }
   document.body.appendChild(el);
   return el;
 }
@@ -260,5 +281,127 @@ describe("the frame an inset is written in (real browser)", () => {
     // And it is held near that edge rather than having fallen to the top of
     // the screen, which a bare upper bound would also accept.
     expect(b.bottom).toBeGreaterThan(visible - 64);
+  });
+});
+
+/**
+ * A visible area the browser has panned down the layout viewport.
+ *
+ * Shrinking is half of what a keyboard does. To show a field the keyboard would
+ * cover, iOS Safari also pans the visual viewport down (its `offsetTop` goes
+ * above zero), while a fixed element stays placed against the top of the layout
+ * viewport. A full-height panel sized to the visible area but anchored at the
+ * layout top then shows only its lower part, from `offsetTop` down, with page
+ * background under it. That is the header and greeting off the top of the
+ * screen and an empty band above the keyboard.
+ *
+ * Only a top-anchored panel needs this. A bottom-anchored one already rises by
+ * the band hidden below, which subtracts `offsetTop`.
+ */
+describe("a visible area the browser has panned (real browser)", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(async () => {
+    for (const el of document.querySelectorAll(ELEMENT_TAG)) {
+      el.remove();
+    }
+    if (original !== undefined) {
+      Object.defineProperty(window, "visualViewport", original);
+    }
+    await page.viewport(1280, 800);
+  });
+
+  const frame = (): Promise<unknown> =>
+    new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+
+  const expectOnTheVisibleBand = (el: AgUiChat, visible: number): void => {
+    const box = el.getBoundingClientRect();
+    expect(box.top).toBeCloseTo(PAN_PX, 0);
+    expect(box.bottom).toBeCloseTo(PAN_PX + visible, 0);
+    // The composer is what the user is typing into, so it is the part that
+    // has to be on screen.
+    const composer = el.shadowRoot?.querySelector(".input-row") as HTMLElement;
+    expect(composer.getBoundingClientRect().bottom).toBeLessThanOrEqual(PAN_PX + visible + 0.5);
+  };
+
+  // Every placement anchored at the top of the screen at desktop width.
+  for (const placement of ["page", "full", "side", "sidebar"]) {
+    it(`moves a ${placement} panel down with the pan`, async () => {
+      const viewport = installFakeViewport();
+      const el = mount(placement);
+      await frame();
+
+      const visible = window.innerHeight - KEYBOARD_PX;
+      viewport.panTo(PAN_PX, visible);
+      await frame();
+
+      expectOnTheVisibleBand(el, visible);
+    });
+  }
+
+  it("moves a sidebar docked left down with the pan", async () => {
+    // Its own inset rule, so its own case.
+    const viewport = installFakeViewport();
+    const el = mount("sidebar");
+    el.setAttribute("data-side", "left");
+    await frame();
+
+    const visible = window.innerHeight - KEYBOARD_PX;
+    viewport.panTo(PAN_PX, visible);
+    await frame();
+
+    expectOnTheVisibleBand(el, visible);
+  });
+
+  // At phone width every placement but embedded becomes the whole screen,
+  // anchored at the top. Its bottom inset was the keyboard lift, but a box
+  // with top, height and bottom all set ignores bottom, so the lift never
+  // moved it.
+  for (const placement of ["floating", "bottom-left", "side", "sidebar", null]) {
+    it(`moves a ${placement ?? "placement-less"} panel down with the pan on a phone`, async () => {
+      await page.viewport(PHONE.width, PHONE.height);
+      const viewport = installFakeViewport();
+      const el = mount(placement);
+      el.setAttribute("data-start-open", "");
+      await frame();
+
+      const visible = window.innerHeight - KEYBOARD_PX;
+      viewport.panTo(PAN_PX, visible);
+      await frame();
+
+      expectOnTheVisibleBand(el, visible);
+    });
+  }
+
+  it("publishes the band above as a number and gives it back", async () => {
+    const viewport = installFakeViewport();
+    const el = mount("page");
+    await frame();
+    expect(el.style.getPropertyValue("--ag-ui-visual-viewport-inset-top")).toBe("");
+
+    viewport.panTo(PAN_PX, window.innerHeight - KEYBOARD_PX);
+    await frame();
+    expect(el.style.getPropertyValue("--ag-ui-visual-viewport-inset-top")).toBe(`${PAN_PX}px`);
+
+    // Keyboard closed: nothing left inline, as with the height and the lift.
+    viewport.panTo(0, window.innerHeight);
+    await frame();
+    expect(el.style.getPropertyValue("--ag-ui-visual-viewport-inset-top")).toBe("");
+  });
+
+  it("lets a host outrank the measured band above", async () => {
+    const viewport = installFakeViewport();
+    const el = mount("page");
+    el.style.setProperty("--ag-ui-keyboard-inset-top", "0px");
+    await frame();
+
+    viewport.panTo(PAN_PX, window.innerHeight - KEYBOARD_PX);
+    await frame();
+
+    // Measured and published regardless, and ignored because the host said so.
+    expect(el.style.getPropertyValue("--ag-ui-visual-viewport-inset-top")).toBe(`${PAN_PX}px`);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
   });
 });

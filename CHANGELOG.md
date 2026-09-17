@@ -43,6 +43,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running continuation, and `AgUiClient.annotatedMessages` is new: the history
   in the form a save writes it, with how each tool call ended.
 
+- **A full-screen panel stays on the visible screen when a keyboard opens under
+  the field.** To show the composer, iOS Safari pans the visible area down the
+  page, and a panel anchored at the top of the screen stayed where it was: sized
+  to the visible height, it showed only its lower part, with the header and the
+  greeting off the top and an empty band above the keyboard. That covered
+  `page`, `full`, `side` and `sidebar`, and at phone width the corner placements
+  too, because they become the whole screen there, and their keyboard lift never
+  moved them: a box with its top, height and bottom all set ignores the bottom.
+  The element now also publishes how far the visible area is panned, as
+  `--ag-ui-visual-viewport-inset-top`, and every panel anchored at the top moves
+  down by it. `--ag-ui-keyboard-inset-top` outranks the measurement, as
+  `--ag-ui-keyboard-inset` does at the bottom; `0px` opts out.
+
 ## [0.39.0] — 2026-09-17
 
 ### Changed

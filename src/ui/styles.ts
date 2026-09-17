@@ -212,6 +212,20 @@ export const STYLES = `
      A host wanting no keyboard lift at all sets --ag-ui-keyboard-inset: 0px. */
   --_keyboard-inset: var(--ag-ui-keyboard-inset, var(--_visual-viewport-inset-bottom));
   --_visual-viewport-inset-bottom: var(--ag-ui-visual-viewport-inset-bottom, 0px);
+  /* How much of the layout viewport is hidden above the visible one: how far
+     the browser panned down to show the field being typed into. Measured and
+     written by the element with the two above, and with the same host knob in
+     front of it.
+
+     A shorter panel anchored at the top needs this as the lift is needed at
+     the bottom. A fixed element stays against the top of the layout viewport
+     while the visible area moves down, so without it the panel shows only its
+     lower part, from the pan down, with its header off the screen and an empty
+     band under it. Every placement whose top edge is the top of the usable
+     box adds it; a corner panel anchored at the bottom does not, because the
+     band below already accounts for the pan. */
+  --_keyboard-inset-top: var(--ag-ui-keyboard-inset-top, var(--_visual-viewport-inset-top));
+  --_visual-viewport-inset-top: var(--ag-ui-visual-viewport-inset-top, 0px);
   --_viewport-width: var(
     --ag-ui-viewport-width,
     calc(100vw - var(--_viewport-inset-left) - var(--_viewport-inset-right))
@@ -348,7 +362,7 @@ export const STYLES = `
 }
 
 :host([placement="side"]) {
-  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
+  --_inset: var(--ag-ui-inset, calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
   --_width: var(--ag-ui-width, 420px);
   --_height: var(--ag-ui-height, var(--_viewport-height));
   --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
@@ -358,7 +372,8 @@ export const STYLES = `
 :host([placement="full"]) {
   --_inset: var(
     --ag-ui-inset,
-    var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)
+    calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right)
+      var(--_viewport-inset-bottom) var(--_viewport-inset-left)
   );
   --_width: var(--ag-ui-width, var(--_viewport-width));
   --_height: var(--ag-ui-height, var(--_viewport-height));
@@ -375,7 +390,8 @@ export const STYLES = `
 :host([placement="page"]) {
   --_inset: var(
     --ag-ui-inset,
-    var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)
+    calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right)
+      var(--_viewport-inset-bottom) var(--_viewport-inset-left)
   );
   --_width: var(--ag-ui-width, var(--_viewport-width));
   --_height: var(--ag-ui-height, var(--_viewport-height));
@@ -441,7 +457,7 @@ export const STYLES = `
   :host([placement=""]:not([data-small-viewport="off"])) {
     --_inset: var(
       --ag-ui-inset,
-      var(--_viewport-inset-top) var(--_viewport-inset-right)
+      calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right)
         calc(var(--_viewport-inset-bottom) + var(--_keyboard-inset))
         var(--_viewport-inset-left)
     );
@@ -471,7 +487,7 @@ export const STYLES = `
    --ag-ui-position: static (and place this element in your own layout) for a
    host-managed push instead. */
 :host([placement="sidebar"]) {
-  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
+  --_inset: var(--ag-ui-inset, calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
   --_width: var(--ag-ui-width, 420px);
   --_height: var(--ag-ui-height, var(--_viewport-height));
   --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
@@ -480,7 +496,11 @@ export const STYLES = `
 }
 
 :host([placement="sidebar"][data-side="left"]) {
-  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) auto var(--_viewport-inset-bottom) var(--_viewport-inset-left));
+  --_inset: var(
+    --ag-ui-inset,
+    calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) auto var(--_viewport-inset-bottom)
+      var(--_viewport-inset-left)
+  );
 }
 
 /* The docked panel is pinned to the edge it docks against rather than filling

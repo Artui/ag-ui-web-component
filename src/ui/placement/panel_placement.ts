@@ -655,6 +655,7 @@ export class PanelPlacement {
     if (Math.abs(visual.height - window.innerHeight) < 1) {
       this.#host.element.style.removeProperty("--ag-ui-visual-viewport-height");
       this.#host.element.style.removeProperty("--ag-ui-visual-viewport-inset-bottom");
+      this.#host.element.style.removeProperty("--ag-ui-visual-viewport-inset-top");
       return;
     }
     this.#host.element.style.setProperty(
@@ -671,6 +672,16 @@ export class PanelPlacement {
     this.#host.element.style.setProperty(
       "--ag-ui-visual-viewport-inset-bottom",
       `${Math.max(0, Math.round(hidden))}px`,
+    );
+    // And what is hidden above it. To show a field the keyboard would cover, a
+    // browser pans the visual viewport down the layout one, and a fixed panel
+    // anchored at the top stays at the layout top: sized to the visible height,
+    // it then shows only its lower part, from the pan down, with its header off
+    // the screen and page background under it. Never negative, for the same
+    // reason as the band below.
+    this.#host.element.style.setProperty(
+      "--ag-ui-visual-viewport-inset-top",
+      `${Math.max(0, Math.round(visual.offsetTop))}px`,
     );
   }
 
