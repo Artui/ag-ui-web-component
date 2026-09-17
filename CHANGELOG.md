@@ -80,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Which storage keys are the element's -- the namespace it claims in the
     document, the keys its layout preferences live under, and the built-in
     conversation store scoped to them -- is `StorageScope` in `src/core/`.
+  - The answer streaming into its bubble is `AnswerStream` in
+    `src/ui/transcript/`, a delegated sub-agent's progress is
+    `SubAgentProgress` in `src/ui/progress/`, and the registry of activity
+    renderers and the blocks they drew is `ActivityRegistry` in `src/core/`.
 
   Nothing a consumer can see changes. The emitted declarations are
   byte-identical to the previous release apart from the new internal modules,
