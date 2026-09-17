@@ -81,6 +81,8 @@ export interface UiStrings {
   noResult: string;
   /** Tool-result content when the user declines a confirmed action. */
   declinedAction: string;
+  /** Tool-result content (and card text) when `confirmPredicate` threw, so the call was refused. */
+  confirmCheckFailed: string;
   /** A navigating tool's card text while the page reloads. */
   navigating: string;
   /** Notice shown when the server replaced the conversation wholesale. */
@@ -349,6 +351,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   connectionLost: "Connection lost",
   noResult: "No result returned.",
   declinedAction: "User declined the action.",
+  confirmCheckFailed:
+    "Not run: the check that decides whether this action needs the user's confirmation failed.",
   navigating: "Navigating…",
   historyReplaced:
     "The server replaced this conversation's history. Reload to see the updated transcript.",

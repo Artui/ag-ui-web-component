@@ -231,6 +231,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transitions, which is why the unit tests of the same calls passed; the new
   tests are in Chromium.
 
+- **A new `user-key` now gets its own confirmation cards.** A tool one principal
+  waived with *Always allow* kept running without a card for whoever signed in
+  next in the same tab, because the waiver lives in the element's memory rather
+  than in the stored conversation that changing `user-key` purges. `user-key`
+  exists because a sign-out is a navigation inside one tab, not a remount, so the
+  element outlives the person who clicked -- and the next person's destructive
+  calls ran on that click, with nothing on screen to say anyone had been asked.
+
+  Changing the key, or removing it, now forgets every waiver along with the
+  transcript. The first key to arrive keeps them, for the same reason it keeps
+  the conversation on screen: it names the user who was already there.
+
+- **A `confirmPredicate` that throws now refuses the call, and the run carries
+  on.** A throw, or a rejected promise, used to end the whole run on an error
+  bubble quoting the host's own message, and left that call's tool card reading
+  "running..." for good, because dispatch had already taken the card out of the
+  sweep that settles leftovers when a run ends. The handler did not run, but
+  nothing on screen said so and the agent was never told.
+
+  The call now fails closed: no confirmation card, no handler, the tool card
+  settles as declined, and the agent receives the new `confirmCheckFailed`
+  string as the result and goes on to its next round, as it does after a
+  decline. It is refused rather than put to a card because for a tool with no
+  `x-destructive` flag the predicate is the only guard, and one click would run
+  what the host's policy could not vouch for. The error is reported with
+  `console.warn`, as a failed `render` already is, and is not sent to the
+  endpoint: unlike a handler's message, it was never written for the model.
+
+- **An `approvalRenderer` that throws now hands the decision to the built-in
+  approval card.** A throw, or a rejected promise, used to end the run on an
+  error bubble quoting the host's message without ever answering the server's
+  interrupt, and the sweep that settles leftover cards at the end of a run then
+  marked the gated call a green "done" -- for a call that never ran and that
+  nobody had been asked about. One failing interrupt took every other interrupt
+  in its batch down with it.
+
+  The renderer decides how the question looks, not whether it is asked, so it
+  now falls back to the built-in card for that interrupt, with a `console.warn`
+  naming the interrupt, the way a failed `render` falls back to the default.
+  Nothing runs without a click, and the run carries on as if no renderer had
+  been set. The exception is a rejection after the signal has fired, which is
+  how a renderer is expected to honour Stop: that wait resolves as denied, as
+  the built-in card does on the same signal, with no card drawn and no warning.
+
 ## [0.38.0] — 2026-09-14
 
 ### Changed

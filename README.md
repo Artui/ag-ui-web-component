@@ -680,7 +680,10 @@ Whether a call is gated is decided in this order:
 1. If `chat.autoConfirm === true`, the call **never** prompts (an "autopilot" toggle).
 2. Else if `chat.confirmPredicate` is set, its boolean return is authoritative — given the tool
    name + parsed args it decides per-call (so one tool can be instant for some args and confirmed
-   for others, which a static flag can't express).
+   for others, which a static flag can't express). **A predicate that throws or rejects refuses
+   the call**: no card, the handler does not run, the tool card settles as declined, and the agent
+   gets the `confirmCheckFailed` string as the result and carries on, as after a decline. The
+   error goes to the console, never to the endpoint.
 3. Else if the user has waived this tool name for the session, the call runs.
 4. Else the element falls back to [`isDestructive(parameters)`](src/tools/is_destructive.ts),
    which reads the `x-destructive` JSON-Schema flag.
@@ -700,7 +703,10 @@ The offer and the allowlist sit on the same path, so there is no dead button eit
 
 The waiver is **per tool name and per element**, held in memory and never persisted. A session
 decision that outlived the tab would be a permanent grant made by one click — which is what
-`autoConfirm` already exists to say deliberately. It is cleared when the element goes away.
+`autoConfirm` already exists to say deliberately. It is cleared when the element goes away, and
+when [`user-key`](#who-the-stored-conversation-belongs-to-user-key) changes hands: one person's
+*Always allow* is not the next person's, and a sign-out in the same tab does not remount anything.
+The first key to arrive keeps it, for the same reason it keeps the conversation.
 
 AG-UI has no built-in risk flag, so destructiveness is carried as a JSON-Schema extension at the
 **schema root**: `parameters["x-destructive"] = true` (use the exported `X_DESTRUCTIVE_KEY`
@@ -800,6 +806,12 @@ concurrently**, so a host that can only ask one thing at a time should queue ins
 chat.approvalRenderer = (request, { signal }) =>
   myConfirmDialog(request.message ?? `Run ${request.toolName}?`, { signal });
 ```
+
+**A renderer that throws or rejects falls back to the built-in card** for that interrupt, with a
+`console.warn` naming it. The renderer decides how the question looks, not whether it is asked, so
+nothing runs without a click and the run carries on as if no renderer were set. The one exception
+is a rejection after the signal fired, which is how a renderer is expected to honour Stop: that
+wait resolves as denied, as the built-in card does on the same signal, with no card and no warning.
 
 ### Asking the user a question (`ask_user`)
 
@@ -2005,7 +2017,8 @@ data, so treat that as the default and turn it off:
 The value is any string that identifies the principal — a user id, an account id, a hash of one.
 It joins the storage namespace, so two principals in the same tab cannot reach each other's
 conversation, and **changing it purges everything the previous principal stored**: transcript,
-history drawer index and navigation checkpoints, for this element's namespace only.
+history drawer index and navigation checkpoints, for this element's namespace only. The tools they
+waived with *Always allow* are forgotten with it, so the next principal is asked again.
 
 Set it live, from script, as part of signing out or in:
 

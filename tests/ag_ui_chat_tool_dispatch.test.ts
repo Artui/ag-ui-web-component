@@ -9,7 +9,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ELEMENT_TAG } from "../src/constants.js";
+import { ELEMENT_TAG, SUBMIT_EVENT } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
@@ -206,5 +206,289 @@ describe("a frontend tool handler that throws", () => {
     expect(toolMessage?.content).toBe(
       "Error: PUT https://internal.example/records/7?sig=abc failed",
     );
+  });
+});
+
+describe("an Always allow waiver and the principal who granted it", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  /**
+   * Mount as `userKey`, with one destructive tool the run calls once per send,
+   * and waive it with Always allow on the first card. Returns the element and
+   * how many times the handler ran.
+   */
+  async function waivedBy(userKey: string | null): Promise<{ el: AgUiChat; ran: () => number }> {
+    let calls = 0;
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    if (userKey !== null) {
+      el.setAttribute("user-key", userKey);
+    }
+    let round = 0;
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        if (round === 0) {
+          emit.toolCall(`call-${calls}`, "delete_record", { id: 7 });
+        }
+        round += 1;
+        emit.runEnd();
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    // A fresh round counter per send, so every send makes exactly one call.
+    el.addEventListener(SUBMIT_EVENT, () => {
+      round = 0;
+    });
+    document.body.appendChild(el);
+    el.registerTool({
+      name: "delete_record",
+      description: "Delete a record",
+      parameters: { type: "object", "x-destructive": true },
+      handler: () => {
+        calls += 1;
+        return "deleted";
+      },
+    });
+
+    await send(el, "delete record 7");
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--always")?.click();
+    await flush();
+    expect(calls).toBe(1);
+    return { el, ran: () => calls };
+  }
+
+  it("asks the next principal again after user-key changes hands", async () => {
+    // One person's "stop asking me" is not the next person's. `user-key` is how
+    // a host says a different principal is now in this tab, and a waiver that
+    // carried across would run the second user's destructive call on the
+    // first user's click.
+    const { el, ran } = await waivedBy("alice");
+
+    el.setAttribute("user-key", "bob");
+    await flush();
+    await send(el, "delete record 7");
+
+    expect(ran()).toBe(1);
+    expect(shadow(el).querySelector(".confirm")).not.toBeNull();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
+    await flush();
+  });
+
+  it("asks again after a sign-out that drops user-key", async () => {
+    // Removing the attribute is a documented sign-out, and it purges the stored
+    // conversation the same way a new key does; the waiver goes with it.
+    const { el, ran } = await waivedBy("alice");
+
+    el.removeAttribute("user-key");
+    await flush();
+    await send(el, "delete record 7");
+
+    expect(ran()).toBe(1);
+    expect(shadow(el).querySelector(".confirm")).not.toBeNull();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
+    await flush();
+  });
+
+  it("keeps the waiver when user-key first arrives", async () => {
+    // The first key names the user who was already there -- an auth handshake
+    // resolving after mount -- which is why the conversation on screen moves
+    // into their namespace rather than being purged. The waiver is theirs by
+    // the same reasoning, so asking again would contradict the adoption.
+    const { el, ran } = await waivedBy(null);
+
+    el.setAttribute("user-key", "alice");
+    await flush();
+    await send(el, "delete record 7");
+
+    expect(ran()).toBe(2);
+    expect(shadow(el).querySelector(".confirm")).toBeNull();
+  });
+});
+
+describe("a confirmPredicate that throws", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  const THROWS = {
+    synchronously: () => {
+      throw new Error("policy service unreachable at 10.0.0.7");
+    },
+    "by rejecting": () => Promise.reject(new Error("policy service unreachable at 10.0.0.7")),
+  };
+
+  it.each(Object.entries(THROWS))(
+    "refuses the call and carries on when it throws %s",
+    async (_how, predicate) => {
+      // The predicate is documented as authoritative, and for a tool with no
+      // `x-destructive` flag it is the only thing standing between the model and
+      // the handler. A guard that cannot answer has not said the call is safe.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const handler = vi.fn(() => "sent");
+      let round = 0;
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      const handle = makeFakeAgent({
+        script: (emit) => {
+          emit.runStart();
+          if (round === 0) {
+            emit.toolCall("call-1", "send_invoice", { id: 7 });
+          }
+          round += 1;
+          emit.runEnd();
+        },
+      });
+      el.agentFactory = () => handle.agent;
+      document.body.appendChild(el);
+      el.confirmPredicate = predicate;
+      el.registerTool({
+        name: "send_invoice",
+        description: "Send an invoice",
+        parameters: { type: "object" },
+        handler,
+      });
+
+      await send(el, "send invoice 7");
+
+      const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+      expect(card?.getAttribute("data-status")).toBe("declined");
+      expect(handler).not.toHaveBeenCalled();
+      // Nobody was asked, so the card must not say a person declined.
+      expect(card?.hasAttribute("data-decision")).toBe(false);
+      expect(shadow(el).querySelector(".confirm")).toBeNull();
+      // The run went on to its next round with the refusal as the tool result,
+      // as it does after a decline, rather than ending on an error bubble.
+      expect(handle.runParams).toHaveLength(2);
+      expect(shadow(el).querySelector(".message--failed")).toBeNull();
+      const result = handle.messages.find((message) => message.role === "tool");
+      expect(result?.content).toBe(card?.querySelector(".tool-call-result")?.textContent);
+      // The host's own message is a detail of its infrastructure: it goes to the
+      // console, never to the endpoint or the model.
+      expect(result?.content).not.toContain("10.0.0.7");
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("confirmPredicate"),
+        expect.objectContaining({ message: "policy service unreachable at 10.0.0.7" }),
+      );
+      warn.mockRestore();
+    },
+  );
+});
+
+describe("an approvalRenderer that throws", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  /** A run that defers one gated server call, and settles it on the resume. */
+  function mountGated(): { el: AgUiChat; handle: ReturnType<typeof makeFakeAgent> } {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    const handle = makeFakeAgent({
+      script: (emit, params) => {
+        emit.runStart();
+        if (params.resume === undefined) {
+          emit.toolCall("call-1", "delete_thing", { target: "x" });
+          emit.interrupt([
+            {
+              id: "int-call-1",
+              reason: "tool_call",
+              toolCallId: "call-1",
+              message: "Delete x?",
+            } as never,
+          ]);
+          return;
+        }
+        for (const answer of params.resume as { interruptId: string; status: string }[]) {
+          if (answer.status === "resolved") {
+            emit.toolResult("call-1", "deleted x");
+          }
+        }
+        emit.runEnd();
+      },
+    });
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    return { el, handle };
+  }
+
+  const FAILS = {
+    synchronously: () => {
+      throw new Error("dialog library not loaded");
+    },
+    "by rejecting": () => Promise.reject(new Error("dialog library not loaded")),
+  };
+
+  it.each(Object.entries(FAILS))(
+    "puts the decision to the built-in card when it fails %s",
+    async (_how, renderer) => {
+      // The renderer is presentation, not a guard. When it cannot draw, the
+      // question still has to be asked, and the built-in card is the one that
+      // is always there to ask it.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const { el, handle } = mountGated();
+      el.approvalRenderer = renderer as never;
+
+      await send(el, "delete x");
+      await flush();
+
+      const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+      expect(card?.querySelector(".tool-call-approval .approval")).not.toBeNull();
+      // Still waiting on a person: not settled, not a failed run, nothing resumed.
+      expect(card?.getAttribute("data-status")).toBe("deferred");
+      expect(shadow(el).querySelector(".message--failed")).toBeNull();
+      expect(handle.runParams).toHaveLength(1);
+
+      card?.querySelector<HTMLButtonElement>(".approval-btn--approve")?.click();
+      await flush();
+
+      // The run carries on exactly as it would with no renderer set.
+      expect(handle.runParams[1]?.resume).toEqual([
+        { interruptId: "int-call-1", status: "resolved", payload: { approved: true } },
+      ]);
+      expect(card?.getAttribute("data-status")).toBe("done");
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("approvalRenderer"),
+        expect.objectContaining({ message: "dialog library not loaded" }),
+      );
+      warn.mockRestore();
+    },
+  );
+
+  it("draws no card for a wait that was already abandoned", async () => {
+    // A renderer that honours its signal the conventional way rejects once it
+    // fires. By then the user has pressed Stop, so a card asking them to decide
+    // would be a question about a run they just ended: the wait resolves as not
+    // approved, the way the built-in card resolves on the same signal.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { el, handle } = mountGated();
+    el.approvalRenderer = (_request, { signal }) =>
+      new Promise<boolean>((_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () => reject(new DOMException("The wait was abandoned.", "AbortError")),
+          { once: true },
+        );
+      });
+
+    await send(el, "delete x");
+    const stop = shadow(el).querySelector<HTMLButtonElement>(".send");
+    expect(stop?.dataset["state"]).toBe("running");
+    stop?.click();
+    await flush();
+    await flush();
+
+    const card = shadow(el).querySelector<HTMLElement>(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("declined");
+    expect(shadow(el).querySelector(".approval")).toBeNull();
+    expect(handle.runParams).toHaveLength(1);
+    // Rejecting on abort is what the signal asks a renderer to do, not a fault.
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

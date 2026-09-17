@@ -69,11 +69,13 @@ export interface ToolDispatchHost {
 export class ToolDispatch {
   readonly #host: ToolDispatchHost;
   /**
-   * Tool names the user waived confirmation for, for the life of this element.
+   * Tool names the user waived confirmation for, for the life of this element
+   * or until the principal changes, whichever comes first.
    *
    * Per instance and never persisted: a session decision that outlived the tab
    * would be a permanent grant made by one click, which is the thing
-   * `autoConfirm` already exists to say deliberately. Cleared with the element.
+   * `autoConfirm` already exists to say deliberately. Cleared with the element,
+   * and by {@link forgetWaivers} when the host names a different principal.
    */
   readonly #sessionApproved = new Set<string>();
   // The page the current round's context describes, captured when that context
@@ -83,6 +85,19 @@ export class ToolDispatch {
 
   constructor(host: ToolDispatchHost) {
     this.#host = host;
+  }
+
+  /**
+   * Forget every tool the user waived confirmation for.
+   *
+   * A waiver is one person's click, and it is only ever that person's to give.
+   * `user-key` exists because a logout is a navigation inside one tab rather
+   * than a remount, so the element outlives the principal who clicked Always
+   * allow -- and without this the next one's destructive calls would run on the
+   * previous one's say-so, with no card to show that anyone was asked.
+   */
+  forgetWaivers(): void {
+    this.#sessionApproved.clear();
   }
 
   /**
@@ -165,6 +180,16 @@ export class ToolDispatch {
       return { content: `Error: ${message}`, error: message, outcome: TOOL_OUTCOME.FAILED };
     }
     const rule = await this.#confirmationRule(call, tool);
+    if (rule === "unanswered") {
+      // Settled as a refusal and returned as one, so the run carries on to its
+      // next round the way it does after a decline and the agent can say what
+      // happened. Not recorded as a decision: no person was asked, and "declined
+      // by you" would be a claim about someone who never saw a card.
+      const message = this.#host.strings().confirmCheckFailed;
+      card.settle(TOOL_CALL_STATUS.DECLINED, message);
+      this.#host.transcript.showPending();
+      return { content: message, outcome: TOOL_OUTCOME.DENIED };
+    }
     if (rule !== null) {
       const request: ConfirmationRequest = { toolName: call.name, args: call.args };
       const confirmText = tool.parameters[X_CONFIRM_KEY];
@@ -305,29 +330,35 @@ export class ToolDispatch {
           request.args = card.args;
         }
         card?.mark(TOOL_CALL_STATUS.DEFERRED);
-        // A host-supplied renderer takes full control of the approval UI. The
-        // built-in card renders into the gated call's own card, falling back to
-        // the answer group when the interrupt names no call we hold one for.
+        // The built-in card renders into the gated call's own card, falling back
+        // to the answer group when the interrupt names no call we hold one for.
+        const builtIn = (): Promise<boolean> =>
+          requestApproval(card?.approvalSlot ?? this.#host.transcript.ensureGroup(), request, {
+            signal,
+            strings: this.#host.strings(),
+            ...(editable
+              ? {
+                  onEdit: (args: Record<string, unknown>) => {
+                    editedArgs = args;
+                  },
+                }
+              : {}),
+          });
+        // A host-supplied renderer takes full control of the approval UI.
         const renderer = this.#host.approvalRenderer();
-        const approved =
-          renderer !== null
-            ? // Called on the element, as `this.approvalRenderer(...)` always was.
-              await renderer.call(this.#host.element, request, { signal })
-            : await requestApproval(
-                card?.approvalSlot ?? this.#host.transcript.ensureGroup(),
-                request,
-                {
-                  signal,
-                  strings: this.#host.strings(),
-                  ...(editable
-                    ? {
-                        onEdit: (args: Record<string, unknown>) => {
-                          editedArgs = args;
-                        },
-                      }
-                    : {}),
-                },
-              );
+        let approved: boolean;
+        if (renderer === null) {
+          approved = await builtIn();
+        } else {
+          // Awaited here rather than inside a helper, so an answering renderer
+          // takes exactly as many turns to be heard as it always did.
+          try {
+            // Called on the element, as `this.approvalRenderer(...)` always was.
+            approved = await renderer.call(this.#host.element, request, { signal });
+          } catch (error) {
+            approved = await this.#afterRendererFailed(error, signal, interrupt.id, builtIn);
+          }
+        }
         // Same annotation as the client-side confirmation gate. Without it the
         // two gates read differently for the same act: a locally-confirmed call
         // said who let it through and a server-gated one said nothing, which is
@@ -362,7 +393,45 @@ export class ToolDispatch {
   }
 
   /**
-   * Which rule gates `call`, or `null` when it runs straight through.
+   * Answer an interrupt whose host renderer threw or rejected instead of
+   * answering: put it to the built-in card.
+   *
+   * The renderer is presentation, not a guard: it decides how the question
+   * looks, never whether it is asked. Uncaught, one failure rejected the whole
+   * batch, so the run ended on an error bubble quoting the host's message, the
+   * server was never answered, and the end-of-run sweep settled the gated card
+   * as a green "done" for a call that never ran. The built-in card still puts
+   * the decision to a person, so nothing runs without a click, and the run
+   * carries on as if no renderer had been set. Reported the way a failed
+   * `render` is, and for the same reason: survived is not the same as findable.
+   *
+   * Except when the wait was already abandoned. A renderer honouring its signal
+   * rejects once a Stop fires it, which is the signal working rather than the
+   * renderer failing, and a card drawn then would ask about a run the user just
+   * ended. So it resolves as not approved, which is what the built-in card
+   * resolves on the same abort, and says nothing.
+   */
+  #afterRendererFailed(
+    error: unknown,
+    signal: AbortSignal,
+    interruptId: string,
+    builtIn: () => Promise<boolean>,
+  ): Promise<boolean> {
+    if (signal.aborted) {
+      return Promise.resolve(false);
+    }
+    // Named by interrupt rather than by tool: a batch can gate several calls of
+    // one tool, and the id is the one thing that tells them apart.
+    console.warn(
+      `ag-ui-chat: approvalRenderer failed for interrupt ${interruptId}, so the built-in approval card asks instead`,
+      error,
+    );
+    return builtIn();
+  }
+
+  /**
+   * Which rule gates `call`, or `null` when it runs straight through, or
+   * `"unanswered"` when the host's predicate threw instead of deciding.
    *
    * The rule, rather than a bare boolean, because it decides whether the user
    * may *waive* the prompt for the rest of the session. Only the default
@@ -378,10 +447,30 @@ export class ToolDispatch {
     }
     const predicate = this.#host.confirmPredicate();
     if (predicate !== null) {
-      // Called on the element, as `this.confirmPredicate(...)` always was.
-      return (await predicate.call(this.#host.element, call.name, call.args)) === true
-        ? "predicate"
-        : null;
+      try {
+        // Called on the element, as `this.confirmPredicate(...)` always was.
+        return (await predicate.call(this.#host.element, call.name, call.args)) === true
+          ? "predicate"
+          : null;
+      } catch (error) {
+        // A guard that cannot answer has not said the call is safe, and for a
+        // tool with no `x-destructive` flag the predicate is the only guard
+        // there is. So it fails closed: the call is refused outright, rather
+        // than run, and rather than put to a card whose one click would run
+        // what the host's own policy could not vouch for.
+        //
+        // Uncaught, the throw ended the run on an error bubble quoting the
+        // host's message and left this call's card reading "running…" for
+        // good, since dispatch had already taken it out of the settle sweep.
+        // The message goes to the console instead, where a render failure is
+        // reported, and not on to the endpoint: unlike a handler's, it was
+        // never written for the model to read.
+        console.warn(
+          `ag-ui-chat: confirmPredicate failed for tool ${call.name}, so the call was refused`,
+          error,
+        );
+        return "unanswered";
+      }
     }
     if (this.#sessionApproved.has(call.name)) {
       return null;
@@ -420,10 +509,12 @@ function confirmPhrase(interrupt: Interrupt): string | undefined {
 }
 
 /**
- * Why a client tool call is gated behind the confirmation card.
+ * Why a client tool call is gated behind the confirmation card, or refused
+ * before one is drawn.
  *
  * Only `"destructive"` -- the default `x-destructive` gate -- may be waived for
  * the session. `confirmPredicate` is documented as authoritative, so a call it
- * gates keeps asking.
+ * gates keeps asking. `"unanswered"` is a predicate that threw instead of
+ * answering, and the call it was asked about is refused without a card.
  */
-type ConfirmationRule = "destructive" | "predicate";
+type ConfirmationRule = "destructive" | "predicate" | "unanswered";

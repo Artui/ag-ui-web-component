@@ -1598,6 +1598,11 @@ export class AgUiChat extends HTMLElement {
     }
     SessionStorageStore.purge(previous);
     this.#rescopeStore(next);
+    // An Always allow is the previous principal's decision too, and it lives in
+    // memory rather than in the store just purged, so it has to be forgotten
+    // here or it outlives them. The adoption above keeps it, for the same
+    // reason it keeps the conversation: the same person is still there.
+    this.#dispatch.forgetWaivers();
     // The transcript on screen, the run in flight and the replayed history all
     // belong to the principal who just left. Purging storage without clearing
     // these would leave the previous user's conversation visible to the new one.
