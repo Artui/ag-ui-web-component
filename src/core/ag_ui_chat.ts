@@ -1,4 +1,4 @@
-import type { Context, Tool } from "@ag-ui/core";
+import type { Context, Message, Tool } from "@ag-ui/core";
 import {
   ATTACHMENT_EVENT,
   CHART_ACTIVITY_TYPE,
@@ -78,6 +78,7 @@ import type { ActivityRenderer } from "./activity_renderer.js";
 import { AgUiClient } from "./agui_client.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type AttachmentRef } from "./attachment.js";
+import type { ClientSeed } from "./client_seed.js";
 import {
   type ClientConversationStore,
   type NavigationCheckpoint,
@@ -816,23 +817,18 @@ export class AgUiChat extends HTMLElement {
       actions: this.#actions,
       activities: this.#activities,
       tools: this.#tools,
-      dispatch: this.#dispatch,
-      runHandlers: this.#runHandlers,
       input: this.#input,
       hint: this.#composerHint,
       strings: () => this.#strings,
       conversationStore: () => this.conversationStore,
       formatRelativeTime: () => this.formatRelativeTime,
       navigationResult: () => this.navigationResult,
-      agentFactory: () => this.agentFactory,
-      trustedOrigins: () => this.trustedOrigins,
-      requestHeaders: () => this.#requestHeaders(),
       headersFor: (url) => this.#headersFor(url),
       requestCredentials: () => this.#requestCredentials(),
-      credentialsOption: () => this.#credentialsOption(),
       appendMessage: (role, content) => this.appendMessage(role, content),
       autoGrow: () => autoGrow(this.#input),
       ensureClient: () => this.#ensureClient(),
+      buildClient: (seed) => this.#buildClient(seed),
       cancelRun: () => this.#cancelRun(),
       resetState: () => this.#resetState(),
       setRunning: (running) => this.#setRunning(running),
@@ -1730,6 +1726,12 @@ export class AgUiChat extends HTMLElement {
   /** Drop the in-memory run + transcript, leaving the thread id untouched. */
   #resetState(): void {
     this.#client = null;
+    // Every path here has just cancelled the run, but a cancelled run ends
+    // later: once its request closes, or once a host tool's handler returns.
+    // Whatever it says then is about the conversation being cleared, so it must
+    // not draw into this one, put a new run's Stop back to Send, or report the
+    // new conversation's tools as its own.
+    this.#runHandlers.detach();
     this.#clearTranscript();
     this.#history.forgetRestored();
     // The composer's own history goes with the conversation it was typed
@@ -2282,6 +2284,9 @@ export class AgUiChat extends HTMLElement {
     this.#renderQueued();
     this.#decision.abort();
     this.#client?.cancel();
+    // A checkpoint continuation is as much the run in flight -- the composer
+    // offers Stop for it -- but it runs on a client the element does not hold.
+    this.#history.stopContinuation();
   }
 
   /**
@@ -2502,34 +2507,61 @@ export class AgUiChat extends HTMLElement {
 
   #ensureClient(): AgUiClient {
     if (this.#client === null) {
-      const agent = this.agentFactory({
+      this.#client = this.#buildClient({
         endpoint: this.endpoint,
-        headers: this.#requestHeaders(),
-        // Live getter: the client is built once and cached, but a rotated
-        // token must still reach every request — the factory's fetch wrapper
-        // re-reads this on each call.
-        getHeaders: () => this.#requestHeaders(),
-        trustedOrigins: this.trustedOrigins,
-        ...this.#credentialsOption(),
-        threadId: this.#history.threadId,
         initialMessages: this.#history.restored,
-        initialState: this.#sharedState,
-      });
-      this.#client = new AgUiClient({
-        agent,
-        handlers: this.#runHandlers.forClient(),
-        getTools: () => this.#tools.advertise(),
-        getContext: () => this.#dispatch.buildContext(),
-        executeTool: (call) => this.#dispatch.execute(call),
-        resolveInterrupts: (interrupts) => this.#dispatch.resolveInterrupts(interrupts),
-        onPersist: (messages) =>
-          this.conversationStore.saveMessages(this.#history.threadId, messages),
-        onStateChanged: (state) => this.#onSharedStateChanged(state),
-        connectionLostMessage: this.#strings.connectionLost,
-        maxToolRounds: readMaxToolRounds(this),
+        persist: true,
       });
     }
     return this.#client;
+  }
+
+  /**
+   * Build a client for the conversation on screen: the one construction shared
+   * by the conversation's own client and every checkpoint continuation.
+   *
+   * One rather than two, because two drifted. Shared state and the tool-round
+   * bound both arrived after continuations did, and both were wired into the
+   * conversation's client alone -- so a resumed run sent an empty state, never
+   * told the host it changed one, and stopped at the built-in bound on a page
+   * that had raised it. What genuinely differs is the seed.
+   */
+  #buildClient(seed: ClientSeed): AgUiClient {
+    // Fixed when the client is built rather than read at each save. A run
+    // outlives a reset -- a stopped run makes its last save once its request
+    // closes -- and read live, that save landed after New chat had moved the
+    // active thread on, filing the conversation being left under the new one.
+    const threadId = this.#history.threadId;
+    const agent = this.agentFactory({
+      endpoint: seed.endpoint,
+      headers: this.#requestHeaders(),
+      // Live getter: the client is built once and cached, but a rotated
+      // token must still reach every request — the factory's fetch wrapper
+      // re-reads this on each call.
+      getHeaders: () => this.#requestHeaders(),
+      trustedOrigins: this.trustedOrigins,
+      ...this.#credentialsOption(),
+      threadId,
+      initialMessages: seed.initialMessages,
+      initialState: this.#sharedState,
+    });
+    return new AgUiClient({
+      agent,
+      handlers: this.#runHandlers.forClient(),
+      getTools: () => this.#tools.advertise(),
+      getContext: () => this.#dispatch.buildContext(),
+      executeTool: (call) => this.#dispatch.execute(call),
+      resolveInterrupts: (interrupts) => this.#dispatch.resolveInterrupts(interrupts),
+      ...(seed.persist
+        ? {
+            onPersist: (messages: readonly Message[]) =>
+              this.conversationStore.saveMessages(threadId, messages),
+          }
+        : {}),
+      onStateChanged: (state) => this.#onSharedStateChanged(state),
+      connectionLostMessage: this.#strings.connectionLost,
+      maxToolRounds: readMaxToolRounds(this),
+    });
   }
 
   /** Mirror the agent's applied state and tell the host it moved. */

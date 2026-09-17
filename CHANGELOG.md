@@ -150,6 +150,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stop ends a checkpoint continuation.** While a resumed or forked run was
+  streaming, the composer offered Stop and pressing it did nothing; New chat,
+  switching conversations and removing the element left it streaming too, so the
+  rest of the resumed answer drew itself into whatever came next. The element
+  cancelled only the conversation's own client, and a continuation runs on a
+  client of its own. Every path that stops the conversation's run now stops a
+  continuation as well.
+
+- **A run cut off by New chat or a thread switch stays with the conversation it
+  belonged to.** Cancelling closes the request, but the run finishes a moment
+  later, and by then the element had moved on. So its "Stopped" note appeared at
+  the top of the new conversation; its truncated exchange was saved under the new
+  thread, which the drawer then listed as a second copy of the old one; and its
+  `ag-ui-run-finished` reported a server-side tool as the host's own, because the
+  record of what streamed back had been cleared with the transcript. Where a host
+  tool's handler was still running -- which cancelling cannot interrupt -- and the
+  user sent the next message before it returned, the old run's settle also put the
+  new run's Stop button back to Send, and one event carried both runs' tools while
+  the new run's own reported none.
+
+  Each conversation's runs now keep their bookkeeping apart. A run left behind by
+  a reset still reports what it ran, since a stopped run may already have written
+  something, and saves to the thread it was started in; nothing else it does
+  reaches the conversation that replaced it.
+
+- **A resumed or forked run now carries the page's shared state, reports the
+  state it changes, and stops at `data-max-tool-rounds`.** A checkpoint
+  continuation sent an empty state object, so an agent whose tools read the
+  page's state resumed without it; a `STATE_SNAPSHOT` it streamed never reached
+  `ag-ui-state`; and on a page that had raised the tool-round bound, the resumed
+  half of a form-filling task still stopped at ten.
+
+  The continuation's client was built separately from the conversation's own,
+  and both options arrived after continuations did, so each was wired into one
+  construction only. There is now one construction, and a continuation differs
+  from the conversation's client only in its endpoint, its empty seed, and in
+  not writing the conversation store -- which it never did, deliberately: its
+  agent holds only the new turn and its answer, so saving them would replace the
+  stored conversation with its last exchange.
+
 - **Text a user or a server wrote could rewrite the label it was put into.**
   Every string-table template was filled with `template.replace("{token}",
   value)`, and a string replacement interprets dollar patterns in the value: `$&`

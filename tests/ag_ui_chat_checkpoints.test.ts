@@ -1,10 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ELEMENT_TAG } from "../src/constants.js";
+import { ELEMENT_TAG, STATE_EVENT } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
+import type { HttpAgentOptions as AgentOptions } from "../src/core/create_http_agent.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import type { RunRow } from "../src/core/run_index.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
-import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
+import { type Emit, type FakeAgentHandle, makeFakeAgent } from "./helpers/fake_agent.js";
 
 beforeAll(() => {
   defineAgUiChat();
@@ -569,5 +570,217 @@ describe("the two overlapping surfaces", () => {
 
     expect(shadow(el).querySelector<HTMLElement>(".checkpoints")?.hidden).toBe(true);
     expect(shadow(el).querySelector<HTMLElement>(".drawer")?.hidden).toBe(false);
+  });
+});
+
+describe("a continuation is the run in flight", () => {
+  /**
+   * Continue a run whose stream is held open until the test releases it.
+   *
+   * Every agent the element builds is recorded, because the continuation's is
+   * the one that has to be stopped and the conversation's own is not. Once
+   * released, the script delivers the rest of its answer only if nothing
+   * aborted it -- which is what a real agent does, since an abort closes the
+   * request the rest would have arrived on.
+   */
+  async function continueHeld(): Promise<{
+    el: AgUiChat;
+    agents: FakeAgentHandle[];
+    release: () => void;
+  }> {
+    stubRuns([row()]);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-runs-url", "/agent/runs/");
+    const agents: FakeAgentHandle[] = [];
+    el.agentFactory = () => {
+      const handle = makeFakeAgent({
+        script: async (emit) => {
+          emit.runStart();
+          await gate;
+          if (handle.abortRuns === 0) {
+            emit.text("the rest of the resumed answer");
+          }
+        },
+      });
+      agents.push(handle);
+      return handle.agent;
+    };
+    document.body.appendChild(el);
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+    (shadow(el).querySelector("textarea") as HTMLTextAreaElement).value = "go on";
+    (shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement).click();
+    await flush();
+    return { el, agents, release };
+  }
+
+  function sendButton(el: AgUiChat): HTMLButtonElement {
+    return shadow(el).querySelector(".send") as HTMLButtonElement;
+  }
+
+  it("offers Stop while it runs", async () => {
+    const { el, release } = await continueHeld();
+    expect(sendButton(el).title).toBe(DEFAULT_UI_STRINGS.stop);
+    release();
+    await flush();
+  });
+
+  it("stops when Stop is pressed", async () => {
+    // The button read Stop and pressing it did nothing: the element cancelled
+    // only the conversation's own client, and a continuation runs on another.
+    const { el, agents, release } = await continueHeld();
+
+    sendButton(el).click();
+    release();
+    await flush();
+
+    expect(agents.map((agent) => agent.abortRuns)).toEqual([1]);
+    expect(shadow(el).querySelector(".stopped-note")).not.toBeNull();
+    expect(shadow(el).textContent).not.toContain("the rest of the resumed answer");
+    expect(sendButton(el).title).toBe(DEFAULT_UI_STRINGS.send);
+  });
+
+  it("stops when a new chat starts, and leaves the new conversation empty", async () => {
+    const { el, agents, release } = await continueHeld();
+
+    el.newChat();
+    release();
+    await flush();
+
+    expect(agents.map((agent) => agent.abortRuns)).toEqual([1]);
+    // Nothing the abandoned run does afterwards belongs to the conversation
+    // that replaced it -- not its answer, and not the note saying it stopped.
+    expect(shadow(el).querySelector(".message--assistant")).toBeNull();
+    expect(shadow(el).querySelector(".stopped-note")).toBeNull();
+  });
+
+  it("stops when another conversation is opened", async () => {
+    const { el, agents, release } = await continueHeld();
+    el.conversationStore.saveMessages("elsewhere", [
+      { id: "u1", role: "user", content: "another conversation" },
+    ] as never);
+
+    (shadow(el).querySelector(".header-btn--history") as HTMLButtonElement).click();
+    await flush();
+    const rows = [...shadow(el).querySelectorAll<HTMLButtonElement>(".drawer-row-select")];
+    rows.find((button) => button.textContent?.includes("another conversation"))?.click();
+    release();
+    await flush();
+
+    expect(el.conversationStore.threadId()).toBe("elsewhere");
+    expect(agents.map((agent) => agent.abortRuns)).toEqual([1]);
+    expect(shadow(el).textContent).not.toContain("the rest of the resumed answer");
+  });
+
+  it("stops when the element is removed", async () => {
+    const { el, agents, release } = await continueHeld();
+
+    el.remove();
+    release();
+    await flush();
+
+    expect(agents.map((agent) => agent.abortRuns)).toEqual([1]);
+  });
+});
+
+describe("a continuation is built like the conversation's own client", () => {
+  /** Mount with `attrs`, capturing the options every agent is built with. */
+  function mountBuilt(
+    script: (emit: Emit) => void,
+    attrs: Record<string, string> = {},
+  ): { el: AgUiChat; built: AgentOptions[] } {
+    stubRuns([row()]);
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-runs-url", "/agent/runs/");
+    for (const [name, value] of Object.entries(attrs)) {
+      el.setAttribute(name, value);
+    }
+    const built: AgentOptions[] = [];
+    el.agentFactory = (options) => {
+      built.push(options);
+      return makeFakeAgent({ script, initialState: { ...(options.initialState ?? {}) } }).agent;
+    };
+    document.body.appendChild(el);
+    return { el, built };
+  }
+
+  async function resume(el: AgUiChat): Promise<void> {
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+    (shadow(el).querySelector("textarea") as HTMLTextAreaElement).value = "go on";
+    (shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement).click();
+    // Past every round a run can take, rather than a fixed count of microtasks:
+    // each round awaits a tool handler, so a short flush stops counting early
+    // and would agree with any bound at all.
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  it("stops at the host's tool-round bound, not the built-in one", async () => {
+    // A page-driving deployment raises the bound because filling a form takes
+    // a round per field; the resumed half of that same task stopped at ten.
+    let rounds = 0;
+    const { el } = mountBuilt(
+      (emit) => {
+        rounds += 1;
+        emit.toolCall(`tc${rounds}`, "fill_field", {});
+      },
+      { "data-max-tool-rounds": "3" },
+    );
+    el.registerTool({
+      name: "fill_field",
+      description: "fill a field",
+      parameters: { type: "object" },
+      handler: () => "filled",
+    });
+
+    await resume(el);
+
+    expect(rounds).toBe(3);
+  });
+
+  it("sends the conversation's shared state", async () => {
+    // State rides every run's input. A resumed run sent an empty object, so an
+    // agent whose tools read the page's state resumed without it.
+    const { el, built } = mountBuilt((emit) => emit.runEnd());
+    el.sharedState = { board: "sprint-12" };
+
+    await resume(el);
+
+    expect(built.at(-1)?.initialState).toEqual({ board: "sprint-12" });
+  });
+
+  it("tells the host when it changes shared state", async () => {
+    const { el } = mountBuilt((emit) => emit.state({ board: "sprint-13" }));
+    const states: unknown[] = [];
+    el.addEventListener(STATE_EVENT, (event) => {
+      states.push((event as CustomEvent<{ state: unknown }>).detail.state);
+    });
+
+    await resume(el);
+
+    expect(states).toEqual([{ board: "sprint-13" }]);
+  });
+
+  it("leaves the stored conversation as it was", async () => {
+    // Deliberately not persisted. A continuation's agent holds only the new
+    // turn and its answer -- the snapshot it continues lives on the server --
+    // and a store keeps one list per thread, so saving that agent's messages
+    // would replace the conversation with its last exchange.
+    const { el } = mountBuilt((emit) => emit.runEnd());
+    const threadId = el.conversationStore.threadId();
+    const stored = [{ id: "u1", role: "user", content: "the conversation so far" }];
+    el.conversationStore.saveMessages(threadId, stored as never);
+
+    await resume(el);
+
+    expect(await el.conversationStore.loadMessages(threadId)).toEqual(stored);
   });
 });

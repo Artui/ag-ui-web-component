@@ -2411,6 +2411,42 @@ describe("AgUiChat", () => {
       expect(handle.abortRuns).toBe(1);
       expect(shadow(el).querySelector<HTMLButtonElement>(".send")?.title).toBe("Send");
     });
+
+    it("a run New chat stopped says nothing in the conversation that replaced it", async () => {
+      // An abort is not instant: the stopped run reports how it ended once its
+      // request has closed, and by then New chat has already cleared the
+      // transcript. The note belongs to the conversation that was left.
+      const { el, release } = mountGated("partial");
+      sendNoWait(el, "x");
+      await flush();
+
+      el.newChat();
+      release();
+      await flush();
+
+      expect(shadow(el).querySelector(".stopped-note")).toBeNull();
+      expect(shadow(el).querySelectorAll(".message")).toHaveLength(0);
+    });
+
+    it("a run New chat stopped saves what it had under its own conversation", async () => {
+      // The stopped run persists its truncated exchange once its request
+      // closes. Saving under whichever thread is active by then filed the old
+      // conversation under the new one, which the drawer then listed twice.
+      const { el, release } = mountGated("partial");
+      sendNoWait(el, "the question that was left");
+      await flush();
+      const left = el.conversationStore.threadId();
+
+      el.newChat();
+      const started = el.conversationStore.threadId();
+      release();
+      await flush();
+
+      expect(await el.conversationStore.loadMessages(started)).toBeNull();
+      expect(await el.conversationStore.loadMessages(left)).toEqual([
+        expect.objectContaining({ content: "the question that was left" }),
+      ]);
+    });
   });
 
   describe("thread drawer", () => {

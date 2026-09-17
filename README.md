@@ -619,7 +619,14 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
   (the terminal-rest guarantee), returning the button to **Send**.
 
 `cancel()` with no run in flight is a safe no-op. `newChat()` cancels any in-flight run before
-discarding the client.
+discarding the client, and so do switching conversations, `reload()` and removing the element. A
+[checkpoint continuation](#resuming-a-run) is the run in flight while it lasts, so Stop and all of
+these end it too.
+
+A cancelled run ends a moment later, once its request has closed or a running tool handler has
+returned. What it does then stays with the conversation it belonged to: its truncated exchange is
+saved to that thread, `ag-ui-run-finished` still reports the tools it ran, and nothing reaches the
+transcript or the Stop button of the conversation that replaced it.
 
 ### Registering tools
 
@@ -2342,8 +2349,16 @@ thing it *can* send, and the fresh run id comes free because a new agent mints
 one. Your main agent's history is never touched.
 
 A resumed run is a normal run in every other respect: frontend tools execute,
-approval interrupts render their card, and `headers` are re-read per request so
-a rotated CSRF token or JWT still reaches the endpoint.
+approval interrupts render their card, `headers` are re-read per request so
+a rotated CSRF token or JWT still reaches the endpoint, it carries and updates
+[shared state](#host-seams-the-spa-story) like any other run, it is bounded by
+`data-max-tool-rounds`, and Stop ends it. Its client is built by the same
+construction as the conversation's own, differing only in the endpoint and the
+empty seed.
+
+It does not write the conversation store. Its agent holds only the new turn and
+the answer, and a store keeps one message list per thread, so saving that would
+replace the stored conversation with its last exchange.
 
 If the index can't be reached, the panel shows its empty state rather than an
 error — a history affordance that fails is empty, not broken.

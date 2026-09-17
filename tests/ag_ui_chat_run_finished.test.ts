@@ -227,3 +227,130 @@ describe("run-finished event", () => {
     expect(onDocument).toHaveLength(1);
   });
 });
+
+describe("a run the conversation left behind", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  /**
+   * One element whose every agent runs the next script in `scripts`, so the
+   * run New chat abandons and the run the new conversation starts can differ.
+   */
+  function mountRuns(scripts: ((emit: Emit) => void | Promise<void>)[]): Mounted {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    let built = 0;
+    el.agentFactory = () => {
+      const script = scripts[built] as (emit: Emit) => void | Promise<void>;
+      built += 1;
+      return makeFakeAgent({ script }).agent;
+    };
+    const seen: RunFinishedDetail[] = [];
+    el.addEventListener(RUN_FINISHED_EVENT, (event) => {
+      seen.push((event as CustomEvent<RunFinishedDetail>).detail);
+    });
+    document.body.appendChild(el);
+    return { el, seen };
+  }
+
+  /** A gate a test opens by hand, and the promise that waits on it. */
+  function gate<T>(value: T): { opened: Promise<T>; open: () => void } {
+    let open: () => void = () => {};
+    const opened = new Promise<T>((resolve) => {
+      open = () => resolve(value);
+    });
+    return { opened, open };
+  }
+
+  it("still reports what it ran, and a server-side tool as the server's", async () => {
+    // A run cut off by New chat still wrote what it wrote, and the event fires
+    // on cancellation for exactly that reason. The side is decided from what
+    // streamed back, which the transcript forgot when New chat cleared it --
+    // so a booking the server made was reported as the host's own tool, the
+    // one case the documented listener skips its refetch for.
+    const stream = gate(undefined);
+    const { el, seen } = mountRuns([
+      async (emit) => {
+        emit.toolCall("call-1", "create_event", {});
+        emit.toolResult("call-1", '{"id": 13}');
+        await stream.opened;
+      },
+    ]);
+    void el.sendMessage("book it");
+    await flush();
+
+    el.newChat();
+    stream.open();
+    await flush();
+
+    expect(seen).toEqual([{ tools: [{ name: "create_event", side: "server" }], invalidated: [] }]);
+  });
+
+  describe("settling after the new conversation's run began", () => {
+    /**
+     * The abandoned run is inside a host tool's handler when New chat is
+     * pressed. Cancelling cannot interrupt a handler, so that run settles only
+     * when the handler returns -- by which time the user has sent the next
+     * message and its run is underway.
+     */
+    async function overlap(): Promise<Mounted & { settleOld: () => void; settleNew: () => void }> {
+      const handler = gate("scrolled");
+      const next = gate(undefined);
+      const mounted = mountRuns([
+        (emit) => {
+          emit.runStart();
+          emit.toolCall("old-1", "scroll_to", {});
+        },
+        async (emit) => {
+          emit.runStart();
+          emit.toolCall("new-1", "create_event", {});
+          emit.toolResult("new-1", '{"id": 13}');
+          await next.opened;
+        },
+      ]);
+      mounted.el.registerTool({
+        name: "scroll_to",
+        description: "Scroll a target into view.",
+        parameters: { type: "object" },
+        handler: () => handler.opened,
+      });
+      void mounted.el.sendMessage("scroll to Friday");
+      await flush();
+      mounted.el.newChat();
+      void mounted.el.sendMessage("book a design sync");
+      await flush();
+      return { ...mounted, settleOld: handler.open, settleNew: next.open };
+    }
+
+    it("keeps each run's tools in its own report", async () => {
+      const { seen, settleOld, settleNew } = await overlap();
+
+      settleOld();
+      await flush();
+      settleNew();
+      await flush();
+
+      expect(seen).toEqual([
+        { tools: [{ name: "scroll_to", side: "client" }], invalidated: [] },
+        { tools: [{ name: "create_event", side: "server" }], invalidated: [] },
+      ]);
+    });
+
+    it("leaves the new run's Stop button and transcript alone", async () => {
+      const { el, settleOld, settleNew } = await overlap();
+      const send = shadow(el).querySelector(".send") as HTMLButtonElement;
+      // Asserted before the old run settles too, or this passes against a new
+      // run that never showed Stop in the first place.
+      expect(send.title).toBe("Stop");
+
+      settleOld();
+      await flush();
+
+      expect(send.title).toBe("Stop");
+      expect(shadow(el).querySelector(".stopped-note")).toBeNull();
+      settleNew();
+      await flush();
+    });
+  });
+});

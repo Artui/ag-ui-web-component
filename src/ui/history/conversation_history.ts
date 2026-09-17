@@ -1,20 +1,18 @@
 import type { Message } from "@ag-ui/core";
 import { MESSAGE_ROLE } from "../../constants.js";
 import type { ActivityRegistry } from "../../core/activity_registry.js";
-import { AgUiClient } from "../../core/agui_client.js";
+import type { AgUiClient } from "../../core/agui_client.js";
 import { messageAttachments } from "../../core/attachment.js";
+import type { ClientSeed } from "../../core/client_seed.js";
 import type {
   ClientConversationStore,
   NavigationCheckpoint,
 } from "../../core/conversation_store.js";
-import type { AgentFactory } from "../../core/create_http_agent.js";
 import type { MessageRole } from "../../core/message_role.js";
-import type { RunHandlers } from "../../core/run_handlers.js";
 import { RunIndex } from "../../core/run_index.js";
 import { toolStatusFromOutcome } from "../../core/tool_outcome.js";
 import { mintThread } from "../../core/utils.js";
 import type { ToolCatalog } from "../../tools/tool_catalog.js";
-import type { ToolDispatch } from "../../tools/tool_dispatch.js";
 import type { AnswerActions } from "../transcript/answer_actions.js";
 import { renderAttachmentChips } from "../transcript/attachment_chips.js";
 import type { Transcript } from "../transcript/transcript.js";
@@ -42,10 +40,6 @@ export interface ConversationHistoryHost {
   readonly activities: ActivityRegistry;
   /** The frontend tools, whose renderers a restored call is redrawn with. */
   readonly tools: ToolCatalog;
-  /** Tool execution, which a continuation's client is handed. */
-  readonly dispatch: ToolDispatch;
-  /** The run's event handlers, which a continuation streams through. */
-  readonly runHandlers: RunHandlers;
   /** The composer, whose text a continuation sends. */
   readonly input: HTMLTextAreaElement;
   /** The one-line hint above the composer. */
@@ -58,24 +52,22 @@ export interface ConversationHistoryHost {
   readonly formatRelativeTime: () => RelativeTimeFormatter | null;
   /** The element's `navigationResult`. */
   readonly navigationResult: () => (checkpoint: NavigationCheckpoint) => unknown;
-  /** The element's `agentFactory`. */
-  readonly agentFactory: () => AgentFactory;
-  /** The element's `trustedOrigins`. */
-  readonly trustedOrigins: () => readonly string[];
-  /** The headers for the request about to go out. */
-  readonly requestHeaders: () => Record<string, string>;
   /** The request headers, having first reported the destination if it is foreign. */
   readonly headersFor: (url: string) => Record<string, string>;
   /** The configured cookie policy as `fetch` spells it. */
   readonly requestCredentials: () => RequestCredentials | undefined;
-  /** The `credentials` entry for an agent factory call, or nothing at all. */
-  readonly credentialsOption: () => { credentials?: RequestCredentials };
   /** The element's `appendMessage`, which a restored bubble opens through. */
   readonly appendMessage: (role: MessageRole, content: string) => HTMLDivElement;
   /** Resize the composer to its content. */
   readonly autoGrow: () => void;
   /** The conversation's own client, built on first use. */
   readonly ensureClient: () => AgUiClient;
+  /**
+   * A client from the same construction as the conversation's own, differing
+   * only in what `seed` says. A continuation's comes from here so that nothing
+   * added to one can be missing from the other.
+   */
+  readonly buildClient: (seed: ClientSeed) => AgUiClient;
   /** Stop the in-flight run. */
   readonly cancelRun: () => void;
   /** Drop the in-memory run and transcript, leaving the thread untouched. */
@@ -113,6 +105,11 @@ export class ConversationHistory {
   #generation = 0;
   /** Built lazily from `data-runs-url`; `null` when the host didn't opt in. */
   #runIndex: RunIndex | null = null;
+  /**
+   * The checkpoint continuation in flight, so stopping the conversation's run
+   * reaches it. `null` when none is running.
+   */
+  #continuation: AgUiClient | null = null;
 
   constructor(host: ConversationHistoryHost) {
     this.#host = host;
@@ -136,6 +133,20 @@ export class ConversationHistory {
   /** Make a freshly minted thread the active one. */
   startThread(): void {
     this.#threadId = mintThread(this.#host.conversationStore());
+  }
+
+  /**
+   * Stop the checkpoint continuation in flight, if there is one.
+   *
+   * A continuation runs on a client of its own, which the element never held,
+   * so Stop cancelled the conversation's client and left this one streaming:
+   * the button read Stop and did nothing, and New chat, a thread switch or
+   * removing the element carried on drawing the resumed answer into whatever
+   * came next. The element calls this wherever it stops its own run.
+   */
+  stopContinuation(): void {
+    this.#continuation?.cancel();
+    this.#continuation = null;
   }
 
   /** Forget the messages the last restore seeded, with the rest of the run. */
@@ -249,8 +260,10 @@ export class ConversationHistory {
    * structural — the main agent keeps its own history — and mints the fresh
    * `run_id` the endpoints also require.
    *
-   * Handlers come from the same run handlers as the conversation's own client,
-   * so the continuation streams into the same transcript the user is looking at.
+   * Built by the same construction as the conversation's own client, so the
+   * continuation streams into the same transcript the user is looking at and
+   * runs under the same state, tools and bounds. It is the run in flight while
+   * it lasts: {@link stopContinuation} is how the element's Stop reaches it.
    */
   async continueRun(runId: string, verb: CheckpointVerb): Promise<void> {
     const index = this.runs();
@@ -282,28 +295,22 @@ export class ConversationHistory {
     }
     this.#host.input.value = "";
     this.#host.autoGrow();
-    const endpoint = verb === "resume" ? index.resumeUrl(runId) : index.forkUrl(runId);
-    // Called on the element, as `this.agentFactory(...)` always was.
-    const agent = this.#host.agentFactory().call(this.#host.element, {
-      endpoint,
-      headers: this.#host.requestHeaders(),
-      getHeaders: () => this.#host.requestHeaders(),
-      trustedOrigins: this.#host.trustedOrigins(),
-      ...this.#host.credentialsOption(),
-      threadId: this.#threadId,
+    const client = this.#host.buildClient({
+      endpoint: verb === "resume" ? index.resumeUrl(runId) : index.forkUrl(runId),
       // The seed the endpoints assume: nothing. The snapshot is the history.
       initialMessages: [],
+      // Nor does it write the store. Its agent holds only the new turn and its
+      // answer, and a store keeps one list per thread, so saving what this
+      // client has would replace the conversation with its last exchange.
+      persist: false,
     });
-    const client = new AgUiClient({
-      agent,
-      handlers: this.#host.runHandlers.forClient(),
-      getTools: () => this.#host.tools.advertise(),
-      getContext: () => this.#host.dispatch.buildContext(),
-      executeTool: (call) => this.#host.dispatch.execute(call),
-      resolveInterrupts: (interrupts) => this.#host.dispatch.resolveInterrupts(interrupts),
-      connectionLostMessage: this.#host.strings().connectionLost,
-    });
+    this.#continuation = client;
     await client.send(content);
+    // Only if it is still the one in flight: stopping forgets it at once, and a
+    // continuation started after that one is not this one to forget.
+    if (this.#continuation === client) {
+      this.#continuation = null;
+    }
   }
 
   /**
