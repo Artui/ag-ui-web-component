@@ -38,6 +38,12 @@ export const STYLES = `
   --_header-fg: var(--ag-ui-header-fg, #ffffff);
   --_border: var(--ag-ui-border, #e2e2ec);
   --_radius: var(--ag-ui-radius, 12px);
+  /* The panel's own frame, which is the one corner a placement can put against
+     the edge of the viewport. The placements that do (page, sidebar, side, full,
+     and all but embedded on a small viewport) square this and leave --_radius alone, so
+     the answer well and the controls inside the panel stay as round as the
+     theme says: none of them meets that edge. */
+  --_panel-radius: var(--ag-ui-panel-radius, var(--_radius));
 
   /* Body text and raised chrome, read only by the code-block copy button.
      The defaults restate what it inherits, so a host that sets neither sees
@@ -95,6 +101,7 @@ export const STYLES = `
   /* Answer well (opt-in via data-answer-well) — boxes a whole assistant turn. */
   --_well-bg: var(--ag-ui-well-bg, transparent);
   --_well-border: var(--ag-ui-well-border, var(--_border));
+  --_well-radius: var(--ag-ui-well-radius, var(--_radius));
 
   /* Surface — set --ag-ui-shadow: none for a flush, embedded panel. */
   --_shadow: var(--ag-ui-shadow, 0 12px 32px rgba(20, 20, 50, 0.18));
@@ -344,7 +351,7 @@ export const STYLES = `
   --_width: var(--ag-ui-width, 420px);
   --_height: var(--ag-ui-height, var(--_viewport-height));
   --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
-  --_radius: var(--ag-ui-radius, 0);
+  --_panel-radius: var(--ag-ui-panel-radius, 0);
 }
 
 :host([placement="full"]) {
@@ -356,7 +363,7 @@ export const STYLES = `
   --_height: var(--ag-ui-height, var(--_viewport-height));
   --_max-width: var(--ag-ui-max-width, var(--_viewport-width));
   --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
-  --_radius: var(--ag-ui-radius, 0);
+  --_panel-radius: var(--ag-ui-panel-radius, 0);
 }
 
 /* Page: full-bleed background with a centred reading column capped at
@@ -373,7 +380,7 @@ export const STYLES = `
   --_height: var(--ag-ui-height, var(--_viewport-height));
   --_max-width: var(--ag-ui-max-width, var(--_viewport-width));
   --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
-  --_radius: var(--ag-ui-radius, 0);
+  --_panel-radius: var(--ag-ui-panel-radius, 0);
 }
 
 :host([placement="page"]) .messages {
@@ -441,7 +448,7 @@ export const STYLES = `
     --_height: var(--ag-ui-height, var(--_viewport-height));
     --_max-width: var(--ag-ui-max-width, var(--_viewport-width));
     --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
-    --_radius: var(--ag-ui-radius, 0);
+    --_panel-radius: var(--ag-ui-panel-radius, 0);
     --_shadow: var(--ag-ui-shadow, none);
   }
 
@@ -467,7 +474,7 @@ export const STYLES = `
   --_width: var(--ag-ui-width, 420px);
   --_height: var(--ag-ui-height, var(--_viewport-height));
   --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
-  --_radius: var(--ag-ui-radius, 0);
+  --_panel-radius: var(--ag-ui-panel-radius, 0);
   transition: width var(--_motion) var(--_ease);
 }
 
@@ -745,7 +752,7 @@ export const STYLES = `
   min-height: 0;
   background: var(--_bg);
   border: 1px solid var(--_border);
-  border-radius: var(--_radius);
+  border-radius: var(--_panel-radius);
   box-shadow: var(--_shadow);
   overflow: hidden;
 }
@@ -1253,7 +1260,7 @@ export const STYLES = `
   padding: var(--_pad);
   background: var(--_well-bg);
   border: 1px solid var(--_well-border);
-  border-radius: var(--_radius);
+  border-radius: var(--_well-radius);
 }
 
 .message {

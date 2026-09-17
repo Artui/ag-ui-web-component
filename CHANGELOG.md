@@ -148,6 +148,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--ag-ui-threads-rail-width` no longer exist, so host CSS written against
   either can be deleted.
 
+- **The answer well and the controls inside the panel keep round corners when
+  the panel's frame is square.** Under `placement="page"` and `"sidebar"`, and
+  on a small viewport, the frame is square because it meets the edge of the
+  window. Those placements squared it by setting the theme's radius to 0, so
+  everything else that reads that radius went square with it: the answer well,
+  the conversation list's *New chat* button and filter field, and a run
+  notice's *Undo*, beside message bubbles and a composer that stayed round. They
+  now square only the frame, through a new `--ag-ui-panel-radius`, and the
+  corners inside keep `--ag-ui-radius` (12px unless set). The floating and
+  embedded panels look as they did.
+
+  **A host that sets `--ag-ui-radius` under one of those placements now gets a
+  square frame**, where the token used to round the frame too. Set
+  `--ag-ui-panel-radius` to round it again. The well also gains
+  `--ag-ui-well-radius`, beside `--ag-ui-well-bg` and `--ag-ui-well-border`, to
+  round it apart from the rest of the panel.
+
 ### Fixed
 
 - **Stop ends a checkpoint continuation.** While a resumed or forked run was

@@ -2696,6 +2696,13 @@ ag-ui-chat {
 }
 ```
 
+`--ag-ui-radius` is the theme's corner radius. It rounds the panel's frame and the corners inside
+the panel that have no radius of their own: the answer well, the conversation list's *New chat*
+button and filter field, and the *Undo* on a run notice. The frame is the exception where it meets
+the edge of the window. `page` and `sidebar` draw it square, and so does every placement but
+`embedded` on a small viewport, while the corners inside keep the theme's radius, since none of them
+meets that edge. `--ag-ui-panel-radius` sets the frame on its own, in any placement.
+
 ### Small viewports
 
 At **600px wide and below** every placement but `embedded` becomes one full-bleed
@@ -3052,8 +3059,13 @@ Each assistant turn renders inside one `.answer` group (part `answer`) that hold
 text, tool cards, and pending indicator — so a turn that calls tools reads as a single answer
 rather than a string of loose siblings. Add the boolean `data-answer-well` attribute to box that
 group in a bordered, padded "well"; without it the layout is the flat stack as before. The well is
-pure CSS and turn-scoped — no JS API — and themeable via `--ag-ui-well-bg` / `--ag-ui-well-border`
-(and `::part(answer)`).
+pure CSS and turn-scoped — no JS API — and themeable via `--ag-ui-well-bg`, `--ag-ui-well-border`
+and `--ag-ui-well-radius` (and `::part(answer)`).
+
+The well's corners default to `--ag-ui-radius`, 12px unless you set it, in every placement. The
+panel's own frame is different: `page` and `sidebar` draw it square because it meets the edge of
+the window, but nothing inside the panel does, so the well stays round there too. Set
+`--ag-ui-well-radius` to round the well differently from the rest of the panel.
 
 ```html
 <ag-ui-chat endpoint="/agent/" data-answer-well></ag-ui-chat>
