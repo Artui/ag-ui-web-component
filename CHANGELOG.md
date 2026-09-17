@@ -24,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with an empty answer, as the built-in card does on the same signal, with no
   card drawn and no warning.
 
+- **On a small viewport the composer stays at the foot of the panel, with the
+  greeting over the space above it.** Until a conversation had something in it,
+  `page` -- and an `embedded` panel that opts into a greeting -- centred the
+  composer between the greeting and the foot at every width. Centring is a shape
+  for a screen with room to spare: on a phone the on-screen keyboard takes the
+  room, and the composer was left halfway up what remained with an empty band
+  under it, which is the part of the screen a thumb is already on. At 600px wide
+  and below it now stays at the foot, directly over the keyboard, and the
+  greeting takes the space above it. `data-small-viewport="off"` keeps the
+  centred shape at every width, as it keeps the rest of the desktop layout.
+
 ### Fixed
 
 - **A checkpoint continuation waits for the run in flight.** Picking Resume or

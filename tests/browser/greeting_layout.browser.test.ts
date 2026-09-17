@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { ELEMENT_TAG, MESSAGE_ROLE } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
@@ -197,20 +197,69 @@ describe("the greeting layout on a full page", () => {
     expect(greetingShown(el)).toBe(true);
     expect(halves(el).below).toBeGreaterThan(200);
   });
+});
 
-  it("stays centred on a phone-sized page", async () => {
+/**
+ * A phone gets the other shape: the composer at the foot, the greeting in the
+ * space above it.
+ *
+ * These narrow the viewport for real rather than emulating it, because a media
+ * query is half the subject and nothing short of the real width evaluates one.
+ */
+describe("the greeting layout on a phone", () => {
+  beforeAll(async () => {
     await page.viewport(390, 844);
-    try {
-      const el = mount({ placement: "page" });
-      await settle();
+  });
 
-      expect(greetingShown(el)).toBe(true);
-      const { above, below } = halves(el);
-      expect(below).toBeGreaterThan(150);
-      expect(Math.abs(above - below)).toBeLessThanOrEqual(1);
-    } finally {
-      await page.viewport(DESKTOP.width, DESKTOP.height);
-    }
+  afterAll(async () => {
+    await page.viewport(DESKTOP.width, DESKTOP.height);
+  });
+
+  it("docks the composer at the foot, with the greeting over the space above it", async () => {
+    const el = mount({ placement: "page", "user-name": "Ada" });
+    await settle();
+
+    expect(greetingShown(el)).toBe(true);
+    expect(halves(el).below).toBeLessThanOrEqual(1);
+    // In the middle of what is left, rather than at the foot of an upper half
+    // that no longer exists.
+    expect(emptyOffCentre(el)).toBeLessThanOrEqual(1);
+  });
+
+  it("keeps it at the foot when the visible area shortens under a keyboard", async () => {
+    // The height a host reports while iOS holds a keyboard over a 390x844
+    // screen. Centred, the composer sat halfway up this with a band of empty
+    // page under it, which is the shape that started this.
+    const el = mount({ placement: "page" }, { "--ag-ui-viewport-height": "426px" });
+    await settle();
+
+    expect(el.getBoundingClientRect().height).toBe(426);
+    expect(halves(el).below).toBeLessThanOrEqual(1);
+    const send = part(el, ".send").getBoundingClientRect();
+    const foot = part(el, ".chat").getBoundingClientRect().bottom;
+    expect(send.bottom).toBeLessThanOrEqual(foot);
+    expect(greetingShown(el)).toBe(true);
+  });
+
+  it("docks an embedded panel that opted in, within its own box", async () => {
+    const el = mount({ placement: "embedded", "data-greeting": "" });
+    el.style.height = "560px";
+    await settle();
+
+    expect(greetingShown(el)).toBe(true);
+    expect(halves(el).below).toBeLessThanOrEqual(1);
+    expect(emptyOffCentre(el)).toBeLessThanOrEqual(1);
+  });
+
+  it("leaves the centred composer to a host that keeps its desktop shape", async () => {
+    // The breakpoint's own opt-out, which is the only way to reach a media
+    // query from outside the shadow root.
+    const el = mount({ placement: "page", "data-small-viewport": "off" });
+    await settle();
+
+    const { above, below } = halves(el);
+    expect(below).toBeGreaterThan(150);
+    expect(Math.abs(above - below)).toBeLessThanOrEqual(1);
   });
 });
 

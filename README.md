@@ -2768,6 +2768,12 @@ of the screen with a frame drawn round it.
 `embedded` is left alone deliberately: it sits in a box you sized and placed, and
 only you know whether that column should become the whole screen.
 
+The [greeting layout](#the-greeting-on-an-empty-page) changes shape here too, and
+it is the one part of this that `embedded` gets as well, because it moves nothing
+about the box you placed: an empty conversation keeps its composer at the foot of
+the panel, with the greeting over the space above it, instead of centring the two
+together.
+
 The corner placements still rest at their launcher, so a full-bleed panel is
 something the user opens rather than something they are given.
 
@@ -3085,7 +3091,8 @@ naturally with the [answer well](#the-answer-well).
 #### The greeting on an empty page
 
 Until the first message is sent, a page shows a greeting with the composer centred beneath it,
-and the composer moves to the foot of the page once the conversation has something in it.
+and the composer moves to the foot of the page once the conversation has something in it. On a
+phone it starts at the foot, for the reason below.
 
 ```html
 <ag-ui-chat endpoint="/agent/" placement="page" user-name="Ada"></ag-ui-chat>
@@ -3106,6 +3113,12 @@ and the composer moves to the foot of the page once the conversation has somethi
   restores the plain layout there. `embedded` opts in with `data-greeting` (any value but `off`),
   for an app shell that gives the panel a page-sized box. The corner placements and the sidebar
   never show it: a panel opened from a launcher is already mid-task.
+- **On a phone** the composer stays at the foot and the greeting takes the space above it.
+  Centring is a shape for a screen with room to spare; at
+  [600px wide and below](#small-viewports) the room is what the on-screen keyboard takes, and a
+  composer centred over an empty band sits halfway up what is left of the screen.
+  `data-small-viewport="off"` keeps the centred shape at every width, as it keeps the rest of
+  the desktop layout.
 
 The composer's rows stay centred while you type, while a draft grows and while attachments are
 added, because the centring is two equal flexible halves either side of them and growth splits

@@ -1282,6 +1282,36 @@ export const STYLES = `
   border-block-start-color: transparent;
 }
 
+/* On a phone the composer stays at the foot and the greeting takes the room
+   above it, which is the other way round from everything above.
+
+   Centring is a shape for a screen with room to spare: the composer reads as
+   the one thing on the page, and whichever way the rows grow there is space
+   left on both sides of them. A phone has no space to spare, and the keyboard
+   is what takes it -- opening one leaves a 426px-tall visible area with the
+   composer halfway up it and an empty band underneath, which is the half of
+   the screen a thumb is already resting on. Docked, the field sits directly
+   over the keyboard, where every chat on the platform puts it, and the
+   greeting keeps the rest.
+
+   Both rules restate the selector they override, with the breakpoint's own
+   opt-out added: this is part of the shape a host keeps its desktop layout
+   instead of, so it goes the same way as the rest of that shape. Restating
+   rather than adding conditions to the originals keeps each of those rules
+   readable as one decision, and source order settles the pair. */
+@media (max-width: 600px) {
+  :host([data-empty]:not([data-restoring]):not([data-small-viewport="off"])) .chat::after {
+    flex-grow: 0;
+  }
+
+  /* Centred in the transcript, which is now everything above the composer,
+     rather than at the foot of an upper half that no longer exists. */
+  :host([placement="page"]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty,
+  :host([placement="embedded"][data-greeting]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty {
+    margin: auto;
+  }
+}
+
 /* Nor does the greeting paint while a restore is in flight. Hidden rather than
    removed, so it keeps its place and nothing around it moves when it shows. */
 :host([data-restoring]) .greeting {
