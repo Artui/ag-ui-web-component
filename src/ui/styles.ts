@@ -183,7 +183,7 @@ export const STYLES = `
   --_viewport-height: var(
     --ag-ui-viewport-height,
     calc(
-      min(var(--_visual-viewport-inset-top) + var(--_visual-viewport-height), 100vh - var(--_viewport-inset-bottom)) -
+      min(var(--_visual-viewport-inset-top) + var(--_visual-viewport-height), 100dvh - var(--_viewport-inset-bottom)) -
         var(--_viewport-inset-top) - var(--_keyboard-inset-top)
     )
   );
@@ -210,8 +210,15 @@ export const STYLES = `
 
      Separate from the token above so a host that states the usable height
      outright still wins: the element writes this one inline, and an inline
-     value would otherwise outrank the host's own rule. */
-  --_visual-viewport-height: var(--ag-ui-visual-viewport-height, 100vh);
+     value would otherwise outrank the host's own rule.
+
+     The fallback is dvh rather than vh because the browser's own bars do move
+     it, where a keyboard does not. iOS Safari resolves vh to the viewport with
+     its bars collapsed, so on a page that does not scroll them away a panel
+     sized from it ran under the address bar by the bars' height -- 40px on
+     the phone measured -- with a docked composer underneath. dvh is the
+     viewport with the bars as they are. */
+  --_visual-viewport-height: var(--ag-ui-visual-viewport-height, 100dvh);
   /* How much of the layout viewport is hidden below the visible one, measured
      and written by the element alongside the height above.
 

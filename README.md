@@ -2862,7 +2862,10 @@ or `0px` to keep the panel below your reserved top.
 outright, for the case where no viewport-percentage length describes it. An
 on-screen keyboard is the one that matters: it changes neither `vh` nor `dvh` nor
 `svh` on any current mobile browser, so a full-bleed panel has to be told the
-visual viewport's height rather than deriving it.
+visual viewport's height rather than deriving it. The widget does that itself;
+where it has nothing to report, the panel falls back to `100dvh` rather than
+`100vh`, because iOS Safari resolves `vh` to the screen with its bars collapsed
+and a panel sized from it runs under them.
 
 Marks are variables too, so one vocabulary covers a re-theme rather than
 leaving half the transcript in the built-in set: `--ag-ui-tool-icon-done` /

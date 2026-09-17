@@ -73,6 +73,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is now read from the root element's `clientHeight`, which an iPhone reported
   unchanged through the pan.
 
+- **A full-screen panel no longer runs under Safari's bars with no keyboard
+  up.** Where nothing has been measured, the panel's height fell back to
+  `100vh`, which iOS Safari resolves to the screen with its bars collapsed, so
+  on a page that never scrolls them away the foot of the panel sat under the
+  address bar: 40px on the iPhone measured, with a docked composer in it. The
+  fallback is now `100dvh`, the screen with the bars as they are.
+
 ## [0.39.0] — 2026-09-17
 
 ### Changed
