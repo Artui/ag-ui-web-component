@@ -1,6 +1,12 @@
+import type { Message } from "@ag-ui/core";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ELEMENT_TAG, STATE_EVENT } from "../src/constants.js";
+import { ELEMENT_TAG, STATE_EVENT, TOOL_OUTCOME } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
+import type {
+  ClientConversationStore,
+  NavigationCheckpoint,
+  ThreadMeta,
+} from "../src/core/conversation_store.js";
 import type { HttpAgentOptions as AgentOptions } from "../src/core/create_http_agent.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import type { RunRow } from "../src/core/run_index.js";
@@ -769,18 +775,541 @@ describe("a continuation is built like the conversation's own client", () => {
     expect(states).toEqual([{ board: "sprint-13" }]);
   });
 
-  it("leaves the stored conversation as it was", async () => {
-    // Deliberately not persisted. A continuation's agent holds only the new
-    // turn and its answer -- the snapshot it continues lives on the server --
-    // and a store keeps one list per thread, so saving that agent's messages
-    // would replace the conversation with its last exchange.
-    const { el } = mountBuilt((emit) => emit.runEnd());
-    const threadId = el.conversationStore.threadId();
-    const stored = [{ id: "u1", role: "user", content: "the conversation so far" }];
-    el.conversationStore.saveMessages(threadId, stored as never);
+  it("reads the shared state it changed while it runs, not the conversation's", async () => {
+    // The conversation's own client has to exist for this to mean anything:
+    // without one the getter read the element's mirror, which every client
+    // writes. A message sent first builds it, holding the state as assigned.
+    stubRuns([row()]);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-runs-url", "/agent/runs/");
+    const agents: FakeAgentHandle[] = [];
+    el.agentFactory = (options) => {
+      const continuing = options.endpoint !== "/agent/";
+      const handle = makeFakeAgent({
+        initialState: { ...(options.initialState ?? {}) },
+        script: async (emit) => {
+          emit.runStart();
+          if (continuing) {
+            emit.state({ board: "sprint-13" });
+            await gate;
+          }
+        },
+      });
+      agents.push(handle);
+      return handle.agent;
+    };
+    document.body.appendChild(el);
+    el.sharedState = { board: "sprint-12" };
+    const input = shadow(el).querySelector("textarea") as HTMLTextAreaElement;
+    input.value = "what is on the board?";
+    (shadow(el).querySelector(".send") as HTMLButtonElement).click();
+    await flush();
 
-    await resume(el);
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+    input.value = "go on";
+    (shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement).click();
+    await flush();
 
-    expect(await el.conversationStore.loadMessages(threadId)).toEqual(stored);
+    expect(el.sharedState).toEqual({ board: "sprint-13" });
+
+    // A value the host assigns meanwhile reaches the run that is going, whose
+    // next round sends it, and reads back as what was assigned.
+    el.sharedState = { board: "sprint-14" };
+    expect(agents.at(-1)?.agent.state).toEqual({ board: "sprint-14" });
+    expect(el.sharedState).toEqual({ board: "sprint-14" });
+
+    release();
+    await flush();
+  });
+});
+
+/**
+ * A store that serialises, as the built-in one does, and keeps one list per
+ * thread -- which is the property a continuation's save has to respect.
+ */
+function memoryStore(seed: Record<string, readonly Message[]> = {}): ClientConversationStore & {
+  saved: (threadId: string) => readonly Message[] | null;
+} {
+  const copy = (messages: readonly Message[]): Message[] =>
+    JSON.parse(JSON.stringify(messages)) as Message[];
+  const threads = new Map(Object.entries(seed).map(([id, messages]) => [id, copy(messages)]));
+  let active = "t1";
+  let minted = 1;
+  return {
+    saved: (threadId) => {
+      const messages = threads.get(threadId);
+      return messages === undefined ? null : copy(messages);
+    },
+    threadId: () => active,
+    newThread: () => {
+      minted += 1;
+      active = `t${minted}`;
+      return active;
+    },
+    setActiveThread: (threadId) => {
+      active = threadId;
+    },
+    loadMessages: (threadId) => {
+      const messages = threads.get(threadId);
+      return Promise.resolve(messages === undefined ? null : copy(messages));
+    },
+    saveMessages: (threadId, messages) => {
+      threads.set(threadId, copy(messages));
+    },
+    loadCheckpoint: (): NavigationCheckpoint | null => null,
+    saveCheckpoint: () => {},
+    clear: (threadId) => {
+      threads.delete(threadId);
+    },
+    listThreads: (): Promise<readonly ThreadMeta[]> => Promise.resolve([]),
+    renameThread: () => {},
+  };
+}
+
+/** Each message's role and text, which is what these assertions are about. */
+function turns(messages: readonly Message[] | null | undefined): [string, unknown][] {
+  return (messages ?? []).map((message) => [message.role, message.content]);
+}
+
+/** Macrotask ticks: the real `HttpAgent` hands events on across timers. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 10; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+/** A run request as the real `HttpAgent` put it on the wire. */
+interface SentRun {
+  readonly url: string;
+  readonly body: { readonly messages: readonly Message[]; readonly state: unknown };
+}
+
+/**
+ * Stand in for the server: the run index lists one continuable run, and every
+ * run request is recorded and answered with the events `reply` gives it for
+ * that URL, framed as the SSE stream an AG-UI endpoint writes.
+ */
+function stubServer(reply: (url: string) => readonly Record<string, unknown>[]): SentRun[] {
+  const sent: SentRun[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method !== "POST") {
+        return { ok: true, json: async () => ({ runs: [row()] }) };
+      }
+      sent.push({ url, body: JSON.parse(String(init.body)) as SentRun["body"] });
+      const runId = `run-${sent.length}`;
+      const events = [
+        { type: "RUN_STARTED", threadId: "t1", runId },
+        ...reply(url),
+        { type: "RUN_FINISHED", threadId: "t1", runId },
+      ];
+      return new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }),
+  );
+  return sent;
+}
+
+/** The events of one complete assistant text message. */
+function says(messageId: string, text: string): Record<string, unknown>[] {
+  return [
+    { type: "TEXT_MESSAGE_START", messageId, role: "assistant" },
+    { type: "TEXT_MESSAGE_CONTENT", messageId, delta: text },
+    { type: "TEXT_MESSAGE_END", messageId },
+  ];
+}
+
+/** Type `text` and press Send. */
+function sendTurn(el: AgUiChat, text: string): void {
+  (shadow(el).querySelector("textarea") as HTMLTextAreaElement).value = text;
+  (shadow(el).querySelector(".send") as HTMLButtonElement).click();
+}
+
+/** Open the checkpoint panel, type `text`, and resume the listed run. */
+async function resumeWith(el: AgUiChat, text: string): Promise<void> {
+  (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+  await flush();
+  (shadow(el).querySelector("textarea") as HTMLTextAreaElement).value = text;
+  (shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement).click();
+}
+
+describe("a continuation waits for the run in flight", () => {
+  /**
+   * Mount with every run held open until released, recording each agent built
+   * and the endpoint it was built for. Once released, a run delivers the rest
+   * of its answer only if nothing aborted it, as a real agent would.
+   *
+   * The first event arrives a microtask after the run starts, as it does from
+   * `HttpAgent`, which awaits its subscribers before any of them hears of the
+   * run. A fake that announced it synchronously would close the gap one of the
+   * guards exists for.
+   */
+  function mountHeld(): {
+    el: AgUiChat;
+    agents: { endpoint: string; handle: FakeAgentHandle }[];
+    release: () => void;
+  } {
+    stubRuns([row()]);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-runs-url", "/agent/runs/");
+    const agents: { endpoint: string; handle: FakeAgentHandle }[] = [];
+    el.agentFactory = (options) => {
+      const handle = makeFakeAgent({
+        script: async (emit) => {
+          await Promise.resolve();
+          emit.runStart();
+          await gate;
+          if (handle.abortRuns === 0) {
+            emit.text("the rest of the answer");
+          }
+        },
+      });
+      agents.push({ endpoint: options.endpoint, handle });
+      return handle.agent;
+    };
+    document.body.appendChild(el);
+    return { el, agents, release: () => release() };
+  }
+
+  it("does not start while the conversation's own run is streaming", async () => {
+    // It would stream a second answer into the turn that is still arriving,
+    // and Stop would reach only one of the two.
+    const { el, agents, release } = mountHeld();
+    sendTurn(el, "what is on the board?");
+    await flush();
+
+    await resumeWith(el, "go on");
+    await flush();
+
+    expect(agents.map((agent) => agent.endpoint)).toEqual(["/agent/"]);
+    release();
+    await flush();
+  });
+
+  it("does not start over a continuation still streaming, which Stop then still reaches", async () => {
+    // Starting the second replaced the one the element keeps for Stop, so the
+    // first streamed on where nothing could end it.
+    const { el, agents, release } = mountHeld();
+    await resumeWith(el, "go on");
+    await flush();
+
+    await resumeWith(el, "and faster");
+    await flush();
+    (shadow(el).querySelector(".send") as HTMLButtonElement).click();
+    release();
+    await flush();
+
+    expect(agents.map((agent) => [agent.endpoint, agent.handle.abortRuns])).toEqual([
+      ["/agent/resume/r1/", 1],
+    ]);
+    expect(shadow(el).textContent).not.toContain("the rest of the answer");
+  });
+
+  it("does not start over one picked a moment ago, before its run has begun", async () => {
+    // The composer learns a run is going from its first event, which is behind
+    // the pick. A host driving the rows can land a second pick in that gap.
+    const { el, agents, release } = mountHeld();
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+    const input = shadow(el).querySelector("textarea") as HTMLTextAreaElement;
+    const resume = shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement;
+
+    input.value = "go on";
+    resume.click();
+    input.value = "and faster";
+    resume.click();
+    await flush();
+
+    expect(agents.map((agent) => agent.endpoint)).toEqual(["/agent/resume/r1/"]);
+    release();
+    await flush();
+  });
+
+  it("says why at the composer, and keeps the turn that was typed for it", async () => {
+    // The row closes the panel before the pick is handled, so a refusal with
+    // nothing to show for it reads as a resume that was attempted and lost.
+    // And the text is the user's next turn, still wanted once the run is done.
+    const { el, release } = mountHeld();
+    sendTurn(el, "what is on the board?");
+    await flush();
+
+    await resumeWith(el, "go on");
+    await flush();
+
+    const hint = shadow(el).querySelector<HTMLElement>(".skill-hint");
+    const input = shadow(el).querySelector("textarea") as HTMLTextAreaElement;
+    expect(hint?.hidden).toBe(false);
+    expect(hint?.textContent).toBe(DEFAULT_UI_STRINGS.continueWhileRunning);
+    expect(input.value).toBe("go on");
+    expect(shadow(el).activeElement).toBe(input);
+    release();
+    await flush();
+  });
+
+  it("starts once the run it waited for has settled", async () => {
+    // The refusal lasts as long as the run and no longer: a guard that is never
+    // lifted would turn the panel off for the rest of the page.
+    const { el, agents, release } = mountHeld();
+    await resumeWith(el, "go on");
+    await flush();
+    release();
+    await flush();
+
+    await resumeWith(el, "and then?");
+    await flush();
+
+    expect(agents.map((agent) => agent.endpoint)).toEqual([
+      "/agent/resume/r1/",
+      "/agent/resume/r1/",
+    ]);
+  });
+});
+
+describe("a continued exchange joins the conversation", () => {
+  const conversation: readonly Message[] = [
+    { id: "u1", role: "user", content: "what is on the board?" },
+    { id: "a1", role: "assistant", content: "three cards" },
+  ];
+
+  /** Mount over `store`, with the checkpoint panel configured. */
+  function mountOver(store: ClientConversationStore): AgUiChat {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-runs-url", "/agent/runs/");
+    el.conversationStore = store;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  it("is saved after the conversation it continues", async () => {
+    // A store keeps one list per thread, and the continuation's own history is
+    // only the turn it adds. Unsaved, a reload brought the conversation back
+    // without the exchange the user had just watched arrive.
+    stubServer((url) => (url === "/agent/resume/r1/" ? says("a2", "the resumed answer") : []));
+    const store = memoryStore({ t1: conversation });
+    const el = mountOver(store);
+    await settle();
+
+    await resumeWith(el, "go on");
+    await settle();
+
+    expect(turns(store.saved("t1"))).toEqual([
+      ["user", "what is on the board?"],
+      ["assistant", "three cards"],
+      ["user", "go on"],
+      ["assistant", "the resumed answer"],
+    ]);
+  });
+
+  it("goes out with the next ordinary message", async () => {
+    // The conversation's own client never held the exchange, so the next
+    // message went to the agent without the turn it was a reply to.
+    const sent = stubServer((url) =>
+      url === "/agent/resume/r1/" ? says("a2", "the resumed answer") : says("a3", "done"),
+    );
+    const el = mountOver(memoryStore({ t1: conversation }));
+    await settle();
+    await resumeWith(el, "go on");
+    await settle();
+
+    sendTurn(el, "and then?");
+    await settle();
+
+    expect(sent.map((run) => run.url)).toEqual(["/agent/resume/r1/", "/agent/"]);
+    expect(turns(sent.at(-1)?.body.messages)).toEqual([
+      ["user", "what is on the board?"],
+      ["assistant", "three cards"],
+      ["user", "go on"],
+      ["assistant", "the resumed answer"],
+      ["user", "and then?"],
+    ]);
+  });
+
+  it("keeps how an earlier call ended, in a conversation sent in this page", async () => {
+    // Here the conversation lives in a client this page built rather than in a
+    // restore, and that client keeps a declined call's outcome beside its
+    // messages, not on them. Saving its bare messages ahead of the exchange
+    // would turn the declined card green on the next reload. And it is that
+    // client which the next message would have gone out on, without the
+    // exchange.
+    let posts = 0;
+    const sent = stubServer((url) => {
+      posts += 1;
+      if (url === "/agent/resume/r1/") {
+        return says("a2", "the resumed answer");
+      }
+      return posts === 1
+        ? [
+            { type: "TOOL_CALL_START", toolCallId: "tc1", toolCallName: "delete_user" },
+            { type: "TOOL_CALL_ARGS", toolCallId: "tc1", delta: '{"id":7}' },
+            { type: "TOOL_CALL_END", toolCallId: "tc1" },
+          ]
+        : says(`a${posts}`, "left alone");
+    });
+    const store = memoryStore();
+    const el = mountOver(store);
+    el.registerTool({
+      name: "delete_user",
+      description: "delete",
+      parameters: { type: "object", "x-destructive": true },
+      handler: () => "deleted",
+    });
+    await settle();
+    sendTurn(el, "delete user 7");
+    await settle();
+    shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
+    await settle();
+
+    await resumeWith(el, "go on");
+    await settle();
+
+    const saved = store.saved("t1");
+    expect(turns(saved).slice(-2)).toEqual([
+      ["user", "go on"],
+      ["assistant", "the resumed answer"],
+    ]);
+    const declined = saved?.find((message) => message.role === "tool") as { outcome?: unknown };
+    expect(declined.outcome).toBe(TOOL_OUTCOME.DENIED);
+
+    sendTurn(el, "and then?");
+    await settle();
+    const request = sent.at(-1)?.body.messages;
+    expect(sent.at(-1)?.url).toBe("/agent/");
+    expect(turns(request).slice(-3)).toEqual([
+      ["user", "go on"],
+      ["assistant", "the resumed answer"],
+      ["user", "and then?"],
+    ]);
+    // Carried there as a save writes it, but never onto the wire.
+    expect(JSON.stringify(request)).not.toContain('"outcome"');
+  });
+
+  /**
+   * Mount over a store holding the conversation, with every run held open
+   * until released, recording the options each agent is built with. Each fake
+   * starts from the history it is seeded with, as a real agent does, so what a
+   * client saves is measured against what the element gave it.
+   */
+  async function mountHeldOver(store: ClientConversationStore): Promise<{
+    el: AgUiChat;
+    built: AgentOptions[];
+    release: () => void;
+  }> {
+    stubRuns([row()]);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-runs-url", "/agent/runs/");
+    el.conversationStore = store;
+    const built: AgentOptions[] = [];
+    el.agentFactory = (options) => {
+      built.push(options);
+      const { agent } = makeFakeAgent({
+        script: async (emit) => {
+          emit.runStart();
+          await gate;
+        },
+      });
+      agent.setMessages([...(options.initialMessages ?? [])]);
+      return agent;
+    };
+    document.body.appendChild(el);
+    await flush();
+    return { el, built, release: () => release() };
+  }
+
+  it("stopped part-way, is kept as far as it got", async () => {
+    // As a stopped ordinary run is: its turn stays in the conversation, saved
+    // and sent with the next message.
+    const store = memoryStore({ t1: conversation });
+    const { el, built, release } = await mountHeldOver(store);
+    await resumeWith(el, "go on");
+    await flush();
+
+    (shadow(el).querySelector(".send") as HTMLButtonElement).click();
+    release();
+    await flush();
+    sendTurn(el, "and then?");
+    await flush();
+
+    expect(built.map((options) => options.endpoint)).toEqual(["/agent/resume/r1/", "/agent/"]);
+    expect(turns(built.at(-1)?.initialMessages)).toEqual([
+      ["user", "what is on the board?"],
+      ["assistant", "three cards"],
+      ["user", "go on"],
+    ]);
+    expect(turns(store.saved("t1"))).toEqual([
+      ["user", "what is on the board?"],
+      ["assistant", "three cards"],
+      ["user", "go on"],
+      ["user", "and then?"],
+    ]);
+  });
+
+  it("stays with its own conversation when a new chat replaces it mid-run", async () => {
+    // A stopped run saves once its request closes, which can be after New chat.
+    // That save belongs to the thread the run continued, and nothing of it
+    // belongs in the conversation that replaced it.
+    const store = memoryStore({ t1: conversation });
+    const { el, built, release } = await mountHeldOver(store);
+    await resumeWith(el, "go on");
+    await flush();
+
+    el.newChat();
+    release();
+    await flush();
+    sendTurn(el, "a new question");
+    await flush();
+
+    expect(turns(store.saved("t1"))).toEqual([
+      ["user", "what is on the board?"],
+      ["assistant", "three cards"],
+      ["user", "go on"],
+    ]);
+    expect(built.at(-1)?.initialMessages).toEqual([]);
+    expect(turns(store.saved("t2"))).toEqual([["user", "a new question"]]);
+  });
+
+  it("leaves its shared state for the next ordinary message to send", async () => {
+    // The conversation's own client held the state as it was before the
+    // continuation changed it, and sent that.
+    let answers = 0;
+    const sent = stubServer((url) => {
+      answers += 1;
+      return url === "/agent/resume/r1/"
+        ? [{ type: "STATE_SNAPSHOT", snapshot: { board: "sprint-13" } }]
+        : says(`a${answers}`, "noted");
+    });
+    const el = mountOver(memoryStore());
+    el.sharedState = { board: "sprint-12" };
+    await settle();
+    sendTurn(el, "what is on the board?");
+    await settle();
+
+    await resumeWith(el, "go on");
+    await settle();
+    expect(el.sharedState).toEqual({ board: "sprint-13" });
+
+    sendTurn(el, "and then?");
+    await settle();
+    expect(sent.at(-1)?.url).toBe("/agent/");
+    expect(sent.at(-1)?.body.state).toEqual({ board: "sprint-13" });
   });
 });
