@@ -64,9 +64,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the element keeps its public members as delegations with their documentation
   unchanged.
 
-  The panel's placement moved first: the dragged launcher, the dragged header,
-  the eight resize grips, the corner the panel opens from and the persisted
-  record of all of it are now `PanelPlacement` in `src/ui/placement/`.
+  What has moved, each into the directory its concern already had:
+
+  - The panel's placement -- the dragged launcher, the dragged header, the
+    eight resize grips, the corner the panel opens from and the persisted
+    record of all of it -- is `PanelPlacement` in `src/ui/placement/`.
+  - Quoting a selection, in the transcript and over the host page, is
+    `TranscriptQuoteOffer` in `src/ui/excerpts/`.
+  - The skill catalog -- its three sources, their merge into the chips and the
+    palette, and what a pick does to the composer -- is `SkillCatalog` in
+    `src/skills/`.
+  - The composer's attachments (the tray and the picker, drop and paste routes
+    into it) and its mic are `ComposerAttachments` and `ComposerVoice` in
+    `src/ui/composer/`.
 
   Nothing a consumer can see changes. The emitted declarations are
   byte-identical to the previous release apart from the new internal modules,

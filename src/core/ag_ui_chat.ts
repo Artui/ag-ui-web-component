@@ -6,7 +6,6 @@ import {
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
-  DEFAULT_ATTACHMENT_MAX_BYTES,
   FEEDBACK_EVENT,
   ICON_ATTACH,
   ICON_LAUNCHER,
@@ -21,7 +20,6 @@ import {
   MAX_TOOL_ROUNDS,
   MESSAGE_ACTIONS,
   MESSAGE_ROLE,
-  PASTE_ATTACH_CHARS,
   READ_PAGE_TOOL,
   RUN_FINISHED_EVENT,
   STATE_EVENT,
@@ -38,9 +36,8 @@ import {
   X_CONFIRM_KEY,
   X_SUMMARY_KEY,
 } from "../constants.js";
-import { fillTemplate } from "../skills/fill_template.js";
-import { parseSkills } from "../skills/parse_skills.js";
 import type { Skill } from "../skills/skill.js";
+import { SkillCatalog } from "../skills/skill_catalog.js";
 import {
   type ChatCorner,
   type ChatSurfaceReport,
@@ -62,13 +59,12 @@ import { createRouteTools, type RouteMap } from "../tools/route_map.js";
 import { renderChart } from "../ui/charts/chart_block.js";
 import { chartSpecFrom } from "../ui/charts/chart_spec_from.js";
 import { CHART_TOOL_NAME, createChartTool } from "../ui/charts/chart_tool.js";
-import { AttachmentTray } from "../ui/composer/attachment_tray.js";
+import { ComposerAttachments } from "../ui/composer/composer_attachments.js";
+import { ComposerVoice } from "../ui/composer/composer_voice.js";
 import { SkillsMenu } from "../ui/composer/skills_menu.js";
-import { VoiceInput } from "../ui/composer/voice_input.js";
 import { attachCopyButtons } from "../ui/excerpts/attach_copy_buttons.js";
 import { copyPayload } from "../ui/excerpts/copy_payload.js";
-import { attachQuoteOffer, type PageQuoteOffer } from "../ui/excerpts/page_quote_offer.js";
-import { asQuote, quotableSelection } from "../ui/excerpts/quote_selection.js";
+import { TranscriptQuoteOffer } from "../ui/excerpts/transcript_quote_offer.js";
 import { fillUiString } from "../ui/fill_ui_string.js";
 import { CheckpointMenu, type CheckpointVerb } from "../ui/history/checkpoint_menu.js";
 import type { RelativeTimeFormatter } from "../ui/history/relative_time.js";
@@ -132,7 +128,6 @@ import {
   writeStoredItem,
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
-import type { AttachmentsDetail } from "./events/attachments_detail.js";
 import type { CustomAgentDetail } from "./events/custom_agent_detail.js";
 import type { FeedbackDetail } from "./events/feedback_detail.js";
 import type { InvalidateDetail } from "./events/invalidate_detail.js";
@@ -146,8 +141,10 @@ import type { MessageRole } from "./message_role.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunIndex } from "./run_index.js";
 import { toolStatusFromOutcome } from "./tool_outcome.js";
-import { type TranscribeHandler, transcribeAudio } from "./transcribe_audio.js";
-import { type UploadHandler, uploadAttachment } from "./upload_attachment.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type TranscribeHandler } from "./transcribe_audio.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type UploadHandler } from "./upload_attachment.js";
 import { mintThread, warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
 
 /**
@@ -196,9 +193,6 @@ const COLLAPSED_KEY = "ag-ui-chat:collapsed";
 
 /** Per-tab persistence key for the built-in theme toggle. */
 const THEME_KEY = "ag-ui-chat:theme";
-
-/** Pixels between a selection and the offer to quote it. */
-const QUOTE_GAP = 6;
 
 /**
  * Storage namespaces already spoken for in this document.
@@ -608,17 +602,11 @@ export class AgUiChat extends HTMLElement {
   /** Return-to-foot affordance, shown only once something has been missed. */
   readonly #jumpButton = document.createElement("button");
   /**
-   * Offer to quote the current selection, floated beside it.
-   *
-   * Shares {@link AgUiChat.#messagesWrap} with the jump button for the same
-   * reason: it is positioned against the transcript, and must not scroll away
-   * with the words it is pointing at.
+   * Quoting a selection into the composer: the offer beside a transcript
+   * selection, the same offer over the host page, and the quotation itself.
+   * Built in the constructor, once the composer it writes into exists.
    */
-  readonly #quoteButton = document.createElement("button");
-  /** What {@link AgUiChat.#quoteButton} would quote, while it is showing. */
-  #quoting = "";
-  /** The host-page offer, while one is attached; see {@link AgUiChat.offerQuoteInPage}. */
-  #pageQuote: PageQuoteOffer | null = null;
+  readonly #excerpts: TranscriptQuoteOffer;
   /**
    * Positioning context for {@link AgUiChat.#jumpButton}.
    *
@@ -688,8 +676,12 @@ export class AgUiChat extends HTMLElement {
    * greeting layout is on, so a placement switch needs nothing from script.
    */
   readonly #greetingText: HTMLSpanElement = document.createElement("span");
-  /** Upload tray; created on connect only when `data-attachments-url` is set. */
-  #attachTray: AttachmentTray | null = null;
+  /**
+   * Files handed to the composer: the upload tray and the picker, drop and
+   * paste routes into it. Built in the constructor; the tray itself only once
+   * uploads are wired on connect.
+   */
+  readonly #attachments: ComposerAttachments;
 
   /**
    * Where the panel and launcher sit and how big the panel is: the drags, the
@@ -741,8 +733,8 @@ export class AgUiChat extends HTMLElement {
 
   /** Mic button mount point (input row); the control mounts on connect when enabled. */
   readonly #voiceSlot: HTMLSpanElement;
-  /** Voice-input control; created on connect when transcription is available. */
-  #voice: VoiceInput | null = null;
+  /** The composer's mic, mounted on connect when transcription is available. */
+  readonly #voice: ComposerVoice;
   /** Whether the element is currently in the DOM; gates the connect-time warning. */
   #connected = false;
 
@@ -808,10 +800,11 @@ export class AgUiChat extends HTMLElement {
   // thread switch started while it awaited a slow store) drops its result.
   #rehydrateGeneration = 0;
   #initialMessages: readonly Message[] = [];
-  // Skill catalog by source; merged backend → embed → client (later wins).
-  #backendSkills: readonly Skill[] = [];
-  #embedSkills: readonly Skill[] = [];
-  #clientSkills: readonly Skill[] = [];
+  /**
+   * The skill catalog: its three sources merged into the menu, and what a pick
+   * does to the composer. Built in the constructor, after the menu it fills.
+   */
+  readonly #skills: SkillCatalog;
 
   constructor() {
     super();
@@ -843,6 +836,37 @@ export class AgUiChat extends HTMLElement {
       clearPreference: (base) => this.#clearPreference(base),
       announceSurfaceChange: (text, undo) => this.#announceSurfaceChange(text, undo),
     });
+    this.#excerpts = new TranscriptQuoteOffer({
+      element: this,
+      root: this.#root,
+      messages: this.#messages,
+      messagesWrap: this.#messagesWrap,
+      input: this.#input,
+      strings: () => this.#strings,
+      autoGrow: () => this.#autoGrow(),
+      quote: (text) => this.quote(text),
+    });
+    this.#attachments = new ComposerAttachments({
+      element: this,
+      chat: this.#chat,
+      slot: this.#attachSlot,
+      fileInput: this.#fileInput,
+      button: this.#attachButton,
+      strings: () => this.#strings,
+      uploadHandler: () => this.uploadHandler,
+      headersFor: (url) => this.#headersFor(url),
+      credentialsOption: () => this.#credentialsOption(),
+    });
+    this.#voice = new ComposerVoice({
+      element: this,
+      slot: this.#voiceSlot,
+      input: this.#input,
+      strings: () => this.#strings,
+      transcribeHandler: () => this.transcribeHandler,
+      headersFor: (url) => this.#headersFor(url),
+      credentialsOption: () => this.#credentialsOption(),
+      onInput: () => this.#onInput(),
+    });
     // The compaction notice is a registration, not a branch -- and going through
     // the seam earns it two things it did not have: a reload puts it back (it is
     // content, and content replays), and a server redrawing under the same id
@@ -870,7 +894,25 @@ export class AgUiChat extends HTMLElement {
           void this.sendMessage(prompt);
         }),
     });
-    this.#skillsMenu = new SkillsMenu((skill) => this.#applySkill(skill));
+    this.#skillsMenu = new SkillsMenu((skill) => this.#skills.apply(skill));
+    this.#skills = new SkillCatalog({
+      element: this,
+      menu: this.#skillsMenu,
+      input: this.#input,
+      hint: this.#composerHint,
+      strings: () => this.#strings,
+      context: () => this.skillContext(),
+      flag: (name) => this.#flag(name),
+      readJsonAttribute: (name) => this.#readJsonAttribute(name),
+      fetchInit: (url) => this.#fetchInit(url),
+      send: (content) => {
+        void this.sendMessage(content);
+      },
+      submit: () => {
+        void this.#submit();
+      },
+      autoGrow: () => this.#autoGrow(),
+    });
     this.#drawer = new ThreadDrawer({
       onSelect: (threadId) => {
         void this.#switchThread(threadId);
@@ -944,7 +986,7 @@ export class AgUiChat extends HTMLElement {
       // Said at the composer rather than in the transcript, because that is
       // where the fix goes and because the hint clears itself on the first
       // keystroke -- a transcript notice for a recoverable slip would outlive
-      // the slip. Focus follows for the same reason `#applySkill` moves it when
+      // the slip. Focus follows for the same reason applying a skill moves it when
       // a template is short of a field.
       this.#composerHint.textContent = this.#strings.continueNeedsTurn;
       this.#composerHint.hidden = false;
@@ -1517,7 +1559,7 @@ export class AgUiChat extends HTMLElement {
       this.setAttribute("collapsed", "");
     }
     this.#syncLauncher();
-    this.#initSkills();
+    this.#skills.init();
     // Namespace the built-in default store too (a host-injected store is used
     // verbatim). Must precede #wireThreadStore, which wraps the current store.
     if (this.conversationStore instanceof SessionStorageStore) {
@@ -1536,8 +1578,8 @@ export class AgUiChat extends HTMLElement {
     window.visualViewport?.addEventListener("scroll", this.#onViewportResize);
     this.#placement.publishVisualViewport();
     this.#wireThreadStore();
-    this.#wireAttachments();
-    this.#wireVoice();
+    this.#attachments.wire();
+    this.#voice.wire();
     this.#threadId = this.conversationStore.threadId();
     // The catalog requests go out a microtask later, so a host configuring
     // through a framework ref still has a chance to be heard — see #startup.
@@ -1576,7 +1618,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     void this.#fetchToolCatalog();
-    void this.#fetchSkills();
+    void this.#skills.fetch();
   }
 
   /**
@@ -1596,7 +1638,7 @@ export class AgUiChat extends HTMLElement {
     this.#cancelRun();
     this.#resetState();
     this.#setRunning(false);
-    await Promise.all([this.#fetchToolCatalog(), this.#fetchSkills(), this.#rehydrate()]);
+    await Promise.all([this.#fetchToolCatalog(), this.#skills.fetch(), this.#rehydrate()]);
   }
 
   /**
@@ -1619,12 +1661,9 @@ export class AgUiChat extends HTMLElement {
       this.#claimedNs = null;
     }
     this.#cancelRun();
-    // The page offer listens on the host's document, not on anything of ours,
-    // so nothing else would ever take it down.
-    this.#pageQuote?.detach();
-    this.#pageQuote = null;
-    this.#attachTray?.dispose();
-    this.#voice?.dispose();
+    this.#excerpts.detachPageOffer();
+    this.#attachments.tray?.dispose();
+    this.#voice.dispose();
     this.#scroller.dispose();
     if (this.#announceTimer !== null) {
       clearTimeout(this.#announceTimer);
@@ -1687,100 +1726,6 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Enable the composer's file-upload tray when uploads are possible — either a
-   * custom {@link uploadHandler} is set or `data-attachments-url` provides the
-   * built-in multipart endpoint: reveal the 📎 button, wire the hidden file
-   * input + drag-and-drop, and mount the tray. With neither, the affordance
-   * stays hidden and the chat degrades to text-only.
-   */
-  #wireAttachments(): void {
-    const url = this.getAttribute("data-attachments-url");
-    const upload = this.uploadHandler ?? this.#defaultUploadHandler(url);
-    if (upload === null) {
-      return;
-    }
-    const accept = this.getAttribute("data-attachment-accept") ?? "";
-    // Bound to the local rather than the field: the hook can only fire from a
-    // tray that exists, so passing it removes a null check no caller can reach.
-    const tray: AttachmentTray = new AttachmentTray({
-      upload,
-      maxBytes: this.#attachmentMaxBytes(),
-      accept,
-      strings: this.#strings,
-      // The tray's change hook, surfaced to the host as an event. A host
-      // driving its own composer could otherwise not tell a settled upload from
-      // one still in flight, which is the state sendMessage() has to be called
-      // with knowledge of.
-      onChange: () => this.#dispatchAttachments(tray),
-    });
-    this.#attachTray = tray;
-    this.#attachSlot.appendChild(this.#attachTray.element);
-    this.#fileInput.accept = accept;
-    this.#attachButton.hidden = false;
-    this.#enableDragAndDrop();
-    this.#enablePaste(tray);
-  }
-
-  /** The built-in multipart upload handler for `data-attachments-url`, or `null`. */
-  #defaultUploadHandler(url: string | null): UploadHandler | null {
-    if (url === null) {
-      return null;
-    }
-    // Forward the tray's abort signal so removing a chip (or tearing the
-    // element down) cancels the XHR.
-    return (file, onProgress, signal) =>
-      uploadAttachment(file, {
-        url,
-        headers: this.#headersFor(url),
-        ...this.#credentialsOption(),
-        onProgress,
-        signal,
-      });
-  }
-
-  /**
-   * Reveal the composer's 🎤 mic button when transcription is possible — either
-   * a custom {@link transcribeHandler} is set or `data-transcribe-url` provides
-   * the built-in POST endpoint. The control records via `MediaRecorder` and
-   * drops the transcript into the composer; with neither configured the mic
-   * stays hidden and the chat is text-only.
-   */
-  #wireVoice(): void {
-    const url = this.getAttribute("data-transcribe-url");
-    const transcribe = this.transcribeHandler ?? this.#defaultTranscribeHandler(url);
-    if (transcribe === null) {
-      return;
-    }
-    this.#voice = new VoiceInput({
-      transcribe,
-      onText: (text) => this.#insertVoiceText(text),
-      strings: this.#strings,
-    });
-    this.#voiceSlot.appendChild(this.#voice.element);
-  }
-
-  /** The built-in transcription handler for `data-transcribe-url`, or `null`. */
-  #defaultTranscribeHandler(url: string | null): TranscribeHandler | null {
-    if (url === null) {
-      return null;
-    }
-    return (audio) =>
-      transcribeAudio(audio, {
-        url,
-        headers: this.#headersFor(url),
-        ...this.#credentialsOption(),
-      });
-  }
-
-  /** Drop a voice transcript into the composer (appended to any typed text). */
-  #insertVoiceText(text: string): void {
-    const current = this.#input.value.trim();
-    this.#input.value = current === "" ? text : `${current} ${text}`;
-    this.#onInput();
-    this.#input.focus();
-  }
-
-  /**
    * Put `text` into the composer as a markdown quotation, and focus it.
    *
    * Deliberately **not** a send. Quoting is how a question narrows to one part
@@ -1795,20 +1740,7 @@ export class AgUiChat extends HTMLElement {
    * No-ops on text that is empty or only whitespace.
    */
   quote(text: string): void {
-    const quoted = asQuote(text);
-    if (quoted === "") {
-      return;
-    }
-    // Appended after whatever is already typed, on a fresh paragraph: a second
-    // quotation is a second thing being asked about, not a replacement for the
-    // first. Trailing blank lines are dropped so repeated quoting does not
-    // accumulate gaps.
-    const current = this.#input.value.replace(/\s+$/, "");
-    this.#input.value = current === "" ? quoted : `${current}\n\n${quoted}`;
-    this.#autoGrow();
-    this.#input.focus();
-    const end = this.#input.value.length;
-    this.#input.setSelectionRange(end, end);
+    this.#excerpts.insert(text);
   }
 
   /**
@@ -1832,72 +1764,7 @@ export class AgUiChat extends HTMLElement {
    * re-mounts it calls this again.
    */
   offerQuoteInPage(within: HTMLElement = document.body): () => void {
-    this.#pageQuote?.detach();
-    const offer = attachQuoteOffer({
-      within,
-      label: this.#strings.quoteSelection,
-      exclude: this,
-      onQuote: (text) => this.quote(text),
-    });
-    this.#pageQuote = offer;
-    return () => {
-      offer.detach();
-      if (this.#pageQuote === offer) {
-        this.#pageQuote = null;
-      }
-    };
-  }
-
-  /** Whether the transcript offers to quote what the user selects. */
-  #quoteEnabled(): boolean {
-    return this.getAttribute("data-quote-selection") !== "false";
-  }
-
-  /**
-   * Offer to quote the settled selection, or retire the offer.
-   *
-   * `event` is passed for its coordinates and only those: they say which line
-   * of a selection spanning several messages the offer should hang from. A
-   * keyboard selection has none, and the first line is used instead.
-   */
-  #onSelectionSettled(event?: MouseEvent): void {
-    if (!this.#quoteEnabled()) {
-      return;
-    }
-    const near = event === undefined ? undefined : { x: event.clientX, y: event.clientY };
-    const selected = quotableSelection(this.#messages, [this.#root], near);
-    if (selected === null) {
-      this.#hideQuote();
-      return;
-    }
-    this.#quoting = selected.text;
-    this.#placeQuote(selected.rect);
-  }
-
-  /** Float the offer beside `rect`, kept inside the transcript's own box. */
-  #placeQuote(rect: DOMRect): void {
-    // Unhidden first: a hidden element measures zero, and its own size is what
-    // decides whether it fits above the selection and how far to pull it left.
-    this.#quoteButton.hidden = false;
-    const wrap = this.#messagesWrap.getBoundingClientRect();
-    const top = rect.top - wrap.top;
-    // Above the selection by default, below it when there is no room --
-    // selecting the first line of the transcript is the ordinary case, not an
-    // edge one, and an offer clipped by the header is an offer nobody takes.
-    const below = top < QUOTE_GAP + this.#quoteButton.offsetHeight;
-    this.#quoteButton.dataset["below"] = String(below);
-    this.#quoteButton.style.top = `${below ? rect.bottom - wrap.top + QUOTE_GAP : top - QUOTE_GAP}px`;
-    // Centred on the selection, then pulled back by its own half-width so a
-    // selection at either margin does not push the offer out of the panel.
-    const half = this.#quoteButton.offsetWidth / 2;
-    const centre = rect.left + rect.width / 2 - wrap.left;
-    this.#quoteButton.style.left = `${Math.min(Math.max(centre, half), wrap.width - half)}px`;
-  }
-
-  /** Retire the offer, and forget what it was pointing at. */
-  #hideQuote(): void {
-    this.#quoteButton.hidden = true;
-    this.#quoting = "";
+    return this.#excerpts.offerInPage(within);
   }
 
   /**
@@ -1943,144 +1810,6 @@ export class AgUiChat extends HTMLElement {
     );
   }
 
-  /** The client-side upload size cap from `data-attachment-max-bytes`. */
-  #attachmentMaxBytes(): number {
-    const attr = this.getAttribute("data-attachment-max-bytes");
-    if (attr === null) {
-      return DEFAULT_ATTACHMENT_MAX_BYTES;
-    }
-    const parsed = Number.parseInt(attr, 10);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_ATTACHMENT_MAX_BYTES;
-  }
-
-  /** Queue every file from the picker into the tray, then reset the input. */
-  #onFilesPicked(): void {
-    const files = this.#fileInput.files;
-    if (files !== null) {
-      for (const file of Array.from(files)) {
-        this.#attachTray?.add(file);
-      }
-    }
-    // Reset so re-picking the same file fires `change` again.
-    this.#fileInput.value = "";
-  }
-
-  /** Accept files dropped anywhere on the chat shell into the tray. */
-  #enableDragAndDrop(): void {
-    this.#chat.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      this.#chat.classList.add("chat--dragover");
-    });
-    this.#chat.addEventListener("dragleave", () => {
-      this.#chat.classList.remove("chat--dragover");
-    });
-    this.#chat.addEventListener("drop", (event) => {
-      event.preventDefault();
-      this.#chat.classList.remove("chat--dragover");
-      const files = event.dataTransfer?.files;
-      if (files !== undefined) {
-        for (const file of Array.from(files)) {
-          this.#attachTray?.add(file);
-        }
-      }
-    });
-  }
-
-  /**
-   * Turn a very long text paste into an attachment instead of a wall of text.
-   *
-   * A composer capped at `40vh` is not where forty thousand characters go: the
-   * user cannot read what they pasted, cannot edit around it, and sends one
-   * enormous turn. As a file it stays whole, the model still receives it, and
-   * the box is left for the question about it.
-   *
-   * Only where the host has configured uploads -- and structurally so, rather
-   * than by a check here: the paste listener is wired inside the attachment
-   * setup, so with no tray there is no listener at all and an ordinary paste is
-   * untouched. Quietly dropping a paste for being long would be far worse than
-   * an awkward composer. The tray is passed rather than read off the field for
-   * the same reason its `onChange` hook is: it can only be called from one that
-   * exists, so taking it as an argument removes a null check no caller can
-   * reach.
-   *
-   * Nothing is lost by removing the chip: the text is still on the clipboard,
-   * so pasting again brings it back. That is why this needs no undo of its own.
-   */
-  #pasteLongTextAsFile(event: ClipboardEvent, clipboard: DataTransfer, tray: AttachmentTray): void {
-    const threshold = this.#pasteAttachThreshold();
-    const text = clipboard.getData("text/plain");
-    if (threshold === null || text.length < threshold) {
-      return;
-    }
-    event.preventDefault();
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    tray.add(new File([text], `pasted-${stamp}.txt`, { type: "text/plain" }));
-  }
-
-  /**
-   * How long a pasted string has to be before it becomes a file, or `null` to
-   * leave every paste in the composer.
-   *
-   * One attribute with three answers rather than three attributes: absent is
-   * the default, `off` refuses, and a number states the threshold. A value that
-   * is neither says so, because a typo silently meaning "off" is the failure
-   * this whole release keeps finding.
-   */
-  #pasteAttachThreshold(): number | null {
-    const raw = this.getAttribute("data-paste-attach");
-    if (raw === null) {
-      return PASTE_ATTACH_CHARS;
-    }
-    if (raw === "off") {
-      return null;
-    }
-    const stated = Number.parseInt(raw, 10);
-    if (Number.isNaN(stated) || stated <= 0) {
-      console.warn(
-        `<ag-ui-chat>: data-paste-attach="${raw}" is neither "off" nor a positive ` +
-          `number of characters, so the default of ${PASTE_ATTACH_CHARS} is used.`,
-      );
-      return PASTE_ATTACH_CHARS;
-    }
-    return stated;
-  }
-
-  /**
-   * Accept files pasted into the composer.
-   *
-   * The whole tray already exists behind this: a paste is one more way to hand
-   * it a `File`, alongside the picker and a drop.
-   *
-   * Two rules keep it from stealing a paste that was never about files.
-   * `clipboardData.files` is empty for text, so ordinary pasting is untouched.
-   * And the default is only prevented when the clipboard carries **no text**:
-   * copying a rich selection that happens to contain an image puts both on the
-   * clipboard, and swallowing the words someone meant to paste in order to
-   * attach a picture they did not is the worse of the two failures.
-   */
-  #enablePaste(tray: AttachmentTray): void {
-    this.#chat.addEventListener("paste", (event: ClipboardEvent) => {
-      // Nullish rather than a null check: the property is typed as nullable,
-      // and an engine that fires a plain Event for a paste leaves it absent
-      // instead, which is not the same value and is the same situation.
-      const clipboard = event.clipboardData ?? null;
-      if (clipboard === null) {
-        return;
-      }
-      const files = Array.from(clipboard.files);
-      if (files.length === 0) {
-        this.#pasteLongTextAsFile(event, clipboard, tray);
-        return;
-      }
-      if (clipboard.getData("text/plain") === "") {
-        event.preventDefault();
-      }
-      for (const file of files) {
-        this.#attachTray?.add(named(file));
-      }
-    });
-  }
-
   /**
    * When `data-threads-url` is set, route thread enumeration / load / rename /
    * delete through that server endpoint (wrapping the current store as the
@@ -2124,114 +1853,7 @@ export class AgUiChat extends HTMLElement {
    * and fetched skills (so a client skill overrides a same-named server one).
    */
   setSkills(skills: readonly Skill[]): void {
-    this.#clientSkills = skills;
-    this.#recomputeSkills();
-  }
-
-  /**
-   * Wire the skill surfaces: opt-in flags and the embedded catalog. The backend
-   * catalog is fetched from `#startup`, a microtask later, so it carries the
-   * host's transport configuration.
-   */
-  #initSkills(): void {
-    this.#skillsMenu.enableChips(this.#flag("data-prompt-chips"));
-    this.#skillsMenu.enableSlash(this.#flag("data-slash-commands"));
-    this.#embedSkills = this.#readEmbeddedSkills();
-    this.#recomputeSkills();
-  }
-
-  /** Parse the inline `data-skills` JSON catalog (empty when absent/malformed). */
-  #readEmbeddedSkills(): readonly Skill[] {
-    // `parseSkills` drops anything that is not a well-formed skill, `null`
-    // included, so the absent and unparseable cases need no branch here.
-    return parseSkills(this.#readJsonAttribute("data-skills"));
-  }
-
-  /** Fetch the backend skills catalog from `data-skills-url`, if set. */
-  async #fetchSkills(): Promise<void> {
-    const url = this.getAttribute("data-skills-url");
-    if (url === null) {
-      return;
-    }
-    try {
-      const response = await fetch(url, this.#fetchInit(url));
-      this.#backendSkills = parseSkills(await response.json());
-      this.#recomputeSkills();
-    } catch {
-      // Network/parse failure: skills just stay as the embedded/client set.
-    }
-  }
-
-  /** Merge the three sources (backend → embed → client; later wins by name). */
-  #recomputeSkills(): void {
-    const merged = new Map<string, Skill>();
-    for (const skill of [...this.#backendSkills, ...this.#embedSkills, ...this.#clientSkills]) {
-      merged.set(skill.name, skill);
-    }
-    this.#skillsMenu.setSkills([...merged.values()]);
-  }
-
-  /**
-   * Act on a picked skill.
-   *
-   * A skill with no `prompt` is server-resolved: picking it sends the bare
-   * `/name` token for the agent to expand, so the wording never reaches the
-   * browser. Prefer that shape — a skill often states a project's internal
-   * workflow most plainly, and a catalog endpoint is a plain GET.
-   *
-   * A skill carrying a `prompt` has the client fill its `{placeholder}`s from
-   * the page instead, which is right for placeholders only the page can supply.
-   *
-   * Either way a pick sends; `sendImmediately: false` opts into pre-filling the
-   * composer instead.
-   */
-  #applySkill(skill: Skill): void {
-    if (skill.prompt === undefined) {
-      this.#composerHint.hidden = true;
-      void this.sendMessage(`/${skill.name}`);
-      return;
-    }
-    const { text, missing } = fillTemplate(skill.prompt, this.skillContext());
-    if (missing.length > 0) {
-      // Hand the user something to work with rather than only a refusal. The
-      // partially-filled template goes into the composer with its unresolved
-      // `{placeholder}`s intact and the first one selected, so the next
-      // keystroke replaces it. Blocking with a hint alone left whatever the
-      // user had typed to open the palette — a lone "/" — sitting there, which
-      // says nothing about what the skill wanted or how to give it.
-      this.#composerHint.textContent = fillUiString(this.#strings.skillNeeds, {
-        title: skill.title,
-        fields: missing.join(", "),
-      });
-      this.#composerHint.hidden = false;
-      this.#input.value = text;
-      this.#autoGrow();
-      this.#input.focus();
-      this.#selectFirstPlaceholder(text);
-      return;
-    }
-    this.#composerHint.hidden = true;
-    this.#input.value = text;
-    this.#autoGrow();
-    if (skill.sendImmediately === false) {
-      this.#input.focus();
-      return;
-    }
-    void this.#submit();
-  }
-
-  /**
-   * Put the caret on the first unresolved placeholder, selected.
-   *
-   * Typing then replaces it, which is the shortest path from "this skill needs
-   * a topic" to a sendable prompt.
-   */
-  #selectFirstPlaceholder(text: string): void {
-    // The first surviving brace *is* the first unresolved placeholder — a
-    // resolved one was substituted away — so this needs no search through the
-    // missing keys and no not-found branch to defend.
-    const start = text.indexOf("{");
-    this.#input.setSelectionRange(start, text.indexOf("}", start) + 1);
+    this.#skills.setClientSkills(skills);
   }
 
   /** Whether the widget is collapsed (reflected as the `collapsed` attribute). */
@@ -2806,7 +2428,7 @@ export class AgUiChat extends HTMLElement {
     this.#cardElements.clear();
     this.#activityBlocks.clear();
     this.#retryOwner = null;
-    this.#attachTray?.clear();
+    this.#attachments.tray?.clear();
     // Returning to an empty conversation snaps back to the centre: only the send
     // that left it travels. And whatever restore was holding the layout back is
     // no longer this transcript's, so a new chat started mid-restore greets the
@@ -3261,31 +2883,8 @@ export class AgUiChat extends HTMLElement {
       this.#scroller.jump();
     });
 
-    this.#quoteButton.className = "quote-selection";
-    this.#quoteButton.type = "button";
-    this.#quoteButton.setAttribute("part", "quote-selection");
-    this.#quoteButton.textContent = this.#strings.quoteSelection;
-    this.#quoteButton.hidden = true;
-    // `mousedown` rather than `click`: pressing anywhere else collapses the
-    // selection first, and by the time a click lands there is nothing left to
-    // quote. Preventing the default keeps the selection alive long enough to
-    // read it.
-    this.#quoteButton.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-    });
-    this.#quoteButton.addEventListener("click", () => {
-      this.quote(this.#quoting);
-      window.getSelection()?.removeAllRanges();
-      this.#hideQuote();
-    });
-
-    // A settled selection, by either input. `mouseup` rather than
-    // `selectionchange` so the offer does not chase the pointer mid-drag; the
-    // second half of the same gesture, `mousedown`, retires the previous offer
-    // before the new selection exists.
-    this.#messages.addEventListener("mouseup", (event) => this.#onSelectionSettled(event));
-    this.#messages.addEventListener("keyup", () => this.#onSelectionSettled());
-    this.#messages.addEventListener("mousedown", () => this.#hideQuote());
+    // The quote offer, and the transcript's settled selections it listens for.
+    this.#excerpts.mount();
 
     // Built here rather than at field initialisation: the viewport has to exist
     // and the observer has to have something to observe.
@@ -3391,7 +2990,7 @@ export class AgUiChat extends HTMLElement {
 
     // File-upload affordance: a paperclip button (hidden until
     // `data-attachments-url` is wired) opening a hidden multi-file input.
-    // Drag-and-drop covers the whole shell (wired in #enableDragAndDrop).
+    // Drag-and-drop covers the whole shell (wired by ComposerAttachments).
     this.#attachButton.className = "attach-btn";
     this.#attachButton.type = "button";
     this.#attachButton.setAttribute("part", "attach-button");
@@ -3405,11 +3004,11 @@ export class AgUiChat extends HTMLElement {
     this.#fileInput.type = "file";
     this.#fileInput.multiple = true;
     this.#fileInput.hidden = true;
-    this.#fileInput.addEventListener("change", () => this.#onFilesPicked());
+    this.#fileInput.addEventListener("change", () => this.#attachments.onFilesPicked());
 
     this.#attachSlot.className = "attachment-slot";
 
-    // Mic button mount point (kept empty until #wireVoice mounts the control).
+    // Mic button mount point (kept empty until ComposerVoice mounts the control).
     this.#voiceSlot.className = "voice-slot";
 
     // A coarse footer slot below the composer.
@@ -3425,7 +3024,7 @@ export class AgUiChat extends HTMLElement {
     this.#messagesWrap.className = "messages-wrap";
     // Sibling of the list inside a shared box, not a child of it: the
     // affordance offering to scroll must not scroll away with the content.
-    this.#messagesWrap.append(this.#messages, this.#jumpButton, this.#quoteButton);
+    this.#messagesWrap.append(this.#messages, this.#jumpButton, this.#excerpts.button);
 
     this.#chat.append(
       header,
@@ -3932,7 +3531,7 @@ export class AgUiChat extends HTMLElement {
     // SSE run that orphans the first (unabortable) and lets the second run's
     // settle sweep corrupt the first's still-pending tool cards.
     const content = this.#input.value.trim();
-    const attachments = this.#attachTray?.readyRefs() ?? [];
+    const attachments = this.#attachments.tray?.readyRefs() ?? [];
     // Allow an attachments-only message (no typed text), but nothing empty.
     if (content === "" && attachments.length === 0) {
       return;
@@ -3970,18 +3569,18 @@ export class AgUiChat extends HTMLElement {
     // frequently the entire point of the message, and the user had no way to
     // tell theirs had been left behind. Say it before dropping the chips,
     // while `hasPending()` still describes this send.
-    if (this.#attachTray?.hasPending() === true) {
+    if (this.#attachments.tray?.hasPending() === true) {
       this.#appendNotice(
         "\u{1F4CE}",
         fillUiString(this.#strings.attachmentsStillUploading, {
-          n: this.#attachTray.pendingCount(),
+          n: this.#attachments.tray.pendingCount(),
         }),
         "attachment-pending",
       );
     }
     // The refs ride the message from here; drop the settled chips, keep any
     // still uploading for a follow-up message.
-    this.#attachTray?.clearReady();
+    this.#attachments.tray?.clearReady();
     await this.sendMessage(content, attachments);
   }
 
@@ -4040,22 +3639,7 @@ export class AgUiChat extends HTMLElement {
    * reaches zero.
    */
   attachFile(file: File): boolean {
-    if (this.#attachTray === null) {
-      return false;
-    }
-    this.#attachTray.add(file);
-    return true;
-  }
-
-  /** Tell the host what the tray now holds — see {@link ATTACHMENT_EVENT}. */
-  #dispatchAttachments(tray: AttachmentTray): void {
-    this.dispatchEvent(
-      new CustomEvent<AttachmentsDetail>(ATTACHMENT_EVENT, {
-        detail: { attachments: tray.readyRefs(), pending: tray.pendingCount() },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    return this.#attachments.attach(file);
   }
 
   /**
@@ -5398,31 +4982,6 @@ interface RestoredToolCall {
  */
 function restoredToolCalls(value: unknown): readonly RestoredToolCall[] {
   return Array.isArray(value) ? value.filter(isRestoredToolCall) : [];
-}
-
-/**
- * A pasted file, guaranteed to have a name.
- *
- * A file dropped or picked always carries one; a pasted one need not. Some
- * engines hand over a blob with an empty name, which travels all the way to
- * the upload as an empty `filename` and lands on the server as a file nobody
- * can identify -- while the chip in the tray shows an empty label. A file that
- * already has a name keeps it, including the generic one Chrome gives a pasted
- * screenshot: it is at least what the file is, and the chip shows the size
- * beside it.
- */
-function named(file: File): File {
-  if (file.name !== "") {
-    return file;
-  }
-  // The subtype is the extension for every clipboard image type worth naming.
-  // A type with no slash in it falls back to the whole string, and an absent
-  // one leaves a bare stamp rather than a name ending in a dot.
-  const subtype = file.type.split("/")[1] ?? file.type;
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return new File([file], subtype === "" ? `pasted-${stamp}` : `pasted-${stamp}.${subtype}`, {
-    type: file.type,
-  });
 }
 
 /** Whether an unknown history entry has enough shape to render a tool card. */
