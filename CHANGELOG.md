@@ -53,8 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moved them: a box with its top, height and bottom all set ignores the bottom.
   The element now also publishes how far the visible area is panned, as
   `--ag-ui-visual-viewport-inset-top`, and every panel anchored at the top moves
-  down by it. `--ag-ui-keyboard-inset-top` outranks the measurement, as
-  `--ag-ui-keyboard-inset` does at the bottom; `0px` opts out.
+  down by as much of it as goes past the host's `--ag-ui-viewport-inset-top`.
+  `--ag-ui-keyboard-inset-top` outranks that, as `--ag-ui-keyboard-inset` does
+  at the bottom; `0px` opts out.
+
+  The same panel with a bar reserved at the top also ran past the bottom of the
+  visible area by the bar's height whenever a keyboard was up, pan or no pan:
+  the measured height replaced the host's box rather than being cut from it, so
+  the bar stayed in the position and left the height. The height is now the
+  host's box cut to the visible area.
 
 ## [0.39.0] — 2026-09-17
 

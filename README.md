@@ -2852,9 +2852,11 @@ measurement, or set it to `0px` to opt out of the lift entirely.
 `--ag-ui-keyboard-inset-top` does the same at the top. To show a field a
 keyboard would cover, a mobile browser pans the visible area down the page, and
 a panel anchored at the top of the screen (`page`, `full`, `side`, `sidebar`, and
-every placement at phone width) moves down with it. The widget publishes how far
-as `--ag-ui-visual-viewport-inset-top`; state this one to outrank it, or `0px` to
-keep the panel at the top of the page.
+every placement at phone width) moves down with it. The widget publishes the pan
+as `--ag-ui-visual-viewport-inset-top`, and the panel moves by as much of it as
+goes past your `--ag-ui-viewport-inset-top`, since the pan scrolls a reserved bar
+away with the page. State `--ag-ui-keyboard-inset-top` to outrank that distance,
+or `0px` to keep the panel below your reserved top.
 
 `--ag-ui-viewport-height` and `--ag-ui-viewport-width` state the usable box
 outright, for the case where no viewport-percentage length describes it. An

@@ -375,6 +375,52 @@ describe("a visible area the browser has panned (real browser)", () => {
     });
   }
 
+  // A host that reserves a bar at the top, as the README shows for a sticky
+  // header. The bar is in the page, so a pan takes it off the screen with
+  // everything else: the panel belongs below whichever is lower, the bar or the
+  // top of the visible area, and must end where the visible area ends. Adding
+  // the two put the panel a whole bar below the band, with its composer behind
+  // the keyboard.
+  const BAR_PX = 100;
+
+  for (const [label, pan] of [
+    ["deeper than the bar", PAN_PX],
+    ["shallower than the bar", 60],
+    ["absent", 0],
+  ] as const) {
+    it(`fits the band below a reserved bar when the pan is ${label}`, async () => {
+      const viewport = installFakeViewport();
+      const el = mount("page");
+      el.style.setProperty("--ag-ui-viewport-inset-top", `${BAR_PX}px`);
+      await frame();
+
+      const visible = window.innerHeight - KEYBOARD_PX;
+      viewport.panTo(pan, visible);
+      await frame();
+
+      const box = el.getBoundingClientRect();
+      expect(box.top).toBeCloseTo(Math.max(BAR_PX, pan), 0);
+      expect(box.bottom).toBeCloseTo(pan + visible, 0);
+    });
+  }
+
+  it("fits the band below a reserved bar on a phone", async () => {
+    await page.viewport(PHONE.width, PHONE.height);
+    const viewport = installFakeViewport();
+    const el = mount("floating");
+    el.setAttribute("data-start-open", "");
+    el.style.setProperty("--ag-ui-viewport-inset-top", `${BAR_PX}px`);
+    await frame();
+
+    const visible = window.innerHeight - KEYBOARD_PX;
+    viewport.panTo(PAN_PX, visible);
+    await frame();
+
+    const box = el.getBoundingClientRect();
+    expect(box.top).toBeCloseTo(PAN_PX, 0);
+    expect(box.bottom).toBeCloseTo(PAN_PX + visible, 0);
+  });
+
   it("publishes the band above as a number and gives it back", async () => {
     const viewport = installFakeViewport();
     const el = mount("page");

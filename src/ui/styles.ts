@@ -180,7 +180,24 @@ export const STYLES = `
      keyboard changes no viewport-percentage length -- not vh, not dvh, not svh
      -- so a full-bleed panel on a phone has to be told the height rather than
      deriving it. The value to publish there is the visual viewport's. */
-  --_viewport-height: var(--ag-ui-viewport-height, var(--_visual-viewport-height));
+  --_viewport-height: var(
+    --ag-ui-viewport-height,
+    calc(
+      min(var(--_visual-viewport-inset-top) + var(--_visual-viewport-height), 100vh - var(--_viewport-inset-bottom)) -
+        var(--_viewport-inset-top) - var(--_keyboard-inset-top)
+    )
+  );
+  /* That default is the host's box cut to the part of the screen the user can
+     see: from the top the panel starts at, the host's reserved top moved down
+     by the keyboard inset below, to whichever is further up, the bottom of the
+     visible area or the host's reserved bottom. Where nothing has measured, the
+     visible area is the layout viewport with no pan, and this is the host's
+     box exactly.
+
+     Cut rather than replaced. A measured height used as the whole answer kept
+     a bar the host reserved at the top in the position and out of the height,
+     so the panel ran that far past the bottom of the visible area, with its
+     composer behind the keyboard. */
   /* The measured height of the part of the screen the user can actually see,
      written by the element from the visual viewport and falling back to the
      layout viewport where nothing has measured yet.
@@ -194,10 +211,7 @@ export const STYLES = `
      Separate from the token above so a host that states the usable height
      outright still wins: the element writes this one inline, and an inline
      value would otherwise outrank the host's own rule. */
-  --_visual-viewport-height: var(
-    --ag-ui-visual-viewport-height,
-    calc(100vh - var(--_viewport-inset-top) - var(--_viewport-inset-bottom))
-  );
+  --_visual-viewport-height: var(--ag-ui-visual-viewport-height, 100vh);
   /* How much of the layout viewport is hidden below the visible one, measured
      and written by the element alongside the height above.
 
@@ -212,19 +226,23 @@ export const STYLES = `
      A host wanting no keyboard lift at all sets --ag-ui-keyboard-inset: 0px. */
   --_keyboard-inset: var(--ag-ui-keyboard-inset, var(--_visual-viewport-inset-bottom));
   --_visual-viewport-inset-bottom: var(--ag-ui-visual-viewport-inset-bottom, 0px);
-  /* How much of the layout viewport is hidden above the visible one: how far
-     the browser panned down to show the field being typed into. Measured and
-     written by the element with the two above, and with the same host knob in
-     front of it.
+  /* How far a panel anchored at the top moves down for a keyboard, below the
+     top the host reserved. With the same two-token shape as the lift above;
+     0px keeps the panel at the host's top.
 
-     A shorter panel anchored at the top needs this as the lift is needed at
-     the bottom. A fixed element stays against the top of the layout viewport
-     while the visible area moves down, so without it the panel shows only its
-     lower part, from the pan down, with its header off the screen and an empty
-     band under it. Every placement whose top edge is the top of the usable
-     box adds it; a corner panel anchored at the bottom does not, because the
-     band below already accounts for the pan. */
-  --_keyboard-inset-top: var(--ag-ui-keyboard-inset-top, var(--_visual-viewport-inset-top));
+     To show the field being typed into, a browser pans the visible area down
+     the layout viewport, and a fixed element stays against the layout top, so
+     a panel that did not move showed only its lower part, from the pan down,
+     with its header off the screen and an empty band under it. It moves by
+     what the pan goes past the host's reserved top, not by the whole pan: the
+     pan scrolls a bar reserved there away with the rest of the page rather
+     than pushing it down, and adding the two put the panel a whole bar below
+     the visible area. A corner panel anchored at the bottom does not use this,
+     because the band below already accounts for the pan. */
+  --_keyboard-inset-top: var(--ag-ui-keyboard-inset-top, max(0px, var(--_visual-viewport-inset-top) - var(--_viewport-inset-top)));
+  /* How much of the layout viewport is hidden above the visible one: how far
+     the browser panned. Measured and written by the element with the two
+     above. */
   --_visual-viewport-inset-top: var(--ag-ui-visual-viewport-inset-top, 0px);
   --_viewport-width: var(
     --ag-ui-viewport-width,
