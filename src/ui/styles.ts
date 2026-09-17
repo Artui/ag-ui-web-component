@@ -2390,8 +2390,8 @@ export const STYLES = `
   display: none;
 }
 
-/* The mic button's mount point; filled only once #wireVoice mounts the
-   control. */
+/* The mic button's mount point; filled only once ComposerVoice.wire mounts
+   the control, which it skips unless transcription is configured. */
 .voice-slot {
   display: contents;
 }
