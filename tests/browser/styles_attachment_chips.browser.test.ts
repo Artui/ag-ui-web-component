@@ -139,7 +139,7 @@ describe("attachment chips (real browser)", () => {
 
   it("builds no mic at all when transcription is unconfigured, rather than hiding one", () => {
     // Pins the asymmetry, so nobody adds a `.voice-btn[hidden]` rule that matches
-    // nothing -- or assumes the clip's defect applied here. `#wireVoice` returns
+    // nothing -- or assumes the clip's defect applied here. `ComposerVoice.wire` returns
     // before constructing the button, leaving an empty slot that costs nothing.
     const el = mountWithoutUploads();
     const root = shadow(el);

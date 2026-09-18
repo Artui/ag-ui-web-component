@@ -305,10 +305,13 @@ the `copyCode` / `copied` / `copyFailed` strings.
 
 `sendMessage(content, attachments?)` sends as if the user had typed it — user bubble,
 `ag-ui-submit` event, run started. Use it for an "Ask about this order" button, a command
-palette, or a composer of your own replacing the built-in one. It no-ops while a run is in
-flight and for an entirely empty message, and unlike the built-in Send it does **not** consult
-the attachment tray: what you pass is what is sent, so your composer stays in charge of its
-own state.
+palette, or a composer of your own replacing the built-in one. It no-ops for an entirely
+empty message, and while a run — or a checkpoint continuation picked from the panel — is in
+flight; a continuation counts from the pick, not from its first event, so the gap where two
+runs could start against one conversation is closed. Unlike the built-in Send it does **not**
+queue, so your composer keeps what it tried to send, and it does **not** consult the
+attachment tray: what you pass is what is sent, so your composer stays in charge of its own
+state.
 
 `attachFile(file)` queues a file into the tray exactly as the picker and drag-and-drop do, with
 the same validation and progress chip. It returns `false` when uploads are not configured
@@ -874,6 +877,13 @@ chat.askUserRenderer = (request, { signal }) =>
   myModal.ask(request.question, request.options, { allowCustom: request.allowCustom, signal });
 ```
 
+**A renderer that throws or rejects falls back to the built-in card** for that call, with a
+`console.warn` naming the tool call. As with `approvalRenderer`, the renderer decides how the
+question looks, not whether it is asked, so the run carries on as if no renderer were set. The one
+exception is a rejection after the signal fired, which is how a renderer is expected to honour Stop:
+that wait resolves with an empty answer, as the built-in card does on the same signal, with no card
+and no warning.
+
 ### DOM-driver and animation primitives
 
 So the agent can visibly drive the host page, the package ships generic, framework-free
@@ -1087,7 +1097,10 @@ chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
 ### The composer's own keys
 
 **Enter during a run queues.** A second run cannot start while one is in flight —
-it would orphan the first — so that key used to do nothing at all, silently. What
+it would orphan the first — so that key used to do nothing at all, silently. A
+checkpoint continuation picked from the panel counts as in flight from the pick
+rather than from its first event, which is a request later, so a turn typed in
+that gap is parked too rather than racing it. What
 is waiting shows above the composer as chips, each of which takes its message
 back when pressed, and the next one is sent when the run settles. Stopping the
 run discards them: sending into a conversation someone has just stopped is the
@@ -2389,6 +2402,12 @@ Picking a row with an empty composer says so above the input and puts the caret
 there, rather than closing the panel over nothing: a continuation sends **only**
 the new turn, so with nothing typed there is nothing to send.
 
+Picking a row while an answer is still streaming — the conversation's own, or
+another continuation's — is refused the same way: the hint asks you to wait or
+stop it, and what you typed stays in the composer for the pick after. The run in
+flight is not cancelled for you, since a continuation starting over it would
+leave two answers streaming into one transcript with Stop reaching only one.
+
 ### One URL, three endpoints
 
 `data-runs-url` is the only thing to configure. `resume/<id>/` and `fork/<id>/`
@@ -2406,7 +2425,7 @@ The component satisfies that structurally rather than by remembering a rule. A
 continuation runs on its own short-lived agent, built pointing at the resume
 endpoint and seeded with **no** history — so "only the new turn" is the only
 thing it *can* send, and the fresh run id comes free because a new agent mints
-one. Your main agent's history is never touched.
+one. Nothing of the conversation's history goes out on its request.
 
 A resumed run is a normal run in every other respect: frontend tools execute,
 approval interrupts render their card, `headers` are re-read per request so
@@ -2416,9 +2435,14 @@ a rotated CSRF token or JWT still reaches the endpoint, it carries and updates
 construction as the conversation's own, differing only in the endpoint and the
 empty seed.
 
-It does not write the conversation store. Its agent holds only the new turn and
-the answer, and a store keeps one message list per thread, so saving that would
-replace the stored conversation with its last exchange.
+The continued exchange joins the conversation. Its agent holds only the new turn
+and the answer, and a store keeps one message list per thread, so each save
+writes the conversation as it stood when you picked the row with the exchange
+after it — through the same `saveMessages` as any other run, and as far as it
+got if it was stopped. A reload then replays the exchange, and the next message
+you send, now to `endpoint` again, carries it together with the shared state the
+continuation left. What is saved is what the transcript shows: a fork's exchange
+follows the conversation it was picked from, in that same thread.
 
 If the index can't be reached, the panel shows its empty state rather than an
 error — a history affordance that fails is empty, not broken.
@@ -2750,6 +2774,12 @@ of the screen with a frame drawn round it.
 `embedded` is left alone deliberately: it sits in a box you sized and placed, and
 only you know whether that column should become the whole screen.
 
+The [greeting layout](#the-greeting-on-an-empty-page) changes shape here too, and
+it is the one part of this that `embedded` gets as well, because it moves nothing
+about the box you placed: an empty conversation keeps its composer at the foot of
+the panel, with the starters against it and the greeting over the space above
+them, instead of centring all three together.
+
 The corner placements still rest at their launcher, so a full-bleed panel is
 something the user opens rather than something they are given.
 
@@ -2836,11 +2866,25 @@ widget measures the hidden band and publishes it as
 `--ag-ui-visual-viewport-inset-bottom`; state this one instead to outrank that
 measurement, or set it to `0px` to opt out of the lift entirely.
 
+`--ag-ui-keyboard-inset-top` does the same at the top. To show a field a
+keyboard would cover, a mobile browser pans the visible area down the page, and
+a panel anchored to the screen (`page`, `full`, `side`, `sidebar`, and at phone
+width the corner placements too) moves down with it. An `embedded` panel renders
+in your own box rather than against the screen, so it does not move at any width.
+The widget publishes the pan as `--ag-ui-visual-viewport-inset-top`, and the
+panel moves by as much of it as goes past your `--ag-ui-viewport-inset-top`,
+since the pan scrolls a reserved bar away with the page. State
+`--ag-ui-keyboard-inset-top` to outrank that distance, or `0px` to keep the
+panel below your reserved top.
+
 `--ag-ui-viewport-height` and `--ag-ui-viewport-width` state the usable box
 outright, for the case where no viewport-percentage length describes it. An
 on-screen keyboard is the one that matters: it changes neither `vh` nor `dvh` nor
 `svh` on any current mobile browser, so a full-bleed panel has to be told the
-visual viewport's height rather than deriving it.
+visual viewport's height rather than deriving it. The widget does that itself;
+where it has nothing to report, the panel falls back to `100dvh` rather than
+`100vh`, because iOS Safari resolves `vh` to the screen with its bars collapsed
+and a panel sized from it runs under them.
 
 Marks are variables too, so one vocabulary covers a re-theme rather than
 leaving half the transcript in the built-in set: `--ag-ui-tool-icon-done` /
@@ -2966,7 +3010,7 @@ component sets, so a new one cannot ship undocumented.
 | Typed question | `question`, `question-body`, `question-options`, `question-choice`, `question-choice-text`, `question-radio`, `question-input`, `question-actions`, `question-button` |
 | Composer | `composer`, `composer-surface`, `composer-tools`, `input`, `send`, `attach-button`, `voice-button` |
 | Attachments | `attachment-tray`, `attachment-chips` (the read-only chips on sent bubbles), and the shared chip parts `attachment-chip`, `attachment-chip-icon`, `attachment-chip-name`, `attachment-chip-size`, `attachment-chip-bar`, `attachment-chip-bar-fill`, `attachment-chip-retry`, `attachment-chip-remove` |
-| Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the composer hint: a skill’s missing placeholders, and a run continuation with nothing typed) |
+| Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the composer hint: a skill’s missing placeholders, and a run continuation picked with nothing typed or while a run is in flight) |
 | Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-close`, `drawer-filter`, `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
 | Charts | `chart-block`, `chart-title`, `chart-legend` |
 | Checkpoints panel | `checkpoints`, `checkpoints-header`, `checkpoints-title`, `checkpoints-list`, `checkpoints-empty`, `checkpoint-row`, `checkpoint-label`, `checkpoint-time`, `checkpoint-id`, `checkpoint-branch`, `checkpoint-action` (plus `checkpoint-resume`, `checkpoint-fork`) |
@@ -3055,7 +3099,8 @@ naturally with the [answer well](#the-answer-well).
 #### The greeting on an empty page
 
 Until the first message is sent, a page shows a greeting with the composer centred beneath it,
-and the composer moves to the foot of the page once the conversation has something in it.
+and the composer moves to the foot of the page once the conversation has something in it. On a
+phone it starts at the foot, for the reason below.
 
 ```html
 <ag-ui-chat endpoint="/agent/" placement="page" user-name="Ada"></ag-ui-chat>
@@ -3076,6 +3121,14 @@ and the composer moves to the foot of the page once the conversation has somethi
   restores the plain layout there. `embedded` opts in with `data-greeting` (any value but `off`),
   for an app shell that gives the panel a page-sized box. The corner placements and the sidebar
   never show it: a panel opened from a launcher is already mid-task.
+- **On a phone** the composer stays at the foot, the starters (or your own `empty` content) sit
+  against it, and the greeting takes the middle of what they leave — the middle of the
+  transcript when there are none. Centring is a shape for a screen with room to spare; at
+  [600px wide and below](#small-viewports) the room is what the on-screen keyboard takes, and a
+  composer centred over an empty band sits halfway up what is left of the screen, with the
+  prompts that start a conversation nowhere near the field that sends one.
+  `data-small-viewport="off"` keeps the centred shape at every width, as it keeps the rest of
+  the desktop layout.
 
 The composer's rows stay centred while you type, while a draft grows and while attachments are
 added, because the centring is two equal flexible halves either side of them and growth splits

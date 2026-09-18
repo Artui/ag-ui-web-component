@@ -615,27 +615,39 @@ export class AgUiClient {
    * unannotated save quietly threw the annotations away.
    */
   #persist(): void {
+    this.#onPersist(this.annotatedMessages);
+  }
+
+  /**
+   * The history in the form a save writes it: {@link messages}, with how each
+   * tool call ended annotated onto its result -- exactly what
+   * {@link AgUiClientConfig.onPersist} is handed.
+   *
+   * For writing the conversation somewhere other than a save. The element needs
+   * it when a checkpoint continuation adds to a conversation this client holds:
+   * the continuation's saves write the conversation ahead of the exchange, and
+   * the bare {@link messages} would drop the annotations, so a declined card
+   * turned green on the next reload.
+   */
+  get annotatedMessages(): readonly Message[] {
     const messages = this.#agent.messages;
     if (this.#outcomes.size === 0) {
-      this.#onPersist(messages);
-      return;
+      return messages;
     }
     // A copy, and only of the messages that gain something. `agent.messages` is
     // the list the next `runAgent` sends back to the server, so writing an extra
     // field into it would put a client-side annotation on the wire; a store is
     // allowed to hold more than the protocol does.
-    this.#onPersist(
-      messages.map((message) => {
-        if (message.role !== "tool") {
-          return message;
-        }
-        const outcome = this.#outcomes.get(message.toolCallId);
-        // Cast at the AG-UI boundary, as the `attachments` augmentation on a
-        // user message already does: `Message` does not declare the field, and
-        // the default store round-trips it through `JSON.stringify` verbatim.
-        return outcome === undefined ? message : ({ ...message, outcome } as Message);
-      }),
-    );
+    return messages.map((message) => {
+      if (message.role !== "tool") {
+        return message;
+      }
+      const outcome = this.#outcomes.get(message.toolCallId);
+      // Cast at the AG-UI boundary, as the `attachments` augmentation on a
+      // user message already does: `Message` does not declare the field, and
+      // the default store round-trips it through `JSON.stringify` verbatim.
+      return outcome === undefined ? message : ({ ...message, outcome } as Message);
+    });
   }
 
   async #runLoop(): Promise<void> {

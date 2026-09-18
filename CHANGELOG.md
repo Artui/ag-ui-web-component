@@ -7,7 +7,132 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] — 2026-09-17
+
+### Changed
+
+- **An `askUserRenderer` that throws now hands the question to the built-in
+  question card.** A throw, or a rejected promise, used to escape the `ask_user`
+  tool: its card settled as an error quoting the host's message, that message
+  went on to the agent as the tool result although it was never written for the
+  model, and the pending wait was never closed, so the next Stop aborted the
+  signal of a question that had already ended.
+
+  The renderer decides how the question looks, not whether it is asked -- the
+  same rule `approvalRenderer` follows -- so it now falls back to the built-in
+  card, with a `console.warn` naming the tool call, and the run carries on as if
+  no renderer had been set. The exception is a rejection after the signal has
+  fired, which is how a renderer is expected to honour Stop: that wait resolves
+  with an empty answer, as the built-in card does on the same signal, with no
+  card drawn and no warning.
+
+- **On a small viewport the composer stays at the foot of the panel, with the
+  greeting over the space above it.** Until a conversation had something in it,
+  `page` -- and an `embedded` panel that opts into a greeting -- centred the
+  composer between the greeting and the foot at every width. Centring is a shape
+  for a screen with room to spare: on a phone the on-screen keyboard takes the
+  room, and the composer was left halfway up what remained with an empty band
+  under it, which is the part of the screen a thumb is already on. At 600px wide
+  and below it now stays at the foot, directly over the keyboard, and the
+  greeting takes the space above it. The prompts in `data-starters`, or
+  whatever a host slots as `empty`, go to the foot with it and sit against the
+  composer: a prompt chip is a way into the conversation, and next to the field
+  it starts it reads as one. The greeting takes the middle of what they leave,
+  and the middle of the transcript where there are none.
+  `data-small-viewport="off"` keeps the centred shape at every width, as it
+  keeps the rest of the desktop layout.
+
 ### Fixed
+
+- **A tool card called with no arguments stops drawing an empty ARGUMENTS
+  heading.** The card hides the region rather than framing an empty object, but
+  the region declares its own `display`, which beats the user-agent rule for
+  the hidden attribute, so 42px of card was drawn holding a heading over
+  nothing -- on every call an agent made with no arguments, in the display mode
+  that shows arguments by default, and on a pending card's result region too.
+
+- **A checkpoint continuation is let go of when its first save fails.** The
+  save runs through `conversationStore` synchronously inside the send, and a
+  store is the host's to replace: the built-in one swallows a write the browser
+  refused, a server-backed one need not. A throw there left the element holding
+  a client that would never run, so every later Resume or Fork was refused for
+  it with no way to clear it -- the composer's button is Send until a run
+  reports a start, so Stop was never offered -- and `sharedState` went on
+  writing into the dead client, which the next run then sent stale. The failure
+  is now reported with a `console.warn` and the panel takes another pick.
+
+- **A turn typed between picking a checkpoint and its run starting is parked
+  rather than raced.** The composer learns a run is going from its first event,
+  a request round trip behind the pick, so its button was still Send: a turn
+  sent in that window started a second run against the conversation the
+  continuation had already frozen to save against, and whichever saved last
+  dropped the other's turn from the store while both answers streamed into one
+  transcript. The composer now queues it, as it does during a run, and sends it
+  when the continuation settles. `sendMessage` no-ops in the same window, as it
+  already did during a run.
+
+- **An empty row of skill chips stops taking space above the composer.** The
+  row is hidden whenever the host offers no skills, which is most elements most
+  of the time, but it declares its own `display`, and an author display beats
+  the user-agent rule for the hidden attribute. So it kept its 20px of padding
+  under every placement: a band of panel between the transcript and the
+  composer, reading as the gap under whatever the transcript ended with. The
+  palette and the queued row beside it were fixed for this reason already, and
+  a tool card's payload regions turned out to be a fourth case, below.
+
+- **A checkpoint continuation waits for the run in flight.** Picking Resume or
+  Fork while an answer was streaming started a second run beside it, and an
+  earlier continuation kept streaming where Stop no longer reached it. The pick
+  is now refused with a composer hint, as Retry is; the run in flight is left
+  alone and the typed turn stays in the composer. `continueWhileRunning` is new
+  in the string table.
+
+- **A continued exchange is kept with its conversation.** It was never saved,
+  so a reload lost it, and the next message went out without it and with the
+  shared state from before the continuation. Each save now writes the
+  conversation with the exchange after it, through the existing `saveMessages`
+  -- `ClientConversationStore` is unchanged -- and the next message carries
+  both. After continuing from an earlier run, what is saved is what the
+  transcript shows, not only the turns up to that run. `sharedState` reads a
+  running continuation, and `AgUiClient.annotatedMessages` is new: the history
+  in the form a save writes it, with how each tool call ended.
+
+- **A full-screen panel stays on the visible screen when a keyboard opens under
+  the field.** To show the composer, iOS Safari pans the visible area down the
+  page, and a panel anchored at the top of the screen stayed where it was: sized
+  to the visible height, it showed only its lower part, with the header and the
+  greeting off the top and an empty band above the keyboard. That covered
+  `page`, `full`, `side` and `sidebar`, and at phone width the corner placements
+  too, because they become the whole screen there, and their keyboard lift never
+  moved them: a box with its top, height and bottom all set ignores the bottom.
+  The element now also publishes how far the visible area is panned, as
+  `--ag-ui-visual-viewport-inset-top`, and every panel anchored at the top moves
+  down by as much of it as goes past the host's `--ag-ui-viewport-inset-top`.
+  `--ag-ui-keyboard-inset-top` outranks that, as `--ag-ui-keyboard-inset` does
+  at the bottom; `0px` opts out.
+
+  The same panel with a bar reserved at the top also ran past the bottom of the
+  visible area by the bar's height whenever a keyboard was up, pan or no pan:
+  the measured height replaced the host's box rather than being cut from it, so
+  the bar stayed in the position and left the height. The height is now the
+  host's box cut to the visible area.
+
+  At the deepest pan, the one that shows a composer docked at the foot of the
+  screen, the panel still went back to the top of the page at full height. The
+  element read the page's height from `innerHeight`, which iOS Safari reports
+  less the pan for as long as the pan lasts; at that depth it equals the visible
+  height, so the element took the two viewports to agree and withdrew its
+  measurements. The band below the visible area came out as nothing at any pan
+  too, leaving a bottom-anchored panel behind the keyboard. The page's height
+  is now read from the root element's `clientHeight`, which an iPhone reported
+  unchanged through the pan.
+
+- **A full-screen panel no longer runs under Safari's bars with no keyboard
+  up.** Where nothing has been measured, the panel's height fell back to
+  `100vh`, which iOS Safari resolves to the screen with its bars collapsed, so
+  on a page that never scrolls them away the foot of the panel sat under the
+  address bar: 40px on the iPhone measured, with a docked composer in it. The
+  fallback is now `100dvh`, the screen with the bars as they are.
 
 - **An element removed from the document and inserted again is one element.**
   Every insertion built the chrome again into the same shadow root, so a
@@ -4001,7 +4126,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.39.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.36.0...v0.37.0

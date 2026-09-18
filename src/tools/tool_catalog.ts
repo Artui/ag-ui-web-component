@@ -264,13 +264,13 @@ export class ToolCatalog {
           },
           required: ["question"],
         },
-        handler: (args) => this.#askUser(args),
+        handler: (args, callId) => this.#askUser(args, callId),
       },
     ];
   }
 
   /** Render the `ask_user` question card and resolve with the user's answer. */
-  async #askUser(args: Record<string, unknown>): Promise<string> {
+  async #askUser(args: Record<string, unknown>, callId: string | undefined): Promise<string> {
     const question = typeof args["question"] === "string" ? args["question"] : "";
     const request: QuestionRequest = { question };
     const rawOptions = args["options"];
@@ -284,20 +284,71 @@ export class ToolCatalog {
     // it with an empty answer (the run is then cancelled).
     const signal = this.#host.decision.open();
     this.#host.hidePending();
-    // A host-supplied renderer takes full control of the UI; otherwise the
-    // built-in inline card renders into the current answer group.
+    // The built-in inline card renders into the current answer group.
+    const builtIn = (): Promise<string> =>
+      requestQuestion(this.#host.ensureGroup(), request, {
+        signal,
+        strings: this.#host.strings(),
+      });
+    // A host-supplied renderer takes full control of the UI.
     const renderer = this.#host.askUserRenderer();
-    const answer =
-      renderer !== null
-        ? // Called on the element, as `this.askUserRenderer(...)` always was.
-          await renderer.call(this.#host.element, request, { signal })
-        : await requestQuestion(this.#host.ensureGroup(), request, {
-            signal,
-            strings: this.#host.strings(),
-          });
+    let answer: string;
+    if (renderer === null) {
+      answer = await builtIn();
+    } else {
+      // Awaited here rather than inside a helper, so an answering renderer
+      // takes exactly as many turns to be heard as it always did.
+      try {
+        // Called on the element, as `this.askUserRenderer(...)` always was.
+        answer = await renderer.call(this.#host.element, request, { signal });
+      } catch (error) {
+        answer = await this.#afterRendererFailed(error, signal, callId, builtIn);
+      }
+    }
     this.#host.decision.close();
     this.#host.updateEmptyState();
     this.#host.follow();
     return answer;
+  }
+
+  /**
+   * Answer an `ask_user` call whose host renderer threw or rejected instead of
+   * answering: put the question to the built-in card.
+   *
+   * The same answer `approvalRenderer` gets for the same failure, and for the
+   * same reason: a renderer is presentation, not a policy. It decides how the
+   * question looks, never whether the agent's question is put to the user.
+   * Uncaught, the throw escaped the handler, so the call's card settled as an
+   * error quoting the host's message, that message went on to the agent as the
+   * tool result -- a detail of the host's page, never written for the model --
+   * and the pending decision was never closed, so the next Stop, in whatever
+   * round, aborted the signal of a wait that had already ended rather than
+   * finding nothing open. The built-in card still asks,
+   * and the run carries on as if no renderer had been set. Reported the way a
+   * failed `render` is, and for the same reason: survived is not the same as
+   * findable.
+   *
+   * Except when the wait was already abandoned. A renderer honouring its signal
+   * rejects once a Stop fires it, which is the signal working rather than the
+   * renderer failing, and a card drawn then would ask about a run the user just
+   * ended. So it resolves with the empty answer the built-in card resolves with
+   * on the same abort, and says nothing.
+   */
+  #afterRendererFailed(
+    error: unknown,
+    signal: AbortSignal,
+    callId: string | undefined,
+    builtIn: () => Promise<string>,
+  ): Promise<string> {
+    if (signal.aborted) {
+      return Promise.resolve("");
+    }
+    // Named by call rather than by question: the model can ask the same thing
+    // twice in one turn, and the id is the one thing that tells them apart.
+    console.warn(
+      `ag-ui-chat: askUserRenderer failed for tool call ${callId}, so the built-in question card asks instead`,
+      error,
+    );
+    return builtIn();
   }
 }

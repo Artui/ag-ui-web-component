@@ -57,6 +57,7 @@ beforeEach(() => {
 
 afterEach(() => {
   xhr.restore();
+  vi.unstubAllGlobals();
 });
 
 describe("AgUiChat.sendMessage", () => {
@@ -202,6 +203,12 @@ describe("connect-time-only attributes", () => {
   });
 
   it("stays silent when the value did not actually change", () => {
+    // Connecting with a tools URL fetches the catalog. Left real, that request
+    // goes to a localhost port nobody listens on, and happy-dom prints the
+    // refused connection after this test has already passed, attributed to no
+    // test at all. The catalog is not what this asserts, so an empty one stands
+    // in.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ json: () => Promise.resolve([]) }));
     const { el } = mount({ "data-tools-url": "/agent/tools/" });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 

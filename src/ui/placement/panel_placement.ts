@@ -653,9 +653,22 @@ export class PanelPlacement {
     if (visual === null || visual === undefined) {
       return;
     }
-    if (Math.abs(visual.height - window.innerHeight) < 1) {
+    // The layout viewport from the box a fixed element is laid out against,
+    // for the reasons #screen gives -- and one more that only a phone shows.
+    // While iOS Safari has the visible area panned down to show a focused
+    // field, innerHeight reads the layout height less the pan, and goes on
+    // reading it until a window scroll the element never hears about. Measured
+    // from that, the band below came out as nothing, and at the deepest pan the
+    // browser makes -- the one that shows a composer docked at the foot of the
+    // screen -- the shorter number equals the visible height, so the check
+    // below took every measurement back and put the panel at the layout top at
+    // full height, its header above the screen. clientHeight held the layout
+    // height throughout.
+    const layout = this.#screen().height;
+    if (Math.abs(visual.height - layout) < 1) {
       this.#host.element.style.removeProperty("--ag-ui-visual-viewport-height");
       this.#host.element.style.removeProperty("--ag-ui-visual-viewport-inset-bottom");
+      this.#host.element.style.removeProperty("--ag-ui-visual-viewport-inset-top");
       return;
     }
     this.#host.element.style.setProperty(
@@ -668,10 +681,20 @@ export class PanelPlacement {
     // the launcher at that corner stay behind the keyboard until this lifts
     // them. Never negative -- a visual viewport panned up past the layout one
     // would otherwise pull the panel down off the screen.
-    const hidden = window.innerHeight - visual.height - visual.offsetTop;
+    const hidden = layout - visual.height - visual.offsetTop;
     this.#host.element.style.setProperty(
       "--ag-ui-visual-viewport-inset-bottom",
       `${Math.max(0, Math.round(hidden))}px`,
+    );
+    // And what is hidden above it. To show a field the keyboard would cover, a
+    // browser pans the visual viewport down the layout one, and a fixed panel
+    // anchored at the top stays at the layout top: sized to the visible height,
+    // it then shows only its lower part, from the pan down, with its header off
+    // the screen and page background under it. Never negative, for the same
+    // reason as the band below.
+    this.#host.element.style.setProperty(
+      "--ag-ui-visual-viewport-inset-top",
+      `${Math.max(0, Math.round(visual.offsetTop))}px`,
     );
   }
 

@@ -61,6 +61,17 @@ export interface ConversationHistoryHost {
   readonly appendMessage: (role: MessageRole, content: string) => HTMLDivElement;
   /** Resize the composer to its content. */
   readonly autoGrow: () => void;
+  /**
+   * A continuation has ended, whether or not it ever ran.
+   *
+   * The composer parks a turn typed while one is in flight, and learns a run
+   * has settled from its own events -- which never arrive for a continuation
+   * that failed before starting one. Without this, such a turn stayed parked
+   * with nothing left to release it.
+   */
+  readonly continuationEnded: () => void;
+  /** The conversation's own client, or `null` until one is built. */
+  readonly client: () => AgUiClient | null;
   /** The conversation's own client, built on first use. */
   readonly ensureClient: () => AgUiClient;
   /**
@@ -69,6 +80,14 @@ export interface ConversationHistoryHost {
    * added to one can be missing from the other.
    */
   readonly buildClient: (seed: ClientSeed) => AgUiClient;
+  /**
+   * Forget the conversation's own client, so the next one is built from
+   * {@link ConversationHistory.restored}. Nothing is cancelled: this is for a
+   * client that is not running.
+   */
+  readonly releaseClient: () => void;
+  /** Whether an interaction is in flight, which the composer owns. */
+  readonly running: () => boolean;
   /** Stop the in-flight run. */
   readonly cancelRun: () => void;
   /** Drop the in-memory run and transcript, leaving the thread untouched. */
@@ -97,10 +116,16 @@ export class ConversationHistory {
   /** The active thread's id. Empty until the element connects. */
   #threadId = "";
   /**
-   * The messages the last restore replayed, which seed the next client the
-   * element builds. Emptied with the rest of the in-memory run.
+   * The conversation as last written for the next client the element builds to
+   * start from: what the last restore replayed, or what a checkpoint
+   * continuation last saved after it. Emptied with the rest of the in-memory run.
    */
   #restored: readonly Message[] = [];
+  /**
+   * Counts the conversations cleared away, so a continuation can tell whether
+   * the one it continued is still on screen when it saves.
+   */
+  #cleared = 0;
   // Bumped on every rehydrate; a replay whose generation is stale (a newer
   // thread switch started while it awaited a slow store) drops its result.
   #generation = 0;
@@ -121,9 +146,14 @@ export class ConversationHistory {
     return this.#threadId;
   }
 
-  /** The messages the last restore replayed, for seeding the next client. */
+  /** The conversation as last written, for seeding the next client. */
   get restored(): readonly Message[] {
     return this.#restored;
+  }
+
+  /** The checkpoint continuation in flight, or `null` when none is running. */
+  get continuation(): AgUiClient | null {
+    return this.#continuation;
   }
 
   /** Point at the thread the store says is active. */
@@ -153,6 +183,9 @@ export class ConversationHistory {
   /** Forget the messages the last restore seeded, with the rest of the run. */
   forgetRestored(): void {
     this.#restored = [];
+    // The element clears the conversation through here, so a continuation
+    // still saving afterwards learns the conversation is no longer this one.
+    this.#cleared += 1;
   }
 
   /** Delete the active thread if nothing was ever sent in it. */
@@ -258,13 +291,18 @@ export class ConversationHistory {
    * Uses a short-lived agent pointed at the resume / fork endpoint and seeded
    * with no history, because those endpoints supply the prior turns from the
    * snapshot and re-sending them would duplicate. A separate agent makes that
-   * structural — the main agent keeps its own history — and mints the fresh
-   * `run_id` the endpoints also require.
+   * structural and mints the fresh `run_id` the endpoints also require.
    *
    * Built by the same construction as the conversation's own client, so the
    * continuation streams into the same transcript the user is looking at and
    * runs under the same state, tools and bounds. It is the run in flight while
    * it lasts: {@link stopContinuation} is how the element's Stop reaches it.
+   *
+   * What it adds joins the conversation. Its saves write the conversation on
+   * screen ahead of its exchange, and each one hands that whole list to the
+   * next client the element builds, so the next ordinary message is sent with
+   * the exchange it follows. The conversation's own client never held it, and
+   * was sending without it.
    */
   async continueRun(runId: string, verb: CheckpointVerb): Promise<void> {
     const index = this.runs();
@@ -273,6 +311,26 @@ export class ConversationHistory {
       // rendered when `runs()` is configured, so a row to pick cannot exist
       // without one. A host calling `openCheckpoints()` regardless gets the
       // documented empty panel, which has no rows either. Typed, not silent.
+      return;
+    }
+    if (this.#host.running() || this.#continuation !== null) {
+      // Refused rather than started beside it. The panel opens and its rows
+      // take a pick while a run streams, and a second run would draw its answer
+      // into the turn still arriving; a second continuation would also replace
+      // the one Stop reaches, leaving the first streaming where nothing could
+      // end it. Nor is the earlier run cancelled for it: a pick in a panel is not
+      // a Stop, and what is streaming may be the answer the user is waiting on.
+      //
+      // Both checks, because they see different moments. `running` is the
+      // composer's own state and spans every round of an interaction, but it
+      // is set when the run's first event arrives; a continuation is recorded
+      // here the moment it starts.
+      //
+      // Said at the composer, as an empty composer is below, because the row
+      // closed the panel before this ran. The typed turn stays where it is --
+      // it is what the user wants sent once the run is done -- and the caret
+      // goes back to it, where Escape stops the run.
+      this.#refuse(this.#host.strings().continueWhileRunning);
       return;
     }
     const content = this.#host.input.value.trim();
@@ -289,29 +347,79 @@ export class ConversationHistory {
       // keystroke -- a transcript notice for a recoverable slip would outlive
       // the slip. Focus follows for the same reason applying a skill moves it when
       // a template is short of a field.
-      this.#host.hint.textContent = this.#host.strings().continueNeedsTurn;
-      this.#host.hint.hidden = false;
-      this.#host.input.focus();
+      this.#refuse(this.#host.strings().continueNeedsTurn);
       return;
     }
     this.#host.input.value = "";
     this.#host.autoGrow();
+    const cleared = this.#cleared;
     const client = this.#host.buildClient({
       endpoint: verb === "resume" ? index.resumeUrl(runId) : index.forkUrl(runId),
       // The seed the endpoints assume: nothing. The snapshot is the history.
       initialMessages: [],
-      // Nor does it write the store. Its agent holds only the new turn and its
-      // answer, and a store keeps one list per thread, so saving what this
-      // client has would replace the conversation with its last exchange.
-      persist: false,
+      // What its saves write ahead of the exchange: the conversation on screen,
+      // in the form the store holds it. From the conversation's own client when
+      // there is one, because that client keeps how each call ended beside its
+      // messages rather than on them; otherwise what the last restore or
+      // continuation wrote, which is already in that form.
+      //
+      // All of it, even where this forks an earlier run and the server's
+      // snapshot stops there: what is saved is what the screen shows.
+      follows: this.#host.client()?.annotatedMessages ?? this.#restored,
+      onSaved: (conversation) => {
+        // A continuation stopped by New chat or a thread switch saves once its
+        // request closes, into its own thread; the conversation now on screen
+        // is not the one it continued.
+        if (cleared !== this.#cleared) {
+          return;
+        }
+        // The conversation's own client holds the conversation without this
+        // exchange, and would send it that way. Released rather than patched:
+        // the next client is built from this list exactly as a reload builds
+        // one from the store, outcomes included.
+        //
+        // Nothing can run on the released client in between, because the
+        // composer refuses to start one while a continuation is in flight --
+        // it parks the turn instead. It said here that only a script in the
+        // same task could, which was wrong by a whole request: `running` does
+        // not turn on until the continuation's first event, and a person who
+        // typed in that window got a second run against the snapshot
+        // `follows` had already frozen, so whichever saved last dropped the
+        // other's turn.
+        this.#restored = conversation;
+        this.#host.releaseClient();
+      },
     });
     this.#continuation = client;
-    await client.send(content);
-    // Only if it is still the one in flight: stopping forgets it at once, and a
-    // continuation started after that one is not this one to forget.
-    if (this.#continuation === client) {
-      this.#continuation = null;
+    try {
+      await client.send(content);
+    } finally {
+      // Only if it is still the one in flight: stopping forgets it at once, and
+      // a continuation started after that one is not this one to forget.
+      //
+      // In a finally because the send can fail before its run ever starts. The
+      // first save goes through the host's `conversationStore` synchronously
+      // inside it, and a store is the host's to replace: the built-in one
+      // swallows a write the browser refused, a server-backed one need not. A
+      // throw there left this pointing at a client that would never run, so
+      // every later pick was refused with no Stop to clear it -- the composer's
+      // button is Send until a run reports a start -- and `#liveClient` went on
+      // handing that dead client the shared state a host wrote.
+      if (this.#continuation === client) {
+        this.#continuation = null;
+        this.#host.continuationEnded();
+      }
     }
+  }
+
+  /**
+   * Say at the composer why a picked run did not continue, and put the caret
+   * there. The hint clears itself on the next keystroke.
+   */
+  #refuse(reason: string): void {
+    this.#host.hint.textContent = reason;
+    this.#host.hint.hidden = false;
+    this.#host.input.focus();
   }
 
   /**

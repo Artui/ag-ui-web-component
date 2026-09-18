@@ -118,6 +118,8 @@ export interface UiStrings {
   notConnected: string;
   /** Composer hint when a run continuation was picked with an empty composer. */
   continueNeedsTurn: string;
+  /** Composer hint when a run continuation was picked while a run is in flight. */
+  continueWhileRunning: string;
 
   // ── Composer ────────────────────────────────────────────────────────────────
   /** `aria-label` of the message textarea. */
@@ -385,6 +387,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     "{n} file still uploading — it was not sent with this message and is still attached.",
   notConnected: "This chat isn’t connected to an agent, so the message wasn’t sent.",
   continueNeedsTurn: "Type the next turn in the composer first, then pick a run to continue.",
+  continueWhileRunning: "Wait for the current answer or stop it, then pick a run to continue.",
   skillNeeds: "“{title}” needs {fields} — fill it in below, then send.",
 
   message: "Message",
