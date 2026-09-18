@@ -1019,6 +1019,92 @@ describe("a continuation waits for the run in flight", () => {
     expect(shadow(el).textContent).not.toContain("the rest of the answer");
   });
 
+  it("lets go of a continuation whose first save threw", async () => {
+    // `conversationStore` is the host's to replace, and nothing promises its
+    // writes succeed: the built-in one swallows a write the browser refused, a
+    // server-backed one need not. The first save runs synchronously inside the
+    // send, so the throw comes back out before any run starts -- and the
+    // element went on holding a client that would never run. Every later pick
+    // was refused for it, with no way to clear it: the composer's button is
+    // Send until a run reports a start, so Stop was never offered.
+    const { el, agents, release } = mountHeld();
+    // The store the element actually uses, with its one write made to fail.
+    // Patched in place rather than wrapped in a literal: a store is a class
+    // instance, so a spread copies none of its prototype methods and the
+    // element loses every one it does not go on to call in this test.
+    const store = el.conversationStore;
+    const write = store.saveMessages.bind(store);
+    let offline = true;
+    store.saveMessages = (threadId, messages) => {
+      if (offline) {
+        throw new Error("the store is offline");
+      }
+      write(threadId, messages);
+    };
+
+    await resumeWith(el, "go on");
+    await flush();
+    offline = false;
+
+    await resumeWith(el, "and then?");
+    await flush();
+
+    expect(agents.map((agent) => agent.endpoint)).toEqual([
+      "/agent/resume/r1/",
+      "/agent/resume/r1/",
+    ]);
+    release();
+    await flush();
+  });
+
+  it("parks a turn typed before the continuation's run has begun", async () => {
+    // The composer learns a run is going from its first event, a request round
+    // trip behind the pick, so its button is still Send. A turn typed in that
+    // window started a second run of its own -- against the conversation the
+    // continuation froze when it was picked, so whichever saved last dropped
+    // the other's turn from the store, while both answers streamed into one
+    // transcript.
+    const { el, agents, release } = mountHeld();
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+    (shadow(el).querySelector("textarea") as HTMLTextAreaElement).value = "go on";
+    (shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement).click();
+    // Not awaited, which is the whole window: one microtask later the run has
+    // reported its start and the button is Stop, so a test that waited here
+    // would be checking the guard that already worked.
+    sendTurn(el, "actually, do X");
+    await flush();
+
+    expect(agents.map((agent) => agent.endpoint)).toEqual(["/agent/resume/r1/"]);
+    expect(shadow(el).querySelector<HTMLElement>(".queued")?.hidden).toBe(false);
+
+    // And it is parked rather than dropped: the continuation settling is what
+    // sends it, through the same path every other queued turn takes.
+    release();
+    await flush();
+    expect(agents.map((agent) => agent.endpoint)).toEqual(["/agent/resume/r1/", "/agent/"]);
+  });
+
+  it("no-ops a scripted send in the same window", async () => {
+    // `sendMessage` is the programmatic half of the composer and goes nowhere
+    // near it, so the parking above does not cover a host driving its own
+    // input. It returns instead of queueing, as it already does during a run:
+    // the caller still holds what it tried to send, which a queue would take
+    // from it.
+    const { el, agents, release } = mountHeld();
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await flush();
+    (shadow(el).querySelector("textarea") as HTMLTextAreaElement).value = "go on";
+    (shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement).click();
+
+    await el.sendMessage("actually, do X");
+    await flush();
+
+    expect(agents.map((agent) => agent.endpoint)).toEqual(["/agent/resume/r1/"]);
+    release();
+    await flush();
+  });
+
   it("does not start over one picked a moment ago, before its run has begun", async () => {
     // The composer learns a run is going from its first event, which is behind
     // the pick. A host driving the rows can land a second pick in that gap.

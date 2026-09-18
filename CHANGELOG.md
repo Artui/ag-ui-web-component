@@ -44,14 +44,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A tool card called with no arguments stops drawing an empty ARGUMENTS
+  heading.** The card hides the region rather than framing an empty object, but
+  the region declares its own `display`, which beats the user-agent rule for
+  the hidden attribute, so 42px of card was drawn holding a heading over
+  nothing -- on every call an agent made with no arguments, in the display mode
+  that shows arguments by default, and on a pending card's result region too.
+
+- **A checkpoint continuation is let go of when its first save fails.** The
+  save runs through `conversationStore` synchronously inside the send, and a
+  store is the host's to replace: the built-in one swallows a write the browser
+  refused, a server-backed one need not. A throw there left the element holding
+  a client that would never run, so every later Resume or Fork was refused for
+  it with no way to clear it -- the composer's button is Send until a run
+  reports a start, so Stop was never offered -- and `sharedState` went on
+  writing into the dead client, which the next run then sent stale. The failure
+  is now reported with a `console.warn` and the panel takes another pick.
+
+- **A turn typed between picking a checkpoint and its run starting is parked
+  rather than raced.** The composer learns a run is going from its first event,
+  a request round trip behind the pick, so its button was still Send: a turn
+  sent in that window started a second run against the conversation the
+  continuation had already frozen to save against, and whichever saved last
+  dropped the other's turn from the store while both answers streamed into one
+  transcript. The composer now queues it, as it does during a run, and sends it
+  when the continuation settles. `sendMessage` no-ops in the same window, as it
+  already did during a run.
+
 - **An empty row of skill chips stops taking space above the composer.** The
   row is hidden whenever the host offers no skills, which is most elements most
   of the time, but it declares its own `display`, and an author display beats
   the user-agent rule for the hidden attribute. So it kept its 20px of padding
   under every placement: a band of panel between the transcript and the
   composer, reading as the gap under whatever the transcript ended with. The
-  palette and the queued row beside it were fixed for this reason already; this
-  was the third row with its own display and no rule for being hidden.
+  palette and the queued row beside it were fixed for this reason already, and
+  a tool card's payload regions turned out to be a fourth case, below.
 
 - **A checkpoint continuation waits for the run in flight.** Picking Resume or
   Fork while an answer was streaming started a second run beside it, and an

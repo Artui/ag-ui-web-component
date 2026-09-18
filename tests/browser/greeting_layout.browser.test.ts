@@ -248,6 +248,23 @@ describe("the greeting layout on a phone", () => {
     ).toBeLessThanOrEqual(1);
   });
 
+  it("still collapses the empty region when it is hidden", async () => {
+    // The phone rules give the region a display of their own, at a specificity
+    // that beats the rule collapsing a hidden one. Nothing reaches that today:
+    // the transcript sets the hidden property and the host's data-empty from
+    // one expression, so the two cannot disagree. That is a coupling between a
+    // stylesheet and a method in another file, stated nowhere, and it is the
+    // whole reason the region stays collapsed -- so it is asserted here rather
+    // than left to hold by luck.
+    const el = mount({ placement: "page", "user-name": "Ada", "data-starters": STARTERS });
+    await settle();
+    const empty = part(el, ".empty");
+
+    empty.hidden = true;
+    expect(getComputedStyle(empty).display).toBe("none");
+    expect(empty.getBoundingClientRect().height).toBe(0);
+  });
+
   it("centres the greeting in the transcript when no prompts are offered", async () => {
     const el = mount({ placement: "page", "user-name": "Ada" });
     await settle();

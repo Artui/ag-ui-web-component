@@ -1319,9 +1319,15 @@ export const STYLES = `
      Auto block margins on the greeting are what centre it, and they take the
      free space whether or not there are prompts below to leave any, so a host
      that offers none gets a greeting in the middle of the transcript rather
-     than one clinging to the composer. */
-  :host([placement="page"][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty,
-  :host([placement="embedded"][data-greeting][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty {
+     than one clinging to the composer.
+     The region declares a display here, which outranks the rule collapsing a
+     hidden one, so it says it is not hidden itself. Nothing sets the two
+     apart today -- the transcript writes the hidden property and the host's
+     data-empty from one expression -- and that is exactly why: a rule holding
+     because of how a method in another file happens to be written is a rule
+     holding by luck. */
+  :host([placement="page"][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty:not([hidden]),
+  :host([placement="embedded"][data-greeting][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty:not([hidden]) {
     margin: 0;
     flex: 1;
     display: flex;
@@ -1815,6 +1821,17 @@ export const STYLES = `
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+/* A call with no arguments drops the region rather than framing an empty
+   object, and a settled card drops the result region until it has one -- both
+   by setting the hidden property, and an author display beats the user-agent
+   rule for that attribute. Without this the region kept laying out: 42px of
+   card holding the ARGUMENTS heading over nothing, on every call the agent
+   made with no arguments, in the display mode that shows arguments by
+   default. */
+.tool-call-section[hidden] {
+  display: none;
 }
 
 /* The heading that tells the two payloads apart. Without it the arguments and

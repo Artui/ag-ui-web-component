@@ -836,7 +836,12 @@ export class AgUiChat extends HTMLElement {
       },
     });
     this.#checkpoints = new CheckpointMenu((runId, verb) => {
-      void this.#history.continueRun(runId, verb);
+      // Reported rather than dropped: the send fails when the host's store
+      // refuses the first save, and `continueRun` has already let go of the
+      // continuation by then, so the panel takes another pick.
+      void this.#history.continueRun(runId, verb).catch((error: unknown) => {
+        console.warn("<ag-ui-chat>: continuing a run failed", error);
+      });
     });
     this.#history = new ConversationHistory({
       element: this,
@@ -856,6 +861,7 @@ export class AgUiChat extends HTMLElement {
       requestCredentials: () => this.#requestCredentials(),
       appendMessage: (role, content) => this.appendMessage(role, content),
       autoGrow: () => autoGrow(this.#input),
+      continuationEnded: () => this.#flushQueued(),
       client: () => this.#client,
       ensureClient: () => this.#ensureClient(),
       buildClient: (seed) => this.#buildClient(seed),
@@ -2451,6 +2457,15 @@ export class AgUiChat extends HTMLElement {
    * other shape would be a second sender racing the guard above.
    */
   #flushQueued(): void {
+    // Guarded here rather than at each caller, because this is what takes the
+    // turn off the queue: a caller that ran while something was still in
+    // flight would shift a turn off and lose it to the no-op in `sendMessage`.
+    // A continuation settles its run before the element lets go of it, so the
+    // settle below arrives while `continuation` is still set, and the release
+    // that follows is what drains.
+    if (this.#running || this.#history.continuation !== null) {
+      return;
+    }
     const next = this.#queued.shift();
     this.#renderQueued();
     if (next !== undefined) {
@@ -2501,11 +2516,16 @@ export class AgUiChat extends HTMLElement {
     // the first's still-pending tool cards. That is why this was a dead key --
     // Enter during a run did nothing at all, silently.
     //
+    // A picked checkpoint counts as in flight from the pick, not from its
+    // first event: `running` is a request behind it, and a turn sent in that
+    // window ran against the conversation the continuation had already frozen
+    // to save against, so one of the two saves dropped the other's turn.
+    //
     // Queueing keeps the guard and gives the key something to do. Text only:
     // an attachment is settled state the tray is holding and the composer has
     // no second copy of, so parking it here would mean deciding what happens
     // when the user then removes the chip.
-    if (this.#running) {
+    if (this.#running || this.#history.continuation !== null) {
       if (content !== "") {
         this.#queued.push(content);
         this.#renderQueued();
@@ -2555,12 +2575,18 @@ export class AgUiChat extends HTMLElement {
    * `attachments` are durable {@link AttachmentRef}s — what {@link attachFile}
    * resolves to and what {@link ATTACHMENT_EVENT} reports.
    *
-   * No-ops on an empty message, and while a run is in flight, since a second
-   * concurrent run would orphan the first. Unlike the built-in Send it does not
-   * consult the tray: what you pass is what is sent.
+   * No-ops on an empty message, and while a run or a picked checkpoint's
+   * continuation is in flight, since a second concurrent run would orphan the
+   * first. Unlike the built-in Send it does not queue: it returns, and the
+   * caller keeps what it tried to send. Nor does it consult the tray -- what
+   * you pass is what is sent.
    */
   async sendMessage(content: string, attachments: readonly AttachmentRef[] = []): Promise<void> {
-    if (this.#running || (content === "" && attachments.length === 0)) {
+    if (
+      this.#running ||
+      this.#history.continuation !== null ||
+      (content === "" && attachments.length === 0)
+    ) {
       return;
     }
     // Only a send travels. Every other way out of the empty state -- a restored

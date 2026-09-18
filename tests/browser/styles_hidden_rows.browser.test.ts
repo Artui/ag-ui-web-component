@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
+import { ToolCallCard } from "../../src/ui/progress/tool_call_card.js";
 
 /**
  * Two composer rows that set the hidden property and used to keep laying out.
@@ -84,6 +85,29 @@ describe("a hidden composer row takes no space", () => {
 
     chips.hidden = false;
     expect(chips.getBoundingClientRect().height).toBeGreaterThan(0);
+  });
+
+  it("collapses a tool card's empty arguments region", () => {
+    // Not a composer row, and found only after the three above were fixed and
+    // the rule was stated as "every class declaring its own display needs one".
+    // A call with no arguments hides the region rather than framing an empty
+    // object, which is what the card's own comment says it is doing -- and the
+    // region kept laying out, so the ARGUMENTS heading was drawn over nothing
+    // on every such card, in the default display mode.
+    const el = mount();
+    const card = new ToolCallCard("refresh_index", {});
+    part(el, ".messages").appendChild(card.element);
+    const args = card.element.querySelector(".tool-call-section--args");
+    if (!(args instanceof HTMLElement)) {
+      throw new Error("expected the arguments region");
+    }
+
+    expect(args.hidden).toBe(true);
+    expect(args.getBoundingClientRect().height).toBe(0);
+    expect(getComputedStyle(args).display).toBe("none");
+
+    args.hidden = false;
+    expect(args.getBoundingClientRect().height).toBeGreaterThan(0);
   });
 
   it("leaves nothing between the transcript and the composer", () => {

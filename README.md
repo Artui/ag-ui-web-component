@@ -305,10 +305,13 @@ the `copyCode` / `copied` / `copyFailed` strings.
 
 `sendMessage(content, attachments?)` sends as if the user had typed it — user bubble,
 `ag-ui-submit` event, run started. Use it for an "Ask about this order" button, a command
-palette, or a composer of your own replacing the built-in one. It no-ops while a run is in
-flight and for an entirely empty message, and unlike the built-in Send it does **not** consult
-the attachment tray: what you pass is what is sent, so your composer stays in charge of its
-own state.
+palette, or a composer of your own replacing the built-in one. It no-ops for an entirely
+empty message, and while a run — or a checkpoint continuation picked from the panel — is in
+flight; a continuation counts from the pick, not from its first event, so the gap where two
+runs could start against one conversation is closed. Unlike the built-in Send it does **not**
+queue, so your composer keeps what it tried to send, and it does **not** consult the
+attachment tray: what you pass is what is sent, so your composer stays in charge of its own
+state.
 
 `attachFile(file)` queues a file into the tray exactly as the picker and drag-and-drop do, with
 the same validation and progress chip. It returns `false` when uploads are not configured
@@ -1094,7 +1097,10 @@ chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
 ### The composer's own keys
 
 **Enter during a run queues.** A second run cannot start while one is in flight —
-it would orphan the first — so that key used to do nothing at all, silently. What
+it would orphan the first — so that key used to do nothing at all, silently. A
+checkpoint continuation picked from the panel counts as in flight from the pick
+rather than from its first event, which is a request later, so a turn typed in
+that gap is parked too rather than racing it. What
 is waiting shows above the composer as chips, each of which takes its message
 back when pressed, and the next one is sent when the run settles. Stopping the
 run discards them: sending into a conversation someone has just stopped is the
@@ -2862,12 +2868,14 @@ measurement, or set it to `0px` to opt out of the lift entirely.
 
 `--ag-ui-keyboard-inset-top` does the same at the top. To show a field a
 keyboard would cover, a mobile browser pans the visible area down the page, and
-a panel anchored at the top of the screen (`page`, `full`, `side`, `sidebar`, and
-every placement at phone width) moves down with it. The widget publishes the pan
-as `--ag-ui-visual-viewport-inset-top`, and the panel moves by as much of it as
-goes past your `--ag-ui-viewport-inset-top`, since the pan scrolls a reserved bar
-away with the page. State `--ag-ui-keyboard-inset-top` to outrank that distance,
-or `0px` to keep the panel below your reserved top.
+a panel anchored to the screen (`page`, `full`, `side`, `sidebar`, and at phone
+width the corner placements too) moves down with it. An `embedded` panel renders
+in your own box rather than against the screen, so it does not move at any width.
+The widget publishes the pan as `--ag-ui-visual-viewport-inset-top`, and the
+panel moves by as much of it as goes past your `--ag-ui-viewport-inset-top`,
+since the pan scrolls a reserved bar away with the page. State
+`--ag-ui-keyboard-inset-top` to outrank that distance, or `0px` to keep the
+panel below your reserved top.
 
 `--ag-ui-viewport-height` and `--ag-ui-viewport-width` state the usable box
 outright, for the case where no viewport-percentage length describes it. An

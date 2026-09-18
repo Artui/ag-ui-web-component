@@ -61,6 +61,15 @@ export interface ConversationHistoryHost {
   readonly appendMessage: (role: MessageRole, content: string) => HTMLDivElement;
   /** Resize the composer to its content. */
   readonly autoGrow: () => void;
+  /**
+   * A continuation has ended, whether or not it ever ran.
+   *
+   * The composer parks a turn typed while one is in flight, and learns a run
+   * has settled from its own events -- which never arrive for a continuation
+   * that failed before starting one. Without this, such a turn stayed parked
+   * with nothing left to release it.
+   */
+  readonly continuationEnded: () => void;
   /** The conversation's own client, or `null` until one is built. */
   readonly client: () => AgUiClient | null;
   /** The conversation's own client, built on first use. */
@@ -367,22 +376,39 @@ export class ConversationHistory {
         // The conversation's own client holds the conversation without this
         // exchange, and would send it that way. Released rather than patched:
         // the next client is built from this list exactly as a reload builds
-        // one from the store, outcomes included. The first save comes as the
-        // turn is added, synchronously inside the pick that checked nothing
-        // was in flight, so a person cannot start a run on the released client
-        // in between. Only a script calling sendMessage() in that same task
-        // could, before its run reports a start, which is the window every
-        // in-flight check here shares.
+        // one from the store, outcomes included.
+        //
+        // Nothing can run on the released client in between, because the
+        // composer refuses to start one while a continuation is in flight --
+        // it parks the turn instead. It said here that only a script in the
+        // same task could, which was wrong by a whole request: `running` does
+        // not turn on until the continuation's first event, and a person who
+        // typed in that window got a second run against the snapshot
+        // `follows` had already frozen, so whichever saved last dropped the
+        // other's turn.
         this.#restored = conversation;
         this.#host.releaseClient();
       },
     });
     this.#continuation = client;
-    await client.send(content);
-    // Only if it is still the one in flight: stopping forgets it at once, and a
-    // continuation started after that one is not this one to forget.
-    if (this.#continuation === client) {
-      this.#continuation = null;
+    try {
+      await client.send(content);
+    } finally {
+      // Only if it is still the one in flight: stopping forgets it at once, and
+      // a continuation started after that one is not this one to forget.
+      //
+      // In a finally because the send can fail before its run ever starts. The
+      // first save goes through the host's `conversationStore` synchronously
+      // inside it, and a store is the host's to replace: the built-in one
+      // swallows a write the browser refused, a server-backed one need not. A
+      // throw there left this pointing at a client that would never run, so
+      // every later pick was refused with no Stop to clear it -- the composer's
+      // button is Send until a run reports a start -- and `#liveClient` went on
+      // handing that dead client the shared state a host wrote.
+      if (this.#continuation === client) {
+        this.#continuation = null;
+        this.#host.continuationEnded();
+      }
     }
   }
 
