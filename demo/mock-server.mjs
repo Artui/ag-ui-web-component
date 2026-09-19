@@ -41,6 +41,8 @@ const PAGE_ASSETS = new Map([
   ["/page/", { path: "page/index.html", contentType: HTML }],
   ["/page/index.html", { path: "page/index.html", contentType: HTML }],
   ["/page/page.js", { path: "page/page.js", contentType: "text/javascript" }],
+  // Both pages load it; it does nothing unless the URL carries `?readout`.
+  ["/viewport-readout.js", { path: "viewport-readout.js", contentType: "text/javascript" }],
 ]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -472,6 +474,24 @@ async function streamContinuation(res, verb, runId) {
 }
 
 const server = createServer((req, res) => {
+  // The pages are matched on their path alone, so `/page/?readout` is the same
+  // page as `/page/`. The API routes below still match the whole URL.
+  const path = req.url.split("?")[0];
+  if (req.method === "POST" && req.url === "/viewport-readout/") {
+    // What viewport-readout.js measured on a device, one line per settled
+    // reading, so the numbers can be read off this process's output instead of
+    // transcribed from a phone screenshot.
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      process.stdout.write(`viewport-readout ${body}\n`);
+      res.writeHead(204);
+      res.end();
+    });
+    return;
+  }
   if (req.method === "POST" && req.url === "/agent/") {
     let body = "";
     req.on("data", (chunk) => {
@@ -554,7 +574,7 @@ const server = createServer((req, res) => {
     });
     return;
   }
-  if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
+  if (req.method === "GET" && (path === "/" || path === "/index.html")) {
     serveFile(res, join(HERE, "themes", "index.html"), "text/html; charset=utf-8");
     return;
   }
@@ -562,7 +582,7 @@ const server = createServer((req, res) => {
     serveFile(res, join(ROOT, "dist", "ag-ui-web-component.bundle.js"), "text/javascript");
     return;
   }
-  const asset = req.method === "GET" && PAGE_ASSETS.get(req.url);
+  const asset = req.method === "GET" && PAGE_ASSETS.get(path);
   if (asset) {
     serveFile(res, join(HERE, asset.path), asset.contentType);
     return;

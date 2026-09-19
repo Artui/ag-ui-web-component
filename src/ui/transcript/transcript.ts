@@ -82,12 +82,17 @@ export class Transcript {
   /**
    * Start following the foot of the list, and wire the jump button to it.
    * Called while rendering rather than at construction: the viewport has to
-   * exist and the observer has to have something to observe.
+   * exist and the observer has to have something to observe. The button
+   * outlives a connection, so its listener goes under `signal`.
    */
-  mountScroller(jumpButton: HTMLButtonElement): void {
-    jumpButton.addEventListener("click", () => {
-      this.jump();
-    });
+  mountScroller(jumpButton: HTMLButtonElement, signal: AbortSignal): void {
+    jumpButton.addEventListener(
+      "click",
+      () => {
+        this.jump();
+      },
+      { signal },
+    );
     this.#scroller = createStickToBottom({
       viewport: this.#host.messages,
       onMissedContent: (missed) => {

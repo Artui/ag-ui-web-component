@@ -180,7 +180,24 @@ export const STYLES = `
      keyboard changes no viewport-percentage length -- not vh, not dvh, not svh
      -- so a full-bleed panel on a phone has to be told the height rather than
      deriving it. The value to publish there is the visual viewport's. */
-  --_viewport-height: var(--ag-ui-viewport-height, var(--_visual-viewport-height));
+  --_viewport-height: var(
+    --ag-ui-viewport-height,
+    calc(
+      min(var(--_visual-viewport-inset-top) + var(--_visual-viewport-height), 100dvh - var(--_viewport-inset-bottom)) -
+        var(--_viewport-inset-top) - var(--_keyboard-inset-top)
+    )
+  );
+  /* That default is the host's box cut to the part of the screen the user can
+     see: from the top the panel starts at, the host's reserved top moved down
+     by the keyboard inset below, to whichever is further up, the bottom of the
+     visible area or the host's reserved bottom. Where nothing has measured, the
+     visible area is the layout viewport with no pan, and this is the host's
+     box exactly.
+
+     Cut rather than replaced. A measured height used as the whole answer kept
+     a bar the host reserved at the top in the position and out of the height,
+     so the panel ran that far past the bottom of the visible area, with its
+     composer behind the keyboard. */
   /* The measured height of the part of the screen the user can actually see,
      written by the element from the visual viewport and falling back to the
      layout viewport where nothing has measured yet.
@@ -193,11 +210,15 @@ export const STYLES = `
 
      Separate from the token above so a host that states the usable height
      outright still wins: the element writes this one inline, and an inline
-     value would otherwise outrank the host's own rule. */
-  --_visual-viewport-height: var(
-    --ag-ui-visual-viewport-height,
-    calc(100vh - var(--_viewport-inset-top) - var(--_viewport-inset-bottom))
-  );
+     value would otherwise outrank the host's own rule.
+
+     The fallback is dvh rather than vh because the browser's own bars do move
+     it, where a keyboard does not. iOS Safari resolves vh to the viewport with
+     its bars collapsed, so on a page that does not scroll them away a panel
+     sized from it ran under the address bar by the bars' height -- 40px on
+     the phone measured -- with a docked composer underneath. dvh is the
+     viewport with the bars as they are. */
+  --_visual-viewport-height: var(--ag-ui-visual-viewport-height, 100dvh);
   /* How much of the layout viewport is hidden below the visible one, measured
      and written by the element alongside the height above.
 
@@ -212,6 +233,24 @@ export const STYLES = `
      A host wanting no keyboard lift at all sets --ag-ui-keyboard-inset: 0px. */
   --_keyboard-inset: var(--ag-ui-keyboard-inset, var(--_visual-viewport-inset-bottom));
   --_visual-viewport-inset-bottom: var(--ag-ui-visual-viewport-inset-bottom, 0px);
+  /* How far a panel anchored at the top moves down for a keyboard, below the
+     top the host reserved. With the same two-token shape as the lift above;
+     0px keeps the panel at the host's top.
+
+     To show the field being typed into, a browser pans the visible area down
+     the layout viewport, and a fixed element stays against the layout top, so
+     a panel that did not move showed only its lower part, from the pan down,
+     with its header off the screen and an empty band under it. It moves by
+     what the pan goes past the host's reserved top, not by the whole pan: the
+     pan scrolls a bar reserved there away with the rest of the page rather
+     than pushing it down, and adding the two put the panel a whole bar below
+     the visible area. A corner panel anchored at the bottom does not use this,
+     because the band below already accounts for the pan. */
+  --_keyboard-inset-top: var(--ag-ui-keyboard-inset-top, max(0px, var(--_visual-viewport-inset-top) - var(--_viewport-inset-top)));
+  /* How much of the layout viewport is hidden above the visible one: how far
+     the browser panned. Measured and written by the element with the two
+     above. */
+  --_visual-viewport-inset-top: var(--ag-ui-visual-viewport-inset-top, 0px);
   --_viewport-width: var(
     --ag-ui-viewport-width,
     calc(100vw - var(--_viewport-inset-left) - var(--_viewport-inset-right))
@@ -348,7 +387,7 @@ export const STYLES = `
 }
 
 :host([placement="side"]) {
-  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
+  --_inset: var(--ag-ui-inset, calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
   --_width: var(--ag-ui-width, 420px);
   --_height: var(--ag-ui-height, var(--_viewport-height));
   --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
@@ -358,7 +397,8 @@ export const STYLES = `
 :host([placement="full"]) {
   --_inset: var(
     --ag-ui-inset,
-    var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)
+    calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right)
+      var(--_viewport-inset-bottom) var(--_viewport-inset-left)
   );
   --_width: var(--ag-ui-width, var(--_viewport-width));
   --_height: var(--ag-ui-height, var(--_viewport-height));
@@ -375,7 +415,8 @@ export const STYLES = `
 :host([placement="page"]) {
   --_inset: var(
     --ag-ui-inset,
-    var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)
+    calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right)
+      var(--_viewport-inset-bottom) var(--_viewport-inset-left)
   );
   --_width: var(--ag-ui-width, var(--_viewport-width));
   --_height: var(--ag-ui-height, var(--_viewport-height));
@@ -441,7 +482,7 @@ export const STYLES = `
   :host([placement=""]:not([data-small-viewport="off"])) {
     --_inset: var(
       --ag-ui-inset,
-      var(--_viewport-inset-top) var(--_viewport-inset-right)
+      calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right)
         calc(var(--_viewport-inset-bottom) + var(--_keyboard-inset))
         var(--_viewport-inset-left)
     );
@@ -471,7 +512,7 @@ export const STYLES = `
    --ag-ui-position: static (and place this element in your own layout) for a
    host-managed push instead. */
 :host([placement="sidebar"]) {
-  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
+  --_inset: var(--ag-ui-inset, calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
   --_width: var(--ag-ui-width, 420px);
   --_height: var(--ag-ui-height, var(--_viewport-height));
   --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
@@ -480,7 +521,11 @@ export const STYLES = `
 }
 
 :host([placement="sidebar"][data-side="left"]) {
-  --_inset: var(--ag-ui-inset, var(--_viewport-inset-top) auto var(--_viewport-inset-bottom) var(--_viewport-inset-left));
+  --_inset: var(
+    --ag-ui-inset,
+    calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) auto var(--_viewport-inset-bottom)
+      var(--_viewport-inset-left)
+  );
 }
 
 /* The docked panel is pinned to the edge it docks against rather than filling
@@ -1237,6 +1282,64 @@ export const STYLES = `
   border-block-start-color: transparent;
 }
 
+/* On a phone the composer stays at the foot and the greeting takes the room
+   above it, which is the other way round from everything above.
+
+   Centring is a shape for a screen with room to spare: the composer reads as
+   the one thing on the page, and whichever way the rows grow there is space
+   left on both sides of them. A phone has no space to spare, and the keyboard
+   is what takes it -- opening one leaves a 426px-tall visible area with the
+   composer halfway up it and an empty band underneath, which is the half of
+   the screen a thumb is already resting on. Docked, the field sits directly
+   over the keyboard, where every chat on the platform puts it, and the
+   greeting keeps the rest.
+
+   Both rules restate the selector they override, with the breakpoint's own
+   opt-out added: this is part of the shape a host keeps its desktop layout
+   instead of, so it goes the same way as the rest of that shape. Restating
+   rather than adding conditions to the originals keeps each of those rules
+   readable as one decision, and source order settles the pair. */
+@media (max-width: 600px) {
+  :host([data-empty]:not([data-restoring]):not([data-small-viewport="off"])) .chat::after {
+    flex-grow: 0;
+  }
+
+  /* The empty region fills the transcript instead of being centred in it as a
+     block, so the two things in it can go to different places: the prompts the
+     host offers to the foot, against the composer, and the greeting to the
+     middle of what they leave.
+
+     A prompt chip is a way into the conversation. Against the field it starts,
+     it reads as one; under the greeting halfway up the panel, with the field
+     at the foot, it reads as decoration next to something else. Nothing here
+     moves them on a screen where the composer is still centred: there the
+     whole region hangs at the foot of the upper half, directly over the
+     composer, and the prompts are already against it.
+
+     Auto block margins on the greeting are what centre it, and they take the
+     free space whether or not there are prompts below to leave any, so a host
+     that offers none gets a greeting in the middle of the transcript rather
+     than one clinging to the composer.
+     The region declares a display here, which outranks the rule collapsing a
+     hidden one, so it says it is not hidden itself. Nothing sets the two
+     apart today -- the transcript writes the hidden property and the host's
+     data-empty from one expression -- and that is exactly why: a rule holding
+     because of how a method in another file happens to be written is a rule
+     holding by luck. */
+  :host([placement="page"][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty:not([hidden]),
+  :host([placement="embedded"][data-greeting][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .empty:not([hidden]) {
+    margin: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  :host([placement="page"][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .greeting,
+  :host([placement="embedded"][data-greeting][data-empty]:not([data-greeting="off"]):not([data-restoring]):not([data-small-viewport="off"])) .greeting {
+    margin-block: auto;
+  }
+}
+
 /* Nor does the greeting paint while a restore is in flight. Hidden rather than
    removed, so it keeps its place and nothing around it moves when it shows. */
 :host([data-restoring]) .greeting {
@@ -1718,6 +1821,17 @@ export const STYLES = `
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+/* A call with no arguments drops the region rather than framing an empty
+   object, and a settled card drops the result region until it has one -- both
+   by setting the hidden property, and an author display beats the user-agent
+   rule for that attribute. Without this the region kept laying out: 42px of
+   card holding the ARGUMENTS heading over nothing, on every call the agent
+   made with no arguments, in the display mode that shows arguments by
+   default. */
+.tool-call-section[hidden] {
+  display: none;
 }
 
 /* The heading that tells the two payloads apart. Without it the arguments and
@@ -2390,8 +2504,8 @@ export const STYLES = `
   display: none;
 }
 
-/* The mic button's mount point; filled only once #wireVoice mounts the
-   control. */
+/* The mic button's mount point; filled only once ComposerVoice.wire mounts
+   the control, which it skips unless transcription is configured. */
 .voice-slot {
   display: contents;
 }
@@ -3066,6 +3180,15 @@ export const STYLES = `
   flex-wrap: wrap;
   gap: 6px;
   padding: 10px 12px;
+}
+
+/* The row is hidden whenever the host offers no skills, which is most elements
+   most of the time, and an author display beats the user-agent rule for the
+   hidden attribute. Without this it kept its padding: 20px of panel between
+   the transcript and the composer, under every placement, reading as the gap
+   under whatever the transcript ends with. */
+.skill-chips[hidden] {
+  display: none;
 }
 
 .skill-chip {

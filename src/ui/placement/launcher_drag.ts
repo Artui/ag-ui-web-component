@@ -21,6 +21,12 @@ export interface LauncherDragOptions {
    * per pointer move, and never per key repeat.
    */
   readonly commit: (left: number, top: number) => void;
+  /**
+   * Ends the launcher's own listeners when aborted. The launcher outlives the
+   * element's connection to the document and this is called on every connect,
+   * so without it a re-inserted element moved one arrow press two steps.
+   */
+  readonly signal: AbortSignal;
 }
 
 /**
@@ -55,6 +61,7 @@ const COARSE_STEP = 64;
  */
 export function enableLauncherDrag(launcher: HTMLElement, options: LauncherDragOptions): void {
   let suppressClick = false;
+  const { signal } = options;
 
   launcher.addEventListener(
     "click",
@@ -70,72 +77,76 @@ export function enableLauncherDrag(launcher: HTMLElement, options: LauncherDragO
       event.stopPropagation();
       event.preventDefault();
     },
-    true,
+    { capture: true, signal },
   );
 
-  launcher.addEventListener("pointerdown", (event: PointerEvent) => {
-    // Any suppression left armed by a drag that ended elsewhere dies here,
-    // before it can reach a click belonging to this new gesture.
-    suppressClick = false;
-    if (!options.enabled()) {
-      return;
-    }
-    const start = options.rect();
-    const originX = event.clientX;
-    const originY = event.clientY;
-    let dragging = false;
-
-    const onMove = (move: PointerEvent): void => {
-      const dx = move.clientX - originX;
-      const dy = move.clientY - originY;
-      if (!dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) {
+  launcher.addEventListener(
+    "pointerdown",
+    (event: PointerEvent) => {
+      // Any suppression left armed by a drag that ended elsewhere dies here,
+      // before it can reach a click belonging to this new gesture.
+      suppressClick = false;
+      if (!options.enabled()) {
         return;
       }
-      dragging = true;
-      launcher.setAttribute("data-dragging", "true");
-      // Measured from the box the press started on, never from the live one:
-      // reading it each move would chase the launcher as it moves and the
-      // travel would compound.
-      const next = clampLauncher(
-        { ...start, left: start.left + dx, top: start.top + dy },
-        options.viewport(),
-      );
-      options.apply(next.left, next.top);
-    };
+      const start = options.rect();
+      const originX = event.clientX;
+      const originY = event.clientY;
+      let dragging = false;
 
-    const onUp = (up: PointerEvent): void => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      if (!dragging) {
-        return;
-      }
-      launcher.removeAttribute("data-dragging");
-      suppressClick = true;
-      const next = clampLauncher(
-        {
-          ...start,
-          left: start.left + (up.clientX - originX),
-          top: start.top + (up.clientY - originY),
-        },
-        options.viewport(),
-      );
-      options.commit(next.left, next.top);
-    };
+      const onMove = (move: PointerEvent): void => {
+        const dx = move.clientX - originX;
+        const dy = move.clientY - originY;
+        if (!dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) {
+          return;
+        }
+        dragging = true;
+        launcher.setAttribute("data-dragging", "true");
+        // Measured from the box the press started on, never from the live one:
+        // reading it each move would chase the launcher as it moves and the
+        // travel would compound.
+        const next = clampLauncher(
+          { ...start, left: start.left + dx, top: start.top + dy },
+          options.viewport(),
+        );
+        options.apply(next.left, next.top);
+      };
 
-    // Listeners on `window`, not the launcher: a fast drag outruns the pointer
-    // and would otherwise strand it mid-move with no pointerup.
-    //
-    // pointercancel matters on touch, where it is routine rather than
-    // exceptional: the browser takes the pointer back for a scroll or a system
-    // gesture and never sends pointerup. Without this the move listeners stay
-    // attached and the drag stamp never clears, which leaves the launcher
-    // following a finger that has stopped and the element believing a gesture
-    // is still in flight.
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-  });
+      const onUp = (up: PointerEvent): void => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+        if (!dragging) {
+          return;
+        }
+        launcher.removeAttribute("data-dragging");
+        suppressClick = true;
+        const next = clampLauncher(
+          {
+            ...start,
+            left: start.left + (up.clientX - originX),
+            top: start.top + (up.clientY - originY),
+          },
+          options.viewport(),
+        );
+        options.commit(next.left, next.top);
+      };
+
+      // Listeners on `window`, not the launcher: a fast drag outruns the pointer
+      // and would otherwise strand it mid-move with no pointerup.
+      //
+      // pointercancel matters on touch, where it is routine rather than
+      // exceptional: the browser takes the pointer back for a scroll or a system
+      // gesture and never sends pointerup. Without this the move listeners stay
+      // attached and the drag stamp never clears, which leaves the launcher
+      // following a finger that has stopped and the element believing a gesture
+      // is still in flight.
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    },
+    { signal },
+  );
 
   // The position this key gesture has applied but not yet persisted. The
   // pointer path can commit inline because a drag has one unambiguous end; a
@@ -155,37 +166,41 @@ export function enableLauncherDrag(launcher: HTMLElement, options: LauncherDragO
   // Keyboard parity: a pointer-only move is unreachable without a mouse, and
   // the launcher has no equivalent control elsewhere. Arrow keys are free on a
   // button, so Enter and Space still expand.
-  launcher.addEventListener("keydown", (event: KeyboardEvent) => {
-    if (!options.enabled()) {
-      return;
-    }
-    const step = event.shiftKey ? COARSE_STEP : STEP;
-    const rect = options.rect();
-    let moved: { left: number; top: number } | null = null;
-    if (event.key === "ArrowLeft") {
-      moved = { left: rect.left - step, top: rect.top };
-    } else if (event.key === "ArrowRight") {
-      moved = { left: rect.left + step, top: rect.top };
-    } else if (event.key === "ArrowUp") {
-      moved = { left: rect.left, top: rect.top - step };
-    } else if (event.key === "ArrowDown") {
-      moved = { left: rect.left, top: rect.top + step };
-    }
-    if (moved === null) {
-      return;
-    }
-    event.preventDefault();
-    const next = clampLauncher({ ...rect, ...moved }, options.viewport());
-    // Live feedback per key event, persistence only when the gesture ends: a
-    // held arrow repeats at the OS rate, and committing here would put that
-    // many storage writes behind a single press.
-    options.apply(next.left, next.top);
-    pending = next;
-  });
+  launcher.addEventListener(
+    "keydown",
+    (event: KeyboardEvent) => {
+      if (!options.enabled()) {
+        return;
+      }
+      const step = event.shiftKey ? COARSE_STEP : STEP;
+      const rect = options.rect();
+      let moved: { left: number; top: number } | null = null;
+      if (event.key === "ArrowLeft") {
+        moved = { left: rect.left - step, top: rect.top };
+      } else if (event.key === "ArrowRight") {
+        moved = { left: rect.left + step, top: rect.top };
+      } else if (event.key === "ArrowUp") {
+        moved = { left: rect.left, top: rect.top - step };
+      } else if (event.key === "ArrowDown") {
+        moved = { left: rect.left, top: rect.top + step };
+      }
+      if (moved === null) {
+        return;
+      }
+      event.preventDefault();
+      const next = clampLauncher({ ...rect, ...moved }, options.viewport());
+      // Live feedback per key event, persistence only when the gesture ends: a
+      // held arrow repeats at the OS rate, and committing here would put that
+      // many storage writes behind a single press.
+      options.apply(next.left, next.top);
+      pending = next;
+    },
+    { signal },
+  );
 
   // The key coming up ends the gesture, mirroring `pointerup`. `blur` closes
   // one whose keyup never arrives here -- focus moved on mid-press -- because a
   // position applied but never committed is a move the host silently forgets.
-  launcher.addEventListener("keyup", settle);
-  launcher.addEventListener("blur", settle);
+  launcher.addEventListener("keyup", settle, { signal });
+  launcher.addEventListener("blur", settle, { signal });
 }

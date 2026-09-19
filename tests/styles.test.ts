@@ -370,3 +370,27 @@ describe("STYLES token indirection", () => {
     expect(direct).toEqual([]);
   });
 });
+
+describe("STYLES viewport lengths", () => {
+  /** The stylesheet with CSS comments stripped, so prose is not mistaken for code. */
+  const code = STYLES.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("sizes a full-bleed panel from the dynamic viewport, not the large one", () => {
+    // Measured on an iPhone with nothing focused: innerHeight and the root's
+    // clientHeight were both 775, and a page panel below a 124px bar ended at
+    // 815. That is 100vh, which iOS Safari resolves to the viewport with its
+    // bars collapsed, so the panel's foot -- and with a conversation in it, the
+    // composer -- sat 40px under the address bar. 100dvh is the viewport with
+    // the bars as they are.
+    //
+    // Asserted on the text because no test browser here can tell the two
+    // apart: Chromium on a desktop has no collapsing bars, so every
+    // viewport-percentage height resolves to the same number, and a box
+    // measurement would pass on either spelling.
+    expect(code).not.toMatch(/\b100vh\b/);
+    expect(STYLES).toContain(
+      "--_visual-viewport-height: var(--ag-ui-visual-viewport-height, 100dvh);",
+    );
+    expect(code).toContain("100dvh - var(--_viewport-inset-bottom)");
+  });
+});
