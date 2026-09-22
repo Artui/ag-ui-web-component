@@ -34,7 +34,8 @@
  * cannot drift silently.
  */
 
-import { EventSchemas, EventType } from "@ag-ui/core";
+import { EventType } from "@ag-ui/core";
+import { EventSchemas } from "@ag-ui/core/schemas";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
@@ -313,6 +314,21 @@ describe("a run the server aborts, decoded from recorded bytes", () => {
 
     const bubbles = shadow(el).querySelectorAll(".message");
     expect(bubbles[bubbles.length - 1]?.textContent).toContain("The upstream model timed out");
+  });
+});
+
+describe("a server tool that failed, decoded from recorded bytes", () => {
+  it("settles the card as an error from the outcome the server stamped", async () => {
+    // Stamped by the server package's own helper, which writes the outcome on
+    // two carriers. `@ag-ui/client` 1.0 strips the top-level copy before any
+    // subscriber runs and keeps the one in `metadata`, so this card is red only
+    // if the element reads the carrier that survives the real client.
+    const el = mount();
+    await replay(el, framesOf("refused"));
+
+    const card = shadow(el).querySelector(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("error");
+    expect(text(el, ".tool-call-result")).toContain("Aula is already booked at that time");
   });
 });
 

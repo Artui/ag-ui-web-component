@@ -1,4 +1,5 @@
 import type { Message } from "@ag-ui/core";
+import { metadataOrTopLevel } from "./utils.js";
 
 /**
  * A durable, lightweight reference to one uploaded file — what an upload
@@ -24,17 +25,24 @@ export interface AttachmentRef {
 /**
  * The attachment refs a user message carries.
  *
- * Refs ride on the message as a non-standard `attachments` field, which the
- * default store round-trips and `@ag-ui/client` preserves through `addMessage`
- * / `structuredClone`, so a restored conversation re-renders its chips. The
- * server's strict `RunAgentInput` validation ignores the unknown field.
+ * `AgUiClient.send` writes them into the message's `metadata`, under
+ * `attachments`. That is the one place they survive the trip: `@ag-ui/client`
+ * 1.0 strips every key its schemas do not declare from the outgoing input, so
+ * refs written at the top level of the message never reach the server, while
+ * `metadata` is declared open by key and sent as it is. The server reads them
+ * from there to tell the agent which files it can read, and the default store
+ * round-trips them, so a restored conversation re-renders its chips.
+ *
+ * A conversation stored by an earlier release has them at the top level, so
+ * that is read when the metadata has none. An older server reads only the top
+ * level, so against one the agent is never told about a file at all.
  *
  * Storage is untrusted — hand-edited, truncated, or corrupted — so malformed
  * entries are dropped here; a shapeless one would throw in `iconFor` and abort
  * the whole history replay.
  */
 export function messageAttachments(message: Message): readonly AttachmentRef[] {
-  const refs = (message as { attachments?: unknown }).attachments;
+  const refs = metadataOrTopLevel(message, "attachments");
   return Array.isArray(refs) ? refs.filter(isAttachmentRef) : [];
 }
 

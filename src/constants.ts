@@ -271,7 +271,8 @@ export const TOOL_CALL_STATUS = {
 } as const;
 
 /**
- * How a tool call ended, as the server states it on `TOOL_CALL_RESULT`.
+ * How a tool call ended, as the server states it under `outcome` in a
+ * `TOOL_CALL_RESULT`'s `metadata`.
  *
  * The vocabulary is pydantic-ai's own `ToolReturnPart.outcome`, carried whole
  * rather than re-spelled, so the four repos that pass a refusal along agree on
@@ -280,7 +281,7 @@ export const TOOL_CALL_STATUS = {
  * **Absent means {@link TOOL_OUTCOME.SUCCESS}, and that is load-bearing.** Every
  * server written before the field existed omits it, so a missing field has to
  * render exactly as a plain result did — which is why this is an optional
- * annotation on the event and not a required one. `FAILED` is a call that ran
+ * key in the event's metadata and not a required field. `FAILED` is a call that ran
  * and failed; `DENIED` is one a person or a guard refused, so it never ran at
  * all. The two are worth distinguishing on screen because only the second is
  * something the user did. `INTERRUPTED` is a call that produced no result because

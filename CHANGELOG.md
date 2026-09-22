@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Requires `@ag-ui/client` and `@ag-ui/core` 1.0.** Both ranges are now
+  `>=1.0.0 <2`. A host that bundles the package itself resolves 1.0 beside it;
+  the vendored bundle carries its own copy.
+
+- **A tool result whose content arrives as parts shows its text.** Since 1.0 a
+  tool may return an ordered list of parts rather than a string, so a result can
+  carry an image beside its text. The card shows the text parts joined, both
+  while the run streams and when a reload replays it, and the saved conversation
+  keeps the message whole, parts included.
+
+- **A tool call's outcome and a message's attachment refs travel in
+  `metadata`.** `@ag-ui/client` 1.0 strips every key its schemas do not declare,
+  from an inbound event before any subscriber sees it and from the outgoing run
+  input before it is sent, and `metadata` is the one field on events and
+  messages it declares open by key. The element now reads a `TOOL_CALL_RESULT`'s
+  outcome from `metadata.outcome` only, which is also what
+  `AgUiClientHandlers.onToolResult` receives, and `sendMessage` puts a user
+  message's refs at `metadata.attachments`.
+
+  The client folds a result's metadata onto the tool message it keeps, so a
+  server's outcome is now saved on the message itself, and the element writes
+  the outcomes it decides on its own -- a declined confirmation, a frontend tool
+  that threw, a call the run left unfinished -- in the same place. The outcome
+  therefore goes back to the server with the rest of the history on every run,
+  which it never did before. `metadata` is a declared field, and a server that
+  does not read the key ignores it.
+
+- **Needs django-ag-ui 0.63.0 or later for outcomes and attachments.** An older
+  server writes the outcome, and reads the refs, at the top level, where 1.0
+  strips them. The chat still runs against one, but the agent is never told a
+  file was attached, and a failed or declined server-side tool call settles as
+  done.
+
+- **Conversations stored by an earlier release keep both.** Their tool messages
+  carry `outcome`, and their user messages `attachments`, at the top level. The
+  replay reads `metadata` first and falls back to the top-level key, so a
+  declined card stays declined after the upgrade and a bubble keeps its chips.
+  A client seeded from such a conversation moves both keys into `metadata`
+  before its first request, so the server is still told about every file
+  attached before the upgrade, and the next save writes the new shape.
+
+### Deprecated
+
+- **`AgUiClient.annotatedMessages` is the same list as `messages`.** It returned
+  a copy with each tool call's outcome added for the store, which the outcome
+  being on the message has made unnecessary. It is kept so code written against
+  it compiles and gets the same history.
+
 ## [0.40.0] — 2026-09-17
 
 ### Changed

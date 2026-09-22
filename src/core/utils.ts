@@ -205,3 +205,26 @@ function toolCallIds(value: unknown): string[] {
         .filter((id): id is string => typeof id === "string")
     : [];
 }
+
+/**
+ * A key a message carries in its `metadata`, or the same key at the message's
+ * top level when its metadata has none.
+ *
+ * Two keys are read this way, a tool message's `outcome` and a user message's
+ * `attachments`, and both for the same reason. `@ag-ui/client` 1.0 strips every
+ * key its schemas do not declare, off an inbound event and off the outgoing
+ * input, and `metadata` is the one place it declares open by key, so that is
+ * where this component writes them. A conversation stored by an earlier release
+ * has them at the top level instead, and a reload has to replay it as it
+ * settled.
+ *
+ * Metadata first, so a message carrying both says what the newer writer said.
+ * The result is `unknown` because it comes out of a store, which is not trusted
+ * to hold the shape anything here wrote; the caller narrows it. `Object()` boxes
+ * an absent, `null` or primitive `metadata` into an object with neither key,
+ * which reads as no metadata without a branch per shape.
+ */
+export function metadataOrTopLevel(message: Message, key: "outcome" | "attachments"): unknown {
+  const metadata = Object((message as { metadata?: unknown }).metadata) as Record<string, unknown>;
+  return metadata[key] ?? (message as unknown as Record<string, unknown>)[key];
+}

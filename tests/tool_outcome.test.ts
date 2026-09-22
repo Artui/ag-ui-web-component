@@ -37,7 +37,7 @@ describe("toolStatusFromOutcome", () => {
   });
 
   it("reads anything unrecognised as a success", () => {
-    // Every shape a `passthrough` field or a JSON blob out of a store can
+    // Every shape an undeclared field or a JSON blob out of a store can
     // actually hand over. None of them is grounds for claiming a failure.
     for (const value of [null, "", "FAILED", 1, true, {}, ["failed"]]) {
       expect(toolStatusFromOutcome(value)).toBe(TOOL_CALL_STATUS.DONE);

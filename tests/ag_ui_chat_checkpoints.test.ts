@@ -1227,10 +1227,10 @@ describe("a continued exchange joins the conversation", () => {
 
   it("keeps how an earlier call ended, in a conversation sent in this page", async () => {
     // Here the conversation lives in a client this page built rather than in a
-    // restore, and that client keeps a declined call's outcome beside its
-    // messages, not on them. Saving its bare messages ahead of the exchange
-    // would turn the declined card green on the next reload. And it is that
-    // client which the next message would have gone out on, without the
+    // restore, and a declined call's outcome rides in its result's metadata.
+    // Saving anything but the messages as that client holds them ahead of the
+    // exchange would turn the declined card green on the next reload. And it is
+    // that client which the next message would have gone out on, without the
     // exchange.
     let posts = 0;
     const sent = stubServer((url) => {
@@ -1268,8 +1268,8 @@ describe("a continued exchange joins the conversation", () => {
       ["user", "go on"],
       ["assistant", "the resumed answer"],
     ]);
-    const declined = saved?.find((message) => message.role === "tool") as { outcome?: unknown };
-    expect(declined.outcome).toBe(TOOL_OUTCOME.DENIED);
+    const declined = saved?.find((message) => message.role === "tool");
+    expect(declined?.metadata).toEqual({ outcome: TOOL_OUTCOME.DENIED });
 
     sendTurn(el, "and then?");
     await settle();
@@ -1280,8 +1280,11 @@ describe("a continued exchange joins the conversation", () => {
       ["assistant", "the resumed answer"],
       ["user", "and then?"],
     ]);
-    // Carried there as a save writes it, but never onto the wire.
-    expect(JSON.stringify(request)).not.toContain('"outcome"');
+    // Carried there as a save writes it: in the result's metadata, which the
+    // protocol declares, and never at the top level, which 1.0 would strip.
+    const tool = request?.find((message) => message["role"] === "tool");
+    expect(tool).toMatchObject({ metadata: { outcome: TOOL_OUTCOME.DENIED } });
+    expect(tool).not.toHaveProperty("outcome");
   });
 
   /**

@@ -1,5 +1,5 @@
 import { randomUUID } from "@ag-ui/client";
-import type { Message } from "@ag-ui/core";
+import { contentToText, type Message } from "@ag-ui/core";
 import { MESSAGE_ROLE, TOOL_OUTCOME } from "../../constants.js";
 import type { ActivityRegistry } from "../../core/activity_registry.js";
 import type { AgUiClient } from "../../core/agui_client.js";
@@ -12,7 +12,7 @@ import type {
 import type { MessageRole } from "../../core/message_role.js";
 import { RunIndex } from "../../core/run_index.js";
 import { toolStatusFromOutcome } from "../../core/tool_outcome.js";
-import { answerUnansweredCalls, mintThread } from "../../core/utils.js";
+import { answerUnansweredCalls, metadataOrTopLevel, mintThread } from "../../core/utils.js";
 import type { ToolCatalog } from "../../tools/tool_catalog.js";
 import type { AnswerActions } from "../transcript/answer_actions.js";
 import { renderAttachmentChips } from "../transcript/attachment_chips.js";
@@ -365,7 +365,7 @@ export class ConversationHistory {
       //
       // All of it, even where this forks an earlier run and the server's
       // snapshot stops there: what is saved is what the screen shows.
-      follows: this.#host.client()?.annotatedMessages ?? this.#restored,
+      follows: this.#host.client()?.messages ?? this.#restored,
       onSaved: (conversation) => {
         // A continuation stopped by New chat or a thread switch saves once its
         // request closes, into its own thread; the conversation now on screen
@@ -487,16 +487,14 @@ export class ConversationHistory {
       const restored = answerUnansweredCalls(
         messages,
         // The shape the store holds for a call the client answered the same way:
-        // its tool message, with the outcome it annotates onto the stored copy.
-        // Cast at the AG-UI boundary, as the client's own annotation is.
-        (toolCallId) =>
-          ({
-            id: randomUUID(),
-            role: "tool",
-            content: unfinished,
-            toolCallId,
-            outcome: TOOL_OUTCOME.INTERRUPTED,
-          }) as Message,
+        // its tool message, with the outcome in its metadata.
+        (toolCallId) => ({
+          id: randomUUID(),
+          role: "tool",
+          content: unfinished,
+          toolCallId,
+          metadata: { outcome: TOOL_OUTCOME.INTERRUPTED },
+        }),
         new Set(checkpoint === null ? [] : [checkpoint.toolCallId]),
       );
       this.#restored = restored;
@@ -611,16 +609,21 @@ export class ConversationHistory {
     if (message.role === "tool") {
       const card = this.#host.transcript.card(message.toolCallId);
       if (card !== undefined) {
-        // The outcome `AgUiClient` annotated onto the persisted message, read
-        // back through the same mapping the live path uses -- so a card that
-        // said "declined" before the reload still says it after. Narrowed off
-        // `unknown` rather than trusted, like every other field read out of the
-        // store: `Message` does not declare it, a host store may not round-trip
-        // it, and history written before this shipped has none. All three land
-        // on DONE, which is what this line did unconditionally.
+        // The outcome in the message's metadata -- folded there from a server's
+        // result by `@ag-ui/client`, or written there by `AgUiClient` for a
+        // result it made itself -- read back through the same mapping the live
+        // path uses, so a card that said "declined" before the reload still
+        // says it after. History stored by an earlier release has it at the
+        // top level instead, which is read when the metadata has none. Narrowed
+        // off `unknown` rather than trusted, like every other field read out of
+        // the store: metadata is open by key, a host store may not round-trip
+        // it, and history written before outcomes existed has none. All three
+        // land on DONE, which is what this line did unconditionally.
         card.settle(
-          toolStatusFromOutcome((message as { outcome?: unknown }).outcome),
-          message.content,
+          toolStatusFromOutcome(metadataOrTopLevel(message, "outcome")),
+          // Flattened exactly as the live path flattens it, so a reload shows
+          // the card the user watched settle.
+          contentToText(message.content),
         );
       }
     }

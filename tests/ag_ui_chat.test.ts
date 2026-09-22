@@ -2131,7 +2131,10 @@ describe("AgUiChat", () => {
     expect(store.loadCheckpoint(tid)).toBeNull();
     const toolMsg = handle.messages.find((m) => m.role === "tool");
     expect(toolMsg?.toolCallId).toBe("nav-1");
-    expect(JSON.parse(toolMsg?.content ?? "{}").navigated).toBe(true);
+    // A frontend tool's result is always the string this component built.
+    const content = toolMsg?.content;
+    expect(typeof content).toBe("string");
+    expect(JSON.parse(content as string).navigated).toBe(true);
     expect(shadow(el).querySelector(".message--assistant")?.textContent).toBe("here are the books");
   });
 

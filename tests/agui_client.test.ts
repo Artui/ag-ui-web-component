@@ -1,11 +1,12 @@
-import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
-import { describe, expect, it, vi } from "vitest";
+import type { ContentPart, Context, Interrupt, Message, Tool } from "@ag-ui/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_TOOL_ROUNDS } from "../src/constants.js";
 import {
   AgUiClient,
   type AgUiClientHandlers,
   ConnectionLostError,
 } from "../src/core/agui_client.js";
+import { createHttpAgent } from "../src/core/create_http_agent.js";
 import { makeFakeAgent } from "./helpers/fake_agent.js";
 
 function recordingHandlers(): AgUiClientHandlers & { calls: string[] } {
@@ -48,18 +49,25 @@ describe("AgUiClient", () => {
     expect(fake.messages).toHaveLength(1);
     expect(fake.messages[0]).toMatchObject({ role: "user", content: "hello" });
     expect(typeof fake.messages[0]?.id).toBe("string");
-    // No attachments passed → no attachments field on the message.
+    // No attachments passed → no metadata on the message at all.
+    expect(fake.messages[0]).not.toHaveProperty("metadata");
     expect(fake.messages[0]).not.toHaveProperty("attachments");
   });
 
-  it("rides attachment refs on the user message", async () => {
+  it("rides attachment refs in the user message's metadata", async () => {
     const fake = makeFakeAgent();
     const refs = [{ id: "a1", name: "notes.txt", mime: "text/plain", size: 5 }];
     await new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() }).send(
       "read this",
       refs,
     );
-    expect(fake.messages[0]).toMatchObject({ content: "read this", attachments: refs });
+    expect(fake.messages[0]).toMatchObject({
+      content: "read this",
+      metadata: { attachments: refs },
+    });
+    // Not at the top level too: 1.0 strips it from the request there, with a
+    // warning, and the server reads the metadata first anyway.
+    expect(fake.messages[0]).not.toHaveProperty("attachments");
   });
 
   it("maps every subscriber callback to a handler", async () => {
@@ -753,13 +761,68 @@ describe("duplicate message ids", () => {
   });
 });
 
+describe("a tool result's content", () => {
+  it("joins the text parts of a result that arrives as parts", async () => {
+    // Since the protocol's 1.0 a tool can return parts, an image beside its
+    // text. The handler takes a string because a card shows text, so the text
+    // parts are joined in order and the rest is left to the stored message.
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "seat_map", {});
+        emit.toolResult("tc1", [
+          { type: "text", text: "seat 12A " },
+          { type: "image", source: { type: "url", value: "https://example.test/map.png" } },
+          { type: "text", text: "is held" },
+        ]);
+        emit.runEnd();
+      },
+    });
+    const seen: string[] = [];
+    const handlers = recordingHandlers();
+    handlers.onToolResult = (_id, content) => {
+      seen.push(content);
+    };
+    await new AgUiClient({ agent: fake.agent, handlers }).send("show me");
+
+    expect(seen).toEqual(["seat 12A is held"]);
+  });
+
+  it("keeps the parts whole on the stored message", async () => {
+    // The flattening is the card's view only. The message the host persists is
+    // the one the client appended, parts and all, so the next run hands the
+    // model the image it was shown.
+    const parts: ContentPart[] = [
+      { type: "text", text: "seat 12A" },
+      { type: "image", source: { type: "url", value: "https://example.test/map.png" } },
+    ];
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "seat_map", {});
+        emit.toolResult("tc1", parts);
+        emit.runEnd();
+      },
+    });
+    const persisted: Message[][] = [];
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      onPersist: (messages) => persisted.push([...messages]),
+    }).send("show me");
+
+    const tool = persisted.at(-1)?.find((m) => m.role === "tool");
+    expect(tool?.content).toEqual(parts);
+  });
+});
+
 describe("a tool result's outcome", () => {
-  it("forwards the wire outcome to the handler", async () => {
+  it("forwards the outcome in the result's metadata to the handler", async () => {
     const fake = makeFakeAgent({
       script: (emit) => {
         emit.runStart();
         emit.toolCall("tc1", "book_flight", {});
-        emit.toolResult("tc1", "no seats left", "failed");
+        emit.toolResult("tc1", "no seats left", { outcome: "failed" });
         emit.runEnd();
       },
     });
@@ -774,8 +837,8 @@ describe("a tool result's outcome", () => {
   });
 
   it("forwards undefined when the server states no outcome", async () => {
-    // The shape every server written before the field existed produces, and the
-    // one a two-parameter handler has always seen.
+    // The shape every server that states no outcome produces, and the one a
+    // two-parameter handler has always seen.
     const fake = makeFakeAgent({
       script: (emit) => {
         emit.runStart();
@@ -794,31 +857,8 @@ describe("a tool result's outcome", () => {
     expect(seen).toEqual([undefined]);
   });
 
-  it("persists a server outcome beside the tool message without putting it on the wire", async () => {
-    const fake = makeFakeAgent({
-      script: (emit) => {
-        emit.runStart();
-        emit.toolCall("tc1", "book_flight", {});
-        emit.toolResult("tc1", "no seats left", "failed");
-        emit.runEnd();
-      },
-    });
-    const persisted: Message[][] = [];
-    await new AgUiClient({
-      agent: fake.agent,
-      handlers: recordingHandlers(),
-      onPersist: (messages) => persisted.push([...messages]),
-    }).send("book it");
-
-    const saved = persisted.at(-1)?.find((m) => m.role === "tool");
-    expect(saved).toMatchObject({ toolCallId: "tc1", outcome: "failed" });
-    // `agent.messages` is what the next run posts back, so the annotation must
-    // not be there -- `@ag-ui/client` never put it there, and neither do we.
-    expect(fake.messages.find((m) => m.role === "tool")).not.toHaveProperty("outcome");
-  });
-
-  it("persists a frontend tool's own outcome", async () => {
-    // Nothing on the wire carries this one: the call never reached a server.
+  it("persists a frontend tool's own outcome in its result's metadata", async () => {
+    // Nothing on the wire states this one: the call never reached a server.
     let round = 0;
     const fake = makeFakeAgent({
       script: (emit) => {
@@ -838,20 +878,20 @@ describe("a tool result's outcome", () => {
 
     expect(persisted.at(-1)?.find((m) => m.role === "tool")).toMatchObject({
       toolCallId: "tc1",
-      outcome: "denied",
+      metadata: { outcome: "denied" },
     });
   });
 
-  it("re-applies an earlier round's outcome on every later persist", async () => {
-    // The store keeps only the most recent list, so an annotation that was
-    // written once and then dropped by the next save would leave the card green
-    // again -- and the persist that overwrites it is one the *next* round makes.
+  it("keeps an earlier round's outcome on every later persist", async () => {
+    // The store keeps only the most recent list, so an outcome written once and
+    // then dropped by the next save would leave the card green again -- and
+    // the persist that overwrites it is one the *next* round makes.
     let round = 0;
     const fake = makeFakeAgent({
       script: (emit) => {
         if (round === 0) {
           emit.toolCall("tc1", "book_flight", {});
-          emit.toolResult("tc1", "no seats left", "failed");
+          emit.toolResult("tc1", "no seats left", { outcome: "failed" });
           emit.toolCall("ui1", "note_it", {});
         } else {
           emit.text("understood");
@@ -871,31 +911,41 @@ describe("a tool result's outcome", () => {
     expect(round).toBe(2);
     const last = persisted.at(-1) ?? [];
     expect(last.find((m) => m.role === "tool" && m.toolCallId === "tc1")).toMatchObject({
-      outcome: "failed",
+      metadata: { outcome: "failed" },
     });
-    // And the round that followed did not acquire one.
+    // And the round that followed, which succeeded, carries no metadata at all.
     expect(last.find((m) => m.role === "tool" && m.toolCallId === "ui1")).not.toHaveProperty(
-      "outcome",
+      "metadata",
     );
   });
 
-  it("leaves the persisted list untouched when nothing has an outcome", async () => {
-    // The overwhelmingly common case, and the one that must stay allocation-free
-    // and byte-identical to what a host store saw before this shipped.
-    const fake = makeFakeAgent();
+  it("hands the store the agent's own list, outcomes included", async () => {
+    // The same array, not an annotated copy of it: the outcome is on the
+    // message, so what a save writes is exactly what the next request sends,
+    // and a host store diffing what it is handed sees the agent's own list.
+    let round = 0;
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        if (round === 0) {
+          emit.toolCall("tc1", "delete_user", {});
+        }
+        round += 1;
+      },
+    });
     const seen: (readonly Message[])[] = [];
-    await new AgUiClient({
+    const client = new AgUiClient({
       agent: fake.agent,
       handlers: recordingHandlers(),
       onPersist: (messages) => {
         seen.push(messages);
       },
-    }).send("hello");
+      executeTool: async () => ({ content: "User declined the action.", outcome: "denied" }),
+    });
+    await client.send("delete user 7");
 
-    // The same array, not a copy of it: with nothing to annotate there is
-    // nothing to rebuild, and a host store diffing what it is handed should see
-    // exactly what it saw before.
     expect(seen.at(-1)).toBe(fake.messages);
+    // The getter that used to return the annotated copy is the same list now.
+    expect(client.annotatedMessages).toBe(client.messages);
   });
 });
 
@@ -951,5 +1001,287 @@ describe("truncateToLastUser", () => {
 
     // Running here would stream the new answer in underneath the old one.
     expect(fake.runParams).toHaveLength(runsBefore);
+  });
+});
+
+/**
+ * The same client over the real `@ag-ui/client` `HttpAgent`, with only `fetch`
+ * stubbed.
+ *
+ * Everything above drives the client through `makeFakeAgent`, which dispatches
+ * straight to the subscriber and so skips the one stage that decides what a key
+ * outside the protocol's schemas does: 1.0's enforcement, which strips every
+ * undeclared key off an inbound event after parsing and off the outgoing
+ * `RunAgentInput` before it is sent. The fake cannot model a stage it bypasses,
+ * which is how a tool outcome and a message's attachment refs both stopped
+ * arriving with the whole suite green. These read what crosses the wire instead.
+ */
+describe("over the real HttpAgent", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** An SSE response carrying `events`, the way a server streams a run. */
+  function sse(events: readonly Record<string, unknown>[]): Response {
+    const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+    return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  }
+
+  /** A run that streams `middle` between a start and a finish. */
+  function run(...middle: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+    return [
+      { type: "RUN_STARTED", threadId: "t1", runId: "r1" },
+      ...middle,
+      { type: "RUN_FINISHED", threadId: "t1", runId: "r1" },
+    ];
+  }
+
+  /** A server-side tool call and its result, as `TOOL_CALL_*` events. */
+  function serverToolCall(result: Record<string, unknown>): Record<string, unknown>[] {
+    return [
+      { type: "TOOL_CALL_START", toolCallId: "tc1", toolCallName: "book_flight" },
+      { type: "TOOL_CALL_ARGS", toolCallId: "tc1", delta: "{}" },
+      { type: "TOOL_CALL_END", toolCallId: "tc1" },
+      { type: "TOOL_CALL_RESULT", messageId: "m1", toolCallId: "tc1", content: "no", ...result },
+    ];
+  }
+
+  /**
+   * Answer each request with the next run in `runs` (an empty run once they are
+   * spent), and return the parsed body of every request made.
+   */
+  function stubFetch(...runs: readonly Record<string, unknown>[][]): Record<string, unknown>[] {
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Promise.resolve(sse(runs[bodies.length - 1] ?? run()));
+      }),
+    );
+    return bodies;
+  }
+
+  /** The messages a request body carried. */
+  function sent(body: Record<string, unknown> | undefined): Record<string, unknown>[] {
+    return (body?.["messages"] ?? []) as Record<string, unknown>[];
+  }
+
+  /** Every `[ag-ui][enforce]` warning, which is what the client prints as it strips a key. */
+  function enforceWarnings(): () => string[] {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    return () =>
+      warn.mock.calls.map((args) => String(args[0])).filter((m) => m.includes("[ag-ui][enforce]"));
+  }
+
+  function outcomes(): { handlers: AgUiClientHandlers; seen: unknown[] } {
+    const seen: unknown[] = [];
+    const handlers = recordingHandlers();
+    handlers.onToolResult = (_id, _content, outcome) => {
+      seen.push(outcome);
+    };
+    return { handlers, seen };
+  }
+
+  it("delivers the outcome a result states in its metadata", async () => {
+    stubFetch(run(...serverToolCall({ metadata: { outcome: "failed" } })));
+    const { handlers, seen } = outcomes();
+
+    await new AgUiClient({ agent: createHttpAgent({ endpoint: "/agent/" }), handlers }).send(
+      "book it",
+    );
+
+    expect(seen).toEqual(["failed"]);
+  });
+
+  it("never sees an outcome stated only at the top level, which 1.0 strips", async () => {
+    // What a server written against the 0.x client sends. The key is not in
+    // the event's schema, so the client removes it before any subscriber runs
+    // and the card settles as done -- the reason the outcome moved.
+    stubFetch(run(...serverToolCall({ outcome: "failed" })));
+    const warnings = enforceWarnings();
+    const { handlers, seen } = outcomes();
+
+    await new AgUiClient({ agent: createHttpAgent({ endpoint: "/agent/" }), handlers }).send(
+      "book it",
+    );
+
+    expect(seen).toEqual([undefined]);
+    expect(warnings()).toEqual([expect.stringContaining("'/outcome'")]);
+  });
+
+  it("sends attachment refs in the user message's metadata", async () => {
+    const bodies = stubFetch(run());
+    const warnings = enforceWarnings();
+    const refs = [{ id: "att1", name: "notes.txt", mime: "text/plain", size: 5 }];
+
+    await new AgUiClient({
+      agent: createHttpAgent({ endpoint: "/agent/" }),
+      handlers: recordingHandlers(),
+    }).send("read this", refs);
+
+    const user = sent(bodies[0]).find((m) => m["role"] === "user");
+    expect(user?.["metadata"]).toEqual({ attachments: refs });
+    expect(user).not.toHaveProperty("attachments");
+    expect(warnings()).toEqual([]);
+  });
+
+  it("persists a server's outcome on the tool message, and sends it back", async () => {
+    // The real client folds a result's metadata onto the tool message it
+    // appends, so the transcript carries the outcome with no bookkeeping here,
+    // and the next request carries it too: `metadata` is a declared field, and
+    // a server that does not read it ignores it.
+    const bodies = stubFetch(run(...serverToolCall({ metadata: { outcome: "failed" } })), run());
+    const persisted: Message[][] = [];
+    const client = new AgUiClient({
+      agent: createHttpAgent({ endpoint: "/agent/" }),
+      handlers: recordingHandlers(),
+      onPersist: (messages) => persisted.push([...messages]),
+    });
+
+    await client.send("book it");
+    await client.send("try again");
+
+    const tool = { toolCallId: "tc1", metadata: { outcome: "failed" } };
+    expect(persisted.at(-1)?.find((m) => m.role === "tool")).toMatchObject(tool);
+    expect(sent(bodies[1]).find((m) => m["role"] === "tool")).toMatchObject(tool);
+  });
+
+  it("sends a frontend tool's own outcome in the tool message's metadata", async () => {
+    // No server stated this one -- the call never reached a server -- so the
+    // client writes it where the real client would have folded a server's.
+    const bodies = stubFetch(
+      run(
+        { type: "TOOL_CALL_START", toolCallId: "ui1", toolCallName: "delete_user" },
+        { type: "TOOL_CALL_END", toolCallId: "ui1" },
+      ),
+      run(),
+    );
+    const warnings = enforceWarnings();
+
+    await new AgUiClient({
+      agent: createHttpAgent({ endpoint: "/agent/" }),
+      handlers: recordingHandlers(),
+      executeTool: async () => ({ content: "User declined the action.", outcome: "denied" }),
+    }).send("delete user 7");
+
+    expect(sent(bodies[1]).find((m) => m["role"] === "tool")).toMatchObject({
+      toolCallId: "ui1",
+      metadata: { outcome: "denied" },
+    });
+    expect(warnings()).toEqual([]);
+  });
+
+  it("builds and places a result's tool message exactly as the fake agent does", async () => {
+    // The drift guard for `makeFakeAgent`, which every other test here trusts:
+    // the same round through both, compared message by message. The results
+    // arrive in the opposite order to the calls, so a fake that appended rather
+    // than placing each after its own call would disagree, and one of them
+    // carries metadata, so a fake that dropped it -- or copied anything else
+    // off the event -- would too.
+    const call = (id: string): Record<string, unknown>[] => [
+      { type: "TOOL_CALL_START", toolCallId: id, toolCallName: "book_flight" },
+      { type: "TOOL_CALL_END", toolCallId: id },
+    ];
+    const result = (id: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+      type: "TOOL_CALL_RESULT",
+      messageId: `${id}-result`,
+      toolCallId: id,
+      content: "no",
+      ...extra,
+    });
+    stubFetch(
+      run(
+        ...call("tc1"),
+        ...call("tc2"),
+        result("tc2", { metadata: { outcome: "failed" } }),
+        result("tc1"),
+      ),
+    );
+    const real = createHttpAgent({ endpoint: "/agent/" });
+    await new AgUiClient({ agent: real, handlers: recordingHandlers() }).send("book both");
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.toolCall("tc1", "book_flight", {});
+        emit.toolCall("tc2", "book_flight", {});
+        emit.toolResult("tc2", "no", { outcome: "failed" });
+        emit.toolResult("tc1", "no");
+      },
+    });
+    await new AgUiClient({ agent: fake.agent, handlers: recordingHandlers() }).send("book both");
+
+    // Ids aside, which each side mints its own way: a turn by its role and the
+    // calls it makes, and a tool message whole.
+    const shape = (messages: readonly unknown[]): unknown[] =>
+      messages.map((message) => {
+        const m = message as Message & { toolCalls?: { id: string }[] };
+        return m.role === "tool"
+          ? { ...m, id: undefined }
+          : [m.role, ...(m.toolCalls ?? []).map((c) => c.id)];
+      });
+    expect(shape(real.messages)).toEqual([
+      ["user"],
+      ["assistant", "tc1"],
+      { role: "tool", toolCallId: "tc1", content: "no" },
+      ["assistant", "tc2"],
+      { role: "tool", toolCallId: "tc2", content: "no", metadata: { outcome: "failed" } },
+    ]);
+    expect(shape(fake.messages)).toEqual(shape(real.messages));
+  });
+
+  it("carries history stored by an earlier release into metadata", async () => {
+    // Earlier releases stored both keys at the top level. Sent that way, 1.0
+    // strips them -- and the server would lose the manifest of every file
+    // attached before the upgrade -- so the seed moves them into metadata,
+    // merged with what is there, where a key already in metadata wins.
+    const ref = { id: "att1", name: "a.txt", mime: "text/plain", size: 1 };
+    const call = (id: string) => ({
+      id,
+      type: "function",
+      function: { name: "f", arguments: "{}" },
+    });
+    const legacy = [
+      { id: "u1", role: "user", content: "read this", attachments: [ref] },
+      { id: "a1", role: "assistant", toolCalls: [call("tc1"), call("tc2")] },
+      {
+        id: "r1",
+        role: "tool",
+        content: "no",
+        toolCallId: "tc1",
+        outcome: "denied",
+        metadata: { note: "kept" },
+      },
+      {
+        id: "r2",
+        role: "tool",
+        content: "no",
+        toolCallId: "tc2",
+        outcome: "denied",
+        metadata: { outcome: "failed" },
+      },
+      // A store is not trusted to hold an object where one belongs.
+      { id: "u2", role: "user", content: "and this", attachments: [ref], metadata: "junk" },
+    ] as unknown as Message[];
+    const bodies = stubFetch(run());
+    const warnings = enforceWarnings();
+
+    await new AgUiClient({
+      agent: createHttpAgent({ endpoint: "/agent/", initialMessages: legacy }),
+      handlers: recordingHandlers(),
+    }).send("and now");
+
+    const messages = sent(bodies[0]);
+    expect(messages.map((m) => m["metadata"])).toEqual([
+      { attachments: [ref] },
+      undefined,
+      { note: "kept", outcome: "denied" },
+      { outcome: "failed" },
+      { attachments: [ref] },
+      undefined,
+    ]);
+    expect(messages.flatMap((m) => Object.keys(m))).not.toContain("attachments");
+    expect(messages.flatMap((m) => Object.keys(m))).not.toContain("outcome");
+    expect(warnings()).toEqual([]);
   });
 });

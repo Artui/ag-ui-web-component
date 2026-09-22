@@ -173,8 +173,11 @@ the collision the registry exists to catch.
 - Test layout mirrors `src/` under `tests/`. `src/fill_field.ts` → `tests/fill_field.test.ts`.
 - DOM tests run under `happy-dom` (configured as the Vitest environment). Custom Element
   registration, Shadow DOM queries, and event dispatch all work there.
-- For AG-UI protocol behaviour, mock `@ag-ui/client`'s `HttpAgent` rather than hitting a real
-  server; assert on the `RunAgentInput` shape produced and the handling of synthetic events.
+- For AG-UI protocol behaviour, never hit a real server. The fake agent
+  (`tests/helpers/fake_agent.ts`) covers how the client handles subscriber events; anything about
+  the shape that crosses the wire -- the `RunAgentInput` sent, or which event keys arrive -- runs a
+  real `HttpAgent` with `fetch` stubbed, because only the real client applies 1.0's enforcement
+  (see Compatibility floor).
 
 ## Lint and types
 
@@ -189,10 +192,26 @@ the collision the registry exists to catch.
 | --- | --- | --- |
 | Node (tooling/tests) | 22 | 22, 24 |
 | Browsers (runtime target) | ES2022 / evergreen | Chrome/Firefox/Safari 17+ |
-| `@ag-ui/client` | latest 0.x | — |
+| `@ag-ui/client`, `@ag-ui/core` | 1.0 | 1.0 |
+| django-ag-ui (server) | 0.63.0 | — |
 
 The shipped artefact targets evergreen browsers (Shadow DOM, Custom Elements v1, ES2022). Node
 is only the build/test runtime, not a runtime target.
+
+The server row is a wire contract, not a dependency. `@ag-ui/client` 1.0 strips every key its
+schemas do not declare, off an inbound event and off the outgoing `RunAgentInput`, so a tool
+call's `outcome` and a user message's `attachments` both ride in `metadata`, the one field it
+declares open by key. An older django-ag-ui writes and reads them at the top level: the chat still
+runs, but the agent never sees an attachment and a failed or declined tool card settles as done.
+Stored history from before the move still has the top-level keys, so every reader takes
+`metadata` first and falls back to the top level, and a seeded client moves them into `metadata`
+before its first request.
+
+**A fake agent cannot see this stage.** `tests/helpers/fake_agent.ts` dispatches straight to the
+subscriber, past enforcement, so an undeclared key reaches a test exactly as it never reaches a
+real run. Anything about what crosses the wire goes through the real `HttpAgent` with `fetch`
+stubbed to an SSE body, as the `over the real HttpAgent` block in `tests/agui_client.test.ts`
+does.
 
 ## Branching
 

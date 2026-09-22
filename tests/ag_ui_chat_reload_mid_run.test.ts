@@ -333,7 +333,7 @@ describe("reloading while a confirmation card is open", () => {
     const stored = first.store
       .snapshot()
       .messages.find((m) => m.role === "tool" && m.toolCallId === "tc1");
-    expect((stored as { outcome?: unknown } | undefined)?.outcome).toBe(TOOL_OUTCOME.INTERRUPTED);
+    expect(stored?.metadata).toEqual({ outcome: TOOL_OUTCOME.INTERRUPTED });
 
     const second = await reload(first.store.snapshot());
     expect(cardView(second.el).status).toBe("interrupted");

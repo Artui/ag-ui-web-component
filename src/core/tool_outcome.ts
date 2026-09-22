@@ -13,9 +13,10 @@ export type ToolOutcome = (typeof TOOL_OUTCOME)[keyof typeof TOOL_OUTCOME];
  * The card status a wire outcome settles into.
  *
  * Takes `unknown` rather than {@link ToolOutcome} on purpose: both callers read
- * this off a boundary the type system does not police -- a `passthrough` field
- * on an AG-UI event, and a JSON blob out of the conversation store -- so the
- * narrowing belongs here, once, instead of at each of them.
+ * this off a boundary the type system does not police -- a key in an AG-UI
+ * event's `metadata`, which the protocol declares open and does not validate,
+ * and a JSON blob out of the conversation store -- so the narrowing belongs
+ * here, once, instead of at each of them.
  *
  * **Everything unrecognised maps to `DONE`.** Not because unknown values are
  * expected to be successes, but because the alternative is worse in the
