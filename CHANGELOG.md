@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The vendored bundle no longer carries zod code nothing calls.**
+  `ag-ui-web-component.bundle.js` shipped every locale zod has and its JSON
+  Schema generator, because `@ag-ui/core` and `@ag-ui/client` both write
+  `import { z } from "zod/v4"`: that `z` is a namespace zod re-exports as a
+  value, and a bundler cannot tell which of its members are read. The build now
+  resolves the namespace statically, so only what the two packages call is
+  kept, and installs zod's English messages explicitly -- zod's
+  `sideEffects: false` would otherwise drop the module that sets them, and a
+  rejected event would be reported as "Invalid input" and nothing more. The
+  bundle goes from 840,847 to 651,996 bytes, and from 203,433 to 172,151 gzipped.
+  Decoding, the 1.0 client's enforcement and its error text are unchanged, and a
+  browser test now loads the built bundle to hold all three. The npm build,
+  which leaves `@ag-ui/*` to the host's bundler, is byte-identical.
+
 ## [0.41.0] — 2026-09-22
 
 ### Changed

@@ -53,6 +53,10 @@ export default defineConfig({
           // empty storage. See the file for why a teardown in whichever file
           // changed them is not enough.
           setupFiles: ["tests/browser/setup_browser_state.ts"],
+          // Builds the vendored bundle once, in Node, for the one file that
+          // loads it. See the file for why the result is provided rather than
+          // written to dist/.
+          globalSetup: ["tests/browser/build_vendored_bundle.ts"],
           // One file at a time. The viewport belongs to the browser context
           // rather than to a file, so a test that narrows it to exercise the
           // small-viewport layout resizes it under every file running beside
