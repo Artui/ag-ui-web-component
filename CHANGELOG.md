@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] — 2026-09-22
+
 ### Changed
 
 - **Requires `@ag-ui/client` and `@ag-ui/core` 1.0.** Both ranges are now
@@ -4176,7 +4178,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.0...HEAD
+[0.41.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.37.0...v0.38.0
