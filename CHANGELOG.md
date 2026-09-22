@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.1] — 2026-09-22
+
 ### Changed
 
 - **The vendored bundle no longer carries zod code nothing calls.**
@@ -4194,7 +4196,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.1...HEAD
+[0.41.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.0...v0.41.1
 [0.41.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.38.0...v0.39.0
