@@ -75,6 +75,7 @@ from django_ag_ui.agent.chart_points_delta import chart_points_delta  # noqa: E4
 from django_ag_ui.agent.inject_compaction_events import (  # noqa: E402
     COMPACTION_ACTIVITY_TYPE,
 )
+from django_ag_ui.agent.stamp_outcome import stamp_outcome  # noqa: E402
 from django_ag_ui.agent.types.chart_series import ChartSeries  # noqa: E402
 from django_ag_ui.agent.types.chart_spec import ChartSpec  # noqa: E402
 
@@ -181,6 +182,43 @@ def _failed_run() -> list[Any]:
     ]
 
 
+def _refused_run() -> list[Any]:
+    """A server tool that fails, then an answer saying so.
+
+    The result is stamped by the server package's own ``stamp_outcome``, so the
+    outcome sits wherever that server puts it -- on the event's ``metadata`` for
+    a 1.0 client and at the top level for an older one -- rather than where this
+    script believes it goes. Only the metadata copy survives a 1.0 client's
+    enforcement stage, which is the whole question this run exists to answer.
+    """
+    return [
+        RunStartedEvent(thread_id=THREAD_ID, run_id="run-refused"),
+        ToolCallStartEvent(
+            tool_call_id="call-3",
+            tool_call_name="book_room",
+            parent_message_id="assistant-4",
+        ),
+        ToolCallArgsEvent(tool_call_id="call-3", delta='{"room": "Aula"}'),
+        ToolCallEndEvent(tool_call_id="call-3"),
+        stamp_outcome(
+            ToolCallResultEvent(
+                message_id="tool-result-3",
+                tool_call_id="call-3",
+                content="Aula is already booked at that time",
+            ),
+            "failed",
+        ),
+        TextMessageStartEvent(message_id="assistant-4"),
+        TextMessageContentEvent(message_id="assistant-4", delta="Aula is taken then."),
+        TextMessageEndEvent(message_id="assistant-4"),
+        RunFinishedEvent(
+            thread_id=THREAD_ID,
+            run_id="run-refused",
+            outcome=RunFinishedSuccessOutcome(),
+        ),
+    ]
+
+
 def _deferred_run() -> list[Any]:
     """A gated server-side tool that defers, so the run finishes on an interrupt.
 
@@ -220,6 +258,7 @@ def main() -> None:
     runs = {
         "ordinary": _ordinary_run(),
         "failed": _failed_run(),
+        "refused": _refused_run(),
         "deferred": _deferred_run(),
     }
     document = {

@@ -317,6 +317,21 @@ describe("a run the server aborts, decoded from recorded bytes", () => {
   });
 });
 
+describe("a server tool that failed, decoded from recorded bytes", () => {
+  it("settles the card as an error from the outcome the server stamped", async () => {
+    // Stamped by the server package's own helper, which writes the outcome on
+    // two carriers. `@ag-ui/client` 1.0 strips the top-level copy before any
+    // subscriber runs and keeps the one in `metadata`, so this card is red only
+    // if the element reads the carrier that survives the real client.
+    const el = mount();
+    await replay(el, framesOf("refused"));
+
+    const card = shadow(el).querySelector(".tool-call");
+    expect(card?.getAttribute("data-status")).toBe("error");
+    expect(text(el, ".tool-call-result")).toContain("Aula is already booked at that time");
+  });
+});
+
 describe("a gated tool that deferred, decoded from recorded bytes", () => {
   it("reads the interrupt out of RUN_FINISHED's outcome object", async () => {
     // The terminal event the fakes flatten hardest: on the wire `outcome` is an

@@ -32,6 +32,17 @@
       "data: {\"type\":\"TEXT_MESSAGE_END\",\"timestamp\":1700000000000,\"messageId\":\"assistant-2\"}\n\n",
       "data: {\"type\":\"RUN_ERROR\",\"timestamp\":1700000000000,\"message\":\"The upstream model timed out\",\"code\":\"upstream_timeout\"}\n\n"
     ],
+    "refused": [
+      "data: {\"type\":\"RUN_STARTED\",\"timestamp\":1700000000000,\"threadId\":\"thread-recorded\",\"runId\":\"run-refused\"}\n\n",
+      "data: {\"type\":\"TOOL_CALL_START\",\"timestamp\":1700000000000,\"toolCallId\":\"call-3\",\"toolCallName\":\"book_room\",\"parentMessageId\":\"assistant-4\"}\n\n",
+      "data: {\"type\":\"TOOL_CALL_ARGS\",\"timestamp\":1700000000000,\"toolCallId\":\"call-3\",\"delta\":\"{\\\"room\\\": \\\"Aula\\\"}\"}\n\n",
+      "data: {\"type\":\"TOOL_CALL_END\",\"timestamp\":1700000000000,\"toolCallId\":\"call-3\"}\n\n",
+      "data: {\"type\":\"TOOL_CALL_RESULT\",\"timestamp\":1700000000000,\"metadata\":{\"outcome\":\"failed\"},\"messageId\":\"tool-result-3\",\"toolCallId\":\"call-3\",\"content\":\"Aula is already booked at that time\",\"outcome\":\"failed\"}\n\n",
+      "data: {\"type\":\"TEXT_MESSAGE_START\",\"timestamp\":1700000000000,\"messageId\":\"assistant-4\"}\n\n",
+      "data: {\"type\":\"TEXT_MESSAGE_CONTENT\",\"timestamp\":1700000000000,\"messageId\":\"assistant-4\",\"delta\":\"Aula is taken then.\"}\n\n",
+      "data: {\"type\":\"TEXT_MESSAGE_END\",\"timestamp\":1700000000000,\"messageId\":\"assistant-4\"}\n\n",
+      "data: {\"type\":\"RUN_FINISHED\",\"timestamp\":1700000000000,\"threadId\":\"thread-recorded\",\"runId\":\"run-refused\",\"outcome\":{\"type\":\"success\"}}\n\n"
+    ],
     "deferred": [
       "data: {\"type\":\"RUN_STARTED\",\"timestamp\":1700000000000,\"threadId\":\"thread-recorded\",\"runId\":\"run-deferred\"}\n\n",
       "data: {\"type\":\"TOOL_CALL_START\",\"timestamp\":1700000000000,\"toolCallId\":\"call-2\",\"toolCallName\":\"delete_order\",\"parentMessageId\":\"assistant-3\"}\n\n",
