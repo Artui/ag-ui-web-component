@@ -98,11 +98,17 @@ export interface AgUiClientHandlers {
    * `TOOL_CALL_RESULT`). Frontend tools don't emit this — the client supplies
    * their result itself — so this is the channel for server-executed output.
    *
-   * `outcome` is the event's optional `outcome` field, forwarded raw. It is
-   * `unknown` rather than {@link ToolOutcome} because it comes off a
-   * loose zod schema: the protocol does not validate it, so neither can
-   * this signature honestly claim to. Read it with `toolStatusFromOutcome`,
-   * which treats `undefined` and anything unrecognised as a success.
+   * `outcome` is the `outcome` key of the event's `metadata`, forwarded raw.
+   * It is `unknown` rather than {@link ToolOutcome} because metadata is open by
+   * key: the protocol declares the object and validates nothing inside it, so
+   * neither can this signature honestly claim to. Read it with
+   * `toolStatusFromOutcome`, which treats `undefined` and anything unrecognised
+   * as a success.
+   *
+   * Only the metadata is read. A server written against `@ag-ui/client` 0.x
+   * states the outcome at the top level of the event, and 1.0 strips that key
+   * before any subscriber runs, so from such a server this is `undefined` and
+   * the card settles as done.
    *
    * Added as a third parameter rather than as a new callback, so an
    * implementation written against the two-parameter form still satisfies this
@@ -307,29 +313,6 @@ export class AgUiClient {
    * set would miss entirely.
    */
   readonly #closedMessageIds = new Set<string>();
-  /**
-   * How each tool call ended, keyed by call id, for the transcript this client
-   * persists.
-   *
-   * A side table rather than a field written onto the message, because neither
-   * producer of a tool message will carry it. `@ag-ui/client` builds the
-   * server-side one by destructuring five named fields off the event, so an
-   * `outcome` beside them is dropped before the message exists; and writing it
-   * back onto that message afterwards would put it in `agent.messages`, which is
-   * what the *next* request sends to the server. This keeps the annotation on
-   * the copy handed to the store and off the wire.
-   *
-   * Per client, not per run: `saveMessages` rewrites the whole transcript on
-   * every persist, so an outcome recorded in round one has to still be here in
-   * round five or the earlier card silently reverts to a green one. Bounded by
-   * the number of tool calls in the conversation, which the transcript beside it
-   * already is.
-   *
-   * Values are `unknown` because a restored seed fills it too (see
-   * {@link #adoptSeededOutcomes}), and a store is not trusted to hold only the
-   * words this class writes: whatever it held is written back as it was.
-   */
-  readonly #outcomes = new Map<string, unknown>();
   readonly #connectionLostMessage: string;
   readonly #unfinishedMessage: string;
   readonly #declinedMessage: string;
@@ -357,7 +340,7 @@ export class AgUiClient {
     // the agent zero times, which would look exactly like a broken endpoint.
     const rounds = config.maxToolRounds ?? MAX_TOOL_ROUNDS;
     this.#maxToolRounds = rounds >= 1 ? Math.floor(rounds) : MAX_TOOL_ROUNDS;
-    this.#adoptSeededOutcomes();
+    this.#moveSeededKeysIntoMetadata();
     const onStateChanged = config.onStateChanged;
     if (onStateChanged !== undefined) {
       // The agent applies STATE_SNAPSHOT / STATE_DELTA itself; subscribing is
@@ -399,18 +382,24 @@ export class AgUiClient {
    * tools (bounded by {@link AgUiClientConfig.maxToolRounds}, which defaults to
    * {@link MAX_TOOL_ROUNDS}).
    *
-   * `attachments` ride on the user message as a non-standard field so the
-   * default store round-trips them for history replay; see
+   * `attachments` ride in the user message's `metadata`, under
+   * `attachments`, which is how the server learns which files the agent can
+   * read and how the default store round-trips them for history replay; see
    * {@link messageAttachments}.
    */
   async send(content: string, attachments: readonly AttachmentRef[] = []): Promise<void> {
-    // Cast at the AG-UI boundary: `attachments` is a web-component augmentation
-    // the strict `Message` union doesn't declare, but `addMessage` /
-    // `structuredClone` preserve it verbatim.
-    const message = { id: randomUUID(), role: "user", content } as Message;
-    if (attachments.length > 0) {
-      (message as { attachments?: readonly AttachmentRef[] }).attachments = attachments;
-    }
+    // In `metadata` because it is the one field on a message `@ag-ui/client`
+    // declares open by key. 1.0 strips every undeclared key from the input it
+    // sends, so refs at the top level of the message -- where every release
+    // before 1.0 put them -- are removed with a console warning and the server
+    // is never told a file was attached. No metadata at all without refs: an
+    // empty object would put a field on every plain message that says nothing.
+    const message: Message = {
+      id: randomUUID(),
+      role: "user",
+      content,
+      ...(attachments.length > 0 ? { metadata: { attachments } } : {}),
+    };
     this.#agent.addMessage(message);
     this.#persist();
     await this.#run();
@@ -511,38 +500,31 @@ export class AgUiClient {
   }
 
   /**
-   * Move the outcome annotations a restored history carries off the agent's
-   * messages and into {@link #outcomes}.
+   * Move the keys a history stored by an earlier release carries at the top
+   * level of its messages into their `metadata`, where this release writes them.
    *
-   * A restore seeds the agent from the stored copy, and the stored copy is the
-   * annotated one {@link #persist} wrote. Left on `agent.messages`, the
-   * annotation went out on the very next request -- the one place it was
-   * promised never to go. Moved rather than dropped: the store keeps the whole
-   * transcript as one list, so the next save has to write each annotation back
-   * or a declined card turns green on the reload after.
+   * Earlier releases wrote a tool message's `outcome` and a user message's
+   * `attachments` beside the protocol's own fields. `@ag-ui/client` 1.0 strips
+   * every undeclared key from the input it sends, so a restored conversation
+   * sent as it was stored would lose both on its first request: the server
+   * would no longer be told about any file attached before the upgrade, and
+   * each strip would print a warning. Moved rather than dropped, so the next
+   * save writes the conversation in the shape this release reads first and a
+   * reload after it still replays a declined card as declined.
    *
-   * `ag_ui_chat_restored_outcome_wire.test.ts` holds the move, off the body of a
-   * real request. The early return only spares the copy for a seed with nothing
-   * to move, and the role check is held by the type checker: only a tool message
-   * has the `toolCallId` the annotation is keyed by.
+   * Merged into the metadata a message already has, with a key already there
+   * winning: a message carrying both was last written by the newer writer.
+   * `ag_ui_chat_restored_outcome_wire.test.ts` reads the result off the body of
+   * a real request. The check before `setMessages` only spares a copy when
+   * nothing moves, which is every restore of a store this release wrote;
+   * nothing observable depends on it.
    */
-  #adoptSeededOutcomes(): void {
+  #moveSeededKeysIntoMetadata(): void {
     const seeded = this.#agent.messages;
-    if (!seeded.some((message) => "outcome" in message)) {
-      return;
+    const moved = seeded.map(withTopLevelKeysInMetadata);
+    if (moved.some((message, index) => message !== seeded[index])) {
+      this.#agent.setMessages(moved);
     }
-    this.#agent.setMessages(
-      seeded.map((message) => {
-        if (message.role !== "tool") {
-          return message;
-        }
-        // An unannotated message records `undefined`, which `#persist` already
-        // reads as "nothing to write back".
-        const { outcome, ...wire } = message as typeof message & { outcome?: unknown };
-        this.#outcomes.set(message.toolCallId, outcome);
-        return wire;
-      }),
-    );
   }
 
   /**
@@ -560,17 +542,21 @@ export class AgUiClient {
    * approval runs or denies them server-side, and a result here would answer
    * them twice.
    *
-   * The labels go to {@link #outcomes}, never onto the messages, because these
-   * messages are the request.
+   * The outcome rides in the result's `metadata`, where the client folds a
+   * server's own, so the next request carries it and a reload replays it. A
+   * server that does not read it ignores it: `metadata` is a declared field.
    */
   #answerUnansweredCalls(resuming: ReadonlySet<string>): void {
     const messages = this.#agent.messages;
     const answered = answerUnansweredCalls(
       messages,
-      (toolCallId) => {
-        this.#outcomes.set(toolCallId, TOOL_OUTCOME.INTERRUPTED);
-        return { id: randomUUID(), role: "tool", content: this.#unfinishedMessage, toolCallId };
-      },
+      (toolCallId) => ({
+        id: randomUUID(),
+        role: "tool",
+        content: this.#unfinishedMessage,
+        toolCallId,
+        metadata: { outcome: TOOL_OUTCOME.INTERRUPTED },
+      }),
       resuming,
     );
     if (answered !== messages) {
@@ -601,12 +587,12 @@ export class AgUiClient {
     for (const interrupt of interrupts) {
       const toolCallId = interrupt.toolCallId;
       if (toolCallId !== undefined && responses[interrupt.id]?.status === "cancelled") {
-        this.#outcomes.set(toolCallId, TOOL_OUTCOME.DENIED);
         this.#agent.addMessage({
           id: randomUUID(),
           role: "tool",
           content: this.#declinedMessage,
           toolCallId,
+          metadata: { outcome: TOOL_OUTCOME.DENIED },
         });
       }
     }
@@ -614,47 +600,32 @@ export class AgUiClient {
   }
 
   /**
-   * Hand the transcript to the host's store, annotated with what {@link #outcomes}
-   * knows about how each tool call ended.
+   * Hand the transcript to the host's store.
    *
-   * Every persist in this class goes through here, because the store keeps only
-   * the most recent list: annotating one call site would mean the next
-   * unannotated save quietly threw the annotations away.
+   * The list as the agent holds it, with nothing added: how each tool call
+   * ended rides in its result's `metadata`, which the client folds in from a
+   * server's `TOOL_CALL_RESULT` and this class writes for the results it makes
+   * itself, so the store sees exactly what the next request sends.
    */
   #persist(): void {
-    this.#onPersist(this.annotatedMessages);
+    this.#onPersist(this.#agent.messages);
   }
 
   /**
-   * The history in the form a save writes it: {@link messages}, with how each
-   * tool call ended annotated onto its result -- exactly what
-   * {@link AgUiClientConfig.onPersist} is handed.
+   * The history in the form a save writes it, which is now {@link messages}
+   * itself.
    *
-   * For writing the conversation somewhere other than a save. The element needs
-   * it when a checkpoint continuation adds to a conversation this client holds:
-   * the continuation's saves write the conversation ahead of the exchange, and
-   * the bare {@link messages} would drop the annotations, so a declined card
-   * turned green on the next reload.
+   * It differed while this client kept how each tool call ended in a side table
+   * and annotated a copy for the store, because `@ag-ui/client` 0.x kept nothing
+   * but five named fields of a result. 1.0 folds a result's `metadata` onto the
+   * message it appends, so the outcome is on the message and there is no copy
+   * left to make.
+   *
+   * @deprecated Read {@link messages}. Kept so a caller written against the
+   * getter keeps compiling and gets the same list.
    */
   get annotatedMessages(): readonly Message[] {
-    const messages = this.#agent.messages;
-    if (this.#outcomes.size === 0) {
-      return messages;
-    }
-    // A copy, and only of the messages that gain something. `agent.messages` is
-    // the list the next `runAgent` sends back to the server, so writing an extra
-    // field into it would put a client-side annotation on the wire; a store is
-    // allowed to hold more than the protocol does.
-    return messages.map((message) => {
-      if (message.role !== "tool") {
-        return message;
-      }
-      const outcome = this.#outcomes.get(message.toolCallId);
-      // Cast at the AG-UI boundary, as the `attachments` augmentation on a
-      // user message already does: `Message` does not declare the field, and
-      // the default store round-trips it through `JSON.stringify` verbatim.
-      return outcome === undefined ? message : ({ ...message, outcome } as Message);
-    });
+    return this.messages;
   }
 
   async #runLoop(): Promise<void> {
@@ -741,19 +712,18 @@ export class AgUiClient {
           // next mount. Stop here rather than re-running into a dead context.
           return;
         }
-        // Recorded before the persist below, so the very first save of this
-        // message already carries how it ended. A frontend tool's refusal or
-        // failure never touches the wire's `outcome` field -- no server states
-        // it, because no server ran the call -- so this side table is the only
-        // record there is, and a reload reads a card off it.
-        if (result.outcome !== undefined) {
-          this.#outcomes.set(call.id, result.outcome);
-        }
+        // A frontend tool's refusal or failure is stated by no server, because
+        // no server ran the call, so the client writes it where the client
+        // folds a server's: the result's `metadata`. Written with the message,
+        // so the very first save of it already carries how it ended, and a
+        // reload reads the card off it. A success writes no metadata at all,
+        // as a server's success states none.
         this.#agent.addMessage({
           id: randomUUID(),
           role: "tool",
           content: result.content,
           toolCallId: call.id,
+          ...(result.outcome === undefined ? {} : { metadata: { outcome: result.outcome } }),
         });
         this.#persist();
         executed = true;
@@ -767,7 +737,6 @@ export class AgUiClient {
   #buildSubscriber(pending: AgUiToolCall[], runState: RunState): AgentSubscriber {
     const h = this.#handlers;
     const closed = this.#closedMessageIds;
-    const outcomes = this.#outcomes;
     // Read at event time, not captured now: the flag flips mid-run, and the
     // subscriber is built before the run that a later `cancel()` stops.
     const cancelled = (): boolean => this.#cancelled;
@@ -809,20 +778,17 @@ export class AgUiClient {
         h.onToolCall(call);
       },
       onToolCallResultEvent({ event }) {
-        // Read through a widened view because the field is not declared, and
-        // under `@ag-ui/client` 1.0 it never arrives: the client's enforcement
-        // stage strips every undeclared key before a subscriber runs, although
-        // the schema itself is a `looseObject`. Until the outcome moves to the
-        // event's `metadata`, which 1.0 declares and delivers, this is always
-        // undefined and every card settles as done.
-        const outcome = (event as { outcome?: unknown }).outcome;
-        // Recorded even when it is a word this client does not recognise, and
-        // even when it says "success": the store is a record of what the server
-        // said, and re-reading it through the same mapping as the live path is
-        // what keeps a reload agreeing with what the user watched happen.
-        if (typeof outcome === "string") {
-          outcomes.set(event.toolCallId, outcome);
-        }
+        // In the event's `metadata`, the one place on it `@ag-ui/client` 1.0
+        // declares open by key. Its enforcement stage strips every undeclared
+        // key before a subscriber runs, so an `outcome` stated at the top level
+        // of the event -- where servers wrote it for 0.x -- never gets here.
+        //
+        // Nothing is recorded for the transcript: after this returns, the
+        // client builds the tool message and folds the event's metadata onto
+        // it, so the outcome is already on the message a save writes, word for
+        // word as the server said it. A reload reads it back through the same
+        // mapping as the live path, which is what keeps the two agreeing.
+        const outcome: unknown = event.metadata?.["outcome"];
         // Content may arrive as parts since the protocol's 1.0, so a tool can
         // return an image beside its text. A card shows text, so the text parts
         // are joined and the rest left to the host store, which keeps the
@@ -971,4 +937,42 @@ function isAbortError(error: unknown): boolean {
   return (
     error.name === "AbortError" || (error instanceof TypeError && /abort/i.test(error.message))
   );
+}
+
+/**
+ * `message` with the keys an earlier release wrote at its top level -- a tool
+ * message's `outcome`, a user message's `attachments` -- moved into its
+ * `metadata`, or `message` itself when it carries neither.
+ *
+ * Both keys move whatever the role: no message the protocol defines declares
+ * either, so a top-level one can only be this component's own. A key already in
+ * the metadata wins over the one being moved, and a `metadata` that is not an
+ * object is replaced rather than spread -- a store is not trusted to hold the
+ * shape anything here wrote, and a spread string would scatter into numbered
+ * keys.
+ *
+ * Held by "carries history stored by an earlier release into metadata" in
+ * `agui_client.test.ts`, which seeds a message with only `attachments`, one
+ * with only `outcome`, one whose metadata already has the key, and one whose
+ * metadata is a string: deleting either half of the early return, or the
+ * object check, fails it.
+ */
+function withTopLevelKeysInMetadata(message: Message): Message {
+  const { outcome, attachments, ...wire } = message as Message & {
+    outcome?: unknown;
+    attachments?: unknown;
+  };
+  if (outcome === undefined && attachments === undefined) {
+    return message;
+  }
+  const existing = (wire as { metadata?: unknown }).metadata;
+  return {
+    ...wire,
+    metadata: {
+      ...(outcome === undefined ? {} : { outcome }),
+      ...(attachments === undefined ? {} : { attachments }),
+      // `null` passes the check and spreads as nothing, which is what it means.
+      ...(typeof existing === "object" ? existing : {}),
+    },
+  } as Message;
 }

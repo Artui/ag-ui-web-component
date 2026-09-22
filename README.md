@@ -569,8 +569,9 @@ the current page state.
 
 #### A tool call that failed
 
-A `TOOL_CALL_RESULT` may carry an optional **`outcome`** field saying how the call ended. It takes
-pydantic-ai's own `ToolReturnPart` vocabulary — read the values off `TOOL_OUTCOME`:
+A `TOOL_CALL_RESULT` may say how the call ended, as an optional **`outcome`** key in the event's
+`metadata` (`"metadata": { "outcome": "failed" }`). It takes pydantic-ai's own `ToolReturnPart`
+vocabulary — read the values off `TOOL_OUTCOME`:
 
 | `outcome` | Card | Means |
 | --- | --- | --- |
@@ -586,18 +587,23 @@ recognise a word is not grounds for claiming failure. So no server has to change
 rendering it has today, and a server that adds the field gets the truth on screen instead of a
 green card with a refusal folded inside it.
 
-Nothing in `@ag-ui/core` needs to declare the field: AG-UI's event schemas are zod loose objects,
-so an unknown key survives parsing and reaches the subscriber. It arrives on
-`AgUiClientHandlers.onToolResult` as an optional third argument, typed `unknown` because the
-protocol does not validate it; `toolStatusFromOutcome` does the narrowing.
+It has to be in `metadata`. `@ag-ui/client` 1.0 strips every key its schemas do not declare from an
+event before any subscriber sees it, with a `[ag-ui][enforce]` console warning, and `metadata` is
+the one place on an event it declares open by key. An `outcome` at the top level of the event —
+where a server wrote it for the 0.x client, and where a django-ag-ui older than 0.63.0 still does —
+never arrives, so the card settles as done. The key arrives on `AgUiClientHandlers.onToolResult` as
+an optional third argument, typed `unknown` because the protocol validates nothing inside
+`metadata`; `toolStatusFromOutcome` does the narrowing.
 
 A **frontend** tool never streams this event — the client posts its own result — so its outcome is
 recorded on the `ToolExecution` the executor returns (`{ content, outcome: "denied" }`). That covers
 the two refusals the component makes itself: a confirmation card the user declined, and a call
 blocked because the page moved under the round.
 
-Either way the outcome is **persisted beside the tool message**, so a reload replays the card as it
-settled rather than as a plain result. See
+Either way the outcome is **persisted on the tool message, in its `metadata`**, so a reload replays
+the card as it settled rather than as a plain result. For a server's result `@ag-ui/client` puts it
+there itself, folding the event's metadata onto the tool message it appends; for its own results the
+client writes it in the same place. See
 [MPA durability](#mpa-durability-surviving-full-page-reloads).
 
 **Every request carries a result for every tool call in it.** Several model providers reject a
@@ -2019,16 +2025,23 @@ On mount the element rehydrates the transcript from the store, so the chat looks
 including tool-call cards and their results (reconstructed from the persisted `toolCalls` and `tool`
 messages), not just the text turns.
 
-A tool message is saved with an extra **`outcome`** field when the call did not simply succeed, in
-the same vocabulary the wire uses (see [A tool call that failed](#a-tool-call-that-failed)), so a
-failed or declined card replays as failed or declined instead of turning green on reload. `Message`
-does not declare the field, exactly as it does not declare the `attachments` an upload rides on a
-user message; the default store round-trips both through `JSON.stringify`. **A store that drops
-unknown fields loses only the distinction** — the card falls back to *done*, which is what it did
-before. It is written onto the copy handed to the store and never onto `agent.messages`, so it is
-not sent back to the server on the next run. That holds after a restore too: the client seeded from
-a stored conversation takes the field off every message it is seeded with and writes it back on the
-next save.
+A tool message is saved with an **`outcome`** in its `metadata` when the call did not simply
+succeed, in the same vocabulary the wire uses (see [A tool call that failed](#a-tool-call-that-failed)),
+so a failed or declined card replays as failed or declined instead of turning green on reload. A user
+message keeps the refs of its uploads the same way, under `attachments` in its `metadata`. Both
+round-trip through `JSON.stringify` in the default store. **A store that drops `metadata` loses only
+the distinction** — the card falls back to *done*, which is what it did before, and the bubble loses
+its chips.
+
+What is saved is exactly what the next request sends, so both go back to the server on every run.
+That is the protocol's own behaviour for a declared field rather than a client-side addition: a server
+validates `metadata` as an open object, and one that does not read a key ignores it — django-ag-ui
+reads `attachments` and ignores `outcome`.
+
+A conversation stored by an earlier release has both keys at the top level of the message instead.
+The history replay reads them from there when the metadata has none, and a client seeded from such a
+conversation moves them into `metadata` before its first request, because `@ag-ui/client` 1.0 would
+strip them from the request as it stands. The next save writes them in the new shape.
 
 **3. Resumable loop (`x-navigates` + `navigationResult`).** A tool whose schema carries
 `x-navigates: true` (use `X_NAVIGATES_KEY`; read back by [`isNavigates`](src/tools/is_navigates.ts))
@@ -2455,7 +2468,10 @@ out-of-band (multipart, with the element's `headers`) and shows a chip in a pend
 `uploading` (with a progress bar) → `ready`, or `error` with a retry. On send, the ready files'
 **refs** ride on the user bubble as read-only chips and the agent reads their contents
 server-side via the `read_attachment` tool. The wire stays vanilla AG-UI: only lightweight refs
-(`{ id, name, mime, size }`) travel, never the bytes.
+(`{ id, name, mime, size }`) travel, never the bytes, in the user message's `metadata` under
+`attachments` — the one place on a message `@ag-ui/client` 1.0 does not strip an unknown key from.
+django-ag-ui reads them from there as of 0.63.0; an older one reads only the top-level key 1.0
+removes, so against it the agent is never told a file was attached.
 
 ### Pasting
 
@@ -2626,7 +2642,7 @@ re-export point. Internal modules import from leaf paths.
 | `UploadOptions` | type | `{ url, headers?, credentials?, onProgress?, signal? }`. `credentials` is spelled as a fetch mode but carried by `XMLHttpRequest.withCredentials`, so only `"include"` is distinguishable. |
 | `UploadHandler` | type | `(file, onProgress, signal?) => Promise<AttachmentRef>` — the `uploadHandler` swap seam (tus / S3). The signal fires when the tray removes a chip or the element is torn down; a handler that honours it aborts its own transport, so a cancelled upload leaves no orphaned file on the server. |
 | `AttachmentRef` | type | The durable upload ref (`{ id, name, mime, size, url? }`). |
-| `messageAttachments(message)` | function | Read the refs a restored user message carries. |
+| `messageAttachments(message)` | function | Read the refs a restored user message carries: from its `metadata`, or from the top level where an earlier release stored them. |
 
 ### Voice input
 
@@ -3298,10 +3314,16 @@ Other workflow targets (all identical in name to the sibling Python packages):
 | --- | --- | --- |
 | Node (tooling/tests only) | 22 | 22, 24 |
 | Browsers (runtime target) | ES2022 / evergreen | Chrome / Firefox / Safari 17+ |
-| `@ag-ui/client` | latest 0.x | — |
+| `@ag-ui/client`, `@ag-ui/core` | 1.0 | 1.0 |
+| django-ag-ui (server) | 0.63.0 | — |
 
 The shipped artefact targets evergreen browsers (Shadow DOM, Custom Elements v1, ES2022). Node is
 only the build/test runtime, not a runtime target.
+
+The server floor is a wire contract rather than a dependency. A tool call's outcome and a user
+message's attachment refs travel in `metadata`, since `@ag-ui/client` 1.0 strips every key its
+schemas do not declare. Against an older django-ag-ui the chat still runs, but the agent is never
+told about an attached file and a failed or declined server-side tool call settles as done.
 
 ---
 

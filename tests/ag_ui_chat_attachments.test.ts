@@ -167,10 +167,11 @@ describe("AgUiChat — attachments", () => {
     expect(bubble?.querySelector(".attachment-chips")).not.toBeNull();
     expect(shadow(el).querySelector<HTMLElement>(".attachment-tray")?.hidden).toBe(true);
 
-    // The refs ride on the persisted user message and on the submit event.
+    // The refs ride in the persisted user message's metadata, which is where
+    // the request carries them, and on the submit event.
     expect(events[0]?.attachments).toEqual([REF]);
-    const sent = handle.messages[0] as Message & { attachments?: AttachmentRef[] };
-    expect(sent.attachments).toEqual([REF]);
+    expect(handle.messages[0]?.metadata).toEqual({ attachments: [REF] });
+    expect(handle.messages[0]).not.toHaveProperty("attachments");
   });
 
   it("leaves the attachment manifest to the server, sending none in context", async () => {

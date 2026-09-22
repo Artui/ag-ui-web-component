@@ -20,14 +20,24 @@ export interface Emit {
   textEnd(buffer: string, messageId?: string): void;
   toolCall(id: string, name: string, args: Record<string, unknown>): void;
   /**
-   * Emit a `TOOL_CALL_RESULT` and append the tool message the real client
-   * appends for it.
+   * Emit a `TOOL_CALL_RESULT` and insert the tool message the real client
+   * inserts for it.
    *
-   * `outcome` is the optional field a server states to say the call failed or
-   * was refused. Omitted by default, which is what every stream written before
-   * the field existed looks like.
+   * `metadata` is the event's own, which is where a server states how the call
+   * ended (`{ outcome: "failed" }`). Omitted by default, which is what every
+   * stream from a server that states no outcome looks like.
+   *
+   * There is deliberately no way to put an `outcome` at the top level of the
+   * event, where servers wrote it for `@ag-ui/client` 0.x. 1.0 strips every key
+   * its schemas do not declare before a subscriber runs, so no subscriber can
+   * see one -- and a fake that delivered it would agree with a client that
+   * never gets it. That case is driven through the real `HttpAgent`.
    */
-  toolResult(toolCallId: string, content: string | ContentPart[], outcome?: string): void;
+  toolResult(
+    toolCallId: string,
+    content: string | ContentPart[],
+    metadata?: Record<string, unknown>,
+  ): void;
   /** Emit an AG-UI `ACTIVITY_SNAPSHOT` (the run-notice channel). */
   activity(activityType: string, content: ActivityContent, messageId?: string): void;
   /** Re-send an activity under an id already seen, as `replace` does. */
@@ -175,28 +185,28 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
         toolCallArgs,
       });
     },
-    toolResult: (toolCallId, content, outcome) => {
+    toolResult: (toolCallId, content, metadata) => {
       dispatch(s, "onToolCallResultEvent", {
         event: {
           type: EventType.TOOL_CALL_RESULT,
           messageId: `${toolCallId}-result`,
           toolCallId,
           content,
-          // Only when given, because the field is absent on every stream from a
-          // server that predates it -- which is the case the component has to
-          // keep rendering exactly as before, so it is the case the default
-          // here has to be.
-          ...(outcome === undefined ? {} : { outcome }),
+          // Only when given, because a server that states no outcome sends no
+          // metadata -- which is the case the component has to keep rendering
+          // exactly as before, so it is the case the default here has to be.
+          ...(metadata === undefined ? {} : { metadata }),
         },
       });
-      // The real client appends the tool message *after* dispatching the event,
-      // building it from five named fields on the event and dropping anything
-      // else -- `outcome` included. Modelled here because the omission is what a
-      // test of persistence has to see: a fake that never wrote the message
-      // would let "the outcome survives a reload" pass without a tool message to
-      // survive on, and a fake that copied `outcome` onto it would agree with a
-      // fix that was never made.
-      agent.appendToolMessage(`${toolCallId}-result`, toolCallId, content);
+      // The real client builds the tool message *after* dispatching the event,
+      // from the event's `messageId`, `toolCallId`, `role`, `content` and
+      // `subagentRunId`, then folds the event's `metadata` onto it -- and
+      // nothing else from the event. Modelled because a test of persistence
+      // has to see both halves: a fake that never wrote the message would let
+      // "the outcome survives a reload" pass with no message to survive on, and
+      // one that dropped the metadata would make the component's own copy of
+      // the outcome look necessary when the client already keeps it.
+      agent.insertToolMessage(`${toolCallId}-result`, toolCallId, content, metadata);
     },
     // `messages` is passed because the real client always passes it, and the
     // component reads it to tell a new activity from one being replaced. A fake
@@ -364,6 +374,7 @@ export interface FakeAgentHandle {
     role: string;
     content: string | ContentPart[];
     toolCallId?: string;
+    metadata?: Record<string, unknown>;
   }>;
   lastRunParams: FakeRunParams | null;
   /** Every run's params in order — lets a test assert the resume follow-up. */
@@ -377,8 +388,13 @@ interface FakeAgentInternals {
   applyState(snapshot: Record<string, unknown>): void;
   /** Replace the agent's message list, as `MESSAGES_SNAPSHOT` does. */
   applyMessagesSnapshot(next: ReadonlyArray<{ id: string; role: string; content: string }>): void;
-  /** Append the tool message a `TOOL_CALL_RESULT` leaves in the transcript. */
-  appendToolMessage(id: string, toolCallId: string, content: string | ContentPart[]): void;
+  /** Insert the tool message a `TOOL_CALL_RESULT` leaves in the transcript. */
+  insertToolMessage(
+    id: string,
+    toolCallId: string,
+    content: string | ContentPart[],
+    metadata: Record<string, unknown> | undefined,
+  ): void;
   /** Append the assistant message a `TOOL_CALL_START` opens for a call. */
   appendToolCall(toolCallId: string, name: string, args: string): void;
 }
@@ -397,6 +413,7 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
     role: string;
     content: string | ContentPart[];
     toolCallId?: string;
+    metadata?: Record<string, unknown>;
   }> = [];
   const handle: FakeAgentHandle = {
     messages,
@@ -415,12 +432,40 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
     // server's version rather than the one the run built.
     messages.splice(0, messages.length, ...next.map((m) => ({ ...m })));
   };
-  const appendToolMessage = (
+  const insertToolMessage = (
     id: string,
     toolCallId: string,
     content: string | ContentPart[],
+    metadata: Record<string, unknown> | undefined,
   ): void => {
-    messages.push({ id, role: "tool", content, toolCallId });
+    // The metadata is copied, as the real client clones it, so a test that
+    // reuses an object across events cannot alias one message into another.
+    const message = {
+      id,
+      role: "tool",
+      content,
+      toolCallId,
+      ...(metadata === undefined ? {} : { metadata: structuredClone(metadata) }),
+    };
+    // Placed where the real client places it: straight after the assistant turn
+    // that made the call, behind any results already there, and at the end only
+    // when no turn made it. A provider reads a result only in the turn after
+    // its call, which is why the client does this, and a fake that appended
+    // would hand every test a history the real one never holds.
+    const owner = messages.findIndex(
+      (m) =>
+        m.role === "assistant" &&
+        ((m as { toolCalls?: { id: string }[] }).toolCalls ?? []).some((c) => c.id === toolCallId),
+    );
+    if (owner === -1) {
+      messages.push(message);
+      return;
+    }
+    let at = owner + 1;
+    while (messages[at]?.role === "tool") {
+      at += 1;
+    }
+    messages.splice(at, 0, message);
   };
   const appendToolCall = (toolCallId: string, name: string, args: string): void => {
     messages.push({
@@ -478,7 +523,7 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
         emitter(subscriber, state, {
           applyState,
           applyMessagesSnapshot,
-          appendToolMessage,
+          insertToolMessage,
           appendToolCall,
         }),
         params,
