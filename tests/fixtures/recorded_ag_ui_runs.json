@@ -4,7 +4,7 @@
   "runs": {
     "ordinary": [
       "data: {\"type\":\"RUN_STARTED\",\"timestamp\":1700000000000,\"threadId\":\"thread-recorded\",\"runId\":\"run-ordinary\"}\n\n",
-      "data: {\"type\":\"ACTIVITY_SNAPSHOT\",\"timestamp\":1700000000000,\"messageId\":\"compaction-recorded\",\"activityType\":\"compaction\",\"content\":{\"removed\":8,\"before\":10,\"after\":2},\"replace\":true}\n\n",
+      "data: {\"type\":\"ACTIVITY_SNAPSHOT\",\"timestamp\":1700000000000,\"messageId\":\"compaction-recorded\",\"activityType\":\"compaction\",\"content\":{\"removed\":8,\"before\":10,\"after\":2}}\n\n",
       "data: {\"type\":\"REASONING_START\",\"timestamp\":1700000000000,\"messageId\":\"reasoning-1\"}\n\n",
       "data: {\"type\":\"REASONING_MESSAGE_START\",\"timestamp\":1700000000000,\"messageId\":\"reasoning-1\",\"role\":\"reasoning\"}\n\n",
       "data: {\"type\":\"REASONING_MESSAGE_CONTENT\",\"timestamp\":1700000000000,\"messageId\":\"reasoning-1\",\"delta\":\"Checking the order table\"}\n\n",
@@ -19,7 +19,7 @@
       "data: {\"type\":\"ACTIVITY_SNAPSHOT\",\"timestamp\":1700000000000,\"messageId\":\"chart-recorded\",\"activityType\":\"chart\",\"content\":{\"kind\":\"bar\",\"labels\":[\"Mon\",\"Tue\",\"Wed\"],\"series\":[{\"label\":\"orders\",\"points\":[3.0,5.0,4.0]}],\"title\":\"Orders this week\"},\"replace\":true}\n\n",
       "data: {\"type\":\"ACTIVITY_DELTA\",\"timestamp\":1700000000000,\"messageId\":\"chart-recorded\",\"activityType\":\"chart\",\"patch\":[{\"op\":\"replace\",\"path\":\"/series/0/points\",\"value\":[9.0,1.0,4.0]}]}\n\n",
       "data: {\"type\":\"STATE_SNAPSHOT\",\"timestamp\":1700000000000,\"snapshot\":{\"selectedWeek\":\"current\"}}\n\n",
-      "data: {\"type\":\"TEXT_MESSAGE_START\",\"timestamp\":1700000000000,\"messageId\":\"assistant-1\",\"role\":\"assistant\"}\n\n",
+      "data: {\"type\":\"TEXT_MESSAGE_START\",\"timestamp\":1700000000000,\"messageId\":\"assistant-1\"}\n\n",
       "data: {\"type\":\"TEXT_MESSAGE_CONTENT\",\"timestamp\":1700000000000,\"messageId\":\"assistant-1\",\"delta\":\"Orders are **up** \"}\n\n",
       "data: {\"type\":\"TEXT_MESSAGE_CONTENT\",\"timestamp\":1700000000000,\"messageId\":\"assistant-1\",\"delta\":\"on Tuesday.\"}\n\n",
       "data: {\"type\":\"TEXT_MESSAGE_END\",\"timestamp\":1700000000000,\"messageId\":\"assistant-1\"}\n\n",
@@ -27,7 +27,7 @@
     ],
     "failed": [
       "data: {\"type\":\"RUN_STARTED\",\"timestamp\":1700000000000,\"threadId\":\"thread-recorded\",\"runId\":\"run-failed\"}\n\n",
-      "data: {\"type\":\"TEXT_MESSAGE_START\",\"timestamp\":1700000000000,\"messageId\":\"assistant-2\",\"role\":\"assistant\"}\n\n",
+      "data: {\"type\":\"TEXT_MESSAGE_START\",\"timestamp\":1700000000000,\"messageId\":\"assistant-2\"}\n\n",
       "data: {\"type\":\"TEXT_MESSAGE_CONTENT\",\"timestamp\":1700000000000,\"messageId\":\"assistant-2\",\"delta\":\"Looking that up\"}\n\n",
       "data: {\"type\":\"TEXT_MESSAGE_END\",\"timestamp\":1700000000000,\"messageId\":\"assistant-2\"}\n\n",
       "data: {\"type\":\"RUN_ERROR\",\"timestamp\":1700000000000,\"message\":\"The upstream model timed out\",\"code\":\"upstream_timeout\"}\n\n"

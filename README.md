@@ -586,8 +586,8 @@ recognise a word is not grounds for claiming failure. So no server has to change
 rendering it has today, and a server that adds the field gets the truth on screen instead of a
 green card with a refusal folded inside it.
 
-Nothing in `@ag-ui/core` needs to declare the field: AG-UI's event schemas are zod `passthrough`, so
-an unknown key survives parsing and reaches the subscriber. It arrives on
+Nothing in `@ag-ui/core` needs to declare the field: AG-UI's event schemas are zod loose objects,
+so an unknown key survives parsing and reaches the subscriber. It arrives on
 `AgUiClientHandlers.onToolResult` as an optional third argument, typed `unknown` because the
 protocol does not validate it; `toolStatusFromOutcome` does the narrowing.
 
@@ -3165,9 +3165,9 @@ When a reasoning model streams its chain-of-thought (django-ag-ui forwards it as
 events — enable a thinking budget via `MODEL_SETTINGS`, see its docs), the element renders a muted,
 collapsible **thoughts region** (part `thoughts`) at the top of the current answer group. It opens
 while the model reasons and folds away on the answer's first token; the reader can reopen it. The
-web component handles the `REASONING_*` event family (and the deprecated `THINKING_*`, which
-`@ag-ui/client` maps onto it), so no client config is needed — the thoughts appear whenever the
-server forwards reasoning.
+web component handles the `REASONING_*` event family (and the retired `THINKING_*`, which
+`@ag-ui/client` still converts onto it, with a console warning, during its deprecation window), so
+no client config is needed — the thoughts appear whenever the server forwards reasoning.
 
 ### The composer
 

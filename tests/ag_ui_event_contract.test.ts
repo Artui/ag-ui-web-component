@@ -1,4 +1,5 @@
-import { EventType, ToolCallResultEventSchema } from "@ag-ui/core";
+import { EventType } from "@ag-ui/core";
+import { ToolCallResultEventSchema } from "@ag-ui/core/schemas";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -13,9 +14,11 @@ import { describe, expect, it } from "vitest";
  * (`tests/test_ag_ui_event_contract.py`) and documented in the ecosystem
  * `architecture.md` ("Events the trio relies on"). Update all three together.
  */
-// The 36 AG-UI event types, as of @ag-ui/core 0.0.59 / ag-ui-protocol 0.1.21.
-// 0.1.21 is the bump that grew the catalogue, adding the three SUBAGENT_* events
-// below; the delegation lifecycle rides them, and the sub-agent panel reads them.
+// The 31 AG-UI event types, as of @ag-ui/core 1.0 / ag-ui-protocol 1.0.
+// 0.1.21 grew the catalogue, adding the three SUBAGENT_* events below; the
+// delegation lifecycle rides them, and the sub-agent panel reads them. 1.0 shrank
+// it, removing the deprecated THINKING_* family (THINKING_START / _END and
+// THINKING_TEXT_MESSAGE_START / _CONTENT / _END) in favour of REASONING_*.
 const CANONICAL_AG_UI_EVENTS: ReadonlySet<string> = new Set([
   "ACTIVITY_DELTA",
   "ACTIVITY_SNAPSHOT",
@@ -43,11 +46,6 @@ const CANONICAL_AG_UI_EVENTS: ReadonlySet<string> = new Set([
   "TEXT_MESSAGE_CONTENT",
   "TEXT_MESSAGE_END",
   "TEXT_MESSAGE_START",
-  "THINKING_END",
-  "THINKING_START",
-  "THINKING_TEXT_MESSAGE_CONTENT",
-  "THINKING_TEXT_MESSAGE_END",
-  "THINKING_TEXT_MESSAGE_START",
   "TOOL_CALL_ARGS",
   "TOOL_CALL_CHUNK",
   "TOOL_CALL_END",
@@ -64,10 +62,12 @@ describe("AG-UI event-set contract", () => {
   it("lets a TOOL_CALL_RESULT carry an outcome the schema never declared", () => {
     // The mechanism the whole four-repo change rides on, asserted rather than
     // assumed. `@ag-ui/core` does not declare `outcome` anywhere; the reason a
-    // server can state one is that `BaseEventSchema` is `.passthrough()` and
-    // `.extend()` keeps that setting, so an unknown key survives parsing instead
-    // of being stripped. Drop passthrough upstream and every card in this
-    // component silently goes back to claiming success.
+    // server can state one is that every event schema is a zod `looseObject`,
+    // so an unknown key survives parsing instead of being stripped. Make them
+    // strict upstream and every card in this component silently goes back to
+    // claiming success. Necessary but no longer sufficient: `@ag-ui/client`
+    // 1.0 strips undeclared keys in an enforcement stage after parsing, so the
+    // schema keeps the key and the subscriber still never sees it.
     const parsed = ToolCallResultEventSchema.parse({
       type: EventType.TOOL_CALL_RESULT,
       messageId: "m1",
@@ -80,11 +80,10 @@ describe("AG-UI event-set contract", () => {
   });
 
   it("includes the reasoning event family", () => {
-    // REASONING_* (7, the modern family) + the legacy THINKING_* (5) this client
-    // maps onto it.
-    const reasoning = [...CANONICAL_AG_UI_EVENTS].filter(
-      (e) => e.startsWith("REASONING") || e.startsWith("THINKING"),
-    );
-    expect(reasoning).toHaveLength(12);
+    // The thoughts region reads a reasoning model's chain-of-thought off this
+    // family, all seven REASONING_* events of it. The legacy THINKING_* family
+    // left the protocol in 1.0.
+    const reasoning = [...CANONICAL_AG_UI_EVENTS].filter((e) => e.startsWith("REASONING"));
+    expect(reasoning).toHaveLength(7);
   });
 });

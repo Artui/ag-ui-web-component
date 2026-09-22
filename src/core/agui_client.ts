@@ -5,7 +5,14 @@ import {
   type RunAgentParameters,
   randomUUID,
 } from "@ag-ui/client";
-import type { Context, Interrupt, Message, ResumeEntry, Tool } from "@ag-ui/core";
+import {
+  type Context,
+  contentToText,
+  type Interrupt,
+  type Message,
+  type ResumeEntry,
+  type Tool,
+} from "@ag-ui/core";
 import { MAX_TOOL_ROUNDS, TOOL_OUTCOME } from "../constants.js";
 import type { AttachmentRef } from "./attachment.js";
 import type { ToolOutcome } from "./tool_outcome.js";
@@ -93,7 +100,7 @@ export interface AgUiClientHandlers {
    *
    * `outcome` is the event's optional `outcome` field, forwarded raw. It is
    * `unknown` rather than {@link ToolOutcome} because it comes off a
-   * `passthrough` zod schema: the protocol does not validate it, so neither can
+   * loose zod schema: the protocol does not validate it, so neither can
    * this signature honestly claim to. Read it with `toolStatusFromOutcome`,
    * which treats `undefined` and anything unrecognised as a success.
    *
@@ -802,12 +809,13 @@ export class AgUiClient {
         h.onToolCall(call);
       },
       onToolCallResultEvent({ event }) {
-        // Bracket access because the field is not declared: `TOOL_CALL_RESULT`
-        // extends a `passthrough` schema, so an unknown key survives parsing and
-        // arrives here typed only by the catch-all index signature. That is the
-        // whole mechanism the outcome rides -- no schema change in `@ag-ui/core`
-        // is needed for a server to state one.
-        const outcome = event["outcome"];
+        // Read through a widened view because the field is not declared, and
+        // under `@ag-ui/client` 1.0 it never arrives: the client's enforcement
+        // stage strips every undeclared key before a subscriber runs, although
+        // the schema itself is a `looseObject`. Until the outcome moves to the
+        // event's `metadata`, which 1.0 declares and delivers, this is always
+        // undefined and every card settles as done.
+        const outcome = (event as { outcome?: unknown }).outcome;
         // Recorded even when it is a word this client does not recognise, and
         // even when it says "success": the store is a record of what the server
         // said, and re-reading it through the same mapping as the live path is
@@ -815,7 +823,11 @@ export class AgUiClient {
         if (typeof outcome === "string") {
           outcomes.set(event.toolCallId, outcome);
         }
-        h.onToolResult(event.toolCallId, event.content, outcome);
+        // Content may arrive as parts since the protocol's 1.0, so a tool can
+        // return an image beside its text. A card shows text, so the text parts
+        // are joined and the rest left to the host store, which keeps the
+        // message whole; a plain string passes through unchanged.
+        h.onToolResult(event.toolCallId, contentToText(event.content), outcome);
       },
       onActivitySnapshotEvent({ event, messages }) {
         // A snapshot for an id already in the list is a replacement, not a new
@@ -876,9 +888,11 @@ export class AgUiClient {
         }
         pendingDeltas.clear();
       },
-      // `@ag-ui/client` maps the deprecated THINKING_* events onto these
-      // REASONING_* callbacks, so the reasoning family alone covers both
-      // protocol versions.
+      // THINKING_* left the protocol in its 1.0, but `@ag-ui/client` still
+      // converts a server's THINKING_* events onto these REASONING_* callbacks,
+      // with a console warning, for a deprecation window it sets. Nothing in the
+      // family emits THINKING_*: pydantic-ai has sent REASONING_* at every
+      // protocol version django-ag-ui admits.
       onReasoningStartEvent() {
         h.onReasoningStart();
       },

@@ -28,7 +28,7 @@ suite say whether the client still reads what the server now writes.
 
 The recorded runs are deliberately not exhaustive. They cover the events
 ``AgUiClient``'s subscriber reads fields off, which is a much smaller set than
-the protocol's thirty-three, and the events nothing reads are left out rather
+the protocol's thirty-one, and the events nothing reads are left out rather
 than padded in for symmetry.
 """
 

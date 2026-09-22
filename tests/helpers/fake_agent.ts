@@ -1,5 +1,5 @@
 import type { AbstractAgent, AgentSubscriber } from "@ag-ui/client";
-import { EventType, type Interrupt } from "@ag-ui/core";
+import { type ContentPart, EventType, type Interrupt } from "@ag-ui/core";
 
 /**
  * The payload an AG-UI activity event carries.
@@ -27,7 +27,7 @@ export interface Emit {
    * was refused. Omitted by default, which is what every stream written before
    * the field existed looks like.
    */
-  toolResult(toolCallId: string, content: string, outcome?: string): void;
+  toolResult(toolCallId: string, content: string | ContentPart[], outcome?: string): void;
   /** Emit an AG-UI `ACTIVITY_SNAPSHOT` (the run-notice channel). */
   activity(activityType: string, content: ActivityContent, messageId?: string): void;
   /** Re-send an activity under an id already seen, as `replace` does. */
@@ -202,9 +202,11 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
     // component reads it to tell a new activity from one being replaced. A fake
     // that omitted it would let a null-check rot in the source unnoticed.
     //
-    // `replace` is true on both of these, including the one that is *not* a
-    // replacement, because that is what the wire carries: the field has a
-    // default on the server's model and every recorded snapshot has it set. The
+    // `replace` is absent on both of these, including the one that *is* a
+    // replacement, because the wire may carry either: since the protocol's 1.0
+    // the server's model has no default for it, so a snapshot states it only
+    // where its builder did -- the recorded chart does, the recorded compaction
+    // notice does not -- and the client reads an absent flag as true. The
     // distinction the component draws is between an id it has already seen and
     // one it has not, which is `messages`, not this flag.
     activity: (activityType, content, messageId = "act-1") =>
@@ -214,7 +216,6 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
           activityType,
           content,
           messageId,
-          replace: true,
         },
         messages: [],
       }),
@@ -225,7 +226,6 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
           activityType,
           content,
           messageId,
-          replace: true,
         },
         messages: [activityMessage(messageId, activityType, content)],
       }),
@@ -359,7 +359,12 @@ export interface FakeAgentOptions {
 
 export interface FakeAgentHandle {
   agent: AbstractAgent;
-  messages: ReadonlyArray<{ id: string; role: string; content: string; toolCallId?: string }>;
+  messages: ReadonlyArray<{
+    id: string;
+    role: string;
+    content: string | ContentPart[];
+    toolCallId?: string;
+  }>;
   lastRunParams: FakeRunParams | null;
   /** Every run's params in order — lets a test assert the resume follow-up. */
   runParams: FakeRunParams[];
@@ -373,7 +378,7 @@ interface FakeAgentInternals {
   /** Replace the agent's message list, as `MESSAGES_SNAPSHOT` does. */
   applyMessagesSnapshot(next: ReadonlyArray<{ id: string; role: string; content: string }>): void;
   /** Append the tool message a `TOOL_CALL_RESULT` leaves in the transcript. */
-  appendToolMessage(id: string, toolCallId: string, content: string): void;
+  appendToolMessage(id: string, toolCallId: string, content: string | ContentPart[]): void;
   /** Append the assistant message a `TOOL_CALL_START` opens for a call. */
   appendToolCall(toolCallId: string, name: string, args: string): void;
 }
@@ -387,7 +392,12 @@ export interface FakeRunParams {
 
 /** Build a minimal fake AG-UI agent that drives the client's subscriber. */
 export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
-  const messages: Array<{ id: string; role: string; content: string; toolCallId?: string }> = [];
+  const messages: Array<{
+    id: string;
+    role: string;
+    content: string | ContentPart[];
+    toolCallId?: string;
+  }> = [];
   const handle: FakeAgentHandle = {
     messages,
     lastRunParams: null,
@@ -405,7 +415,11 @@ export function makeFakeAgent(opts: FakeAgentOptions = {}): FakeAgentHandle {
     // server's version rather than the one the run built.
     messages.splice(0, messages.length, ...next.map((m) => ({ ...m })));
   };
-  const appendToolMessage = (id: string, toolCallId: string, content: string): void => {
+  const appendToolMessage = (
+    id: string,
+    toolCallId: string,
+    content: string | ContentPart[],
+  ): void => {
     messages.push({ id, role: "tool", content, toolCallId });
   };
   const appendToolCall = (toolCallId: string, name: string, args: string): void => {

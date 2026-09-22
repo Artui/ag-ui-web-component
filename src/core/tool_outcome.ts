@@ -13,7 +13,7 @@ export type ToolOutcome = (typeof TOOL_OUTCOME)[keyof typeof TOOL_OUTCOME];
  * The card status a wire outcome settles into.
  *
  * Takes `unknown` rather than {@link ToolOutcome} on purpose: both callers read
- * this off a boundary the type system does not police -- a `passthrough` field
+ * this off a boundary the type system does not police -- an undeclared field
  * on an AG-UI event, and a JSON blob out of the conversation store -- so the
  * narrowing belongs here, once, instead of at each of them.
  *

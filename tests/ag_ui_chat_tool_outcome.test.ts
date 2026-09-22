@@ -18,7 +18,7 @@
  * The store here round-trips through JSON for exactly that reason.
  */
 
-import type { Message } from "@ag-ui/core";
+import type { ContentPart, Message } from "@ag-ui/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ELEMENT_TAG, TOOL_OUTCOME } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
@@ -152,7 +152,7 @@ function savedOutcome(store: MemoryStore, toolCallId: string): unknown {
 }
 
 /** Run one server-side tool that returns `content`, optionally with an outcome. */
-function serverTool(content: string, outcome?: string): (emit: Emit) => void {
+function serverTool(content: string | ContentPart[], outcome?: string): (emit: Emit) => void {
   return (emit) => {
     emit.runStart();
     emit.toolCall("tc1", "book_flight", { seat: "12A" });
@@ -176,6 +176,26 @@ describe("a server-side tool's outcome", () => {
     // The heading over the body changes with the status, so the reason reads as
     // a reason rather than as the thing the tool returned.
     expect(resultLabel(el)).toBe("Error");
+  });
+
+  it("renders a failed call's text when the reason arrives as parts", async () => {
+    // The protocol's 1.0 lets a result be parts rather than a string. The card
+    // shows the text parts joined, and the outcome still decides its colour.
+    const el = mountWithAgent(
+      memoryStore(),
+      serverTool(
+        [
+          { type: "text", text: "no seats " },
+          { type: "image", source: { type: "url", value: "https://example.test/map.png" } },
+          { type: "text", text: "left" },
+        ],
+        TOOL_OUTCOME.FAILED,
+      ),
+    );
+    await send(el, "book me a flight");
+
+    expect(cardStatus(el)).toBe("error");
+    expect(cardResult(el)).toBe("no seats left");
   });
 
   it("renders a denied call as declined", async () => {
@@ -270,7 +290,10 @@ describe("replaying a tool result from history", () => {
   });
 
   /** A store holding one assistant tool call and its `tool` result message. */
-  function seeded(outcome?: string): MemoryStore {
+  function seeded(
+    outcome?: string,
+    content: string | ContentPart[] = "no seats left",
+  ): MemoryStore {
     const store = memoryStore();
     store.seed([
       { id: "1", role: "user", content: "book me a flight" },
@@ -289,7 +312,7 @@ describe("replaying a tool result from history", () => {
         id: "3",
         role: "tool",
         toolCallId: "tc1",
-        content: "no seats left",
+        content,
         ...(outcome === undefined ? {} : { outcome }),
       },
     ]);
@@ -319,6 +342,22 @@ describe("replaying a tool result from history", () => {
     await flush();
 
     expect(cardStatus(el)).toBe("done");
+    expect(cardResult(el)).toBe("no seats left");
+  });
+
+  it("replays a result stored as parts with its text", async () => {
+    // Flattened as the live path flattens it, so the card after a reload reads
+    // the way it read when it settled.
+    const el = mountRestoring(
+      seeded(TOOL_OUTCOME.FAILED, [
+        { type: "text", text: "no seats " },
+        { type: "image", source: { type: "url", value: "https://example.test/map.png" } },
+        { type: "text", text: "left" },
+      ]),
+    );
+    await flush();
+
+    expect(cardStatus(el)).toBe("error");
     expect(cardResult(el)).toBe("no seats left");
   });
 

@@ -22,7 +22,7 @@
  * edited are in `tests/helpers/subagent_fixture.ts`.
  */
 
-import { EventSchemas } from "@ag-ui/core";
+import { EventSchemas } from "@ag-ui/core/schemas";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";

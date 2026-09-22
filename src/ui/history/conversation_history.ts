@@ -1,5 +1,5 @@
 import { randomUUID } from "@ag-ui/client";
-import type { Message } from "@ag-ui/core";
+import { contentToText, type Message } from "@ag-ui/core";
 import { MESSAGE_ROLE, TOOL_OUTCOME } from "../../constants.js";
 import type { ActivityRegistry } from "../../core/activity_registry.js";
 import type { AgUiClient } from "../../core/agui_client.js";
@@ -620,7 +620,9 @@ export class ConversationHistory {
         // on DONE, which is what this line did unconditionally.
         card.settle(
           toolStatusFromOutcome((message as { outcome?: unknown }).outcome),
-          message.content,
+          // Flattened exactly as the live path flattens it, so a reload shows
+          // the card the user watched settle.
+          contentToText(message.content),
         );
       }
     }

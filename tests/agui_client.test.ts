@@ -1,4 +1,4 @@
-import type { Context, Interrupt, Message, Tool } from "@ag-ui/core";
+import type { ContentPart, Context, Interrupt, Message, Tool } from "@ag-ui/core";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_TOOL_ROUNDS } from "../src/constants.js";
 import {
@@ -750,6 +750,61 @@ describe("duplicate message ids", () => {
 
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+describe("a tool result's content", () => {
+  it("joins the text parts of a result that arrives as parts", async () => {
+    // Since the protocol's 1.0 a tool can return parts, an image beside its
+    // text. The handler takes a string because a card shows text, so the text
+    // parts are joined in order and the rest is left to the stored message.
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "seat_map", {});
+        emit.toolResult("tc1", [
+          { type: "text", text: "seat 12A " },
+          { type: "image", source: { type: "url", value: "https://example.test/map.png" } },
+          { type: "text", text: "is held" },
+        ]);
+        emit.runEnd();
+      },
+    });
+    const seen: string[] = [];
+    const handlers = recordingHandlers();
+    handlers.onToolResult = (_id, content) => {
+      seen.push(content);
+    };
+    await new AgUiClient({ agent: fake.agent, handlers }).send("show me");
+
+    expect(seen).toEqual(["seat 12A is held"]);
+  });
+
+  it("keeps the parts whole on the stored message", async () => {
+    // The flattening is the card's view only. The message the host persists is
+    // the one the client appended, parts and all, so the next run hands the
+    // model the image it was shown.
+    const parts: ContentPart[] = [
+      { type: "text", text: "seat 12A" },
+      { type: "image", source: { type: "url", value: "https://example.test/map.png" } },
+    ];
+    const fake = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.toolCall("tc1", "seat_map", {});
+        emit.toolResult("tc1", parts);
+        emit.runEnd();
+      },
+    });
+    const persisted: Message[][] = [];
+    await new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      onPersist: (messages) => persisted.push([...messages]),
+    }).send("show me");
+
+    const tool = persisted.at(-1)?.find((m) => m.role === "tool");
+    expect(tool?.content).toEqual(parts);
   });
 });
 
