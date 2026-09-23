@@ -1,6 +1,6 @@
 import { randomUUID } from "@ag-ui/client";
 import { contentToText, type Message } from "@ag-ui/core";
-import { MESSAGE_ROLE, TOOL_OUTCOME } from "../../constants.js";
+import { MESSAGE_ROLE, TOOL_CALL_STATUS, TOOL_OUTCOME } from "../../constants.js";
 import type { ActivityRegistry } from "../../core/activity_registry.js";
 import type { AgUiClient } from "../../core/agui_client.js";
 import { messageAttachments } from "../../core/attachment.js";
@@ -449,8 +449,8 @@ export class ConversationHistory {
    * Giving them to the replay, rather than leaving the client to add them, is
    * what settles each card from its result. The checkpointed call is excluded,
    * because the resume path answers it from the page the reload landed on; that
-   * exclusion is held by "still resumes with the landed page's result, and is not
-   * declined" in `ag_ui_chat_reload_mid_run.test.ts`.
+   * exclusion is held by "resumes with the landed page's result, and its card says
+   * so" in `ag_ui_chat_reload_mid_run.test.ts`.
    */
   async rehydrate(): Promise<void> {
     // Guard against a thread-switch race: with a slow remote store, picking
@@ -648,15 +648,34 @@ export class ConversationHistory {
     return {};
   }
 
-  /** Complete the checkpointed navigating tool call and continue the run. */
+  /**
+   * Complete the checkpointed navigating tool call and continue the run.
+   *
+   * The call's card is settled here, from the result the continuation carries.
+   * The restore left it open on purpose -- it is the one call a reload was
+   * expected by -- and nothing after this answers it: the run that follows
+   * streams no result for a call the client answered itself. Left open, it
+   * spun through the whole continuation, and the sweep that closes a run then
+   * found it pending and called it not finished -- on the one call known to
+   * have finished, since the page it moved to is the page doing the asking.
+   *
+   * Settled from the string the stored message holds, and with no outcome,
+   * since `addToolResult` writes none, so the card is the one a later reload
+   * draws from that message. The card can be missing, when the stored
+   * transcript does not hold the call -- a store that kept the checkpoint and
+   * lost the turn that made it -- and then there is nothing to settle. That
+   * guard is held by "resumes a checkpointed navigating tool call on mount" in
+   * `ag_ui_chat.test.ts`, whose transcript never made the call.
+   */
   async #resumeFrom(checkpoint: NavigationCheckpoint): Promise<void> {
     this.#host.conversationStore().saveCheckpoint(this.#threadId, null);
     const client = this.#host.ensureClient();
-    client.addToolResult(
-      checkpoint.toolCallId,
-      // Called on the element, as `this.navigationResult(...)` always was.
-      JSON.stringify(this.#host.navigationResult().call(this.#host.element, checkpoint)),
+    // Called on the element, as `this.navigationResult(...)` always was.
+    const landed = JSON.stringify(
+      this.#host.navigationResult().call(this.#host.element, checkpoint),
     );
+    client.addToolResult(checkpoint.toolCallId, landed);
+    this.#host.transcript.card(checkpoint.toolCallId)?.settle(TOOL_CALL_STATUS.DONE, landed);
     await client.resume();
   }
 }
