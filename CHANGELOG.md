@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.2] — 2026-09-23
+
 ### Changed
 
 - **The demo answers a denied approval with a result, as a real server does.**
@@ -4220,7 +4222,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.2...HEAD
+[0.41.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.1...v0.41.2
 [0.41.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.0...v0.41.1
 [0.41.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.39.0...v0.40.0
