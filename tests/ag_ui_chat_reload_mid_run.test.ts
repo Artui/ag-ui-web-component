@@ -468,7 +468,7 @@ describe("reloading while a server-side approval is open", () => {
 });
 
 describe("the navigating tool a reload was expected by", () => {
-  it("still resumes with the landed page's result, and is not declined", async () => {
+  it("resumes with the landed page's result, and its card says so", async () => {
     // The one reload that is part of the run: the tool checkpointed its call
     // before navigating, and the next mount answers it from the page it landed
     // on. It has no stored result either, and that must not make it look
@@ -494,16 +494,27 @@ describe("the navigating tool a reload was expected by", () => {
     expect(snapshot.checkpoint).toEqual({ toolCallId: "nav-1" });
 
     const seen: unknown[][] = [];
-    const running: unknown[] = [];
+    const during: CardView[] = [];
     const restored = await reload(snapshot, (emit, params, history) => {
       recording(seen)(emit, params, history);
-      // Still running while the resumed request is out, because it is: the
-      // restore must not have settled the one card a reload was expected by.
       const host = document.querySelector(ELEMENT_TAG) as AgUiChat;
-      running.push(cardView(host).status);
+      during.push(cardView(host));
     });
 
-    expect(running).toEqual(["pending"]);
+    // The call has its result before the resumed request is built -- the
+    // landed page supplied it -- so its card says so while that request is
+    // out, rather than spinning as though the navigation were still under way.
+    expect(during).toHaveLength(1);
+    expect(during[0]?.status).toBe("done");
+    expect(during[0]?.result).toContain('"navigated": true');
+    // And it keeps saying so once the run settles. Left unsettled, the sweep
+    // that closes a run found it pending and called it not finished -- the
+    // opposite of what happened, on the one call that is known to have.
+    expect(cardView(restored.el)).toEqual(during[0]);
+    // Settled from the result the next request carries, so the card a later
+    // reload draws from the stored message is the one the landing page drew.
+    const again = await reload(restored.store.snapshot());
+    expect(cardView(again.el)).toEqual(during[0]);
     // The resumed request: the navigating call answered from the landed page,
     // and answered once.
     expect(seen).toEqual([

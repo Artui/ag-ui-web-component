@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A navigating tool's card reads done on the page it navigated to.** A tool
+  marked `x-navigates` reloads the page, and the next mount answers its call
+  with the landed page's result and continues the run. That result reached the
+  agent, but the call's card was never settled from it: it spun for the whole
+  continuation, and when the run finished, the sweep that closes any card still
+  open marked it "not finished" -- on the one call known to have finished. The
+  resume now settles the card from the result it sends, so it reads done with
+  that result while the continuation runs, and matches what a later reload
+  shows from the stored message.
+
 ## [0.41.1] — 2026-09-22
 
 ### Changed
