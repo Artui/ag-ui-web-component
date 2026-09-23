@@ -84,6 +84,39 @@ function emitToolResult(res, toolCallId, content) {
   emit(res, { type: "TOOL_CALL_RESULT", toolCallId, messageId: id("m"), content });
 }
 
+// A denied gated call's result, as django-ag-ui streams it. pydantic-ai answers
+// a denial with a tool return carrying the denial's message, and the server
+// stamps how the call ended on both carriers: `metadata` for a 1.0 client, the
+// top-level key for a 0.x one. Without it the call has no result at all, so the
+// next request answers it as not finished and a reload shows that instead of
+// the decline the person made.
+function emitDeniedResult(res, toolCallId, content) {
+  emit(res, {
+    type: "TOOL_CALL_RESULT",
+    toolCallId,
+    messageId: id("m"),
+    content,
+    outcome: "denied",
+    metadata: { outcome: "denied" },
+  });
+}
+
+// The message pydantic-ai's AG-UI adapter denies an answer with: Deny sends
+// `cancelled`, and anything else that is not an approval is denied by default.
+function denialMessage(answer) {
+  if (answer.status === "cancelled") {
+    return "Cancelled by user.";
+  }
+  const reason = answer.payload?.reason;
+  return typeof reason === "string" && reason !== "" ? reason : "The tool call was denied.";
+}
+
+// Whether an answer approves its call. pydantic-ai denies by default: only a
+// `resolved` answer whose payload says `approved: true` runs the tool.
+function isApproval(answer) {
+  return answer.status === "resolved" && answer.payload?.approved === true;
+}
+
 // A reasoning model's streamed chain-of-thought: the web component
 // renders it as a collapsible "thinking" region that folds on the first answer.
 async function streamReasoning(res, messageId, chunks) {
@@ -123,8 +156,9 @@ async function handleAgent(res, body) {
   emit(res, { type: "RUN_STARTED", threadId, runId });
 
   const prompt = lastUserText(messages);
-  // Answers to a previous round's approval interrupts. Only the approved calls
-  // ever produce a result; a denial is answered by the model instead.
+  // Answers to a previous round's approval interrupts. Every answered call gets
+  // a result, as it does from django-ag-ui: an approved one its tool's return,
+  // a denied one the denial, marked as such.
   const resume = Array.isArray(input.resume) ? input.resume : [];
   // The *last* message, not any message: a thread that has ever run a tool
   // keeps those results in history forever, so `some()` made every later turn
@@ -132,15 +166,20 @@ async function handleAgent(res, body) {
   const isFollowUp = messages.at(-1)?.role === "tool";
 
   if (resume.length > 0) {
-    const approved = resume.filter((answer) => answer.status === "resolved");
-    for (const answer of approved) {
+    const approved = resume.filter(isApproval);
+    for (const answer of resume) {
+      const toolCallId = answer.interruptId.replace("int-", "");
+      if (!isApproval(answer)) {
+        emitDeniedResult(res, toolCallId, denialMessage(answer));
+        continue;
+      }
       // Echo what was actually approved. A server that accepts `editedArgs`
       // has to run the edited call rather than the one it proposed, and
       // reflecting it here is what makes that visible in the demo.
       const edited = answer.payload?.editedArgs;
       emitToolResult(
         res,
-        answer.interruptId.replace("int-", ""),
+        toolCallId,
         JSON.stringify(edited === undefined ? { created: true } : { created: true, as: edited }),
       );
     }

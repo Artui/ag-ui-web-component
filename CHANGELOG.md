@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The demo answers a denied approval with a result, as a real server does.**
+  The mock streamed a result only for the calls a person approved, and said so
+  in a comment: a denial was left for the model to answer. django-ag-ui streams
+  one for every answered call, and a denied one carries pydantic-ai's denial
+  message with `outcome: "denied"` on both carriers. With no result, the next
+  request answered the call as not finished, so the playground's own
+  multi-approval scenario came back from a reload with every declined card
+  reading "not finished". The mock also denies by default now, as pydantic-ai
+  does, so only an answer whose payload says `approved: true` runs the call.
+
 ### Fixed
 
 - **A navigating tool's card reads done on the page it navigated to.** A tool
