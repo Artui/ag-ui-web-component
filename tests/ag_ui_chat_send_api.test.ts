@@ -766,6 +766,215 @@ describe("a Retry and a checkpoint pick count a held send", () => {
   });
 });
 
+describe("host code that stops a turn before its request is made", () => {
+  /**
+   * Have the element's store call `stop` from the first save `when` accepts,
+   * after writing it, as a store that starts a new chat on some condition would.
+   */
+  function stopFromSave(
+    el: AgUiChat,
+    stop: (el: AgUiChat) => void,
+    when: (messages: readonly Message[]) => boolean = () => true,
+  ): void {
+    const store = el.conversationStore;
+    const save = store.saveMessages.bind(store);
+    let stopping = true;
+    store.saveMessages = (threadId, messages) => {
+      save(threadId, messages);
+      if (stopping && when(messages)) {
+        stopping = false;
+        stop(el);
+      }
+    };
+  }
+
+  it.each([
+    ["starts a new chat", {}, (el: AgUiChat) => el.newChat()],
+    [
+      "changes the principal",
+      { "user-key": "alice" },
+      (el: AgUiChat) => el.setAttribute("user-key", "bob"),
+    ],
+  ])(
+    "sends nothing once a store that %s has stopped it from the turn's save",
+    async (_, attrs, stop) => {
+      // The client saves the turn before it asks for the run, so the store is
+      // host code running inside the send, after every check the element makes.
+      // The run used to forget the Stop as it started, so the turn went out into
+      // the conversation being left, with all of its history, and its answer was
+      // filed there with nobody looking.
+      const sent = stubEndpoint();
+      const el = mountReal(attrs);
+      stopFromSave(el, stop);
+
+      await el.sendMessage("first");
+      await settle();
+
+      expect(sent).toEqual([]);
+      expect(transcript(el)).toEqual([]);
+      // And the conversation that replaced it takes a turn as a fresh one does.
+      await el.sendMessage("second");
+      await settle();
+      expect(sent).toEqual([[["user", "second"]]]);
+      expect(transcript(el)).toEqual([
+        ["user", "second"],
+        ["assistant", "answer 1"],
+      ]);
+    },
+  );
+
+  it("sends nothing once the context provider has started a new chat", async () => {
+    // Read inside the run's first round, after the turn's save, so it is the
+    // last host code a send runs before its request.
+    const sent = stubEndpoint();
+    const el = mountReal();
+    let stopping = true;
+    el.getContext = () => {
+      if (stopping) {
+        stopping = false;
+        el.newChat();
+      }
+      return [];
+    };
+
+    await el.sendMessage("first");
+    await settle();
+
+    expect(sent).toEqual([]);
+    expect(transcript(el)).toEqual([]);
+  });
+
+  it("asks nothing again once the context provider has stopped a Retry", async () => {
+    // A Retry runs no save of its own after the replay; the context is read
+    // inside the resumed run, past every check the element can make.
+    const sent = stubEndpoint();
+    const el = mountReal();
+    await el.sendMessage("first");
+    await settle();
+    let stopping = true;
+    el.getContext = () => {
+      if (stopping) {
+        stopping = false;
+        el.newChat();
+      }
+      return [];
+    };
+
+    await el.retryLastTurn();
+    await settle();
+
+    expect(sent).toEqual([[["user", "first"]]]);
+    expect(transcript(el)).toEqual([]);
+  });
+
+  it("sends nothing once the save answering a call left open has stopped it", async () => {
+    // Every request first answers the tool calls history left open, and saves
+    // the answers: the store's code again, after the context has been read and
+    // just before the request. Left open here by a call to a tool no page owns,
+    // which ends the round with nothing to send back.
+    const sent = stubEndpoint([], (n) =>
+      n === 1
+        ? [
+            { type: "TOOL_CALL_START", toolCallId: "tc1", toolCallName: "unowned_tool" },
+            { type: "TOOL_CALL_ARGS", toolCallId: "tc1", delta: "{}" },
+            { type: "TOOL_CALL_END", toolCallId: "tc1" },
+          ]
+        : [],
+    );
+    const el = mountReal();
+    await el.sendMessage("first");
+    await settle();
+    stopFromSave(
+      el,
+      (chat) => chat.newChat(),
+      (messages) => messages.some((message) => message.role === "tool"),
+    );
+
+    await el.sendMessage("second");
+    await settle();
+
+    expect(sent).toEqual([[["user", "first"]]]);
+    expect(transcript(el)).toEqual([]);
+  });
+
+  it("still runs the turn after one the user stopped", async () => {
+    // A Stop is remembered until the next turn begins, so the turn after a
+    // stopped one must start by forgetting it, or a Stop would reach forward
+    // and cancel a run nobody had asked to stop.
+    const sent = stubEndpoint([], (n) =>
+      n === 1
+        ? [{ type: "ACTIVITY_SNAPSHOT", messageId: "act1", activityType: "probe", content: {} }]
+        : [],
+    );
+    const el = mountReal();
+    let stopping = true;
+    el.registerActivityRenderer({
+      type: "probe",
+      render: () => {
+        if (stopping) {
+          stopping = false;
+          // The composer's own Stop, which the button is while a run is in flight.
+          (shadow(el).querySelector(".send") as HTMLButtonElement).click();
+        }
+        return document.createElement("div");
+      },
+    });
+    await el.sendMessage("first");
+    await settle();
+    // Stopped, rather than finished with the renderer never reached.
+    expect(shadow(el).querySelectorAll(".stopped-note")).toHaveLength(1);
+
+    await el.sendMessage("second");
+    await settle();
+
+    expect(sent).toHaveLength(2);
+    expect(sent[1]?.at(-1)).toEqual(["user", "second"]);
+    expect(transcript(el).at(-1)).toEqual(["assistant", "answer 2"]);
+  });
+
+  it("leaves the answer standing when the store refuses a Retry's save", async () => {
+    // The Retry saves the shortened history before it re-renders. A store that
+    // throws there used to leave the client already shortened, under a
+    // transcript still showing the answer: the next request then left out an
+    // answer the user could see, and the agent was asked a follow-up about
+    // something it had never said.
+    const sent = stubEndpoint();
+    const el = mountReal();
+    await el.sendMessage("first");
+    await settle();
+    const store = el.conversationStore;
+    const save = store.saveMessages.bind(store);
+    let refuse = true;
+    store.saveMessages = (threadId, messages) => {
+      if (refuse) {
+        refuse = false;
+        throw new Error("the store refused the save");
+      }
+      save(threadId, messages);
+    };
+
+    const failure = await el.retryLastTurn().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(transcript(el)).toEqual([
+      ["user", "first"],
+      ["assistant", "answer 1"],
+    ]);
+
+    await el.sendMessage("second");
+    await settle();
+
+    expect(sent).toEqual([
+      [["user", "first"]],
+      [
+        ["user", "first"],
+        ["assistant", "answer 1"],
+        ["user", "second"],
+      ],
+    ]);
+    expect(transcript(el).at(-1)).toEqual(["assistant", "answer 2"]);
+  });
+});
+
 describe("AgUiChat.attachFile", () => {
   it("queues a file into the tray, like the picker", async () => {
     const { el } = mount({ "data-attachments-url": "/agent/attachments/" });
