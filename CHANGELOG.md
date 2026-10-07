@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A resumed or forked run shows the turn it was sent with.** Picking Resume
+  or Fork in the checkpoint panel sent what the composer held and streamed the
+  answer, but drew no bubble for the turn, so the answer arrived under no
+  question. The save already held the turn, so a reload showed a question the
+  live transcript never had. The continuation now draws the turn the way Send
+  does, ahead of its answer, and tests hold that the live transcript and the
+  restored one agree after both a resume and a fork.
+- **`ag-ui-submit` fires for a continued turn.** A host listens to it as "the
+  user sent something", and a turn sent with Resume or Fork is one: only the
+  endpoint differs. The event fires once the continuation is the run in flight,
+  so a `sendMessage()` from a listener is refused rather than starting a second
+  run beside it. Its `detail.attachments` is empty, because a continuation
+  sends only the composer's text.
+
+### Changed
+
+- **The vendored bundle carries DOMPurify 3.4.16 and marked 18.0.14**, from
+  the lockfile refresh since 0.41.2. The npm build is unaffected: both are
+  dependencies the host's own resolver picks.
+
 ## [0.41.2] — 2026-09-23
 
 ### Changed

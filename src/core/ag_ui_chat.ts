@@ -860,6 +860,9 @@ export class AgUiChat extends HTMLElement {
       headersFor: (url) => this.#headersFor(url),
       requestCredentials: () => this.#requestCredentials(),
       appendMessage: (role, content) => this.appendMessage(role, content),
+      // A continuation sends only what the composer holds. The tray is not
+      // read, so nothing rides along to be drawn or announced.
+      announceTurn: (content) => this.#announceTurn(content, []),
       autoGrow: () => autoGrow(this.#input),
       continuationEnded: () => this.#flushQueued(),
       client: () => this.#client,
@@ -2598,6 +2601,24 @@ export class AgUiChat extends HTMLElement {
     if (this.#transcript.isEmpty()) {
       this.setAttribute("data-composer-settling", "");
     }
+    this.#announceTurn(content, attachments);
+    await this.#client_send(content, attachments);
+  }
+
+  /**
+   * Put a turn the user sent on screen, and tell the host it was sent.
+   *
+   * The half of a send that does not depend on where it goes, so both senders
+   * take it from here: {@link sendMessage}, and a checkpoint continuation, which
+   * posts to the resume or fork endpoint on a client of its own. The
+   * continuation used to call that client directly, so the turn went out and
+   * its answer streamed in under no question -- while the save it made held the
+   * turn, and a reload showed what the live transcript never had.
+   *
+   * Arming the composer's travel stays with {@link sendMessage}: continuing a
+   * run is a change of context, and docks at once.
+   */
+  #announceTurn(content: string, attachments: readonly AttachmentRef[]): void {
     const bubble = this.appendMessage(MESSAGE_ROLE.USER, content);
     if (attachments.length > 0) {
       bubble.appendChild(renderAttachmentChips(attachments));
@@ -2609,7 +2630,6 @@ export class AgUiChat extends HTMLElement {
         composed: true,
       }),
     );
-    await this.#client_send(content, attachments);
   }
 
   /**

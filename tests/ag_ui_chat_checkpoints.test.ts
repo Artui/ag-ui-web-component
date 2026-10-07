@@ -1,6 +1,6 @@
 import type { Message } from "@ag-ui/core";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ELEMENT_TAG, STATE_EVENT, TOOL_OUTCOME } from "../src/constants.js";
+import { ELEMENT_TAG, STATE_EVENT, SUBMIT_EVENT, TOOL_OUTCOME } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import type {
   ClientConversationStore,
@@ -9,6 +9,7 @@ import type {
 } from "../src/core/conversation_store.js";
 import type { HttpAgentOptions as AgentOptions } from "../src/core/create_http_agent.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { SubmitDetail } from "../src/core/events/submit_detail.js";
 import type { RunRow } from "../src/core/run_index.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 import { type Emit, type FakeAgentHandle, makeFakeAgent } from "./helpers/fake_agent.js";
@@ -936,10 +937,41 @@ function sendTurn(el: AgUiChat, text: string): void {
 
 /** Open the checkpoint panel, type `text`, and resume the listed run. */
 async function resumeWith(el: AgUiChat, text: string): Promise<void> {
+  await continueWith(el, "resume", text);
+}
+
+/** Open the checkpoint panel, type `text`, and resume or fork the listed run. */
+async function continueWith(el: AgUiChat, verb: "resume" | "fork", text: string): Promise<void> {
   (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
   await flush();
   (shadow(el).querySelector("textarea") as HTMLTextAreaElement).value = text;
-  (shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement).click();
+  (shadow(el).querySelector(`.checkpoint-${verb}`) as HTMLButtonElement).click();
+}
+
+/**
+ * The transcript as a reader sees it: each bubble's role and the text it
+ * shows, in the order they are drawn. The action row under an answer is
+ * chrome rather than text, so it is left out.
+ */
+function bubbles(el: AgUiChat): [string, string][] {
+  return [...shadow(el).querySelectorAll<HTMLElement>(".message")].map((bubble) => {
+    const shown = bubble.cloneNode(true) as HTMLElement;
+    for (const bar of shown.querySelectorAll(".message-actions")) {
+      bar.remove();
+    }
+    const role = bubble.classList.contains("message--user") ? "user" : "assistant";
+    return [role, shown.textContent?.trim() ?? ""];
+  });
+}
+
+/** Mount over `store`, with the checkpoint panel configured. */
+function mountOver(store: ClientConversationStore): AgUiChat {
+  const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+  el.setAttribute("endpoint", "/agent/");
+  el.setAttribute("data-runs-url", "/agent/runs/");
+  el.conversationStore = store;
+  document.body.appendChild(el);
+  return el;
 }
 
 describe("a continuation waits for the run in flight", () => {
@@ -1142,6 +1174,8 @@ describe("a continuation waits for the run in flight", () => {
     expect(hint?.textContent).toBe(DEFAULT_UI_STRINGS.continueWhileRunning);
     expect(input.value).toBe("go on");
     expect(shadow(el).activeElement).toBe(input);
+    // Nor is the turn drawn: it was not sent, and a bubble would say it was.
+    expect(bubbles(el)).toEqual([["user", "what is on the board?"]]);
     release();
     await flush();
   });
@@ -1170,16 +1204,6 @@ describe("a continued exchange joins the conversation", () => {
     { id: "u1", role: "user", content: "what is on the board?" },
     { id: "a1", role: "assistant", content: "three cards" },
   ];
-
-  /** Mount over `store`, with the checkpoint panel configured. */
-  function mountOver(store: ClientConversationStore): AgUiChat {
-    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
-    el.setAttribute("endpoint", "/agent/");
-    el.setAttribute("data-runs-url", "/agent/runs/");
-    el.conversationStore = store;
-    document.body.appendChild(el);
-    return el;
-  }
 
   it("is saved after the conversation it continues", async () => {
     // A store keeps one list per thread, and the continuation's own history is
@@ -1400,5 +1424,117 @@ describe("a continued exchange joins the conversation", () => {
     await settle();
     expect(sent.at(-1)?.url).toBe("/agent/");
     expect(sent.at(-1)?.body.state).toEqual({ board: "sprint-13" });
+  });
+});
+
+describe("a continued turn is drawn like any other", () => {
+  const conversation: readonly Message[] = [
+    { id: "u1", role: "user", content: "what is on the board?" },
+    { id: "a1", role: "assistant", content: "three cards" },
+  ];
+
+  it.each(["resume", "fork"] as const)(
+    "puts the turn on screen ahead of its answer, after a %s",
+    async (verb) => {
+      // The continuation sent the turn and streamed the answer, and the
+      // transcript showed the answer under no question: the bubble is drawn by
+      // the element's own send, which a continuation never went through.
+      stubServer((url) => (url === `/agent/${verb}/r1/` ? says("a2", "the continued answer") : []));
+      const el = mountOver(memoryStore({ t1: conversation }));
+      await settle();
+
+      await continueWith(el, verb, "go on");
+      await settle();
+
+      expect(bubbles(el)).toEqual([
+        ["user", "what is on the board?"],
+        ["assistant", "three cards"],
+        ["user", "go on"],
+        ["assistant", "the continued answer"],
+      ]);
+    },
+  );
+
+  it.each(["resume", "fork"] as const)(
+    "announces the turn as a submit, after a %s",
+    async (verb) => {
+      // A host listens for the submit event as "the user sent something", and a
+      // continued turn is something the user typed and sent. Only the endpoint
+      // differs, which the host chose by configuring the panel.
+      stubServer((url) => (url === `/agent/${verb}/r1/` ? says("a2", "the continued answer") : []));
+      const el = mountOver(memoryStore({ t1: conversation }));
+      await settle();
+      const submitted: SubmitDetail[] = [];
+      el.addEventListener(SUBMIT_EVENT, (event) => {
+        submitted.push((event as CustomEvent<SubmitDetail>).detail);
+      });
+
+      await continueWith(el, verb, "go on");
+      await settle();
+
+      expect(submitted).toEqual([{ content: "go on", attachments: [] }]);
+    },
+  );
+
+  it.each(["resume", "fork"] as const)("shows what a reload restores after a %s", async (verb) => {
+    // The save already held the turn, so a reload brought back a question the
+    // live transcript had never shown. Both views are asserted, and asserted
+    // equal, so neither can drift from the other again.
+    stubServer((url) => (url === `/agent/${verb}/r1/` ? says("a2", "the continued answer") : []));
+    const store = memoryStore({ t1: conversation });
+    const el = mountOver(store);
+    await settle();
+    await continueWith(el, verb, "go on");
+    await settle();
+    const live = bubbles(el);
+
+    el.remove();
+    const reloaded = mountOver(store);
+    await settle();
+
+    expect(bubbles(reloaded)).toEqual([
+      ["user", "what is on the board?"],
+      ["assistant", "three cards"],
+      ["user", "go on"],
+      ["assistant", "the continued answer"],
+    ]);
+    expect(live).toEqual(bubbles(reloaded));
+  });
+
+  it("refuses a send its own submit listener makes", async () => {
+    // The event is dispatched with the continuation already the run in flight,
+    // so a host that answers a submit by sending something of its own cannot
+    // start a second run beside it against the same conversation.
+    const sent = stubServer(() => says("a2", "the continued answer"));
+    const el = mountOver(memoryStore({ t1: conversation }));
+    await settle();
+    el.addEventListener(SUBMIT_EVENT, () => {
+      void el.sendMessage("and a second thing");
+    });
+
+    await continueWith(el, "resume", "go on");
+    await settle();
+
+    expect(sent.map((run) => run.url)).toEqual(["/agent/resume/r1/"]);
+  });
+
+  it("draws nothing and announces nothing for a pick with nothing typed", async () => {
+    // Refused before anything is sent, so there is no turn to show.
+    stubServer(() => says("a2", "the continued answer"));
+    const el = mountOver(memoryStore({ t1: conversation }));
+    await settle();
+    const submitted: SubmitDetail[] = [];
+    el.addEventListener(SUBMIT_EVENT, (event) => {
+      submitted.push((event as CustomEvent<SubmitDetail>).detail);
+    });
+
+    await continueWith(el, "resume", "   ");
+    await settle();
+
+    expect(bubbles(el)).toEqual([
+      ["user", "what is on the board?"],
+      ["assistant", "three cards"],
+    ]);
+    expect(submitted).toEqual([]);
   });
 });

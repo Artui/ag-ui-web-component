@@ -4,7 +4,12 @@
 /** The Custom Element tag name registered by {@link defineAgUiChat}. */
 export const ELEMENT_TAG = "ag-ui-chat";
 
-/** User submitted a message. `detail` is {@link SubmitDetail}. */
+/**
+ * User submitted a message. `detail` is {@link SubmitDetail}.
+ *
+ * Fires for every turn the user sends: with Send, through `sendMessage`, and
+ * as the next turn of a run resumed or forked from the checkpoint panel.
+ */
 export const SUBMIT_EVENT = "ag-ui-submit";
 
 /**

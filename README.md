@@ -2409,7 +2409,10 @@ Type the next turn in the composer, then pick a row:
 - **Resume** — continue that run.
 - **Fork** — branch it, leaving the original untouched.
 
-Both send to the matching server endpoint and stream into the same transcript.
+Both send to the matching server endpoint and stream into the same transcript. The
+turn you typed is drawn there ahead of the answer and announced with `ag-ui-submit`,
+exactly as a send is, so a host that keeps its own record of what the user said sees
+continued turns too.
 
 Picking a row with an empty composer says so above the input and puts the caret
 there, rather than closing the panel over nothing: a continuation sends **only**
