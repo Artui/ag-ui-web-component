@@ -1127,12 +1127,15 @@ The composer also walks back through what you have already sent, on **Up** and
 that left the composer: one sent at once, one queued behind a run (from the
 moment it is queued), and one sent to resume or fork a run from the checkpoint
 panel. A message sent with `sendMessage` is not in it, because it was never
-typed there. Only from an empty
-composer and only with the skills palette closed: an arrow inside text is how you
-move the caret, and taking it unconditionally would break editing to add a
-shortcut. Arrowing forward past the newest turn empties the box again, so the way
-out is the key that got you in. The history is this conversation's: starting a
-new chat, switching threads or changing `user-key` clears it with the transcript.
+typed there. Only from an empty composer and only with the skills palette closed:
+an arrow inside text is how you move the caret, and taking it unconditionally
+would break editing to add a shortcut. Arrowing forward past the newest turn
+empties the box again, so the way out is the key that got you in. A walk lasts
+only while the composer holds the turn it put there: anything else that writes
+the box — typing, a quotation, a skill, dictation, or the host page itself — ends
+it, so the next arrow moves the caret in what was written rather than replacing
+it. The history is this conversation's: starting a new chat, switching threads
+or changing `user-key` clears it with the transcript.
 
 ### Collapsing to the launcher
 

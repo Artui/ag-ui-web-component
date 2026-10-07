@@ -48,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ag-ui-run-finished` listener for a picked checkpoint's run returns `false`,
   because the continuation is still in flight when that event fires. A
   `sendMessage()` from the same place was already refused for that reason.
+- **A recall walk ends on any write into the composer, not only on typing.**
+  Walking back to a past turn with Up and then quoting text, from the
+  transcript or from the page through `offerQuoteInPage`, or clicking a skill
+  chip that prefills the composer, left the walk running: the next Up replaced
+  what had just been written with an older turn, and Down emptied the box. The
+  walk now checks that the composer still holds the turn it put there, so any
+  other write ends it, including a host page writing the composer itself.
 
 ## [0.41.3] — 2026-10-07
 
