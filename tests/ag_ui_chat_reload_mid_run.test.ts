@@ -24,7 +24,7 @@
  */
 
 import type { Message } from "@ag-ui/core";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG, TOOL_OUTCOME } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import type {
@@ -34,6 +34,8 @@ import type {
 } from "../src/core/conversation_store.js";
 import type { HttpAgentOptions } from "../src/core/create_http_agent.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { RunRow } from "../src/core/run_index.js";
+import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 import { type Emit, type FakeAgentHandle, makeFakeAgent } from "./helpers/fake_agent.js";
 
 defineAgUiChat();
@@ -63,16 +65,22 @@ interface MemoryStore extends ClientConversationStore {
  * would read a different store than the element writes. It round-trips through
  * JSON because the outcome annotation rides on a field `Message` does not
  * declare, so surviving serialisation is part of what is under test.
+ *
+ * Given `answered`, it loads as a remote store does: what it held when asked,
+ * once `answered` settles. Without it, it answers in a microtask, as the
+ * built-in store does.
  */
-function memoryStore(seed?: Snapshot): MemoryStore {
+function memoryStore(seed?: Snapshot, answered?: Promise<void>): MemoryStore {
   let saved: readonly Message[] = seed === undefined ? [] : copy(seed.messages);
   let checkpoint: NavigationCheckpoint | null = seed?.checkpoint ?? null;
   return {
     snapshot: () => ({ messages: copy(saved), checkpoint }),
     threadId: () => "t1",
     setActiveThread: () => {},
-    loadMessages: (): Promise<readonly Message[] | null> =>
-      Promise.resolve(saved.length === 0 ? null : copy(saved)),
+    loadMessages: (): Promise<readonly Message[] | null> => {
+      const messages = saved.length === 0 ? null : copy(saved);
+      return answered === undefined ? Promise.resolve(messages) : answered.then(() => messages);
+    },
     saveMessages: (_threadId: string, messages: readonly Message[]): void => {
       saved = copy(messages);
     },
@@ -645,6 +653,323 @@ describe("a round that finished", () => {
       { role: "tool", toolCallId: "tc-s", content: NOT_FINISHED },
       { role: "assistant", calls: [] },
       { role: "user", content: "thanks" },
+    ]);
+  });
+});
+
+/**
+ * A reload that resumes, asked to start something else while the store answers.
+ *
+ * The resume is a run, and it starts only once the store has answered. With a
+ * remote store that is a real request, and a send, a Retry or a pick in it was
+ * refused by nothing: each built the conversation's client before the
+ * conversation had loaded, so a send went out carrying none of it, and the
+ * resume then ran on that client as a second run, answering a call its history
+ * no longer held.
+ *
+ * Over the real `HttpAgent` with `fetch` stubbed, because the window ends when
+ * the client starts a run, and the real one starts it a microtask after it is
+ * asked, as it does in a page; the fake starts one only when its script says.
+ */
+describe("a reload that resumes, while the store is still answering", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const RUN: RunRow = {
+    run_id: "r1",
+    thread_id: "t1",
+    parent_run_id: null,
+    started_at: "2026-07-27T12:00:00+00:00",
+    continuable: true,
+  };
+
+  /**
+   * Stand in for the AG-UI endpoint, recording each run request's history as
+   * `wire` reduces it. Run N says "answer N", or what `answer` gives it. The
+   * runs index, which the checkpoint panel reads, is the one request with no
+   * body, and is not a run.
+   */
+  function stubEndpoint(answer: (n: number) => readonly object[] = () => []): unknown[][] {
+    const sent: unknown[][] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if (init?.body === undefined) {
+          return new Response(JSON.stringify({ runs: [RUN] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const body = JSON.parse(String(init.body)) as { messages: readonly Message[] };
+        sent.push(wire(body.messages));
+        const n = sent.length;
+        const events = answer(n);
+        const said =
+          events.length > 0
+            ? events
+            : [
+                { type: "TEXT_MESSAGE_START", messageId: `a${n}`, role: "assistant" },
+                { type: "TEXT_MESSAGE_CONTENT", messageId: `a${n}`, delta: `answer ${n}` },
+                { type: "TEXT_MESSAGE_END", messageId: `a${n}` },
+              ];
+        const stream = [
+          { type: "RUN_STARTED", threadId: "t1", runId: `run-${n}` },
+          ...said,
+          { type: "RUN_FINISHED", threadId: "t1", runId: `run-${n}` },
+        ];
+        return new Response(stream.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }),
+    );
+    return sent;
+  }
+
+  /** Mount over `store` with the element's own agent, against the stubbed `fetch`. */
+  function mountReal(store: MemoryStore, attrs: Record<string, string> = {}): AgUiChat {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-start-open", "");
+    for (const [key, value] of Object.entries(attrs)) {
+      el.setAttribute(key, value);
+    }
+    el.conversationStore = store;
+    el.registerTool({
+      name: "open_changelist",
+      description: "navigate",
+      parameters: { type: "object", "x-navigates": true },
+      handler: () => ({ ok: true }),
+    });
+    document.body.appendChild(el);
+    return el;
+  }
+
+  /** Macrotask ticks: the real `HttpAgent` hands events on across timers. */
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  /** Each bubble's role and text, in the order drawn, without the action row. */
+  function transcript(el: AgUiChat): [string, string][] {
+    return [...shadow(el).querySelectorAll<HTMLElement>(".message")].map((bubble) => {
+      const shown = bubble.cloneNode(true) as HTMLElement;
+      for (const bar of shown.querySelectorAll(".message-actions")) {
+        bar.remove();
+      }
+      const role = bubble.classList.contains("message--user") ? "user" : "assistant";
+      return [role, shown.textContent?.trim() ?? ""];
+    });
+  }
+
+  /** Drive a real run to the navigating call, and return the store a reload finds. */
+  async function atNavigation(): Promise<Snapshot> {
+    stubEndpoint((n) =>
+      n === 1
+        ? [
+            { type: "TOOL_CALL_START", toolCallId: "nav-1", toolCallName: "open_changelist" },
+            { type: "TOOL_CALL_ARGS", toolCallId: "nav-1", delta: "{}" },
+            { type: "TOOL_CALL_END", toolCallId: "nav-1" },
+          ]
+        : [],
+    );
+    const store = memoryStore();
+    const el = mountReal(store);
+    await el.sendMessage("open the books");
+    await settle();
+    const snapshot = store.snapshot();
+    expect(snapshot.checkpoint).toEqual({ toolCallId: "nav-1" });
+    vi.unstubAllGlobals();
+    return snapshot;
+  }
+
+  /**
+   * Reload onto `snapshot` over a store that answers when `answer` is called,
+   * and wait until the page is otherwise idle, so all that is outstanding is
+   * the load.
+   */
+  async function reloadAnsweringLater(
+    snapshot: Snapshot,
+    attrs: Record<string, string> = {},
+  ): Promise<{ el: AgUiChat; answer: () => void }> {
+    document.body.innerHTML = "";
+    let answer: () => void = () => {};
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const el = mountReal(memoryStore(snapshot, answered), attrs);
+    await settle();
+    return { el, answer };
+  }
+
+  /** The request the resume makes: the stored turn, its call, and the landed page. */
+  const RESUMED = [
+    { role: "user", content: "open the books" },
+    { role: "assistant", calls: ["nav-1"] },
+    { role: "tool", toolCallId: "nav-1", content: expect.stringContaining('"navigated":true') },
+  ];
+
+  it("refuses a send, and resumes the run the reload interrupted", async () => {
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    const { el, answer } = await reloadAnsweringLater(snapshot);
+
+    await el.sendMessage("meanwhile");
+    await settle();
+    // Refused, not waiting on the load to go out: nothing has been asked of
+    // the endpoint while the store has not answered.
+    expect(sent).toEqual([]);
+    answer();
+    await settle();
+
+    // One run, the resume, carrying the conversation the store held. The send
+    // used to go out first with none of it, and the resume then followed it on
+    // the same client, answering a call that history no longer held.
+    expect(sent).toEqual([RESUMED]);
+    expect(transcript(el)).toEqual([
+      ["user", "open the books"],
+      ["assistant", "answer 1"],
+    ]);
+  });
+
+  it("parks what the built-in Send takes, and sends it after the resumed answer", async () => {
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    const { el, answer } = await reloadAnsweringLater(snapshot);
+
+    sendNoWait(el, "meanwhile");
+    const queued = [...shadow(el).querySelectorAll(".queued-chip")].map((chip) => chip.textContent);
+    answer();
+    await settle();
+
+    expect(queued).toEqual(["meanwhile"]);
+    expect(sent).toEqual([
+      RESUMED,
+      [...RESUMED, { role: "assistant", calls: [] }, { role: "user", content: "meanwhile" }],
+    ]);
+    expect(transcript(el)).toEqual([
+      ["user", "open the books"],
+      ["assistant", "answer 1"],
+      ["user", "meanwhile"],
+      ["assistant", "answer 2"],
+    ]);
+  });
+
+  it("refuses a Retry, and resumes with the conversation it loaded", async () => {
+    // The Retry found nothing to retry -- nothing had loaded -- but it built
+    // the conversation's client on the way, from that nothing, and the resume
+    // then ran on it: a request holding the landed page's result and no turn.
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    const { el, answer } = await reloadAnsweringLater(snapshot);
+
+    const retried = await el.retryLastTurn();
+    answer();
+    await settle();
+
+    expect(retried).toBe(false);
+    expect(sent).toEqual([RESUMED]);
+    expect(transcript(el)).toEqual([
+      ["user", "open the books"],
+      ["assistant", "answer 1"],
+    ]);
+  });
+
+  it("refuses a pick, and says why at the composer", async () => {
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    const { el, answer } = await reloadAnsweringLater(snapshot, {
+      "data-runs-url": "/agent/runs/",
+    });
+
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await settle();
+    const input = shadow(el).querySelector("textarea") as HTMLTextAreaElement;
+    input.value = "and now sort them";
+    (shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement).click();
+    await settle();
+    const hint = shadow(el).querySelector<HTMLElement>(".skill-hint");
+    expect(hint?.hidden).toBe(false);
+    expect(hint?.textContent).toBe(DEFAULT_UI_STRINGS.continueWhileRunning);
+    expect(input.value).toBe("and now sort them");
+    answer();
+    await settle();
+
+    expect(sent).toEqual([RESUMED]);
+  });
+
+  it("stands down when New chat is pressed while the store answers", async () => {
+    // New chat stops what is in flight, and the resume is, from the moment the
+    // restore set out to load it. It used to land in the new chat regardless:
+    // the conversation being left drawn into it, and its run resumed there.
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    const { el, answer } = await reloadAnsweringLater(snapshot);
+
+    el.newChat();
+    answer();
+    await settle();
+
+    expect(sent).toEqual([]);
+    expect(transcript(el)).toEqual([]);
+    expect(shadow(el).querySelector(".tool-call")).toBeNull();
+  });
+
+  it("resumes once when the host reloads while the store answers", async () => {
+    // A host configuring the element once it has connected calls `reload()`,
+    // which starts the restore again with the first still loading. The first
+    // stands down for the second, and lets go of only its own hold as it goes:
+    // the second's is in the same field by then, and losing it read to the
+    // second as a Stop, so nothing resumed at all.
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    const { el, answer } = await reloadAnsweringLater(snapshot);
+
+    const reloading = el.reload();
+    answer();
+    await reloading;
+    await settle();
+
+    expect(sent).toEqual([RESUMED]);
+    expect(transcript(el)).toEqual([
+      ["user", "open the books"],
+      ["assistant", "answer 1"],
+    ]);
+  });
+
+  it("sends what it parked when the store fails to answer", async () => {
+    // No run starts, so none settles to send the parked turn: the restore
+    // letting go of its hold is what sends it. It goes into the empty
+    // conversation the page is left showing, as a turn typed after the failure
+    // would. A resumed request that fails is not this case -- the client
+    // reports its run started before the request goes out, so that run's
+    // settle sends it.
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    document.body.innerHTML = "";
+    const el = mountReal(memoryStore());
+    await settle();
+    let fail: (error: Error) => void = () => {};
+    const answered = new Promise<void>((_resolve, reject) => {
+      fail = reject;
+    });
+    el.conversationStore = memoryStore(snapshot, answered);
+
+    const reloading = el.reload();
+    sendNoWait(el, "meanwhile");
+    const queued = [...shadow(el).querySelectorAll(".queued-chip")].map((chip) => chip.textContent);
+    fail(new Error("offline"));
+    await expect(reloading).rejects.toThrow("offline");
+    await settle();
+
+    expect(queued).toEqual(["meanwhile"]);
+    expect(sent).toEqual([[{ role: "user", content: "meanwhile" }]]);
+    expect(transcript(el)).toEqual([
+      ["user", "meanwhile"],
+      ["assistant", "answer 1"],
     ]);
   });
 });

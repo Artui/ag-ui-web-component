@@ -919,7 +919,32 @@ export class AgUiChat extends HTMLElement {
       // A held send or retry is as much in flight to a pick as a run is: it has
       // asked this element's client for a run that has not started, and a
       // continuation started beside it was a second run in one conversation.
+      // So is a restore that will resume a run, which holds through the same
+      // field from before the store answers.
       running: () => this.#running || this.#sending !== null,
+      // The hold a send takes, taken for a restore that will resume a run, so
+      // what refuses a send held short of its run refuses one made while the
+      // store is still answering: `sendMessage` returns, Send parks the turn,
+      // a Retry and a pick refuse. The same field rather than a flag beside it,
+      // because what lets go of a send's hold is right for this one too. The
+      // resumed run starting lets go, in `#setRunning`, so there is no gap
+      // after the resume is asked for, and a Stop does, in `#cancelRun`. A flag
+      // the restore cleared itself would still be set when the resumed run
+      // settles and sends the parked turn, so that send would be refused after
+      // the turn had left the queue, and lost.
+      holdRun: () => {
+        const hold = {};
+        this.#sending = hold;
+        return {
+          held: () => this.#sending === hold,
+          release: () => {
+            if (this.#sending === hold) {
+              this.#sending = null;
+              this.#flushQueued();
+            }
+          },
+        };
+      },
       cancelRun: () => this.#cancelRun(),
       resetState: () => this.#resetState(),
       setRunning: (running) => this.#setRunning(running),
