@@ -152,6 +152,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a live change stops a voice recording in progress before it is transcribed.
   The first arrival of a key, a move that keeps the key, and New chat leave the
   text where it is.
+- **A voice clip that comes back after a change of `user-key` is dropped, not
+  written into the next principal's composer.** The mic checked whether it had
+  been taken down only before it posted the clip, so a transcript already on
+  its way when the key changed landed in the composer the change had just
+  emptied, and a failed one drew its error on the old button. The permission
+  prompt had the same gap: a mic granted after the key changed or the element
+  left the page started a recording nobody could see or stop, and its tracks
+  were never released, so the browser's recording indicator stayed lit.
+  Removing the element while a clip transcribes now drops that clip too, as
+  removing it mid-recording already did, and that holds for a move that keeps
+  the key.
 
 ## [0.41.3] — 2026-10-07
 

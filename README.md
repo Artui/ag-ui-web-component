@@ -2125,8 +2125,9 @@ A handover also ends what the previous principal had in flight. Their run is sto
 it does afterwards is written into the next principal's storage or shared state: not the save a
 stopped run makes once its request closes, not a tool result that comes back after the Stop, not
 state already on its way. What they had typed into the composer and not sent is cleared with the
-transcript, quotations and skill templates included, and a voice recording in progress is stopped
-before it is transcribed.
+transcript, quotations and skill templates included. A voice recording in progress is stopped
+before it is transcribed, and a clip already sent for transcription is dropped when its transcript
+comes back.
 
 Set it live, from script, as part of signing out or in:
 
