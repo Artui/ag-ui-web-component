@@ -12,13 +12,14 @@
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ELEMENT_TAG, MESSAGE_ROLE } from "../src/constants.js";
+import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import {
   type ClientConversationStore,
   SessionStorageStore,
 } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 function mount(attrs: Record<string, string> = {}): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
@@ -303,6 +304,382 @@ describe("client state scoping", () => {
       expect(el.userKey).toBe("");
       el.userKey = "alice";
       expect(el.getAttribute("user-key")).toBe("alice");
+    });
+  });
+
+  /**
+   * A `user-key` change made while the element is out of the document.
+   *
+   * A router that keeps a view alive detaches the element rather than
+   * destroying it, so a sign-out that runs while the chat is off screen renames
+   * the principal on an element that is not connected. Putting it back is the
+   * first moment it can act on that, and it has to do everything a live change
+   * does: a plain move is a reload that keeps what the user typed, because the
+   * same person is still there, and this is the case where they are not.
+   */
+  describe("user-key changed while detached", () => {
+    /** Mount with a fake agent; by default every run answers once and ends. */
+    function mountRunning(
+      attrs: Record<string, string>,
+      script: (emit: Emit) => void = (emit) => {
+        emit.runStart();
+        emit.textEnd("an answer");
+        emit.runEnd();
+      },
+    ): AgUiChat {
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      for (const [key, value] of Object.entries(attrs)) {
+        el.setAttribute(key, value);
+      }
+      const handle = makeFakeAgent({ script });
+      el.agentFactory = () => handle.agent;
+      document.body.appendChild(el);
+      return el;
+    }
+
+    /** Take the element out, rename the principal (`null` drops it), put it back. */
+    function moveAs(el: AgUiChat, key: string | null): void {
+      el.remove();
+      if (key === null) {
+        el.removeAttribute("user-key");
+      } else {
+        el.setAttribute("user-key", key);
+      }
+      document.body.appendChild(el);
+    }
+
+    function composer(el: AgUiChat): HTMLTextAreaElement {
+      const found = shadow(el).querySelector(".input");
+      if (!(found instanceof HTMLTextAreaElement)) {
+        throw new Error("expected a composer");
+      }
+      return found;
+    }
+
+    /** Type and press Enter, the route that records the turn for recall. */
+    async function type(el: AgUiChat, text: string): Promise<void> {
+      const input = composer(el);
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true }),
+      );
+      await settle();
+    }
+
+    /** What one ArrowUp from an empty composer brings back. */
+    function recall(el: AgUiChat): string {
+      composer(el).dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, composed: true }),
+      );
+      return composer(el).value;
+    }
+
+    /** A store of the host's own kind, counting how often its threads are listed. */
+    function hostStore(): ClientConversationStore & { lists: () => number } {
+      let lists = 0;
+      return {
+        threadId: () => "host-thread",
+        loadMessages: () => Promise.resolve(null),
+        saveMessages: () => undefined,
+        loadCheckpoint: () => null,
+        saveCheckpoint: () => undefined,
+        clear: () => undefined,
+        listThreads: () => {
+          lists += 1;
+          return Promise.resolve([]);
+        },
+        setActiveThread: () => undefined,
+        renameThread: () => undefined,
+        lists: () => lists,
+      };
+    }
+
+    it.each([
+      ["replaced", "bob"],
+      ["removed", null],
+    ])("purges the previous principal's stored conversation when the key is %s", async (_, key) => {
+      const el = mountRunning({ endpoint: "/agent/", "user-key": "alice" });
+      const alice = el.conversationStore;
+      alice.saveMessages(alice.threadId(), transcript(ALICE_SECRET));
+
+      moveAs(el, key);
+      await flush();
+
+      expect(dumpStorage()).not.toContain(ALICE_SECRET);
+      // Nothing at all is left under her namespace -- not even a fresh thread
+      // pointer minted there by reading the store before it was re-scoped.
+      expect(dumpStorage()).not.toContain("#alice");
+      const next = el.conversationStore;
+      expect(await next.loadMessages(next.threadId())).toBeNull();
+      expect(shadow(el).querySelector(".message--user")).toBeNull();
+    });
+
+    it("forgets the composer's recall history", async () => {
+      const el = mountRunning({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      await type(el, "alice's message");
+
+      moveAs(el, "bob");
+
+      expect(recall(el)).toBe("");
+    });
+
+    it("asks the next principal again for a tool the previous one always allowed", async () => {
+      let calls = 0;
+      let round = 0;
+      const el = mountRunning(
+        { endpoint: "/agent/", "user-key": "alice", "data-start-open": "" },
+        (emit) => {
+          emit.runStart();
+          if (round === 0) {
+            emit.toolCall(`call-${calls}`, "delete_record", { id: 7 });
+          }
+          round += 1;
+          emit.runEnd();
+        },
+      );
+      // One call per send: the round counter restarts on every submit.
+      el.addEventListener(SUBMIT_EVENT, () => {
+        round = 0;
+      });
+      el.registerTool({
+        name: "delete_record",
+        description: "Delete a record",
+        parameters: { type: "object", "x-destructive": true },
+        handler: () => {
+          calls += 1;
+          return "deleted";
+        },
+      });
+      send(el, "delete record 7");
+      await flush();
+      shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--always")?.click();
+      await flush();
+      expect(calls).toBe(1);
+
+      moveAs(el, "bob");
+      await flush();
+      send(el, "delete record 7");
+      await flush();
+
+      expect(calls).toBe(1);
+      expect(shadow(el).querySelector(".confirm")).not.toBeNull();
+      shadow(el).querySelector<HTMLButtonElement>(".confirm-btn--cancel")?.click();
+      await flush();
+    });
+
+    it("does not send the previous principal's shared state on the next one's first run", async () => {
+      // Read off the real request, as the live-change test above does.
+      const bodies: { state?: unknown }[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: unknown, init?: RequestInit) => {
+          bodies.push(JSON.parse(String(init?.body)) as { state?: unknown });
+          return Promise.resolve(
+            sseRun(
+              bodies.length === 1
+                ? [{ type: "STATE_SNAPSHOT", snapshot: { balance: ALICE_SECRET } }]
+                : [],
+            ),
+          );
+        }),
+      );
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      send(el, "what is my balance?");
+      await settle();
+      expect(el.sharedState).toEqual({ balance: ALICE_SECRET });
+
+      moveAs(el, "bob");
+      await settle();
+      send(el, "hello");
+      await settle();
+
+      expect(bodies).toHaveLength(2);
+      expect(JSON.stringify(bodies[1])).not.toContain(ALICE_SECRET);
+      expect(bodies[1]?.state).toEqual({});
+      expect(el.sharedState).toEqual({});
+    });
+
+    it("clears the unread count the previous principal's answers left", async () => {
+      const el = mountRunning({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      el.setCollapsed(true);
+      send(el, "hi");
+      await flush();
+      expect(el.unread).toBe(1);
+
+      moveAs(el, "bob");
+
+      expect(el.unread).toBe(0);
+      expect(shadow(el).querySelector<HTMLElement>(".launcher-badge")?.hidden).toBe(true);
+    });
+
+    it("replaces the previous principal's threads in a drawer left open", async () => {
+      const el = mountRunning({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      const alice = el.conversationStore;
+      alice.saveMessages(alice.threadId(), transcript(ALICE_SECRET));
+      el.openThreads();
+      await flush();
+      const drawer = (): string => shadow(el).querySelector(".drawer-list")?.textContent ?? "";
+      expect(drawer()).toContain(ALICE_SECRET);
+
+      moveAs(el, "bob");
+      await flush();
+
+      expect(drawer()).not.toContain(ALICE_SECRET);
+    });
+
+    it("shows the next principal's own conversation", async () => {
+      // The farewell must not land after the arrival and wipe it: bob's earlier
+      // conversation in this tab is what the re-inserted element replays.
+      const bob = new SessionStorageStore("/agent/#bob");
+      bob.saveMessages(bob.threadId(), transcript("bob's earlier question"));
+      const el = mountRunning({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+
+      moveAs(el, "bob");
+      await flush();
+
+      expect(shadow(el).querySelector(".message--user")?.textContent).toContain(
+        "bob's earlier question",
+      );
+    });
+
+    it.each([
+      ["first arrives", null, "alice"],
+      ["changes hands", "alice", "bob"],
+    ])(
+      "keeps a store the host assigned while the element was out, when the key %s",
+      (_, from, to) => {
+        // A store the host assigned since is theirs, and comes back as it is --
+        // the handover does not get to swap the element's own one back in.
+        const injected = hostStore();
+        const el = mountRunning(
+          from === null ? { endpoint: "/agent/" } : { endpoint: "/agent/", "user-key": from },
+        );
+        el.remove();
+        el.conversationStore = injected;
+        el.setAttribute("user-key", to);
+        document.body.appendChild(el);
+
+        expect(el.conversationStore).toBe(injected);
+      },
+    );
+
+    it("keeps recall and the transcript on a move that keeps the key", async () => {
+      // The control for every test above: the same move, the same person.
+      const el = mountRunning({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      await type(el, "alice's message");
+
+      moveAs(el, "alice");
+      await flush();
+
+      expect(shadow(el).querySelector(".message--user")?.textContent).toContain("alice's message");
+      expect(recall(el)).toBe("alice's message");
+    });
+
+    it("does not reload the thread list on a move that keeps the key", () => {
+      // Against a `data-threads-url` store the list is a request to the host's
+      // server, and one issued from connecting goes out before a framework ref
+      // has set the headers -- see #startup. A move has nothing new to list.
+      const injected = hostStore();
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      el.setAttribute("user-key", "alice");
+      el.conversationStore = injected;
+      document.body.appendChild(el);
+      const before = injected.lists();
+
+      moveAs(el, "alice");
+      expect(injected.lists()).toBe(before);
+      // The control: the same move with the key changed does reload it.
+      moveAs(el, "bob");
+      expect(injected.lists()).toBe(before + 1);
+    });
+
+    it("keeps everything when the key goes away and comes back while detached", async () => {
+      // Only where the element ends up counts: nobody else saw this panel while
+      // it was out of the document, so there is no one to hide it from.
+      const el = mountRunning({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      await type(el, "alice's message");
+
+      el.remove();
+      el.setAttribute("user-key", "bob");
+      el.setAttribute("user-key", "alice");
+      document.body.appendChild(el);
+      await flush();
+
+      expect(dumpStorage()).toContain("alice's message");
+      expect(recall(el)).toBe("alice's message");
+    });
+
+    it("hands over only once for a change it already made while connected", async () => {
+      // The live change already said goodbye to alice. Moving the element after
+      // it is not a second handover, which would take bob's own recall with it.
+      const el = mountRunning({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      el.setAttribute("user-key", "bob");
+      await type(el, "bob's message");
+
+      moveAs(el, "bob");
+
+      expect(recall(el)).toBe("bob's message");
+    });
+
+    it("adopts the conversation rather than purging it when the key first arrives", async () => {
+      // The late-configuration shape again, with the element moved in between:
+      // the person on screen is the one the key now names.
+      const el = mountRunning({ endpoint: "/agent/", "data-start-open": "" });
+      const anonymous = el.conversationStore;
+      const thread = anonymous.threadId();
+      await type(el, "before auth resolved");
+      expect(await anonymous.loadMessages(thread)).not.toBeNull();
+
+      moveAs(el, "alice");
+      await flush();
+
+      const scoped = el.conversationStore;
+      expect(scoped.threadId()).toBe(thread);
+      expect(JSON.stringify(await scoped.loadMessages(thread))).toContain("before auth resolved");
+      expect(await new SessionStorageStore("/agent/").loadMessages(thread)).toBeNull();
+      expect(shadow(el).querySelector(".message--user")?.textContent).toContain(
+        "before auth resolved",
+      );
+      expect(recall(el)).toBe("before auth resolved");
+    });
+
+    it("never purges a namespace another element claimed while this one was out", async () => {
+      // Two id-less elements on one endpoint: the second to connect is given a
+      // namespace of its own. One that takes this element's namespace while it
+      // is detached keeps it, and the handover on the way back in is resolved
+      // against the namespace this element holds then, not the one it left.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const el = mountRunning({ endpoint: "/agent/", "user-key": "alice" });
+      el.remove();
+      const other = mountRunning({ endpoint: "/agent/", "user-key": "alice" });
+      const theirs = other.conversationStore;
+      theirs.saveMessages(theirs.threadId(), transcript("the other panel's conversation"));
+
+      el.setAttribute("user-key", "bob");
+      document.body.appendChild(el);
+      await flush();
+
+      expect(await theirs.loadMessages(theirs.threadId())).toEqual(
+        transcript("the other panel's conversation"),
+      );
+      warn.mockRestore();
+    });
+
+    it("does not treat the first connect as a change of principal", async () => {
+      // A key-less conversation some earlier visitor left in this tab is not
+      // the first principal's to adopt, and an element that has never been
+      // connected has nothing of anyone's to hand over.
+      const left = new SessionStorageStore("/agent/");
+      const thread = left.threadId();
+      left.saveMessages(thread, transcript("an earlier visitor's question"));
+
+      const el = mountRunning({ endpoint: "/agent/", "user-key": "alice" });
+      await flush();
+
+      expect(el.conversationStore.threadId()).not.toBe(thread);
+      expect(await left.loadMessages(thread)).toEqual(transcript("an earlier visitor's question"));
     });
   });
 
