@@ -1,13 +1,58 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { ELEMENT_TAG } from "../src/constants.js";
+import type { AgUiChat } from "../src/core/ag_ui_chat.js";
+import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { VoiceInput } from "../src/ui/composer/voice_input.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
-import { installFakeMedia } from "./helpers/fake_media.js";
+import { FakeMediaRecorder, FakeMediaStream, installFakeMedia } from "./helpers/fake_media.js";
 
 /** Drain microtasks so the async start/finish chain settles. */
 async function flush(): Promise<void> {
   for (let i = 0; i < 5; i += 1) {
     await Promise.resolve();
   }
+}
+
+/** A promise and the two hands that settle it, to hold an await open. */
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (reason: unknown) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve: (value: T) => void = () => {};
+  let reject: (reason: unknown) => void = () => {};
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Everything about the button a user or a screen reader can perceive. */
+function perceived(button: HTMLButtonElement): Record<string, unknown> {
+  return {
+    state: button.dataset["state"],
+    title: button.title,
+    label: button.getAttribute("aria-label"),
+    pressed: button.getAttribute("aria-pressed"),
+    disabled: button.disabled,
+  };
+}
+
+/**
+ * Replace the helper's always-granting `getUserMedia` with one that waits, the
+ * way a permission prompt the user has not answered yet does. The helper's
+ * `restore()` puts the original back, so this needs no undo of its own.
+ */
+function holdPermissionPrompt(): Deferred<MediaStream> {
+  const prompt = deferred<MediaStream>();
+  Object.defineProperty(globalThis.navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia: () => prompt.promise },
+  });
+  return prompt;
 }
 
 let media: ReturnType<typeof installFakeMedia> | null = null;
@@ -224,5 +269,161 @@ describe("VoiceInput", () => {
   it("dispose when idle is a safe no-op", () => {
     const voice = new VoiceInput({ transcribe: async () => "", onText: () => {} });
     expect(() => voice.dispose()).not.toThrow();
+  });
+});
+
+describe("VoiceInput after dispose", () => {
+  /** Record, then stop, so the clip is posted and the await is open. */
+  async function transcribing(voice: VoiceInput): Promise<void> {
+    voice.element.click(); // start
+    await flush();
+    voice.element.click(); // stop, which posts the clip
+    await flush();
+    expect(voice.element.dataset["state"]).toBe("transcribing");
+  }
+
+  it("drops a transcript that comes back after dispose, and leaves the button alone", async () => {
+    media = installFakeMedia();
+    const pending = deferred<string>();
+    const got: string[] = [];
+    const voice = new VoiceInput({ transcribe: () => pending.promise, onText: (t) => got.push(t) });
+    await transcribing(voice);
+
+    voice.dispose();
+    const before = perceived(voice.element);
+    pending.resolve("words dictated before dispose");
+    await flush();
+
+    expect(got).toEqual([]);
+    expect(perceived(voice.element)).toEqual(before);
+  });
+
+  it("draws no error for a transcription that fails after dispose", async () => {
+    media = installFakeMedia();
+    const pending = deferred<string>();
+    const voice = new VoiceInput({ transcribe: () => pending.promise, onText: () => {} });
+    await transcribing(voice);
+
+    voice.dispose();
+    const before = perceived(voice.element);
+    pending.reject(new Error("server is down"));
+    await flush();
+
+    expect(voice.element.title).not.toBe("server is down");
+    expect(perceived(voice.element)).toEqual(before);
+  });
+
+  it("delivers only the live clip when a fresh control replaces a disposed one", async () => {
+    // What the host does on a change of user-key: dispose this mic, then build
+    // a new one writing into the same composer. The old clip's answer arrives
+    // while the next principal is mid-recording.
+    media = installFakeMedia();
+    const composer: string[] = [];
+    const pending = deferred<string>();
+    const previous = new VoiceInput({
+      transcribe: () => pending.promise,
+      onText: (t) => composer.push(t),
+    });
+    await transcribing(previous);
+    previous.dispose();
+
+    const next = new VoiceInput({
+      transcribe: vi.fn().mockResolvedValue("the next principal's words"),
+      onText: (t) => composer.push(t),
+    });
+    next.element.click(); // start
+    await flush();
+    pending.resolve("the previous principal's words");
+    await flush();
+    expect(composer).toEqual([]);
+    expect(next.element.dataset["state"]).toBe("recording");
+
+    next.element.click(); // stop and transcribe, as today
+    await flush();
+    expect(composer).toEqual(["the next principal's words"]);
+    expect(next.element.dataset["state"]).toBe("idle");
+    expect(next.element.title).toBe(DEFAULT_UI_STRINGS.recordVoice);
+  });
+
+  it("releases a mic granted after dispose instead of recording on it", async () => {
+    // The permission prompt was still open when the control went away. Nothing
+    // can stop a recording that starts now: dispose has already run and the
+    // button is no longer on the page.
+    media = installFakeMedia();
+    const prompt = holdPermissionPrompt();
+    const voice = new VoiceInput({ transcribe: async () => "x", onText: () => {} });
+    voice.element.click();
+    await flush();
+
+    voice.dispose();
+    const before = perceived(voice.element);
+    const stream = new FakeMediaStream();
+    prompt.resolve(stream as unknown as MediaStream);
+    await flush();
+
+    expect(stream.track.stopped).toBe(true);
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+    expect(perceived(voice.element)).toEqual(before);
+  });
+
+  it("draws no error for a mic refused after dispose", async () => {
+    media = installFakeMedia();
+    const prompt = holdPermissionPrompt();
+    const voice = new VoiceInput({ transcribe: async () => "x", onText: () => {} });
+    voice.element.click();
+    await flush();
+
+    voice.dispose();
+    const before = perceived(voice.element);
+    prompt.reject(new Error("denied"));
+    await flush();
+
+    expect(voice.element.title).not.toBe(DEFAULT_UI_STRINGS.transcriptionFailed);
+    expect(perceived(voice.element)).toEqual(before);
+  });
+});
+
+describe("VoiceInput in <ag-ui-chat>, across a change of user-key", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("drops a clip already posted for transcription, so it lands in nobody's composer", async () => {
+    media = installFakeMedia();
+    const pending = deferred<string>();
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("user-key", "alice");
+    el.setAttribute("data-start-open", "");
+    el.transcribeHandler = () => pending.promise;
+    document.body.appendChild(el);
+    const root = el.shadowRoot;
+    const input = root?.querySelector(".input");
+    if (root === null || !(input instanceof HTMLTextAreaElement)) {
+      throw new Error("expected a shadow root with a composer");
+    }
+    const aliceMic = root.querySelector<HTMLButtonElement>(".voice-btn");
+    aliceMic?.click(); // start
+    await flush();
+    aliceMic?.click(); // stop, which posts her clip
+    await flush();
+    expect(aliceMic?.dataset["state"]).toBe("transcribing");
+
+    el.setAttribute("user-key", "bob");
+    await flush();
+    pending.resolve("alice's dictated account number");
+    await flush();
+
+    expect(input.value).toBe("");
+    // Bob has a mic of his own, idle, and her clip coming back did not touch it.
+    const mics = root.querySelectorAll<HTMLButtonElement>(".voice-btn");
+    expect(mics).toHaveLength(1);
+    expect(mics[0]).not.toBe(aliceMic);
+    expect(mics[0]?.dataset["state"]).toBe("idle");
+    expect(mics[0]?.title).toBe(DEFAULT_UI_STRINGS.recordVoice);
   });
 });
