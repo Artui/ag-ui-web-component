@@ -36,18 +36,24 @@ function composer(el: AgUiChat): HTMLTextAreaElement {
   return found;
 }
 
-/** Type and send, the way the user does, so the draft is recorded on the way. */
+/**
+ * Type and send with Enter, the way the user does, so the draft is recorded on
+ * the way -- and wait for the send to finish, as the user waits for an answer.
+ *
+ * Only the composer route, because it is the one that records drafts. This
+ * used to call `sendMessage` first as well, and the Enter then arrived while
+ * that send was still out: the element let it through as a second run on the
+ * same client, which is what the recording relied on. A turn sent in that time
+ * is queued behind the first now, which is a different path.
+ */
 async function send(el: AgUiChat, text: string): Promise<void> {
   const input = composer(el);
-  input.value = text;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  await el.sendMessage(text);
-  // sendMessage is the host route; the composer route is what records drafts.
   input.value = text;
   input.dispatchEvent(new Event("input", { bubbles: true }));
   input.dispatchEvent(
     new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true }),
   );
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function arrow(el: AgUiChat, key: "ArrowUp" | "ArrowDown"): void {

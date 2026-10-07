@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A send is in flight from the moment it is taken, not from its run's first
+  event.** Between the two, every guard against a second run let one through:
+  a `sendMessage()` from an `ag-ui-submit` listener, or a second call before the
+  server had answered the first, went out as a second request on the same
+  client, and the listener's turn was drawn between the user's turn and its
+  answer. Both are now refused, so a listener that sends hears the event once.
+  A turn the built-in Send takes in that time is queued, as it is during a
+  run, and goes out once the answer is in -- or once the request fails, if it
+  fails before its run starts. A listener that stops the send -- a new chat, a
+  thread switch, moving the element -- now stops it before its request is
+  made, where it used to go out into the conversation that replaced it.
+
 ## [0.41.3] — 2026-10-07
 
 ### Fixed
