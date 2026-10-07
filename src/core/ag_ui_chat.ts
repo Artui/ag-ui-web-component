@@ -782,6 +782,9 @@ export class AgUiChat extends HTMLElement {
       getContext: () => this.getContext(),
       conversationStore: () => this.conversationStore,
       threadId: () => this.#history.threadId,
+      // Read live and compared, the way each client compares the one it was
+      // built with: see #tenure.
+      tenure: () => this.#tenure,
     });
     this.#runHandlers = new RunHandlers({
       element: this,
