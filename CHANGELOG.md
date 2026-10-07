@@ -97,6 +97,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chat while the store answers stands the resume down. A host calling
   `sendMessage()` as the element connects, on a page a navigating tool
   reloaded, now has that call refused, as it would be behind any run.
+- **A conversation restore stops where New chat, leaving the page or host
+  code stopped it.** A restore stood down only for a newer restore or, when it
+  was about to resume a run, for the Stop New chat makes; a restore with
+  nothing to resume holds nothing for a Stop to let go of. So New chat pressed
+  while a remote store was still answering drew the conversation being left
+  into the new chat, and the first turn sent there carried that whole
+  conversation. An element removed meanwhile ran the host's renderers for a
+  node no longer on the page. An activity or tool renderer that started a new
+  chat during the replay had the rest of the old conversation drawn into the
+  new one, and after a reload mid-run, a renderer, the store's save of the
+  checkpoint or `navigationResult` doing the same still let the resume go out,
+  answering the navigating call from the new chat. Once any of these happens,
+  the restore now draws nothing more and resumes nothing. The navigation
+  checkpoint such a stop leaves behind is forgotten, so coming back to that
+  conversation later answers its navigating call as not finished rather than
+  resuming it from whatever page is current then. When the element only left
+  the page, the checkpoint is kept, and the run resumes once the element is
+  put back.
 
 ## [0.41.3] — 2026-10-07
 
