@@ -556,6 +556,13 @@ export class AgUiChat extends HTMLElement {
   readonly #queuedRow: HTMLDivElement = document.createElement("div");
   /** How far back the composer has been walked; null while the user is typing. */
   #recallIndex: number | null = null;
+  /**
+   * What the walk last put in the composer, read back from it. A walk is live
+   * only while the composer still holds exactly this, so a write from anywhere
+   * else ends it. Stale while no walk is in progress, which is harmless: the
+   * comparison can only ever end a walk, never start one.
+   */
+  #recalled = "";
 
   /**
    * Re-clamp the dragged launcher when the window changes size. Bound once as
@@ -2405,7 +2412,9 @@ export class AgUiChat extends HTMLElement {
     autoGrow(this.#input);
     // Typing puts the composer back in the user's hands: the next ArrowUp
     // starts from the newest turn again rather than continuing a walk through
-    // history the user has since edited.
+    // history the user has since edited. Needed beside the walk's own check
+    // below, which compares text: an edit typed and then deleted leaves the
+    // turn there unchanged, and the user has still taken the box back.
     this.#recallIndex = null;
   }
 
@@ -2442,6 +2451,9 @@ export class AgUiChat extends HTMLElement {
    * which is what every shell and every coding agent means by this. Arrowing
    * forward past the newest empties the composer again rather than sticking on
    * it, so the way out is the same key that got you in.
+   *
+   * A walk ends with any write into the composer that is not its own, so that
+   * whatever was written is never replaced by the next step.
    */
   #recallHistory(event: KeyboardEvent): void {
     const back = event.key === "ArrowUp";
@@ -2451,6 +2463,17 @@ export class AgUiChat extends HTMLElement {
     const drafts = this.#sentDrafts;
     if (drafts.length === 0) {
       return;
+    }
+    // The walk checks the composer rather than trusting every writer to end
+    // it. Writers are spread across the element -- a quotation, a skill
+    // prefill, dictation, the clears after a send -- and a walk used to end
+    // only for those that also went through the input handler or
+    // `#recordTurn`. A quotation and a prefill did neither, and the next
+    // ArrowUp replaced them with a past turn.
+    // A host page can write the composer too, which no hook of ours can see.
+    // Comparing here is the one rule a writer added later cannot forget.
+    if (this.#input.value !== this.#recalled) {
+      this.#recallIndex = null;
     }
     // An empty composer is the only safe entry: anything typed is the user's,
     // and replacing it with a past turn would lose it without asking.
@@ -2468,6 +2491,10 @@ export class AgUiChat extends HTMLElement {
     // honestly -- and an unreachable default is worse than an assertion,
     // because it looks like a case somebody thought about.
     this.#input.value = next < 0 ? "" : (drafts[next] as string);
+    // Read back rather than taken from the draft, so a value the textarea
+    // normalises on the way in -- its line endings -- still reads as the
+    // walk's own on the next step instead of ending it.
+    this.#recalled = this.#input.value;
     this.#input.setSelectionRange(this.#input.value.length, this.#input.value.length);
     autoGrow(this.#input);
   }
