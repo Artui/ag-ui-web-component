@@ -116,7 +116,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversation later answers its navigating call as not finished rather than
   resuming it from whatever page is current then. When the element only left
   the page, the checkpoint is kept, and the run resumes once the element is
-  put back.
+  put back. That holds after a `reload()` the host made while the store was
+  answering, too: a restore standing down for a newer restore of the same
+  conversation leaves the checkpoint to it, and the restore that resumes is
+  the one that clears it.
 - **A run stopped by a change of `user-key` no longer saves into the next
   principal's storage.** The handover stopped the run, but a stopped run saves
   what it had once its request closes, and by then the store had been purged
