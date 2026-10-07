@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.3] — 2026-10-07
+
+### Fixed
+
+- **A resumed or forked run shows the turn it was sent with.** Picking Resume
+  or Fork in the checkpoint panel sent what the composer held and streamed the
+  answer, but drew no bubble for the turn, so the answer arrived under no
+  question. The save already held the turn, so a reload showed a question the
+  live transcript never had. The continuation now draws the turn the way Send
+  does, ahead of its answer, and tests hold that the live transcript and the
+  restored one agree after both a resume and a fork.
+- **`ag-ui-submit` fires for a continued turn.** A host listens to it as "the
+  user sent something", and a turn sent with Resume or Fork is one: only the
+  endpoint differs. The event fires once the continuation is the run in flight,
+  so a `sendMessage()` from a listener is refused rather than starting a second
+  run beside it, and a listener that stops it -- a new chat, a thread switch,
+  moving the element -- stops it before its request is made. Its
+  `detail.attachments` is empty, because a continuation sends only the
+  composer's text.
+
+### Changed
+
+- **Ships DOMPurify 3.4.16 and marked 18.0.14**, from the lockfile refresh
+  since 0.41.2. Both builds carry them inlined, the npm build as well as the
+  vendored bundle: only `@ag-ui/client` and `@ag-ui/core` are left to the
+  host's resolver, so a host's own lockfile does not choose which sanitiser
+  runs.
+
 ## [0.41.2] — 2026-09-23
 
 ### Changed
@@ -4222,7 +4250,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.2...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.3...HEAD
+[0.41.3]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.2...v0.41.3
 [0.41.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.1...v0.41.2
 [0.41.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.0...v0.41.1
 [0.41.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.40.0...v0.41.0

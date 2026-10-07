@@ -59,6 +59,11 @@ export interface ConversationHistoryHost {
   readonly requestCredentials: () => RequestCredentials | undefined;
   /** The element's `appendMessage`, which a restored bubble opens through. */
   readonly appendMessage: (role: MessageRole, content: string) => HTMLDivElement;
+  /**
+   * Draw a turn the user sent and dispatch the submit event, as the element's
+   * own send does before it starts a run.
+   */
+  readonly announceTurn: (content: string) => void;
   /** Resize the composer to its content. */
   readonly autoGrow: () => void;
   /**
@@ -392,6 +397,30 @@ export class ConversationHistory {
     });
     this.#continuation = client;
     try {
+      // Drawn and announced as the element's own send does, because this is
+      // the same act sent somewhere else. Without the bubble the answer arrived
+      // under no question, while the save below wrote the turn, so a reload
+      // showed what the live transcript never had.
+      //
+      // The submit event fires too. A host listens to it as "the user sent
+      // something", which a continued turn is: typed in the composer and sent
+      // by a press. Only the endpoint differs, and the host chose that when it
+      // configured the panel; leaving it out would make a host's own record of
+      // the conversation miss exactly the turns this panel exists to add.
+      //
+      // Only once the continuation is recorded, because a listener runs here:
+      // a host's own send from it is refused as overlapping the run in flight,
+      // as it would be from any later moment of this one.
+      this.#host.announceTurn(content);
+      // A listener can also have stopped it: New chat, a thread switch, or
+      // moving the element all reach the stop. That cancelled a client whose
+      // run had not begun, and a run resets its own cancellation when it
+      // starts, so sending now would start one that nothing holds and nothing
+      // can stop -- in a conversation the user has already left, with its
+      // tools still driving the page.
+      if (this.#continuation !== client) {
+        return;
+      }
       await client.send(content);
     } finally {
       // Only if it is still the one in flight: stopping forgets it at once, and
