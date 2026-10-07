@@ -1,9 +1,9 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { ELEMENT_TAG } from "../src/constants.js";
+import { ELEMENT_TAG, SUBMIT_EVENT } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import type { RunRow } from "../src/core/run_index.js";
-import { makeFakeAgent } from "./helpers/fake_agent.js";
+import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
 
 /**
  * Walking back through what you have already sent, on the arrow keys.
@@ -60,8 +60,11 @@ function mountHeld(): { el: AgUiChat; release: () => Promise<void> } {
   };
 }
 
-/** Mount with a runs index that lists one run to continue. */
-function mountWithRuns(): AgUiChat {
+/**
+ * Mount with a runs index that lists one run to continue. Every client the
+ * element builds runs `script`, so a test can hold a continuation's run open.
+ */
+function mountWithRuns(script?: (emit: Emit) => void | Promise<void>): AgUiChat {
   const run: RunRow = {
     run_id: "r1",
     thread_id: "t1",
@@ -79,7 +82,7 @@ function mountWithRuns(): AgUiChat {
   el.setAttribute("data-runs-url", "/agent/runs/");
   // One agent per client, because a continuation builds its own beside the
   // conversation's.
-  el.agentFactory = () => makeFakeAgent().agent;
+  el.agentFactory = () => makeFakeAgent(script === undefined ? {} : { script }).agent;
   document.body.appendChild(el);
   return el;
 }
@@ -305,13 +308,28 @@ describe("turns that reach the history another way", () => {
   it("holds it once, after the queue has sent it", async () => {
     // The queue sends through the same call a host's own send does, which
     // records nothing. Recording there as well as here would put it in twice.
+    // Two are queued, because with one the repeat guard swallows the second
+    // recording: what it would repeat is still the newest entry.
     const { el, release } = mountHeld();
     await send(el, "first");
     await send(el, "second");
+    await send(el, "third");
     await release();
     expect(bubbles(el)).toEqual(["first", "second"]);
 
-    expect(walkBack(el, 3)).toEqual(["second", "first", "first"]);
+    expect(walkBack(el, 4)).toEqual(["third", "second", "first", "first"]);
+  });
+
+  it("records nothing a host sends with sendMessage", async () => {
+    // Its text was never in the composer -- a starter chip, a suggestion, a
+    // host's own UI -- and the arrow keys walk back through what the user
+    // wrote there.
+    const el = mount();
+    await el.sendMessage("from the host");
+    expect(bubbles(el)).toEqual(["from the host"]);
+
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe("");
   });
 
   it("holds each queued turn once when Stop declines to send them", async () => {
@@ -368,6 +386,64 @@ describe("turns that reach the history another way", () => {
     expect(bubbles(el)).toEqual(["first", "and now sort them"]);
 
     expect(walkBack(el, 3)).toEqual(["and now sort them", "first", "first"]);
+  });
+
+  it("keeps a continued turn whose first save failed", async () => {
+    // Recorded as it left the box rather than once it was sent, because a
+    // continuation can fail before its run starts, and by then the box is
+    // empty. A store that refuses every save is one way to get there.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const el = mountWithRuns();
+    el.conversationStore.saveMessages = () => {
+      throw new Error("the store is offline");
+    };
+    await continueWith(el, "resume", "go on");
+    expect(composer(el).value).toBe("");
+
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe("go on");
+    warn.mockRestore();
+  });
+
+  it("keeps a continued turn a submit listener stopped by moving the element", async () => {
+    // Taken from the box and then not sent, as a turn Stop declines to send
+    // is: it is still what the user typed, and coming back reloads the
+    // transcript from the store, which never held it.
+    const el = mountWithRuns();
+    await send(el, "first");
+    el.addEventListener(
+      SUBMIT_EVENT,
+      () => {
+        const dock = document.createElement("aside");
+        document.body.appendChild(dock);
+        dock.appendChild(el);
+      },
+      { once: true },
+    );
+    await continueWith(el, "resume", "and now sort them");
+
+    expect(walkBack(el, 2)).toEqual(["and now sort them", "first"]);
+  });
+
+  it("records nothing for a pick refused while a run is going", async () => {
+    // Refused before the turn is taken: it stays in the composer, for when
+    // the run is done, so it has not left the box to be recalled from.
+    let started = false;
+    const el = mountWithRuns(async (emit) => {
+      if (!started) {
+        started = true;
+        emit.runStart();
+        await new Promise<void>(() => {});
+      }
+    });
+    await send(el, "first");
+    await continueWith(el, "resume", "not yet");
+    expect(composer(el).value).toBe("not yet");
+
+    const input = composer(el);
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(walkBack(el, 2)).toEqual(["first", "first"]);
   });
 
   it("starts the next walk from the newest after continuing with a turn walked back to", async () => {
@@ -463,6 +539,29 @@ describe("what the recall history outlives", () => {
     await continueWith(el, "resume", "alice's resumed turn");
 
     el.setAttribute("user-key", "bob");
+
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe("");
+  });
+
+  it("forgets a continued turn when the principal changes while it runs", async () => {
+    // Recorded before the continuation waits on anything, so the purge comes
+    // after it. Recorded once it had been sent, it landed after the purge, and
+    // one principal's turn was a single ArrowUp away for the next.
+    const gates: (() => void)[] = [];
+    const el = mountWithRuns(async (emit) => {
+      emit.runStart();
+      await new Promise<void>((resolve) => gates.push(resolve));
+    });
+    el.setAttribute("user-key", "alice");
+    await continueWith(el, "resume", "alice's resumed turn");
+    expect(bubbles(el)).toEqual(["alice's resumed turn"]);
+
+    el.setAttribute("user-key", "bob");
+    for (const gate of gates) {
+      gate();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     arrow(el, "ArrowUp");
     expect(composer(el).value).toBe("");

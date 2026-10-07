@@ -1267,7 +1267,8 @@ export class AgUiChat extends HTMLElement {
     // run was cancelled on the way out, and the transcript is rebuilt below
     // from persisted history -- which could only be appended to what is still
     // showing. The composer's recall history is kept, because a move is not a
-    // farewell and disconnecting put the queued messages there on purpose.
+    // farewell, and the Stop on the way out dropped the queued messages because
+    // recall already held them.
     if (this.#connectedBefore) {
       this.#resetConversation();
     }

@@ -1116,12 +1116,16 @@ that gap is parked too rather than racing it. What
 is waiting shows above the composer as chips, each of which takes its message
 back when pressed, and the next one is sent when the run settles. Stopping the
 run discards them: sending into a conversation someone has just stopped is the
-opposite of what stopping meant. It is not thrown away, though — a queued
-message has already left the composer, so it goes to the front of the recall
-history below rather than nowhere.
+opposite of what stopping meant. Nothing is lost, though — a queued message
+entered the recall history below when it left the composer, so **Up** gets it
+back after a Stop, and after its chip is taken back.
 
 The composer also walks back through what you have already sent, on **Up** and
-**Down** — the shape every shell and every coding agent uses. Only from an empty
+**Down** — the shape every shell and every coding agent uses. It holds every turn
+that left the composer: one sent at once, one queued behind a run (from the
+moment it is queued), and one sent to resume or fork a run from the checkpoint
+panel. A message sent with `sendMessage` is not in it, because it was never
+typed there. Only from an empty
 composer and only with the skills palette closed: an arrow inside text is how you
 move the caret, and taking it unconditionally would break editing to add a
 shortcut. Arrowing forward past the newest turn empties the box again, so the way

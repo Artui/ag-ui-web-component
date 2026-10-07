@@ -31,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declined to send already did. Stop no longer adds the queue again, so the
   history holds each turn once. Queueing or continuing with a turn you walked
   back to now starts the next walk from the newest turn, as sending one did.
-  Turns a host sends with `sendMessage` are still not recorded, and a change of
-  `user-key` still clears all of them.
+  Turns a host sends with `sendMessage` are still not recorded, and the purge a
+  change of `user-key` makes still clears them.
 - **Retry and a checkpoint pick keep the rules a send keeps.** `retryLastTurn()`
   checked only for a run in flight. A Retry made before a send's run had
   started, or while a picked checkpoint was in flight, started a second run in
