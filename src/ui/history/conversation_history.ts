@@ -116,10 +116,15 @@ export interface ConversationHistoryHost {
   readonly setRunning: (running: boolean) => void;
 }
 
-/** A hold {@link ConversationHistoryHost.holdRun} took. */
+/**
+ * A hold {@link ConversationHistoryHost.holdRun} took.
+ *
+ * It says nothing about whether the restore that took it was stopped. A
+ * restore asks its generation that, because a restore with no run to resume
+ * holds nothing and can be stopped all the same -- see
+ * {@link ConversationHistory.rehydrate}.
+ */
 interface RunHold {
-  /** Whether it still holds: nothing has started the run or stopped it. */
-  readonly held: () => boolean;
   /**
    * Let go, if nothing else has, and send what the composer parked behind it,
    * because no run is going to settle and send it.
@@ -128,13 +133,12 @@ interface RunHold {
 }
 
 /**
- * What a restore with no run to resume holds: nothing, so it always reads as
- * held and has nothing to let go of. Every restore awaits the store, the
- * built-in one included, and holding all of them would refuse a host's send
- * made as the element connects. Only a restore that is about to start a run
- * has one to collide with.
+ * What a restore with no run to resume holds: nothing, so it has nothing to
+ * let go of. Every restore awaits the store, the built-in one included, and
+ * holding all of them would refuse a host's send made as the element connects.
+ * Only a restore that is about to start a run has one to collide with.
  */
-const UNHELD: RunHold = Object.freeze({ held: () => true, release: () => {} });
+const UNHELD: RunHold = Object.freeze({ release: () => {} });
 
 /**
  * Which conversation is on screen, and how one gets there: restoring it from
@@ -166,8 +170,12 @@ export class ConversationHistory {
    * the one it continued is still on screen when it saves.
    */
   #cleared = 0;
-  // Bumped on every rehydrate; a replay whose generation is stale (a newer
-  // thread switch started while it awaited a slow store) drops its result.
+  /**
+   * Which restore may draw: bumped by every rehydrate, and by every clear of
+   * the conversation on screen. A restore whose generation is stale draws
+   * nothing more and resumes nothing: a newer one has started, or New chat, a
+   * thread switch or a `user-key` handover has cleared what it was restoring.
+   */
   #generation = 0;
   /** Built lazily from `data-runs-url`; `null` when the host didn't opt in. */
   #runIndex: RunIndex | null = null;
@@ -226,6 +234,11 @@ export class ConversationHistory {
     // The element clears the conversation through here, so a continuation
     // still saving afterwards learns the conversation is no longer this one.
     this.#cleared += 1;
+    // And so does a restore still loading or replaying it. Only a newer restore
+    // used to stop one, so New chat during a slow load drew the conversation
+    // being left into the new one once the store answered, and handed it to the
+    // new chat's client as the history its first turn would carry.
+    this.#generation += 1;
   }
 
   /** Delete the active thread if nothing was ever sent in it. */
@@ -539,12 +552,29 @@ export class ConversationHistory {
    * so standing down kept that loss, and it also dropped the run the navigation
    * was part of, which the user asked for before the reload: the agent stopped
    * halfway through the task, with the navigating call never answered.
+   *
+   * **A restore stops where it was stopped, held or not.** New chat, a thread
+   * switch, a `user-key` handover, a newer restore or the element leaving the
+   * page can each come while the store answers, and from host code the restore
+   * runs itself: the activity and tool renderers each replayed message draws
+   * through, and `navigationResult`. From then on it draws nothing more and
+   * resumes nothing. The hold cannot say so, because a restore with no run to
+   * resume holds nothing. So the restore asks its generation, which clearing
+   * the conversation moves on as a newer restore does, and asks it after the
+   * load, after each replayed message -- as a Retry asks after each one -- and
+   * once more before the resume. Stopped by anything but the element leaving
+   * the page, it also forgets the checkpoint it loaded, since that was a Stop
+   * for the run it would have resumed; see `#forgetStopped`.
+   *
+   * What a restore with no run to resume still does not do is refuse a send
+   * made while it loads. That send goes out without the stored conversation,
+   * and its save replaces it.
    */
   async rehydrate(): Promise<void> {
-    // Guard against a thread-switch race: with a slow remote store, picking
-    // thread B then C would interleave both replays into one transcript. Each
-    // rehydrate claims a generation before awaiting and bails if a newer one
-    // started meanwhile (its reset already cleared the transcript).
+    // Claimed before awaiting, and checked by `#restoring` wherever the restore
+    // has waited or run host code. With a slow remote store, picking thread B
+    // then C interleaved both replays into one transcript, and New chat drew
+    // the conversation being left into the new one.
     this.#generation += 1;
     const generation = this.#generation;
     // Read before the load rather than after it, because a checkpoint means
@@ -554,7 +584,13 @@ export class ConversationHistory {
     // keeps it in this tab, so nothing the load fetches can change it. And
     // before the replay, which has to know the one unanswered call a reload was
     // *expected* by, so as not to settle it as abandoned.
-    const checkpoint = this.#host.conversationStore().loadCheckpoint(this.#threadId);
+    //
+    // The thread and the store are taken once, here, because a restore that is
+    // stopped forgets its checkpoint where it read it: by then the active
+    // thread can be a new chat's, and the store scoped to the next principal.
+    const threadId = this.#threadId;
+    const store = this.#host.conversationStore();
+    const checkpoint = store.loadCheckpoint(threadId);
     const hold = checkpoint === null ? UNHELD : this.#host.holdRun();
     try {
       // Held while the store answers. A remote store answers after first paint,
@@ -567,20 +603,17 @@ export class ConversationHistory {
       this.#host.element.setAttribute("data-restoring", "");
       let messages: readonly Message[] | null;
       try {
-        messages = await this.#host.conversationStore().loadMessages(this.#threadId);
+        messages = await store.loadMessages(threadId);
       } finally {
         if (generation === this.#generation) {
           this.#host.element.removeAttribute("data-restoring");
         }
       }
-      if (generation !== this.#generation) {
-        return;
-      }
-      // Stopped while the store answered: New chat, or the element leaving the
-      // page, reached the Stop, which let go of the hold. Going on drew the
-      // conversation being left into the chat that replaced it, and resumed its
-      // run there, on a client seeded from what the restore had just drawn.
-      if (!hold.held()) {
+      // Stopped while the store answered. Going on drew the conversation being
+      // left into the chat that replaced it, and resumed its run there, on a
+      // client seeded from what the restore had just drawn.
+      if (!this.#restoring(generation)) {
+        this.#forgetStopped(generation, store, threadId, checkpoint);
         return;
       }
       if (messages !== null) {
@@ -601,10 +634,19 @@ export class ConversationHistory {
         this.#restored = restored;
         for (const message of restored) {
           this.replay(message);
+          // A replay draws through the host's activity and tool renderers,
+          // which can stop the restore as well as anything outside it can.
+          // Checked after each one, as a Retry checks, so the rest of the
+          // conversation being left is not drawn into the chat that replaced it,
+          // and after the last, so its run is not resumed there.
+          if (!this.#restoring(generation)) {
+            this.#forgetStopped(generation, store, threadId, checkpoint);
+            return;
+          }
         }
       }
       if (checkpoint !== null) {
-        await this.#resumeFrom(checkpoint);
+        await this.#resumeFrom(checkpoint, generation);
         return;
       }
       this.#noticeIfRunUnfinished(messages);
@@ -616,6 +658,69 @@ export class ConversationHistory {
       // to the resume -- and then this is what sends a turn the composer parked
       // meanwhile, since no run is going to settle and send it.
       hold.release();
+    }
+  }
+
+  /**
+   * Whether the restore that claimed `generation` may go on: nothing has
+   * replaced or cleared the conversation it is restoring, and the element is
+   * still on the page.
+   *
+   * On the page, because leaving it is the one stop that clears nothing: the
+   * element is not reset until it connects again, and connecting restores the
+   * conversation afresh. A restore with nothing to resume went on regardless,
+   * drawing into a node that had gone and running the host's renderers for it.
+   * One that resumes learnt it from the Stop letting go of its hold; nothing
+   * asks the hold that now, so this is what keeps the resume's request in.
+   *
+   * One `&&`, so coverage cannot tell whether either half is held. Removing the
+   * generation fails "draws nothing into a new chat started while it loads" in
+   * `conversation_history.test.ts`, and "drops a stale thread replay when a
+   * newer switch started" in `ag_ui_chat.test.ts`; removing the connection
+   * fails "draws nothing into an element that left the page while it loads".
+   */
+  #restoring(generation: number): boolean {
+    return generation === this.#generation && this.#host.element.isConnected;
+  }
+
+  /**
+   * Forget the checkpoint a stopped restore loaded, when what stopped it also
+   * stopped the run it was about to resume.
+   *
+   * New chat, a thread switch, a `user-key` handover and a newer restore all
+   * move the generation, and each is a Stop for that run. Left in the store,
+   * the checkpoint outlived the Stop: coming back to the conversation later
+   * resumed the navigating call with whatever page was current by then.
+   * Forgotten, the call is answered as not finished there, as any stopped call
+   * is.
+   *
+   * Not when the element only left the page, which moves no generation. A move
+   * or a framework re-render is not a farewell, and the restore connecting
+   * starts has to find the checkpoint to resume from. A newer restore of the
+   * same thread -- `reload()`, switching away and back, or a move inside one
+   * task, which connects again before the store answers -- read the checkpoint
+   * as it started, so forgetting it here still leaves that one resuming once.
+   *
+   * Written to the store and the thread it was read from. After a handover
+   * that is the previous principal's: the built-in store's clear is a removal
+   * from a namespace the handover has already purged, so it changes nothing,
+   * and nothing reaches the next principal's. A host's store is the same object
+   * either side of a handover; one the host replaced is held by "still refuses
+   * a send for the newer restore once the older has stood down".
+   *
+   * Two conditions. Clearing on a disconnect too fails "resumes nothing once
+   * the element leaves the page while the store answers", whose re-inserted
+   * element resumes; clearing with no checkpoint fails "draws nothing into a
+   * new chat started while it loads", which runs no store code for one.
+   */
+  #forgetStopped(
+    generation: number,
+    store: ClientConversationStore,
+    threadId: string,
+    checkpoint: NavigationCheckpoint | null,
+  ): void {
+    if (generation !== this.#generation && checkpoint !== null) {
+      store.saveCheckpoint(threadId, null);
     }
   }
 
@@ -777,13 +882,21 @@ export class ConversationHistory {
    * guard is held by "resumes a checkpointed navigating tool call on mount" in
    * `ag_ui_chat.test.ts`, whose transcript never made the call.
    */
-  async #resumeFrom(checkpoint: NavigationCheckpoint): Promise<void> {
+  async #resumeFrom(checkpoint: NavigationCheckpoint, generation: number): Promise<void> {
     this.#host.conversationStore().saveCheckpoint(this.#threadId, null);
     const client = this.#host.ensureClient();
     // Called on the element, as `this.navigationResult(...)` always was.
     const landed = JSON.stringify(
       this.#host.navigationResult().call(this.#host.element, checkpoint),
     );
+    // The store's save and `navigationResult` are host code, and either can
+    // have stopped the restore. Going on answered the call and resumed anyway:
+    // on the client taken before `navigationResult` ran, which nothing held any
+    // more, with its tools still driving the page -- or, stopped by the save, on
+    // the new chat's own client, which the line above had just built.
+    if (!this.#restoring(generation)) {
+      return;
+    }
     client.addToolResult(checkpoint.toolCallId, landed);
     this.#host.transcript.card(checkpoint.toolCallId)?.settle(TOOL_CALL_STATUS.DONE, landed);
     await client.resume();
