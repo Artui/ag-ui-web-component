@@ -603,9 +603,14 @@ describe("AgUiClient", () => {
         },
       });
       const handlers = recordingHandlers();
+      let contexts = 0;
       client = new AgUiClient({
         agent: fake.agent,
         handlers,
+        getContext: () => {
+          contexts += 1;
+          return [];
+        },
         executeTool: async () => {
           client?.cancel(); // Stop pressed while the tool handler runs
           return { content: "ok" };
@@ -614,6 +619,11 @@ describe("AgUiClient", () => {
       await client.send("x");
 
       expect(runs).toBe(1); // the result was posted, but no next round started
+      // Nor was the host asked for the context of a round that will not run.
+      // The check before the request would stop that round anyway; this holds
+      // the one at the top of the round, which keeps a stopped loop from
+      // running host code for nothing.
+      expect(contexts).toBe(1);
       expect(fake.messages.find((m) => m.role === "tool")).toMatchObject({ content: "ok" });
       expect(handlers.calls).toContain("cancelled");
     });
@@ -634,6 +644,69 @@ describe("AgUiClient", () => {
       await client.send("hello"); // the stale flag must not mark this run cancelled
       expect(handlers.calls).toContain("end:ok");
       expect(handlers.calls).not.toContain("cancelled");
+    });
+
+    it("forgets a Stop made before a resume, too", async () => {
+      // The other entry to the loop: a resume is a new interaction exactly as a
+      // send is, so the Stop of the one before it must not end it.
+      const fake = makeFakeAgent({ script: (emit) => emit.text("ok") });
+      const handlers = recordingHandlers();
+      const client = new AgUiClient({ agent: fake.agent, handlers });
+
+      client.cancel();
+      await client.resume();
+
+      expect(fake.runParams).toHaveLength(1);
+      expect(handlers.calls).not.toContain("cancelled");
+    });
+
+    it("stops a send that its own save cancelled, before the request", async () => {
+      // The save is host code and runs before the run starts. A run that reset
+      // the flag as it started forgot this Stop and sent the turn anyway.
+      const fake = makeFakeAgent();
+      const handlers = recordingHandlers();
+      let stopping = true;
+      const client: AgUiClient = new AgUiClient({
+        agent: fake.agent,
+        handlers,
+        onPersist: () => {
+          if (stopping) {
+            stopping = false;
+            client.cancel();
+          }
+        },
+      });
+
+      await client.send("hello");
+
+      expect(fake.runParams).toEqual([]);
+      expect(handlers.calls).toEqual(["cancelled", "settled"]);
+    });
+
+    it("stops a round that its context provider cancelled, before the request", async () => {
+      // Read inside the round, after the check at its top, so the check that
+      // holds this one is the one made just before the request.
+      const fake = makeFakeAgent();
+      const handlers = recordingHandlers();
+      let stopping = true;
+      const client: AgUiClient = new AgUiClient({
+        agent: fake.agent,
+        handlers,
+        getContext: () => {
+          if (stopping) {
+            stopping = false;
+            client.cancel();
+          }
+          return [];
+        },
+      });
+
+      await client.resume();
+      expect(fake.runParams).toEqual([]);
+      expect(handlers.calls).toEqual(["cancelled", "settled"]);
+
+      await client.resume();
+      expect(fake.runParams).toHaveLength(1);
     });
   });
 
@@ -1001,6 +1074,28 @@ describe("truncateToLastUser", () => {
 
     // Running here would stream the new answer in underneath the old one.
     expect(fake.runParams).toHaveLength(runsBefore);
+  });
+
+  it("changes nothing when the store refuses the save, and says so by throwing", async () => {
+    // Saved before the history is shortened: shortened first, a refused save
+    // left the next request without an answer the caller still had on screen.
+    const fake = makeFakeAgent();
+    let refuse = false;
+    const client = new AgUiClient({
+      agent: fake.agent,
+      handlers: recordingHandlers(),
+      onPersist: () => {
+        if (refuse) {
+          throw new Error("the store refused the save");
+        }
+      },
+    });
+    await client.send("what is it");
+    fake.agent.addMessage({ id: "a1", role: "assistant", content: "an answer" });
+    refuse = true;
+
+    expect(() => client.truncateToLastUser()).toThrow("the store refused the save");
+    expect(fake.messages.map((m) => m.content)).toEqual(["what is it", "an answer"]);
   });
 });
 
