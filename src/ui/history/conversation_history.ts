@@ -98,9 +98,16 @@ export interface ConversationHistoryHost {
   readonly releaseClient: () => void;
   /**
    * Whether an interaction is in flight, which the composer owns: from the
-   * moment a send or a retry is taken, not only once its run has started.
+   * moment a send or a retry is taken, or a restore that will resume a run
+   * starts loading, not only once its run has started.
    */
   readonly running: () => boolean;
+  /**
+   * Hold the composer as a send holds it from the moment it is taken: a send
+   * refuses, the built-in Send parks its turn, a Retry and a pick refuse. Let
+   * go of when the run starts, by a Stop, or by {@link RunHold.release}.
+   */
+  readonly holdRun: () => RunHold;
   /** Stop the in-flight run. */
   readonly cancelRun: () => void;
   /** Drop the in-memory run and transcript, leaving the thread untouched. */
@@ -108,6 +115,26 @@ export interface ConversationHistoryHost {
   /** Swap the composer between Send and Stop, which the composer owns. */
   readonly setRunning: (running: boolean) => void;
 }
+
+/** A hold {@link ConversationHistoryHost.holdRun} took. */
+interface RunHold {
+  /** Whether it still holds: nothing has started the run or stopped it. */
+  readonly held: () => boolean;
+  /**
+   * Let go, if nothing else has, and send what the composer parked behind it,
+   * because no run is going to settle and send it.
+   */
+  readonly release: () => void;
+}
+
+/**
+ * What a restore with no run to resume holds: nothing, so it always reads as
+ * held and has nothing to let go of. Every restore awaits the store, the
+ * built-in one included, and holding all of them would refuse a host's send
+ * made as the element connects. Only a restore that is about to start a run
+ * has one to collide with.
+ */
+const UNHELD: RunHold = Object.freeze({ held: () => true, release: () => {} });
 
 /**
  * Which conversation is on screen, and how one gets there: restoring it from
@@ -495,6 +522,23 @@ export class ConversationHistory {
    * because the resume path answers it from the page the reload landed on; that
    * exclusion is held by "resumes with the landed page's result, and its card says
    * so" in `ag_ui_chat_reload_mid_run.test.ts`.
+   *
+   * **A restore that resumes holds the composer from before the load.** The
+   * resume is a run, and it starts only once the store has answered. With a
+   * remote store that is a real request, and a send, a Retry or a pick in it
+   * was refused by nothing: each built the conversation's client before the
+   * conversation had loaded, so a send went out carrying none of it and its
+   * first save replaced the stored one, and the resume then ran on that same
+   * client as a second run, answering a call the request no longer held. So
+   * the composer is held as a send holds it, and the resume gives way to
+   * nothing: what was typed parks behind the resumed run and goes out after its
+   * answer, and a host's send or Retry is refused as it is behind any run.
+   *
+   * The other way round, the resume standing down for the send, was rejected.
+   * The send that got in first had already gone out without the conversation,
+   * so standing down kept that loss, and it also dropped the run the navigation
+   * was part of, which the user asked for before the reload: the agent stopped
+   * halfway through the task, with the navigating call never answered.
    */
   async rehydrate(): Promise<void> {
     // Guard against a thread-switch race: with a slow remote store, picking
@@ -503,54 +547,76 @@ export class ConversationHistory {
     // started meanwhile (its reset already cleared the transcript).
     this.#generation += 1;
     const generation = this.#generation;
-    // Held while the store answers. A remote store answers after first paint,
-    // and a conversation it is still fetching is more likely to have messages
-    // than not, so without this the page would paint the greeting and a centred
-    // composer and then drop the composer the moment they land. The built-in
-    // store answers in a microtask, before paint, so for it this never reaches
-    // the screen. Released in `finally` so a store that rejects cannot leave the
-    // layout held for good, and only by the restore that is still current.
-    this.#host.element.setAttribute("data-restoring", "");
-    let messages: readonly Message[] | null;
-    try {
-      messages = await this.#host.conversationStore().loadMessages(this.#threadId);
-    } finally {
-      if (generation === this.#generation) {
-        this.#host.element.removeAttribute("data-restoring");
-      }
-    }
-    if (generation !== this.#generation) {
-      return;
-    }
-    // Read before the replay rather than after it: the checkpointed call is the
-    // one unanswered call a reload was *expected* by, and the replay has to know
-    // which it is so as not to settle it as abandoned.
+    // Read before the load rather than after it, because a checkpoint means
+    // this restore ends by starting a run, and the window a send could start a
+    // second one in is the load, not the resume -- see "A restore that resumes"
+    // above. The store's checkpoint is synchronous and the built-in remote store
+    // keeps it in this tab, so nothing the load fetches can change it. And
+    // before the replay, which has to know the one unanswered call a reload was
+    // *expected* by, so as not to settle it as abandoned.
     const checkpoint = this.#host.conversationStore().loadCheckpoint(this.#threadId);
-    if (messages !== null) {
-      const unfinished = this.#host.strings().callNotFinished;
-      const restored = answerUnansweredCalls(
-        messages,
-        // The shape the store holds for a call the client answered the same way:
-        // its tool message, with the outcome in its metadata.
-        (toolCallId) => ({
-          id: randomUUID(),
-          role: "tool",
-          content: unfinished,
-          toolCallId,
-          metadata: { outcome: TOOL_OUTCOME.INTERRUPTED },
-        }),
-        new Set(checkpoint === null ? [] : [checkpoint.toolCallId]),
-      );
-      this.#restored = restored;
-      for (const message of restored) {
-        this.replay(message);
+    const hold = checkpoint === null ? UNHELD : this.#host.holdRun();
+    try {
+      // Held while the store answers. A remote store answers after first paint,
+      // and a conversation it is still fetching is more likely to have messages
+      // than not, so without this the page would paint the greeting and a centred
+      // composer and then drop the composer the moment they land. The built-in
+      // store answers in a microtask, before paint, so for it this never reaches
+      // the screen. Released in `finally` so a store that rejects cannot leave the
+      // layout held for good, and only by the restore that is still current.
+      this.#host.element.setAttribute("data-restoring", "");
+      let messages: readonly Message[] | null;
+      try {
+        messages = await this.#host.conversationStore().loadMessages(this.#threadId);
+      } finally {
+        if (generation === this.#generation) {
+          this.#host.element.removeAttribute("data-restoring");
+        }
       }
+      if (generation !== this.#generation) {
+        return;
+      }
+      // Stopped while the store answered: New chat, or the element leaving the
+      // page, reached the Stop, which let go of the hold. Going on drew the
+      // conversation being left into the chat that replaced it, and resumed its
+      // run there, on a client seeded from what the restore had just drawn.
+      if (!hold.held()) {
+        return;
+      }
+      if (messages !== null) {
+        const unfinished = this.#host.strings().callNotFinished;
+        const restored = answerUnansweredCalls(
+          messages,
+          // The shape the store holds for a call the client answered the same
+          // way: its tool message, with the outcome in its metadata.
+          (toolCallId) => ({
+            id: randomUUID(),
+            role: "tool",
+            content: unfinished,
+            toolCallId,
+            metadata: { outcome: TOOL_OUTCOME.INTERRUPTED },
+          }),
+          new Set(checkpoint === null ? [] : [checkpoint.toolCallId]),
+        );
+        this.#restored = restored;
+        for (const message of restored) {
+          this.replay(message);
+        }
+      }
+      if (checkpoint !== null) {
+        await this.#resumeFrom(checkpoint);
+        return;
+      }
+      this.#noticeIfRunUnfinished(messages);
+    } finally {
+      // The resumed run starting has let go of the hold already, as a send's
+      // does, and a request that then fails still started one: the client
+      // reports a run before it sends. Still held here only if none started --
+      // the store rejected the load, or the store or the host threw on the way
+      // to the resume -- and then this is what sends a turn the composer parked
+      // meanwhile, since no run is going to settle and send it.
+      hold.release();
     }
-    if (checkpoint !== null) {
-      await this.#resumeFrom(checkpoint);
-      return;
-    }
-    this.#noticeIfRunUnfinished(messages);
   }
 
   /**
