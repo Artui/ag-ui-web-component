@@ -22,14 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   user sent something", and a turn sent with Resume or Fork is one: only the
   endpoint differs. The event fires once the continuation is the run in flight,
   so a `sendMessage()` from a listener is refused rather than starting a second
-  run beside it. Its `detail.attachments` is empty, because a continuation
-  sends only the composer's text.
+  run beside it, and a listener that stops it -- a new chat, a thread switch,
+  moving the element -- stops it before its request is made. Its
+  `detail.attachments` is empty, because a continuation sends only the
+  composer's text.
 
 ### Changed
 
-- **The vendored bundle carries DOMPurify 3.4.16 and marked 18.0.14**, from
-  the lockfile refresh since 0.41.2. The npm build is unaffected: both are
-  dependencies the host's own resolver picks.
+- **Ships DOMPurify 3.4.16 and marked 18.0.14**, from the lockfile refresh
+  since 0.41.2. Both builds carry them inlined, the npm build as well as the
+  vendored bundle: only `@ag-ui/client` and `@ag-ui/core` are left to the
+  host's resolver, so a host's own lockfile does not choose which sanitiser
+  runs.
 
 ## [0.41.2] — 2026-09-23
 

@@ -412,6 +412,15 @@ export class ConversationHistory {
       // a host's own send from it is refused as overlapping the run in flight,
       // as it would be from any later moment of this one.
       this.#host.announceTurn(content);
+      // A listener can also have stopped it: New chat, a thread switch, or
+      // moving the element all reach the stop. That cancelled a client whose
+      // run had not begun, and a run resets its own cancellation when it
+      // starts, so sending now would start one that nothing holds and nothing
+      // can stop -- in a conversation the user has already left, with its
+      // tools still driving the page.
+      if (this.#continuation !== client) {
+        return;
+      }
       await client.send(content);
     } finally {
       // Only if it is still the one in flight: stopping forgets it at once, and

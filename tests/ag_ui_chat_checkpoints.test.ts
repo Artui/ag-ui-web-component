@@ -1508,14 +1508,56 @@ describe("a continued turn is drawn like any other", () => {
     const sent = stubServer(() => says("a2", "the continued answer"));
     const el = mountOver(memoryStore({ t1: conversation }));
     await settle();
+    // Once only, so that if the event ever fires early enough for the send to
+    // go through, this fails on the requests below rather than by recursing:
+    // every send that is not refused fires the event again.
+    let answered = false;
     el.addEventListener(SUBMIT_EVENT, () => {
-      void el.sendMessage("and a second thing");
+      if (!answered) {
+        answered = true;
+        void el.sendMessage("and a second thing");
+      }
     });
 
     await continueWith(el, "resume", "go on");
     await settle();
 
+    expect(answered).toBe(true);
     expect(sent.map((run) => run.url)).toEqual(["/agent/resume/r1/"]);
+  });
+
+  it.each([
+    ["starts a new chat", (el: AgUiChat) => el.newChat()],
+    ["removes the element", (el: AgUiChat) => el.remove()],
+    [
+      "moves the element",
+      (el: AgUiChat) => {
+        const dock = document.createElement("aside");
+        document.body.appendChild(dock);
+        dock.appendChild(el);
+      },
+    ],
+  ])("sends nothing once a submit listener that %s has stopped it", async (_, stop) => {
+    // Each of these reaches the stop, which cancelled a client whose run had
+    // not begun yet. A run resets its own cancellation when it starts, so the
+    // send went ahead on a client nothing held any more: Stop could not reach
+    // it, and its tools went on driving the page.
+    const sent = stubServer(() => says("a2", "the continued answer"));
+    const el = mountOver(memoryStore({ t1: conversation }));
+    await settle();
+    let stopped = false;
+    el.addEventListener(SUBMIT_EVENT, () => {
+      if (!stopped) {
+        stopped = true;
+        stop(el);
+      }
+    });
+
+    await continueWith(el, "resume", "go on");
+    await settle();
+
+    expect(stopped).toBe(true);
+    expect(sent).toEqual([]);
   });
 
   it("draws nothing and announces nothing for a pick with nothing typed", async () => {
