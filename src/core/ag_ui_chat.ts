@@ -625,6 +625,27 @@ export class AgUiChat extends HTMLElement {
    */
   #principalKey: string | null = null;
   /**
+   * The current principal's tenure: replaced on every handover from one
+   * principal to another, and captured by each client as it is built, so that
+   * a client can tell whether the principal it was built for is still the one
+   * this element serves.
+   *
+   * A client outlives the handover that stops it. A stopped run saves what it
+   * had once its request closes, a tool handler cannot be aborted and its
+   * result is kept, and an event already read off the wire is still applied --
+   * all of it after the store was purged and scoped to whoever arrived, so
+   * each one wrote the previous principal's words into the next one's storage
+   * or state. Writing into the previous principal's store instead would only
+   * re-create what the purge just removed, so such a client writes nothing.
+   *
+   * An identity rather than the key itself, for two reasons. The key's first
+   * arrival is an adoption, not a handover, and a run in flight across it is
+   * the same person's and keeps saving. And a key that leaves and comes back
+   * is a second tenure: the first one's stopped run must not re-create a
+   * conversation the handover purged.
+   */
+  #tenure: object = {};
+  /**
    * The remote store `data-threads-url` wrapped around the conversation store,
    * and the store inside it, so connecting again can wrap that store rather
    * than the wrapper.
@@ -1827,6 +1848,9 @@ export class AgUiChat extends HTMLElement {
       }
       return;
     }
+    // First, ahead of the purge: from here on, nothing a client built for the
+    // previous principal does is written anywhere. See #tenure.
+    this.#tenure = {};
     SessionStorageStore.purge(previous);
     if (live) {
       this.#rescopeStore(next);
@@ -1848,11 +1872,29 @@ export class AgUiChat extends HTMLElement {
     // the new principal's first run. A host that seeds state assigns it again
     // for the one who arrived.
     this.#sharedState = {};
+    // And the turn being written, also only here. A turn typed and not sent is
+    // the previous principal's words as much as the transcript is, and so is
+    // everything else that reaches the box: a quotation and a skill's template
+    // are both text in it. The tray went with the transcript above. New chat
+    // keeps the text, because the same person is still typing, and an adoption
+    // returned before any of this for the same reason. Through the input
+    // handler rather than beside it, so the hint and the slash palette that
+    // were answering that text come down with it.
+    this.#input.value = "";
+    this.#onInput();
     this.#setRunning(false);
     this.#setUnread(0);
     if (!live) {
       return;
     }
+    // A recording in progress is theirs too, and once stopped it would be
+    // transcribed into the next principal's composer. Taking the mic down ends
+    // it untranscribed, and putting a fresh one up leaves the next principal
+    // a working control -- the way leaving and connecting do it, which is also
+    // why only a live change does it here: a detached one has been through
+    // both already.
+    this.#voice.dispose();
+    this.#voice.wire();
     this.#history.adoptActiveThread();
     void this.#history.rehydrate();
     void this.#history.refreshDrawer();
@@ -1862,13 +1904,15 @@ export class AgUiChat extends HTMLElement {
    * Rebuild the `sessionStorage` store under `namespace`, re-wrapping it for
    * `data-threads-url` exactly as connecting did.
    *
-   * A store of the host's own kind is left alone: a store that holds its data
-   * somewhere the element cannot see has to scope itself. The transcript on
+   * A store the host assigned is left alone, whether before connecting or
+   * since: a store that holds its data somewhere the element cannot see has to
+   * scope itself. Hence the unwrapped store in use is what the scope is asked
+   * about, rather than what it remembered when connecting. The transcript on
    * screen is still cleared either way — the host swapped principals, and that
    * much is the element's to act on.
    */
   #rescopeStore(namespace: string): void {
-    const store = this.#storage.rescopeStore(namespace);
+    const store = this.#storage.rescopeStore(this.#unwrappedStore(), namespace);
     if (store === null) {
       return;
     }
@@ -2981,6 +3025,10 @@ export class AgUiChat extends HTMLElement {
     // closes -- and read live, that save landed after New chat had moved the
     // active thread on, filing the conversation being left under the new one.
     const threadId = this.#history.threadId;
+    // Fixed for the same reason, and checked by every write below: see #tenure.
+    // The thread id alone cannot do it, because the store is still read live --
+    // it has to be, since an adoption rescopes it under a run that keeps going.
+    const tenure = this.#tenure;
     const agent = this.agentFactory({
       endpoint: seed.endpoint,
       headers: this.#requestHeaders(),
@@ -3005,12 +3053,30 @@ export class AgUiChat extends HTMLElement {
       // list per thread. For the conversation's own client that is its
       // history; a continuation holds only what it adds, and writes the
       // conversation it continues ahead of that.
+      //
+      // Every message list a client saves reaches the store through here -- a
+      // send, a round's end, a tool's result, the answers it writes for calls
+      // left open or declined by a Stop, a Stop's last save -- and so does a
+      // `data-threads-url` store's local copy, which is the only thing that
+      // wrapper does on a save. So this is the one gate for them. `onSaved` is
+      // behind it as well: it hands the saved conversation on as the seed of
+      // the next client, which would be the next principal's.
       onPersist: (messages) => {
+        if (tenure !== this.#tenure) {
+          return;
+        }
         const conversation = [...seed.follows, ...messages];
         this.conversationStore.saveMessages(threadId, conversation);
         seed.onSaved?.(conversation);
       },
-      onStateChanged: (state) => this.#onSharedStateChanged(state),
+      // Shared state is the next principal's first `RunAgentInput.state`, and
+      // the handover has just emptied it. A snapshot already read off the wire
+      // is applied after the Stop, and would put it back.
+      onStateChanged: (state) => {
+        if (tenure === this.#tenure) {
+          this.#onSharedStateChanged(state);
+        }
+      },
       connectionLostMessage: this.#strings.connectionLost,
       unfinishedMessage: this.#strings.callNotFinished,
       declinedMessage: this.#strings.declinedAction,

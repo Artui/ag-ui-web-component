@@ -12,14 +12,16 @@
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ELEMENT_TAG, MESSAGE_ROLE, SUBMIT_EVENT } from "../src/constants.js";
+import { ELEMENT_TAG, MESSAGE_ROLE, STATE_EVENT, SUBMIT_EVENT } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import {
   type ClientConversationStore,
   SessionStorageStore,
 } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import { RemoteConversationStore } from "../src/core/remote_conversation_store.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
+import { installFakeMedia } from "./helpers/fake_media.js";
 
 function mount(attrs: Record<string, string> = {}): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
@@ -118,6 +120,88 @@ function send(el: AgUiChat, text: string): void {
 
 function transcript(text: string): never[] {
   return [{ id: "m1", role: "user", content: text }] as never;
+}
+
+const RUNS_URL = "/agent/runs/";
+
+/**
+ * Answer every run with a stream the server is still writing: `RUN_STARTED`,
+ * then `events`, then nothing until the request is aborted or `finish` ends it.
+ *
+ * Through the real `HttpAgent`, because what these tests are about is when a
+ * stopped run makes its last save, and that is the real client's timing: the
+ * abort errors the body, `runAgent` settles a few tasks later, and the client
+ * saves what it had once it does -- long after the code that stopped it has
+ * moved on.
+ */
+function holdRuns(events: readonly Record<string, unknown>[]): {
+  /** Send more of the run, leaving it open. */
+  write: (more: readonly Record<string, unknown>[]) => void;
+  /** Send the rest of the run and close it. */
+  finish: (tail: readonly Record<string, unknown>[]) => void;
+} {
+  const encoder = new TextEncoder();
+  const frame = (event: Record<string, unknown>): Uint8Array =>
+    encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
+  let open: ReadableStreamDefaultController<Uint8Array> | null = null;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: unknown, init?: RequestInit) => {
+      // The checkpoint index, for the continuation case: one run to resume.
+      if (String(url) === RUNS_URL) {
+        return Promise.resolve(
+          Response.json({
+            runs: [
+              {
+                run_id: "r1",
+                thread_id: "t1",
+                parent_run_id: null,
+                started_at: "2026-07-27T12:00:00+00:00",
+                continuable: true,
+              },
+            ],
+          }),
+        );
+      }
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          open = controller;
+          controller.enqueue(frame({ type: "RUN_STARTED", threadId: "t1", runId: "r1" }));
+          for (const event of events) {
+            controller.enqueue(frame(event));
+          }
+          // What a closed connection does to a body still being read.
+          init?.signal?.addEventListener("abort", () => {
+            controller.error(new DOMException("The operation was aborted.", "AbortError"));
+          });
+        },
+      });
+      return Promise.resolve(
+        new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+      );
+    }),
+  );
+  const write = (more: readonly Record<string, unknown>[]): void => {
+    const controller = open as ReadableStreamDefaultController<Uint8Array> | null;
+    for (const event of more) {
+      controller?.enqueue(frame(event));
+    }
+  };
+  return {
+    write,
+    finish: (tail) => {
+      write([...tail, { type: "RUN_FINISHED", threadId: "t1", runId: "r1" }]);
+      (open as ReadableStreamDefaultController<Uint8Array> | null)?.close();
+    },
+  };
+}
+
+/** The opening of an answer the server is still streaming. */
+function answerBegins(text: string): Record<string, unknown>[] {
+  return [
+    { type: "TEXT_MESSAGE_START", messageId: "a1", role: "assistant" },
+    { type: "TEXT_MESSAGE_CONTENT", messageId: "a1", delta: text },
+  ];
 }
 
 describe("client state scoping", () => {
@@ -299,11 +383,442 @@ describe("client state scoping", () => {
       expect(shadow(el).querySelector(".message--user")).toBeNull();
     });
 
+    it("rescopes its own store under data-threads-url, inside the remote it wrapped", async () => {
+      // The store in use is the remote wrapper connecting put around the
+      // element's own store. That is still the element's store to move, so the
+      // question of whose it is has to be asked of what is inside.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => Promise.resolve(Response.json({ threads: [] }))),
+      );
+      const el = mount({
+        endpoint: "/agent/",
+        "user-key": "alice",
+        "data-threads-url": "/agent/threads/",
+      });
+
+      el.setAttribute("user-key", "bob");
+      await flush();
+      const store = el.conversationStore;
+      store.saveMessages(store.threadId(), transcript("bob's question"));
+
+      expect(store).toBeInstanceOf(RemoteConversationStore);
+      expect(dumpStorage()).toMatch(/#bob:messages:[^=]+=.*bob's question/);
+      expect(dumpStorage()).not.toContain("#alice");
+    });
+
+    it("leaves alone a store the host assigned after connecting", async () => {
+      // Connecting remembered the element's own store; the host's, assigned
+      // since, is not that one, and a key change must not swap it back out.
+      const saved: string[] = [];
+      const injected: ClientConversationStore = {
+        threadId: () => "host-thread",
+        loadMessages: () => Promise.resolve(null),
+        saveMessages: (threadId) => {
+          saved.push(threadId);
+        },
+        loadCheckpoint: () => null,
+        saveCheckpoint: () => undefined,
+        clear: () => undefined,
+        listThreads: () => Promise.resolve([]),
+        setActiveThread: () => undefined,
+        renameThread: () => undefined,
+      };
+      const el = mount({ endpoint: "/agent/", "user-key": "alice" });
+      el.conversationStore = injected;
+
+      el.setAttribute("user-key", "bob");
+      await flush();
+
+      expect(el.conversationStore).toBe(injected);
+      // And it keeps being the one written to.
+      el.conversationStore.saveMessages("host-thread", transcript("bob's question"));
+      expect(saved).toEqual(["host-thread"]);
+      expect(dumpStorage()).not.toContain("bob's question");
+    });
+
+    it("keeps a host's no-cache remote store across a key change", async () => {
+      // The privacy-relevant case: the host chose to keep message bodies off
+      // the client, and a key change swapping in the element's own store
+      // started caching every one of them in sessionStorage again.
+      //
+      // The handover lists the arriving principal's threads, which against
+      // this store is a request; an empty answer is all it needs.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => Promise.resolve(Response.json({ threads: [] }))),
+      );
+      const injected = new RemoteConversationStore(
+        "/agent/threads/",
+        () => ({}),
+        new SessionStorageStore("host-ns"),
+        () => "same-origin",
+        false,
+      );
+      const el = mount({ endpoint: "/agent/", "user-key": "alice" });
+      el.conversationStore = injected;
+
+      el.setAttribute("user-key", "bob");
+      await flush();
+      el.conversationStore.saveMessages("t1", transcript("bob's question"));
+
+      expect(dumpStorage()).not.toContain("bob's question");
+      expect(el.conversationStore).toBe(injected);
+    });
+
     it("mirrors the attribute through the property", () => {
       const el = mount({ endpoint: "/agent/" });
       expect(el.userKey).toBe("");
       el.userKey = "alice";
       expect(el.getAttribute("user-key")).toBe("alice");
+    });
+  });
+
+  /**
+   * A run still streaming when the principal changes.
+   *
+   * The handover stops it, but a stopped run is not over: it saves what it had
+   * once its request closes, and by then the store has been purged and scoped
+   * to whoever arrived. The thread id that save is filed under was fixed when
+   * the client was built, so it was the previous principal's conversation
+   * written, whole, into the next one's namespace -- a row in their history
+   * drawer, titled with the question they never asked.
+   */
+  describe("a run in flight across a handover", () => {
+    function sendButton(el: AgUiChat): HTMLButtonElement | null {
+      return shadow(el).querySelector<HTMLButtonElement>(".send");
+    }
+
+    it("saves nothing into the next principal's storage once the stopped run closes", async () => {
+      holdRuns(answerBegins(ALICE_SECRET));
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      send(el, "what is my balance?");
+      await settle();
+      // The control: the run is in flight, and her turn is in her own storage.
+      expect(sendButton(el)?.title).toBe("Stop");
+      expect(dumpStorage()).toContain("what is my balance?");
+
+      el.setAttribute("user-key", "bob");
+      await settle();
+
+      expect(dumpStorage()).not.toContain(ALICE_SECRET);
+      expect(dumpStorage()).not.toContain("what is my balance?");
+      expect(await el.conversationStore.listThreads()).toEqual([]);
+    });
+
+    it("saves nothing into the next principal's storage when the key changed while detached", async () => {
+      // Leaving stopped the run, and the save it makes on closing lands after
+      // the element is back, scoped to the principal who arrived.
+      holdRuns(answerBegins(ALICE_SECRET));
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      send(el, "what is my balance?");
+      await settle();
+      expect(sendButton(el)?.title).toBe("Stop");
+
+      el.remove();
+      el.setAttribute("user-key", "bob");
+      document.body.appendChild(el);
+      await settle();
+
+      expect(dumpStorage()).not.toContain(ALICE_SECRET);
+      expect(dumpStorage()).not.toContain("what is my balance?");
+      expect(await el.conversationStore.listThreads()).toEqual([]);
+    });
+
+    it("does not apply a state snapshot read off the wire after the handover", async () => {
+      // Bytes that arrived just before the key changed are read and applied a
+      // few microtasks later, after the handover emptied shared state for the
+      // principal who arrived -- whose first run then sent it as theirs.
+      const run = holdRuns(answerBegins("one moment"));
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      const heard: unknown[] = [];
+      el.addEventListener(STATE_EVENT, (event) => {
+        heard.push((event as CustomEvent<{ state: unknown }>).detail.state);
+      });
+      send(el, "what is my balance?");
+      await settle();
+      expect(sendButton(el)?.title).toBe("Stop");
+
+      run.write([{ type: "STATE_SNAPSHOT", snapshot: { balance: ALICE_SECRET } }]);
+      el.setAttribute("user-key", "bob");
+      await settle();
+
+      expect(el.sharedState).toEqual({});
+      // Nor is the host told about it, after it has signed her out.
+      expect(JSON.stringify(heard)).not.toContain(ALICE_SECRET);
+    });
+
+    it("saves nothing into the next principal's storage when a tool returns after the handover", async () => {
+      // A handler cannot be aborted, and the client keeps what it returns: the
+      // result is added and saved once the handler settles, however long after
+      // the Stop that was.
+      let release: (value: string) => void = () => undefined;
+      const gate = new Promise<string>((resolve) => {
+        release = resolve;
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() =>
+          Promise.resolve(
+            sseRun([
+              { type: "TOOL_CALL_START", toolCallId: "c1", toolCallName: "read_ledger" },
+              { type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: "{}" },
+              { type: "TOOL_CALL_END", toolCallId: "c1" },
+            ]),
+          ),
+        ),
+      );
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      el.registerTool({
+        name: "read_ledger",
+        description: "read the ledger",
+        parameters: { type: "object", properties: {} },
+        handler: () => gate,
+      });
+      send(el, "read my ledger");
+      await settle();
+      expect(sendButton(el)?.title).toBe("Stop");
+
+      el.setAttribute("user-key", "bob");
+      release(ALICE_SECRET);
+      await settle();
+
+      expect(dumpStorage()).not.toContain(ALICE_SECRET);
+      expect(dumpStorage()).not.toContain("read my ledger");
+      expect(await el.conversationStore.listThreads()).toEqual([]);
+    });
+
+    it("saves nothing into the next principal's storage once a stopped continuation closes", async () => {
+      // A checkpoint continuation is built by the same construction and saves
+      // the same way -- the conversation it continues, then its own turn.
+      holdRuns(answerBegins(ALICE_SECRET));
+      const el = mount({
+        endpoint: "/agent/",
+        "user-key": "alice",
+        "data-runs-url": RUNS_URL,
+        "data-start-open": "",
+      });
+      shadow(el).querySelector<HTMLButtonElement>(".header-btn--checkpoints")?.click();
+      await settle();
+      const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
+      if (input === null) {
+        throw new Error("expected an input");
+      }
+      input.value = "and what did I spend?";
+      shadow(el).querySelector<HTMLButtonElement>(".checkpoint-resume")?.click();
+      await settle();
+      expect(sendButton(el)?.title).toBe("Stop");
+
+      el.setAttribute("user-key", "bob");
+      await settle();
+
+      expect(dumpStorage()).not.toContain(ALICE_SECRET);
+      expect(dumpStorage()).not.toContain("and what did I spend?");
+      expect(await el.conversationStore.listThreads()).toEqual([]);
+    });
+
+    it("still files a run New chat stopped under the conversation it left", async () => {
+      // The control on the other side: New chat is not a handover, and the
+      // stopped run's last save -- the only one carrying the partial answer --
+      // is the same person's, and lands where it always did.
+      holdRuns(answerBegins("the answer so far"));
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      send(el, "the question that was left");
+      await settle();
+      const left = el.conversationStore.threadId();
+
+      el.newChat();
+      await settle();
+
+      expect(await el.conversationStore.loadMessages(left)).toEqual([
+        expect.objectContaining({ content: "the question that was left" }),
+        expect.objectContaining({ content: "the answer so far" }),
+      ]);
+    });
+
+    it("keeps saving a run across the key's first arrival, into the namespace it moved to", async () => {
+      // Not a handover: the person on screen is the one the key now names, so
+      // the run is not stopped, and what it says after the key arrives is
+      // theirs to keep. A gate keyed on the principal rather than on the
+      // handover would drop it.
+      const run = holdRuns(answerBegins("the answer begins"));
+      const el = mount({ endpoint: "/agent/", "data-start-open": "" });
+      send(el, "asked before auth resolved");
+      await settle();
+      const thread = el.conversationStore.threadId();
+
+      el.setAttribute("user-key", "alice");
+      await flush();
+      run.finish([
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "a1", delta: " and ends" },
+        { type: "TEXT_MESSAGE_END", messageId: "a1" },
+      ]);
+      await settle();
+
+      expect(sendButton(el)?.title).toBe("Send");
+      expect(await el.conversationStore.loadMessages(thread)).toEqual([
+        expect.objectContaining({ content: "asked before auth resolved" }),
+        expect.objectContaining({ content: "the answer begins and ends" }),
+      ]);
+    });
+  });
+
+  /**
+   * What the composer holds for the turn being written, across a handover.
+   *
+   * The transcript and the recall history were cleared so the previous
+   * principal's words are not in front of the next one, and a turn they had
+   * typed and not sent is their words too. Everything else a person can put
+   * in the box -- a quotation, a skill's template -- is text in it, and the
+   * tray goes with the transcript. Only a handover clears it: an adoption, a
+   * move and New chat all leave the same person typing.
+   */
+  describe("the composer across a handover", () => {
+    function composer(el: AgUiChat): HTMLTextAreaElement {
+      const found = shadow(el).querySelector(".input");
+      if (!(found instanceof HTMLTextAreaElement)) {
+        throw new Error("expected a composer");
+      }
+      return found;
+    }
+
+    function typeUnsent(el: AgUiChat, text: string): void {
+      composer(el).value = text;
+      composer(el).dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    it("clears the previous principal's unsent text on a live change", async () => {
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      typeUnsent(el, ALICE_SECRET);
+
+      el.setAttribute("user-key", "bob");
+      await flush();
+
+      expect(composer(el).value).toBe("");
+    });
+
+    it("clears it when the key changed while detached", async () => {
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      typeUnsent(el, ALICE_SECRET);
+
+      el.remove();
+      el.setAttribute("user-key", "bob");
+      document.body.appendChild(el);
+      await flush();
+
+      expect(composer(el).value).toBe("");
+    });
+
+    it("clears a quotation waiting in the composer", async () => {
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      el.quote(ALICE_SECRET);
+      expect(composer(el).value).toContain(ALICE_SECRET);
+
+      el.setAttribute("user-key", "bob");
+      await flush();
+
+      expect(composer(el).value).toBe("");
+    });
+
+    it("clears a skill's template and takes down the hint over it", async () => {
+      const el = mount({
+        endpoint: "/agent/",
+        "user-key": "alice",
+        "data-start-open": "",
+        "data-prompt-chips": "true",
+        "data-skills": JSON.stringify([
+          { name: "find", title: "Find", prompt: "Find {q}.", chip: true },
+        ]),
+      });
+      shadow(el).querySelector<HTMLButtonElement>(".skill-chip")?.click();
+      const hint = shadow(el).querySelector<HTMLElement>(".skill-hint");
+      expect(hint?.hidden).toBe(false);
+
+      el.setAttribute("user-key", "bob");
+      await flush();
+
+      expect(composer(el).value).toBe("");
+      expect(hint?.hidden).toBe(true);
+    });
+
+    it("closes a slash palette the previous principal's typing opened", async () => {
+      const el = mount({
+        endpoint: "/agent/",
+        "user-key": "alice",
+        "data-start-open": "",
+        "data-slash-commands": "true",
+        "data-skills": JSON.stringify([{ name: "sum", title: "Sum", prompt: "Sum it." }]),
+      });
+      typeUnsent(el, "/");
+      const palette = shadow(el).querySelector<HTMLElement>(".skill-palette");
+      expect(palette?.hidden).toBe(false);
+
+      el.setAttribute("user-key", "bob");
+      await flush();
+
+      expect(palette?.hidden).toBe(true);
+    });
+
+    it("stops a recording in progress, so it lands in nobody's composer", async () => {
+      const media = installFakeMedia();
+      try {
+        const transcribe = vi.fn(async () => ALICE_SECRET);
+        const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+        el.setAttribute("endpoint", "/agent/");
+        el.setAttribute("user-key", "alice");
+        el.setAttribute("data-start-open", "");
+        el.transcribeHandler = transcribe;
+        document.body.appendChild(el);
+        shadow(el).querySelector<HTMLButtonElement>(".voice-btn")?.click();
+        await flush();
+        expect(media.recorder().state).toBe("recording");
+
+        el.setAttribute("user-key", "bob");
+        await flush();
+
+        // Her mic is released and the clip is never transcribed.
+        expect(media.recorder().stream.track.stopped).toBe(true);
+        expect(transcribe).not.toHaveBeenCalled();
+        expect(composer(el).value).toBe("");
+        // The next principal still has a mic, and it is not mid-recording.
+        const mics = shadow(el).querySelectorAll<HTMLButtonElement>(".voice-btn");
+        expect(mics).toHaveLength(1);
+        expect(mics[0]?.dataset["state"]).toBe("idle");
+      } finally {
+        media.restore();
+      }
+    });
+
+    it("keeps the text when the key first arrives", async () => {
+      // The person typing is the one the key now names.
+      const el = mount({ endpoint: "/agent/", "data-start-open": "" });
+      typeUnsent(el, "typed before auth resolved");
+
+      el.setAttribute("user-key", "alice");
+      await flush();
+
+      expect(composer(el).value).toBe("typed before auth resolved");
+    });
+
+    it("keeps the text on a move that keeps the key", async () => {
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      typeUnsent(el, "still typing");
+
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+
+      expect(composer(el).value).toBe("still typing");
+    });
+
+    it("keeps the text on New chat", () => {
+      // The same person, starting over: what they were typing is still theirs.
+      const el = mount({ endpoint: "/agent/", "user-key": "alice", "data-start-open": "" });
+      typeUnsent(el, "still typing");
+
+      el.newChat();
+
+      expect(composer(el).value).toBe("still typing");
     });
   });
 
