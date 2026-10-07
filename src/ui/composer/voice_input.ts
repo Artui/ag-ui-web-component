@@ -100,6 +100,16 @@ export class VoiceInput {
       this.#fail(this.#strings.transcriptionFailed);
       return;
     }
+    if (this.#disposed) {
+      // The permission prompt outlived the control: the element left, or
+      // user-key changed, while it was open. Recording now would light the
+      // browser's indicator for a button nobody can see or stop, and dispose
+      // has already run, so nothing else would ever release these tracks.
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+      return;
+    }
     this.#stream = stream;
     this.#chunks = [];
     this.#hitCap = false;
@@ -136,10 +146,16 @@ export class VoiceInput {
   }
 
   /**
-   * Tear the control down, for a host element removed mid-recording. Stops any
-   * live `MediaRecorder`, releases the mic tracks so the browser's recording
-   * indicator clears, and suppresses the pending transcription — a
-   * disconnected control must not fire `onText` into a detached element.
+   * Tear the control down, for a host element removed mid-recording or handed
+   * to the next principal. Stops any live `MediaRecorder`, releases the mic
+   * tracks so the browser's recording indicator clears, and suppresses the
+   * pending transcription — a disconnected control must not fire `onText` into
+   * a detached element.
+   *
+   * Disposal is final: nothing un-disposes an instance, and the host's next
+   * wiring builds a new one. So the disposed flag alone tells a stale
+   * continuation from a live one, and a clip already posted when this runs is
+   * dropped whenever its answer arrives.
    */
   dispose(): void {
     this.#disposed = true;
@@ -160,6 +176,15 @@ export class VoiceInput {
     const audio = new Blob(this.#chunks, { type: mimeType || "audio/webm" });
     try {
       const text = await this.#transcribe(audio);
+      if (this.#disposed) {
+        // Disposed while the clip was in flight. The check above ran before the
+        // await and cannot see this: on a change of user-key the host disposes
+        // and wires a fresh mic over the same composer, so delivering now
+        // would put the previous principal's words in the next one's box.
+        // The button is left as it was, too: it is no longer this control's
+        // to change.
+        return;
+      }
       this.#setState("idle");
       if (this.#hitCap) {
         // #setState has just reset the tooltip to the idle label, so this goes
@@ -188,6 +213,12 @@ export class VoiceInput {
   }
 
   #fail(message: string): void {
+    // Both callers reach here after an await, a permission prompt or a
+    // transcription, either of which can settle after dispose. A disposed
+    // control has nothing to release and no tooltip to draw.
+    if (this.#disposed) {
+      return;
+    }
     this.#releaseStream();
     this.#recorder = null;
     this.#setState("idle");
