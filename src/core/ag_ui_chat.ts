@@ -1906,7 +1906,9 @@ export class AgUiChat extends HTMLElement {
    *
    * A store the host assigned is left alone, whether before connecting or
    * since: a store that holds its data somewhere the element cannot see has to
-   * scope itself. Hence the unwrapped store in use is what the scope is asked
+   * scope itself. The exception is a plain `SessionStorageStore` assigned
+   * before connecting, which connecting cannot tell from the default and so
+   * took for the element's own. Hence the unwrapped store in use is what the scope is asked
    * about, rather than what it remembered when connecting. The transcript on
    * screen is still cleared either way — the host swapped principals, and that
    * much is the element's to act on.

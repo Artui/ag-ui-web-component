@@ -2186,10 +2186,13 @@ chat.conversationStore = new RemoteConversationStore(
 ```
 
 A conversation store you assign yourself is never replaced by a change of `user-key`, whether you
-assign it before the element connects or after. A store that keeps its data somewhere the element
-cannot see has to scope itself; the element purges only its own `sessionStorage` namespace and
-clears what is on screen. If your store wraps a `SessionStorageStore`, build a new one per
-principal.
+assign it before the element connects or after. The one exception is a plain `SessionStorageStore`
+assigned before the element connects: that is the same kind as the element's own default, which is
+all connecting can see, so the element namespaces it as its own and moves it on every key change.
+Assign it after connecting, or wrap it, to keep it yours. A store that keeps its data somewhere
+the element cannot see has to scope itself; the element purges only its own `sessionStorage`
+namespace and clears what is on screen. If your store wraps a `SessionStorageStore`, build a new
+one per principal.
 
 `SessionStorageStore.purge(namespace)` is the same primitive the element uses, for a host driving
 its own store from its own sign-out path.

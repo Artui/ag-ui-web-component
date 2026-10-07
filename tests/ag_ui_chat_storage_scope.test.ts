@@ -466,6 +466,29 @@ describe("client state scoping", () => {
       expect(el.conversationStore).toBe(injected);
     });
 
+    it("takes a plain sessionStorage store assigned before connecting for its own", async () => {
+      // The one store a host assigns that the element does not leave alone,
+      // and the README names it: assigned before connecting, it is the same
+      // kind as the element's own default, which is all connecting can see.
+      // So it is namespaced like the default, and moves on a key change.
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      el.setAttribute("user-key", "alice");
+      const assigned = new SessionStorageStore("host-ns");
+      el.conversationStore = assigned;
+      document.body.appendChild(el);
+      const connected = el.conversationStore;
+
+      el.setAttribute("user-key", "bob");
+      await flush();
+      el.conversationStore.saveMessages("t1", transcript("bob's question"));
+
+      expect(connected).not.toBe(assigned);
+      expect(el.conversationStore).not.toBe(connected);
+      expect(dumpStorage()).toMatch(/#bob:messages:t1=.*bob's question/);
+      expect(dumpStorage()).not.toMatch(/host-ns:messages/);
+    });
+
     it("mirrors the attribute through the property", () => {
       const el = mount({ endpoint: "/agent/" });
       expect(el.userKey).toBe("");

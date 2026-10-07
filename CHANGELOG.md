@@ -140,7 +140,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RemoteConversationStore` built with `cacheMessages: false` to keep message
   bodies off the client started caching every one of them in the tab. A store
   the host assigned is now left alone whenever it was assigned, and scopes
-  itself.
+  itself. The one exception is unchanged: a plain `SessionStorageStore`
+  assigned before connecting is the same kind as the element's own default,
+  so the element still namespaces it as its own.
 - **A change of `user-key` clears the composer.** The transcript and recall
   history were already cleared so the previous principal's words were not in
   front of the next one, but a turn they had typed and not sent stayed in the
