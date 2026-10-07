@@ -613,6 +613,18 @@ export class AgUiChat extends HTMLElement {
    */
   #connectedBefore = false;
   /**
+   * The `user-key` whose state the element holds -- the transcript, the recall
+   * history, the Always allow waivers and the shared state -- or `null` before
+   * the first connect, when it holds nobody's.
+   *
+   * Not the same thing as the attribute. The attribute names the principal the
+   * host says is here now, and it can change while the element is out of the
+   * document, where nothing acts on it; this is who the state still belongs
+   * to. Connecting compares the two, which is how a key changed while detached
+   * still gets the handover a live change gets.
+   */
+  #principalKey: string | null = null;
+  /**
    * The remote store `data-threads-url` wrapped around the conversation store,
    * and the store inside it, so connecting again can wrap that store rather
    * than the wrapper.
@@ -977,8 +989,11 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     if (name === "user-key") {
-      // Before connect there is nothing to move: connectedCallback resolves the
-      // namespace from the attribute as it stands by then. An absent attribute
+      // Acted on here only while connected. Before the first connect there is
+      // nothing to move: connectedCallback resolves the namespace from the
+      // attribute as it stands by then. Between a disconnect and the next
+      // connect there is, and connecting hands it over -- see #principalKey
+      // and connectedCallback for why it waits until then. An absent attribute
       // and an empty one name the same (unnamed) principal, so neither is a
       // change worth acting on.
       if (this.#connected && (previous ?? "") !== (value ?? "")) {
@@ -1320,6 +1335,33 @@ export class AgUiChat extends HTMLElement {
     }
     this.#syncLauncher();
     this.#skills.init();
+    // A `user-key` that changed while the element was out of the document gets
+    // the handover a live change gets, here, because this is the first moment
+    // the element can make it. A plain move with the same key skips this and
+    // keeps the recall history, as above; a first connect skips it too, since
+    // an element that has never connected holds nobody's state -- and treating
+    // its first key as an arrival would adopt whatever key-less conversation
+    // an earlier visitor left in the tab.
+    //
+    // Deferred to here rather than made the moment the attribute changes, for
+    // three reasons. Out of the document, the arriving half -- replaying the
+    // next principal's history, listing their threads -- is requests, and
+    // nothing should go out for a node that has left (see #startup). Only where
+    // the key ends up counts: one that goes away and comes back while detached
+    // hands nothing over, because nobody else saw this panel in between. And
+    // the namespace was claimed again just above, so the previous principal's
+    // is resolved against the one this element holds now: a namespace another
+    // element claimed while this one was out is never purged from under it.
+    //
+    // Before the store is scoped, which is the arriving half connecting does
+    // anyway: an adoption has to move the conversation before the store is
+    // asked which thread is active, or it mints a fresh one there first.
+    const held = this.#principalKey;
+    const changed = held !== null && held !== this.userKey;
+    if (changed) {
+      this.#changePrincipal(held, this.userKey);
+    }
+    this.#principalKey = this.userKey;
     // Namespace the built-in default store too (a host-injected store is used
     // verbatim). Must precede #wireThreadStore, which wraps the current store.
     this.conversationStore = this.#storage.scopeStore(this.#unwrappedStore(), this.userKey);
@@ -1338,6 +1380,13 @@ export class AgUiChat extends HTMLElement {
     // through a framework ref still has a chance to be heard — see #startup.
     queueMicrotask(() => this.#startup());
     void this.#history.rehydrate();
+    if (changed) {
+      // The last of what a live change does: a drawer left open across the
+      // move still lists the threads of the principal who left, titles and
+      // all, until something reloads it. A plain move leaves it alone, since
+      // the list it shows is still this principal's.
+      void this.#history.refreshDrawer();
+    }
     // Last: everything above reads (and some of it sets) attributes, and none
     // of that should trip the connect-time warning.
     this.#connected = true;
@@ -1718,8 +1767,22 @@ export class AgUiChat extends HTMLElement {
    * logout, because a logout is a navigation (or, in a single-page app, not
    * even that) rather than a tab close. Nothing remounts, so the host naming
    * the new principal is the only signal the element will ever get.
+   *
+   * Two callers. A live change runs all of it. connectedCallback runs it for a
+   * key that changed while the element was out of the document, and there it
+   * runs before the store is scoped and before `#connected` is set -- which is
+   * what `live` reads, since `isConnected` is already true by then. That call
+   * does the half about what storage and the element still hold. The half
+   * about the principal arriving -- the store scoped under the new key, its
+   * active thread, the replay -- is what connecting goes on to do anyway, and
+   * run here too it would read the old store before the new one exists,
+   * minting a thread pointer in the namespace just purged and replaying the
+   * history twice. Nor would it leave alone a store the host assigned while
+   * the element was out.
    */
   #changePrincipal(previousKey: string, nextKey: string): void {
+    this.#principalKey = nextKey;
+    const live = this.#connected;
     const previous = this.#storage.conversationNamespace(previousKey);
     const next = this.#storage.conversationNamespace(nextKey);
     if (previousKey === "") {
@@ -1730,11 +1793,15 @@ export class AgUiChat extends HTMLElement {
       // copying also matters: a copy left behind under the unscoped namespace
       // is a transcript the next key-less mount would happily adopt.
       SessionStorageStore.adopt(previous, next);
-      this.#rescopeStore(next);
+      if (live) {
+        this.#rescopeStore(next);
+      }
       return;
     }
     SessionStorageStore.purge(previous);
-    this.#rescopeStore(next);
+    if (live) {
+      this.#rescopeStore(next);
+    }
     // An Always allow is the previous principal's decision too, and it lives in
     // memory rather than in the store just purged, so it has to be forgotten
     // here or it outlives them. The adoption above keeps it, for the same
@@ -1754,6 +1821,9 @@ export class AgUiChat extends HTMLElement {
     this.#sharedState = {};
     this.#setRunning(false);
     this.#setUnread(0);
+    if (!live) {
+      return;
+    }
     this.#history.adoptActiveThread();
     void this.#history.rehydrate();
     void this.#history.refreshDrawer();
