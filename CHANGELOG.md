@@ -55,6 +55,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what had just been written with an older turn, and Down emptied the box. The
   walk now checks that the composer still holds the turn it put there, so any
   other write ends it, including a host page writing the composer itself.
+- **A `user-key` changed while the element is out of the document now hands
+  over when it is inserted again.** The attribute was acted on only while the
+  element was connected, and inserting it again is a reload that keeps the
+  composer's recall on purpose. So removing the element, changing the key and
+  inserting it again left the previous principal's stored conversation in
+  `sessionStorage`, their turns one ArrowUp away, their Always allow waivers
+  live, their shared state seeded into the next principal's first run, their
+  unread count on the launcher, and their threads in a drawer left open.
+  Connecting now compares the key the element's state belongs to with the
+  attribute, and runs the handover a live change runs when they differ. The
+  first key to arrive is still an adoption rather than a purge, and a move that
+  keeps the key, a key that goes away and comes back while detached, and a
+  first connect hand nothing over.
+- **A Stop your own code makes while a turn is starting now stops it.** A
+  conversation store, a `getContext` or `getTools`, or the save that answers a
+  tool call left open, that started a new chat or changed `user-key` during a
+  send or a Retry stopped nothing: the request still went out into the
+  conversation being left, with all of its history. Nothing is sent now. On
+  `AgUiClient`, a `cancel()` from `onPersist`, `getContext` or `getTools` before
+  the request is honoured and fires `onCancelled` and `onSettled` as any Stop
+  does, and a `cancel()` with nothing in flight is still forgotten by the next
+  `send()` or `resume()`. A Retry stopped this way resolves `true`, because the
+  provider runs after the Retry has handed its turn to the client.
+- **A Retry whose save the store refuses leaves the conversation as it was.**
+  `truncateToLastUser()` shortened the history before saving it, so a store
+  that threw left the answer on screen but out of the next request, and the
+  agent was then asked a follow-up about an answer it was never told it gave.
+  It now saves first, so a refused save changes nothing, and `retryLastTurn()`
+  rejects with the store's error.
+- **A reload that resumes a run no longer lets a second run start beside it.**
+  A reload in the middle of a navigating tool's run resumes that run once the
+  conversation store answers, and with a remote store that answer is a real
+  request. A send, a Retry or a checkpoint pick made while it was out was not
+  refused: the send went out without the stored conversation and its save
+  replaced it, then the resume ran beside it on the same client, answering a
+  call the conversation no longer held. A restore that will resume now counts
+  as in flight from the moment it asks the store, so `sendMessage()` returns
+  without sending, the built-in Send queues the turn behind the resumed answer,
+  `retryLastTurn()` returns `false`, and a pick says why at the composer. New
+  chat while the store answers stands the resume down. A host calling
+  `sendMessage()` as the element connects, on a page a navigating tool
+  reloaded, now has that call refused, as it would be behind any run.
 
 ## [0.41.3] — 2026-10-07
 

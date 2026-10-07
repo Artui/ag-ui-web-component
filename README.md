@@ -309,17 +309,26 @@ palette, or a composer of your own replacing the built-in one. It no-ops for an 
 empty message, and while a run — or a checkpoint continuation picked from the panel — is in
 flight. A continuation counts from the pick, and a send from the call rather than from when its
 run starts, so a `sendMessage` from an `ag-ui-submit` listener, or a second call in the same
-task, is refused rather than starting a second run. Unlike the built-in Send it does **not**
-queue, so your composer keeps what it tried to send, and it does **not** consult the
-attachment tray: what you pass is what is sent, so your composer stays in charge of its own
-state.
+task, is refused rather than starting a second run. So is one made while a reload resumes a run
+a navigating tool interrupted: the resume counts from the moment the element asks its
+conversation store for the conversation, so a `sendMessage` while a remote store is still
+answering is refused, and the built-in Send queues behind the resumed answer. Your own code
+that runs on the way to the request — the conversation store's save, `getContext`, `getTools` —
+can stop a send by starting a new chat or changing `user-key`, and then nothing is sent. Unlike
+the built-in Send it does **not** queue, so your composer keeps what it tried to send, and it
+does **not** consult the attachment tray: what you pass is what is sent, so your composer stays
+in charge of its own state.
 
 `retryLastTurn()` keeps the same rules, because it starts a run on the same conversation. It
-returns `false` while a run, a send, another Retry or a continuation is in flight, and it counts
-from the call as a send does: until its run starts, a `sendMessage` or a second Retry is refused,
-the built-in Send queues, and a checkpoint pick is refused. It also returns `false` when your own
-code stops it before its run starts: a conversation store, or an activity or tool renderer it
-redraws through, that starts a new chat or changes `user-key`.
+returns `false` while a run, a send, another Retry, a continuation or a reload's resume is in
+flight, and it counts from the call as a send does: until its run starts, a `sendMessage` or a
+second Retry is refused, the built-in Send queues, and a checkpoint pick is refused. It also
+returns `false` when your own code stops it before its run starts: a conversation store, or an
+activity or tool renderer it redraws through, that starts a new chat or changes `user-key`. A
+`getContext` or `getTools` that does the same stops it too, before anything is sent, but it runs
+after the Retry has handed its turn to the client, so the call resolves `true`. A store that
+throws from the Retry's save leaves the conversation as it was, and `retryLastTurn()` rejects
+with its error.
 
 `attachFile(file)` queues a file into the tray exactly as the picker and drag-and-drop do, with
 the same validation and progress chip. It returns `false` when uploads are not configured
@@ -663,7 +672,10 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
 `cancel()` with no run in flight is a safe no-op. `newChat()` cancels any in-flight run before
 discarding the client, and so do switching conversations, `reload()` and removing the element. A
 [checkpoint continuation](#resuming-a-run) is the run in flight while it lasts, so Stop and all of
-these end it too.
+these end it too. So does a turn that has not made its request yet: called from host code a send
+or a resume runs on the way — the conversation store's save, `getContext`, `getTools` —
+`cancel()` stops it before anything is sent, and `onCancelled()` and `onSettled()` fire as for any
+other Stop.
 
 A cancelled run ends a moment later, once its request has closed or a running tool handler has
 returned. What it does then stays with the conversation it belonged to: its truncated exchange is
@@ -2116,6 +2128,12 @@ That is why it is a live attribute rather than a connect-time one. A single-page
 out through its own router without remounting anything, so the host naming the new principal — or
 dropping the attribute — is the only signal the element will ever get. Removing the attribute
 purges too, so a sign-out that simply clears it is safe.
+
+It holds for an element that is out of the document too, such as a view a router keeps alive.
+Nothing is purged while it is detached: the handover runs when it is inserted again, against the
+key it has by then, so a key that changes and changes back while detached hands nothing over. An
+element that is never inserted again leaves the previous principal's conversation in
+`sessionStorage` under their key, where only an element naming that principal again can reach it.
 
 The **first** value to arrive is treated as a host naming the user who was already there, not as a
 handover: the conversation in progress moves into the principal's namespace instead of being

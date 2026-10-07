@@ -655,12 +655,14 @@ export class AgUiChat extends HTMLElement {
    * requests, and the listener's turn drawn between the user's turn and its
    * answer. It is the gap a picked checkpoint closes by counting from the pick,
    * closed the same way for a send. A retry asks for its run the same way, so
-   * it takes the same hold.
+   * it takes the same hold, and so does a restore that will resume a run, from
+   * before it asks the store for the conversation, through the history host's
+   * `holdRun`.
    *
    * Let go of once the run starts, because `running` holds from then until the
    * run settles, and a send held past that would refuse a host's follow-up from
    * the run-finished event, which fires as the run settles. Let go of by the
-   * send's or the retry's end when its run never starts.
+   * send's, the retry's or the restore's end when its run never starts.
    *
    * An object rather than a flag, so a send or a retry ending releases only
    * what it took. By the time either ends, the turn queued behind it has
@@ -2034,10 +2036,15 @@ export class AgUiChat extends HTMLElement {
    * repeats, so the agent answers what it was asked rather than being told its
    * last answer was wrong. Returns `false` when there is nothing to retry, or
    * while anything that refuses a send is in flight: a run, a send or another
-   * retry whose run has not started yet, or a checkpoint continuation. Also
-   * `false` when host code it runs before its run starts -- the store's save,
-   * or an activity or tool renderer the replay draws through -- has stopped it
-   * by starting a new chat or changing `user-key`.
+   * retry whose run has not started yet, a checkpoint continuation, or a
+   * reload's restore that will resume a run. Also `false` when host code it
+   * runs before its run starts -- the store's save, or an activity or tool
+   * renderer the replay draws through -- has stopped it by starting a new chat
+   * or changing `user-key`. A tool or context provider that stops it does so
+   * inside the client's resume, past the last point this can see: nothing is
+   * sent, and this resolves `true`, because both a run starting and a Stop let
+   * go of the hold it checks. Rejects with the store's error when the store
+   * refuses the save, and then the conversation is as it was.
    *
    * Public because a host with its own message UI wants the same button, and
    * because the failed-run notice reaches it from outside the action row.
@@ -2619,7 +2626,7 @@ export class AgUiChat extends HTMLElement {
     this.#client?.cancel();
     // A send whose run has not started is ended here too, because nothing else
     // can reach it: the cancel above lands on a client that has not been asked
-    // for the run yet, and a run resets its own cancellation when it starts.
+    // for the run yet, and a client forgets a Stop when it is next asked for one.
     // This is how a submit listener that starts a new chat, switches thread or
     // moves the element stops the send it is hearing about.
     this.#sending = null;
