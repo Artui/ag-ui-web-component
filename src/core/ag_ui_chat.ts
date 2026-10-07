@@ -932,11 +932,13 @@ export class AgUiChat extends HTMLElement {
       // the restore cleared itself would still be set when the resumed run
       // settles and sends the parked turn, so that send would be refused after
       // the turn had left the queue, and lost.
+      //
+      // Whether the restore was stopped is not read off this hold, because one
+      // with nothing to resume takes none; the restore asks its own generation.
       holdRun: () => {
         const hold = {};
         this.#sending = hold;
         return {
-          held: () => this.#sending === hold,
           release: () => {
             if (this.#sending === hold) {
               this.#sending = null;
