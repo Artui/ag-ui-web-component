@@ -307,10 +307,9 @@ the `copyCode` / `copied` / `copyFailed` strings.
 `ag-ui-submit` event, run started. Use it for an "Ask about this order" button, a command
 palette, or a composer of your own replacing the built-in one. It no-ops for an entirely
 empty message, and while a run — or a checkpoint continuation picked from the panel — is in
-flight. Both count from the moment they are taken rather than from the run's first event — a
-continuation from the pick, a send from the call — so a second call before the server has
-answered is refused, and so is one made from an `ag-ui-submit` listener. Unlike the built-in
-Send it does **not**
+flight. A continuation counts from the pick, and a send from the call rather than from when its
+run starts, so a `sendMessage` from an `ag-ui-submit` listener, or a second call in the same
+task, is refused rather than starting a second run. Unlike the built-in Send it does **not**
 queue, so your composer keeps what it tried to send, and it does **not** consult the
 attachment tray: what you pass is what is sent, so your composer stays in charge of its own
 state.

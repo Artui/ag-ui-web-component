@@ -41,10 +41,11 @@ function composer(el: AgUiChat): HTMLTextAreaElement {
  * the way -- and wait for the send to finish, as the user waits for an answer.
  *
  * Only the composer route, because it is the one that records drafts. This
- * used to call `sendMessage` first as well, and the Enter then arrived while
- * that send was still out: the element let it through as a second run on the
- * same client, which is what the recording relied on. A turn sent in that time
- * is queued behind the first now, which is a different path.
+ * used to call `sendMessage` ahead of the Enter as well, and returned without
+ * waiting for the Enter's own send -- so the next call's `sendMessage` arrived
+ * while that send was still out, and the element let it through as a second
+ * run on the same client. The recording relied on that. Such a send is refused
+ * now, and the Enter after it queues, which is a different path.
  */
 async function send(el: AgUiChat, text: string): Promise<void> {
   const input = composer(el);

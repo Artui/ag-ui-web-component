@@ -625,22 +625,27 @@ export class AgUiChat extends HTMLElement {
   // rounds, but the user must still be able to stop there.
   #running = false;
   /**
-   * The send {@link sendMessage} has taken and not finished, from the moment it
-   * is taken until its client's send returns; null otherwise.
+   * The send {@link sendMessage} has taken whose run has not started yet; null
+   * otherwise.
    *
-   * `running` cannot cover it, because it turns on at the run's first event,
-   * and a send has two stretches before that: the submit event, whose listeners
-   * run in the middle of the send, and the request, which is out until the
-   * server answers. A send in either one passed every guard, so a listener's
-   * own send, or a second call before the server had replied, started a second
-   * run on the same client -- two requests, and the listener's turn drawn
-   * between the user's turn and its answer. It is the gap a picked checkpoint
-   * closes by counting from the pick, closed the same way for a send.
+   * `running` turns on when the client starts the run, a microtask after it is
+   * asked for one, and a send does two things before it asks: it draws the
+   * turn, and it dispatches the submit event, whose listeners run in the middle
+   * of the send. A send from one of them, or a second call in the same task,
+   * passed every guard and started a second run on the same client -- two
+   * requests, and the listener's turn drawn between the user's turn and its
+   * answer. It is the gap a picked checkpoint closes by counting from the pick,
+   * closed the same way for a send.
+   *
+   * Let go of once the run starts, because `running` holds from then until the
+   * run settles, and a send held past that would refuse a host's follow-up from
+   * the run-finished event, which fires as the run settles. Let go of by the
+   * send's end when its run never starts.
    *
    * An object rather than a flag, so a send ending releases only what it took.
-   * A Stop lets go of it at once, and the next send can take it before the
-   * stopped one's request has closed; that request closing must not release
-   * the send that followed it.
+   * By the time a send ends, the turn queued behind it has usually taken the
+   * field for itself, and a Stop lets go of it for the next send to take; the
+   * earlier send ending must release neither.
    */
   #sending: object | null = null;
   /** The decision a run is suspended on, which a Stop abandons. */
@@ -2468,6 +2473,13 @@ export class AgUiChat extends HTMLElement {
   #setRunning(running: boolean): void {
     const settled = this.#running && !running;
     this.#running = running;
+    // The send that asked for this run is covered from here until it settles,
+    // so its hold ends now. Held to the send's end instead, it was still held
+    // when the run-finished event fired, and a host's follow-up from it was
+    // refused.
+    if (running) {
+      this.#sending = null;
+    }
     const label = running ? this.#strings.stop : this.#strings.send;
     this.#send.title = label;
     this.#send.setAttribute("aria-label", label);
@@ -2490,10 +2502,8 @@ export class AgUiChat extends HTMLElement {
     // flight would shift a turn off and lose it to the no-op in `sendMessage`.
     // A continuation settles its run before the element lets go of it, so the
     // settle below arrives while `continuation` is still set, and the release
-    // that follows is what drains. A send is released the same way, by its own
-    // end -- which is also the only release a send whose request failed before
-    // its run started ever gets, since no run started to settle.
-    if (this.#running || this.#sending !== null || this.#history.continuation !== null) {
+    // that follows is what drains.
+    if (this.#running || this.#history.continuation !== null) {
       return;
     }
     const next = this.#queued.shift();
@@ -2557,8 +2567,10 @@ export class AgUiChat extends HTMLElement {
     // when the user then removes the chip.
     //
     // A send counts from the moment it is taken, for the same reason a pick
-    // does: a turn typed and sent before the server has answered the last one
-    // would otherwise start a second run on the same client.
+    // does. A second Send in the same task as the first -- a host clicking it
+    // from code -- reaches here before the first's run has started, and
+    // `sendMessage` refuses it then, so without this the box would be cleared
+    // of a turn that went nowhere.
     if (this.#running || this.#sending !== null || this.#history.continuation !== null) {
       if (content !== "") {
         this.#queued.push(content);
@@ -2611,8 +2623,9 @@ export class AgUiChat extends HTMLElement {
    *
    * No-ops on an empty message, and while a run or a picked checkpoint's
    * continuation is in flight, since a second concurrent run would orphan the
-   * first. A send is in flight from the moment it is taken, before the server
-   * has answered, so this no-ops from a {@link SUBMIT_EVENT} listener too.
+   * first. A send is in flight from the moment it is taken rather than from
+   * its run's start, so this no-ops from a {@link SUBMIT_EVENT} listener and
+   * for a second call in the same task too.
    * Unlike the built-in Send it does not queue: it returns, and the caller
    * keeps what it tried to send. Nor does it consult the tray -- what you pass
    * is what is sent.
@@ -2651,10 +2664,11 @@ export class AgUiChat extends HTMLElement {
       }
       await this.#client_send(content, attachments);
     } finally {
-      // Released by its own end rather than by its run settling, as a
-      // continuation is, so the turn queued behind it is sent once this one
-      // has finished rather than from inside its settle. Only if it is still
-      // this send's to release: a Stop gave it up already.
+      // Still held here only if its run never started: no endpoint, or a
+      // client or store that threw before asking for one. No run settles
+      // then, so this is what sends a turn queued behind it. Not released if
+      // it is no longer this send's: the run starting let go of it, or a Stop
+      // did, and the field may hold the next send by now.
       if (this.#sending === send) {
         this.#sending = null;
         this.#flushQueued();

@@ -1,6 +1,11 @@
 import type { Message } from "@ag-ui/core";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ATTACHMENT_EVENT, ELEMENT_TAG, SUBMIT_EVENT } from "../src/constants.js";
+import {
+  ATTACHMENT_EVENT,
+  ELEMENT_TAG,
+  RUN_FINISHED_EVENT,
+  SUBMIT_EVENT,
+} from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import type { AttachmentRef } from "../src/core/attachment.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
@@ -135,14 +140,13 @@ type SentTurns = readonly [string, unknown][];
 /**
  * Stand in for the AG-UI endpoint, so the element's own `HttpAgent` runs.
  *
- * The real agent rather than the fake, because what these tests are about is
- * the time before the server's first event, and only a real request has any:
- * the fake announces its run as soon as it is asked for one. Every request is
- * recorded and answered with "answer N", framed as the SSE stream an endpoint
- * writes. A request whose number is in `drop` fails before any event, as a
- * refused connection does.
+ * The real agent rather than the fake, because what these tests are about ends
+ * when the client starts the run, and the real one starts it a microtask after
+ * it is asked, as it does in a page; the fake starts it only when its script
+ * says so. Every request is recorded and answered with "answer N", framed as
+ * the SSE stream an endpoint writes.
  */
-function stubEndpoint(drop: readonly number[] = []): SentTurns[] {
+function stubEndpoint(): SentTurns[] {
   const sent: SentTurns[] = [];
   vi.stubGlobal(
     "fetch",
@@ -150,9 +154,6 @@ function stubEndpoint(drop: readonly number[] = []): SentTurns[] {
       const body = JSON.parse(String(init?.body)) as { messages: readonly Message[] };
       sent.push(body.messages.map((message) => [message.role, message.content]));
       const n = sent.length;
-      if (drop.includes(n)) {
-        throw new TypeError("Failed to fetch");
-      }
       const events = [
         { type: "RUN_STARTED", threadId: "t1", runId: `run-${n}` },
         { type: "TEXT_MESSAGE_START", messageId: `a${n}`, role: "assistant" },
@@ -170,9 +171,12 @@ function stubEndpoint(drop: readonly number[] = []): SentTurns[] {
 }
 
 /** Mount with the element's own agent, against whatever `fetch` is stubbed to. */
-function mountReal(): AgUiChat {
+function mountReal(attrs: Record<string, string> = {}): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
+  for (const [key, value] of Object.entries(attrs)) {
+    el.setAttribute(key, value);
+  }
   document.body.appendChild(el);
   return el;
 }
@@ -231,6 +235,8 @@ describe("a send is in flight from the moment it is taken", () => {
   });
 
   it("refuses a second send made before the first one's run has started", async () => {
+    // In the same task, because the client starts the run a microtask after
+    // it is asked; from then on the run is in flight and refuses it anyway.
     const sent = stubEndpoint();
     const el = mountReal();
 
@@ -272,35 +278,79 @@ describe("a send is in flight from the moment it is taken", () => {
     ]);
   });
 
-  it("still sends what it queued when the first request fails before its run starts", async () => {
+  it("still sends what it queued when the send fails before its run starts", async () => {
     // No run started, so no run settles: the turn waiting behind the send has
-    // to be released by the send ending, or it waits for a run that never comes.
-    const sent = stubEndpoint([1]);
+    // to be released by the send ending, or it waits for a run that never
+    // comes. A store that refuses the first save is one way to get there --
+    // the client saves the turn before it asks for the run.
+    const sent = stubEndpoint();
     const el = mountReal();
+    const store = el.conversationStore;
+    const save = store.saveMessages.bind(store);
+    let refuse = true;
+    store.saveMessages = (threadId, messages) => {
+      if (refuse) {
+        refuse = false;
+        throw new Error("the store refused the save");
+      }
+      save(threadId, messages);
+    };
 
-    sendTurn(el, "first");
+    const first = el.sendMessage("first").catch((error: unknown) => error);
     sendTurn(el, "second");
+    const failure = await first;
+    await settle();
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.at(-1)).toEqual(["user", "second"]);
+    expect(transcript(el).at(-1)).toEqual(["assistant", "answer 1"]);
+  });
+
+  it("lets a run-finished listener send the next turn", async () => {
+    // The event fires as the run settles. A send still held at that point
+    // refused the host's follow-up without a word.
+    const sent = stubEndpoint();
+    const el = mountReal();
+    el.addEventListener(RUN_FINISHED_EVENT, () => void el.sendMessage("follow-up"), {
+      once: true,
+    });
+
+    await el.sendMessage("first");
     await settle();
 
     expect(sent).toHaveLength(2);
-    expect(sent[1]?.at(-1)).toEqual(["user", "second"]);
-    expect(transcript(el).at(-1)).toEqual(["assistant", "answer 2"]);
+    expect(transcript(el)).toEqual([
+      ["user", "first"],
+      ["assistant", "answer 1"],
+      ["user", "follow-up"],
+      ["assistant", "answer 2"],
+    ]);
   });
 
   it.each([
-    ["starts a new chat", (el: AgUiChat) => el.newChat()],
-    ["removes the element", (el: AgUiChat) => el.remove()],
+    ["starts a new chat", {}, (el: AgUiChat) => el.newChat()],
+    ["removes the element", {}, (el: AgUiChat) => el.remove()],
     [
       "moves the element",
+      {},
       (el: AgUiChat) => {
         const dock = document.createElement("aside");
         document.body.appendChild(dock);
         dock.appendChild(el);
       },
     ],
-  ])("sends nothing once a submit listener that %s has stopped it", async (_, stop) => {
+    // The one with consequences beyond a lost turn: sent anyway, the first
+    // principal's words opened the next principal's conversation.
+    [
+      "changes the principal",
+      { "user-key": "alice" },
+      (el: AgUiChat) => el.setAttribute("user-key", "bob"),
+    ],
+  ])("sends nothing once a submit listener that %s has stopped it", async (_, attrs, stop) => {
     const sent = stubEndpoint();
-    const el = mountReal();
+    const el = mountReal(attrs);
+    await settle();
     el.addEventListener(SUBMIT_EVENT, () => stop(el), { once: true });
 
     await el.sendMessage("first");
@@ -311,9 +361,8 @@ describe("a send is in flight from the moment it is taken", () => {
 
   it("stays in flight when a send stopped before it ends behind it", async () => {
     // A stopped send still ends, once its request closes, and by then the next
-    // send may be the one in flight. Each run here waits to be let through
-    // before its first event, so the second is still short of it when the
-    // first ends.
+    // send may be the one held. Each run here waits to be let through before
+    // it starts, so the second is still short of it when the first ends.
     const gates: (() => void)[] = [];
     const handles: FakeAgentHandle[] = [];
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
@@ -337,7 +386,9 @@ describe("a send is in flight from the moment it is taken", () => {
     await flush();
     gates[0]?.();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    await el.sendMessage("third");
+    // Not awaited: let through, it would wait at its gate like the others.
+    void el.sendMessage("third");
+    await flush();
 
     expect(handles.flatMap((handle) => handle.runParams)).toHaveLength(2);
     expect(bubbles(el)).toEqual(["second"]);
