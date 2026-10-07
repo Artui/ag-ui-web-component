@@ -3,7 +3,9 @@ import { ELEMENT_TAG, SUBMIT_EVENT } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import type { RunRow } from "../src/core/run_index.js";
+import type { Skill } from "../src/skills/skill.js";
 import { type Emit, makeFakeAgent } from "./helpers/fake_agent.js";
+import { installFakeMedia } from "./helpers/fake_media.js";
 
 /**
  * Walking back through what you have already sent, on the arrow keys.
@@ -565,5 +567,191 @@ describe("what the recall history outlives", () => {
 
     arrow(el, "ArrowUp");
     expect(composer(el).value).toBe("");
+  });
+});
+
+/**
+ * The element writes into the composer itself, and every such write ends a
+ * walk: what it put there is the user's to send, and the next arrow is either
+ * caret movement in it or nothing at all.
+ *
+ * Each test walks back to the newest of two turns rather than the oldest, and
+ * that is what makes it able to fail. From the oldest, the next ArrowUp has
+ * nowhere to go and holds, so a walk the write did not end would leave the
+ * written text alone by exhaustion and pass. From the newest it has a turn to
+ * step to, and stepping replaced the write with it.
+ */
+describe("writes that end a walk", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  /** Two turns sent, and the composer walked back to the newer one. */
+  async function walkedToNewest(el: AgUiChat): Promise<void> {
+    await send(el, "first");
+    await send(el, "second");
+    expect(walkBack(el, 1)).toEqual(["second"]);
+  }
+
+  /**
+   * Both arrows leave `written` where it is. Down is asserted as well as up
+   * because it lost the write too, by stepping forward off the newest turn and
+   * emptying the box.
+   */
+  function expectKeptThroughArrows(el: AgUiChat, written: string): void {
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe(written);
+    arrow(el, "ArrowDown");
+    expect(composer(el).value).toBe(written);
+  }
+
+  function skillChip(el: AgUiChat, title: string): HTMLButtonElement {
+    const root = el.shadowRoot as ShadowRoot;
+    const found = [...root.querySelectorAll<HTMLButtonElement>(".skill-chip")].find(
+      (chip) => chip.textContent === title,
+    );
+    if (found === undefined) {
+      throw new Error(`no skill chip ${title}`);
+    }
+    return found;
+  }
+
+  function withSkills(skills: Skill[]): AgUiChat {
+    return mount((element) => {
+      element.setAttribute("data-skills", JSON.stringify(skills));
+      element.setAttribute("data-prompt-chips", "true");
+    });
+  }
+
+  it("keeps a quotation added to a turn walked back to", async () => {
+    // The page quote offer and the transcript's own both arrive here, through
+    // the one insert behind quote().
+    const el = mount();
+    await walkedToNewest(el);
+
+    el.quote("look at this");
+    const written = composer(el).value;
+    expect(written).toContain("look at this");
+    expect(written.startsWith("second")).toBe(true);
+
+    expectKeptThroughArrows(el, written);
+  });
+
+  it("does not empty a quotation on ArrowDown", async () => {
+    // Down on its own, since the pair above stops at the first key to fail: a
+    // step forward off the newest turn empties the box, which lost the
+    // quotation as surely as a step back replaced it.
+    const el = mount();
+    await walkedToNewest(el);
+
+    el.quote("look at this");
+    const written = composer(el).value;
+
+    arrow(el, "ArrowDown");
+    expect(composer(el).value).toBe(written);
+  });
+
+  it("keeps a skill prefilled with a field still to fill", async () => {
+    const el = withSkills([{ name: "find", title: "Find", prompt: "Find {q}.", chip: true }]);
+    await walkedToNewest(el);
+
+    skillChip(el, "Find").click();
+    expect(composer(el).value).toBe("Find {q}.");
+
+    expectKeptThroughArrows(el, "Find {q}.");
+  });
+
+  it("keeps a skill prefilled to be sent by hand", async () => {
+    const el = withSkills([
+      { name: "draft", title: "Draft", prompt: "Draft it.", chip: true, sendImmediately: false },
+    ]);
+    await walkedToNewest(el);
+
+    skillChip(el, "Draft").click();
+    expect(composer(el).value).toBe("Draft it.");
+
+    expectKeptThroughArrows(el, "Draft it.");
+  });
+
+  it("keeps text the host page wrote with no input event", async () => {
+    // No hook the element offers can see this one, which is why the walk
+    // checks the composer itself rather than relying on writers to report.
+    const el = mount();
+    await walkedToNewest(el);
+
+    composer(el).value = "from the host";
+
+    expectKeptThroughArrows(el, "from the host");
+  });
+
+  it("keeps dictated text, and dictation still lands", async () => {
+    // Voice already ends a walk by reporting its write as input; this holds it
+    // there, beside the writers that did not.
+    const media = installFakeMedia();
+    try {
+      const el = mount((element) => {
+        element.transcribeHandler = async () => "and more";
+      });
+      await walkedToNewest(el);
+
+      const mic = el.shadowRoot?.querySelector<HTMLButtonElement>(".voice-btn");
+      mic?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      mic?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(composer(el).value).toBe("second and more");
+
+      expectKeptThroughArrows(el, "second and more");
+    } finally {
+      media.restore();
+    }
+  });
+
+  it("starts from the newest turn once a write has emptied the box", async () => {
+    // An empty box is a fresh start however it got empty. A host clearing it
+    // with no input event left the walk where it was, and the next ArrowUp
+    // stepped past the newest turn to the one before.
+    const el = mount();
+    await walkedToNewest(el);
+
+    composer(el).value = "";
+
+    expect(walkBack(el, 2)).toEqual(["second", "first"]);
+  });
+
+  it("ends a walk on an edit the user typed and then took back", async () => {
+    // The composer holds the walk's own text again, so comparing text alone
+    // would carry on walking. The input events say the user took the box, and
+    // an arrow in a box the user has taken is caret movement.
+    const el = mount();
+    await walkedToNewest(el);
+    const input = composer(el);
+    for (const value of ["second!", "second"]) {
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    expectKeptThroughArrows(el, "second");
+  });
+
+  it("still steps through every turn when nothing else wrote", async () => {
+    // The check that ends a walk must not end one that is only walking: each
+    // step reads back what the step before it put there.
+    const el = mount();
+    await send(el, "first");
+    await send(el, "second");
+    await send(el, "third");
+
+    expect(walkBack(el, 3)).toEqual(["third", "second", "first"]);
+    arrow(el, "ArrowDown");
+    expect(composer(el).value).toBe("second");
+    arrow(el, "ArrowDown");
+    expect(composer(el).value).toBe("third");
   });
 });
