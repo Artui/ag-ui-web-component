@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.3] — 2026-10-07
+
 ### Fixed
 
 - **A resumed or forked run shows the turn it was sent with.** Picking Resume
@@ -4244,7 +4246,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.2...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.3...HEAD
+[0.41.3]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.2...v0.41.3
 [0.41.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.1...v0.41.2
 [0.41.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.0...v0.41.1
 [0.41.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.40.0...v0.41.0
