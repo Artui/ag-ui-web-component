@@ -641,12 +641,12 @@ export class AgUiChat extends HTMLElement {
    * Let go of once the run starts, because `running` holds from then until the
    * run settles, and a send held past that would refuse a host's follow-up from
    * the run-finished event, which fires as the run settles. Let go of by the
-   * send's end when its run never starts.
+   * send's or the retry's end when its run never starts.
    *
-   * An object rather than a flag, so a send ending releases only what it took.
-   * By the time a send ends, the turn queued behind it has usually taken the
-   * field for itself, and a Stop lets go of it for the next send to take; the
-   * earlier send ending must release neither.
+   * An object rather than a flag, so a send or a retry ending releases only
+   * what it took. By the time either ends, the turn queued behind it has
+   * usually taken the field for itself, and a Stop lets go of it for the next
+   * send to take; the earlier one ending must release neither.
    */
   #sending: object | null = null;
   /** The decision a run is suspended on, which a Stop abandons. */
@@ -1932,7 +1932,10 @@ export class AgUiChat extends HTMLElement {
    * repeats, so the agent answers what it was asked rather than being told its
    * last answer was wrong. Returns `false` when there is nothing to retry, or
    * while anything that refuses a send is in flight: a run, a send or another
-   * retry whose run has not started yet, or a checkpoint continuation.
+   * retry whose run has not started yet, or a checkpoint continuation. Also
+   * `false` when host code it runs before its run starts -- the store's save,
+   * or an activity or tool renderer the replay draws through -- has stopped it
+   * by starting a new chat or changing `user-key`.
    *
    * Public because a host with its own message UI wants the same button, and
    * because the failed-run notice reaches it from outside the action row.
@@ -1980,6 +1983,14 @@ export class AgUiChat extends HTMLElement {
       this.#clearTranscript();
       for (const message of kept) {
         this.#history.replay(message);
+        // A replay draws through the host's activity and tool renderers, which
+        // can stop the Retry as the store's save can. Checked after each one,
+        // so the rest of the abandoned conversation is not drawn into the chat
+        // that replaced it, and after the last, so its answer is not asked
+        // again.
+        if (this.#sending !== hold) {
+          return false;
+        }
       }
       await client.resume();
       return true;

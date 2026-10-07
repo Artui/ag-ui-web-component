@@ -315,9 +315,11 @@ attachment tray: what you pass is what is sent, so your composer stays in charge
 state.
 
 `retryLastTurn()` keeps the same rules, because it starts a run on the same conversation. It
-returns `false` while a run, a send or a continuation is in flight, and it counts from the call
-as a send does: until its run starts, a `sendMessage` is refused, the built-in Send queues, and
-a checkpoint pick is refused.
+returns `false` while a run, a send, another Retry or a continuation is in flight, and it counts
+from the call as a send does: until its run starts, a `sendMessage` or a second Retry is refused,
+the built-in Send queues, and a checkpoint pick is refused. It also returns `false` when your own
+code stops it before its run starts: a conversation store, or an activity or tool renderer it
+redraws through, that starts a new chat or changes `user-key`.
 
 `attachFile(file)` queues a file into the tray exactly as the picker and drag-and-drop do, with
 the same validation and progress chip. It returns `false` when uploads are not configured

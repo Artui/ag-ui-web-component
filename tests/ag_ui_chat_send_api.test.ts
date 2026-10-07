@@ -146,9 +146,12 @@ type SentTurns = readonly [string, unknown][];
  * when the client starts the run, and the real one starts it a microtask after
  * it is asked, as it does in a page; the fake starts it only when its script
  * says so. Every request is recorded and answered with "answer N", framed as
- * the SSE stream an endpoint writes.
+ * the SSE stream an endpoint writes, after whatever `during` adds to run N.
  */
-function stubEndpoint(runs: readonly RunRow[] = []): SentTurns[] {
+function stubEndpoint(
+  runs: readonly RunRow[] = [],
+  during: (n: number) => readonly object[] = () => [],
+): SentTurns[] {
   const sent: SentTurns[] = [];
   vi.stubGlobal(
     "fetch",
@@ -166,6 +169,7 @@ function stubEndpoint(runs: readonly RunRow[] = []): SentTurns[] {
       const n = sent.length;
       const events = [
         { type: "RUN_STARTED", threadId: "t1", runId: `run-${n}` },
+        ...during(n),
         { type: "TEXT_MESSAGE_START", messageId: `a${n}`, role: "assistant" },
         { type: "TEXT_MESSAGE_CONTENT", messageId: `a${n}`, delta: `answer ${n}` },
         { type: "TEXT_MESSAGE_END", messageId: `a${n}` },
@@ -674,6 +678,80 @@ describe("a Retry and a checkpoint pick count a held send", () => {
     await flush();
 
     expect(handle.runParams).toHaveLength(3);
+  });
+
+  it("refuses a second Retry made before the first one's run has started", async () => {
+    const sent = stubEndpoint();
+    const el = mountReal();
+    await el.sendMessage("first");
+    await settle();
+
+    const first = el.retryLastTurn();
+    expect(await el.retryLastTurn()).toBe(false);
+    expect(await first).toBe(true);
+    await settle();
+
+    expect(sent).toEqual([[["user", "first"]], [["user", "first"]]]);
+  });
+
+  it("does nothing more once a renderer it replays through has stopped it", async () => {
+    // The replay draws through the host's renderers, which can start a new
+    // chat as the store's save can. Here the activity sits ahead of two more
+    // messages, so the check after each replay is what keeps them out of the
+    // new chat, rather than one made once the replay is done.
+    const sent = stubEndpoint([], (n) =>
+      n === 1
+        ? [{ type: "ACTIVITY_SNAPSHOT", messageId: "act1", activityType: "probe", content: {} }]
+        : [],
+    );
+    const el = mountReal();
+    let armed = false;
+    el.registerActivityRenderer({
+      type: "probe",
+      render: () => {
+        if (armed) {
+          armed = false;
+          el.newChat();
+        }
+        return document.createElement("div");
+      },
+    });
+    await el.sendMessage("first");
+    await settle();
+    await el.sendMessage("second");
+    await settle();
+
+    armed = true;
+    expect(await el.retryLastTurn()).toBe(false);
+    await settle();
+
+    expect(sent).toHaveLength(2);
+    expect(transcript(el)).toEqual([]);
+  });
+
+  it("refuses a Retry from a run-finished listener while a picked checkpoint still holds", async () => {
+    // A continuation settles its run before the element lets go of it, so the
+    // run-finished event fires with the continuation still recorded. A send
+    // from there is refused for that, and a Retry keeps the same rule.
+    const sent = stubEndpoint([RUN]);
+    const el = mountReal({ "data-runs-url": "/agent/runs/" });
+    await el.sendMessage("first");
+    await settle();
+    await openCheckpoints(el);
+    // Once, so a Retry that went ahead fails here rather than retrying from
+    // its own run's end until the worker runs out of memory.
+    const answers: Promise<boolean>[] = [];
+    el.addEventListener(RUN_FINISHED_EVENT, () => {
+      if (answers.length === 0) {
+        answers.push(el.retryLastTurn());
+      }
+    });
+
+    pickResume(el, "and now sort them");
+    await settle();
+
+    expect(await Promise.all(answers)).toEqual([false]);
+    expect(sent).toEqual([[["user", "first"]], [["user", "and now sort them"]]]);
   });
 
   it("lets go of its hold when there is nothing to retry", async () => {

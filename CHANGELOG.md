@@ -37,12 +37,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checked only for a run in flight. A Retry made before a send's run had
   started, or while a picked checkpoint was in flight, started a second run in
   the same conversation. A Retry is now refused in both cases. It also counts
-  from the call, as a send does, so a `sendMessage()` made before its run starts
-  is refused and the built-in Send queues. A pick made before a send's or a
-  Retry's run has started is now refused with the same hint as a pick during a
-  run. A conversation store that starts a new chat or changes `user-key` from
-  the save a Retry makes now stops it. The Retry used to go ahead, drawing the
-  old conversation into the new one and asking its answer again.
+  from the call, as a send does, so a `sendMessage()` or a second Retry made
+  before its run starts is refused and the built-in Send queues. A pick made
+  before a send's or a Retry's run has started is now refused with the same hint
+  as a pick during a run. A conversation store, or an activity or tool renderer
+  the Retry redraws through, that starts a new chat or changes `user-key` now
+  stops it, and `retryLastTurn()` returns `false`. The Retry used to go ahead,
+  drawing the old conversation into the new one and asking its answer again.
+  One new refusal follows from the same rule: a Retry from an
+  `ag-ui-run-finished` listener for a picked checkpoint's run returns `false`,
+  because the continuation is still in flight when that event fires. A
+  `sendMessage()` from the same place was already refused for that reason.
 
 ## [0.41.3] — 2026-10-07
 
