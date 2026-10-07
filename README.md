@@ -2121,6 +2121,13 @@ waived with *Always allow* are forgotten with it, so the next principal is asked
 sent on the next principal's first run, so a host that seeds shared state assigns it again for the
 principal who arrived.
 
+A handover also ends what the previous principal had in flight. Their run is stopped, and nothing
+it does afterwards is written into the next principal's storage or shared state: not the save a
+stopped run makes once its request closes, not a tool result that comes back after the Stop, not
+state already on its way. What they had typed into the composer and not sent is cleared with the
+transcript, quotations and skill templates included, and a voice recording in progress is stopped
+before it is transcribed.
+
 Set it live, from script, as part of signing out or in:
 
 ```js
@@ -2141,7 +2148,8 @@ element that is never inserted again leaves the previous principal's conversatio
 The **first** value to arrive is treated as a host naming the user who was already there, not as a
 handover: the conversation in progress moves into the principal's namespace instead of being
 destroyed. So an element configured by an async auth handshake — the shape described in
-[Framework hosts](#framework-hosts-configure-before-you-insert) — keeps what is on screen.
+[Framework hosts](#framework-hosts-configure-before-you-insert) — keeps what is on screen,
+including a run still streaming and whatever is in the composer.
 
 Two things it deliberately does not do. It does not scope the panel's own collapsed / dragged-size
 / theme preferences, which are this element's UI state and carry no conversation content. And it
@@ -2176,6 +2184,12 @@ chat.conversationStore = new RemoteConversationStore(
   false, // cacheMessages
 );
 ```
+
+A conversation store you assign yourself is never replaced by a change of `user-key`, whether you
+assign it before the element connects or after. A store that keeps its data somewhere the element
+cannot see has to scope itself; the element purges only its own `sessionStorage` namespace and
+clears what is on screen. If your store wraps a `SessionStorageStore`, build a new one per
+principal.
 
 `SessionStorageStore.purge(namespace)` is the same primitive the element uses, for a host driving
 its own store from its own sign-out path.

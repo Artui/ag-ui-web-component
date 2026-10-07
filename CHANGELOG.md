@@ -115,6 +115,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resuming it from whatever page is current then. When the element only left
   the page, the checkpoint is kept, and the run resumes once the element is
   put back.
+- **A run stopped by a change of `user-key` no longer saves into the next
+  principal's storage.** The handover stopped the run, but a stopped run saves
+  what it had once its request closes, and by then the store had been purged
+  and scoped to whoever arrived. The previous principal's question and partial
+  answer were filed under their own thread id in the next principal's
+  namespace, and the history drawer listed a conversation titled with a
+  question the new user never asked. A tool result returned after the Stop, a
+  stopped checkpoint continuation, and a key changed while the element was
+  detached did the same. A state snapshot already read off the wire put the
+  previous principal's shared state back after the handover had emptied it, so
+  it went out on the next principal's first run. A client built before a
+  handover now writes nothing at all. A key's first arrival is still an
+  adoption, so a run in flight across it keeps saving into the namespace it
+  moved to, and New chat still files a stopped run's last save under the
+  conversation it left.
+- **A change of `user-key` no longer replaces a conversation store the host
+  assigned after the element connected.** Connecting remembered the element's
+  own store, and a later key change rebuilt that store under the new namespace
+  whether or not it was still the one in use. A store the host assigned to a
+  connected element was swapped for a `sessionStorage` one, and a
+  `RemoteConversationStore` built with `cacheMessages: false` to keep message
+  bodies off the client started caching every one of them in the tab. A store
+  the host assigned is now left alone whenever it was assigned, and scopes
+  itself.
+- **A change of `user-key` clears the composer.** The transcript and recall
+  history were already cleared so the previous principal's words were not in
+  front of the next one, but a turn they had typed and not sent stayed in the
+  box, on a live change and on one made while detached. A handover now empties
+  the composer, which takes a quotation or a skill's template with it. It also
+  takes down the skill hint, closes a slash palette the text had opened, and on
+  a live change stops a voice recording in progress before it is transcribed.
+  The first arrival of a key, a move that keeps the key, and New chat leave the
+  text where it is.
 
 ## [0.41.3] — 2026-10-07
 
