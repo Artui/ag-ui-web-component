@@ -53,9 +53,12 @@ export class StorageScope {
   // remounts, but re-resolves if the host answers the warning with an `id`.
   #generatedNs = "";
   #generatedFor = "";
-  // The `sessionStorage`-backed store, which the element may therefore re-scope
-  // on a principal change. `null` when the host injected a store of its own
-  // kind, whose keying the element does not know and must not guess at.
+  // The `sessionStorage`-backed store this scope handed out, which the element
+  // may therefore re-scope on a principal change -- while it is still the store
+  // in use, which rescopeStore asks, since a host can assign its own at any
+  // time. `null` until connecting has met the built-in store at all. A store of
+  // the host's own kind is never held here: the element does not know its
+  // keying and must not guess at it.
   #builtinStore: SessionStorageStore | null = null;
 
   constructor(host: StorageScopeHost) {
@@ -115,12 +118,22 @@ export class StorageScope {
   }
 
   /**
-   * Rebuild the built-in store under `namespace`, or `null` for a store of the
-   * host's own kind, which holds its data somewhere the element cannot see and
-   * has to scope itself.
+   * Rebuild the built-in store under `namespace`, or `null` when `current` --
+   * the store the element is using now, unwrapped from any remote it wrapped
+   * it in -- is not the one this scope handed out.
+   *
+   * Asked of the store in use rather than of what connecting remembered,
+   * because the two part company the moment a host assigns a store of its own
+   * to a connected element. Remembering was enough to tell a host's store from
+   * the built-in one at connect; after it, the built-in one was still
+   * remembered, so a key change replaced the host's store with a fresh
+   * `sessionStorage` one -- and a host that had chosen to keep message bodies
+   * off the client found every one of them cached in the tab again. A store
+   * the element did not make holds its data somewhere the element cannot see,
+   * and has to scope itself.
    */
-  rescopeStore(namespace: string): SessionStorageStore | null {
-    if (this.#builtinStore === null) {
+  rescopeStore(current: ClientConversationStore, namespace: string): SessionStorageStore | null {
+    if (current !== this.#builtinStore) {
       return null;
     }
     this.#builtinStore = new SessionStorageStore(namespace);
