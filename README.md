@@ -307,11 +307,19 @@ the `copyCode` / `copied` / `copyFailed` strings.
 `ag-ui-submit` event, run started. Use it for an "Ask about this order" button, a command
 palette, or a composer of your own replacing the built-in one. It no-ops for an entirely
 empty message, and while a run — or a checkpoint continuation picked from the panel — is in
-flight; a continuation counts from the pick, not from its first event, so the gap where two
-runs could start against one conversation is closed. Unlike the built-in Send it does **not**
+flight. A continuation counts from the pick, and a send from the call rather than from when its
+run starts, so a `sendMessage` from an `ag-ui-submit` listener, or a second call in the same
+task, is refused rather than starting a second run. Unlike the built-in Send it does **not**
 queue, so your composer keeps what it tried to send, and it does **not** consult the
 attachment tray: what you pass is what is sent, so your composer stays in charge of its own
 state.
+
+`retryLastTurn()` keeps the same rules, because it starts a run on the same conversation. It
+returns `false` while a run, a send, another Retry or a continuation is in flight, and it counts
+from the call as a send does: until its run starts, a `sendMessage` or a second Retry is refused,
+the built-in Send queues, and a checkpoint pick is refused. It also returns `false` when your own
+code stops it before its run starts: a conversation store, or an activity or tool renderer it
+redraws through, that starts a new chat or changes `user-key`.
 
 `attachFile(file)` queues a file into the tray exactly as the picker and drag-and-drop do, with
 the same validation and progress chip. It returns `false` when uploads are not configured
@@ -1110,12 +1118,16 @@ that gap is parked too rather than racing it. What
 is waiting shows above the composer as chips, each of which takes its message
 back when pressed, and the next one is sent when the run settles. Stopping the
 run discards them: sending into a conversation someone has just stopped is the
-opposite of what stopping meant. It is not thrown away, though — a queued
-message has already left the composer, so it goes to the front of the recall
-history below rather than nowhere.
+opposite of what stopping meant. Nothing is lost, though — a queued message
+entered the recall history below when it left the composer, so **Up** gets it
+back after a Stop, and after its chip is taken back.
 
 The composer also walks back through what you have already sent, on **Up** and
-**Down** — the shape every shell and every coding agent uses. Only from an empty
+**Down** — the shape every shell and every coding agent uses. It holds every turn
+that left the composer: one sent at once, one queued behind a run (from the
+moment it is queued), and one sent to resume or fork a run from the checkpoint
+panel. A message sent with `sendMessage` is not in it, because it was never
+typed there. Only from an empty
 composer and only with the skills palette closed: an arrow inside text is how you
 move the caret, and taking it unconditionally would break editing to add a
 shortcut. Arrowing forward past the newest turn empties the box again, so the way
@@ -1858,7 +1870,7 @@ chat.addEventListener("ag-ui-feedback", (e) => {
   analytics.track("assistant_rating", e.detail); // { content, rating }
 });
 
-await chat.retryLastTurn(); // false when there is nothing to ask again
+await chat.retryLastTurn(); // false when there is nothing to ask again, or a run is in flight
 ```
 
 ## Quoting a selection

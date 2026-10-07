@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A send is in flight from the moment it is taken, not from when its run
+  starts.** A send draws its turn and dispatches `ag-ui-submit` before it asks
+  the client for a run, and only the run counted. So a `sendMessage()` from an
+  `ag-ui-submit` listener, or a second call in the same task, passed every
+  guard and went out as a second request on the same client, with the
+  listener's turn drawn between the user's turn and its answer. Both are now
+  refused, so a listener that sends hears the event once, and the built-in
+  Send queues in that time as it does during a run. A listener that stops the
+  send -- a new chat, a thread switch, a change of `user-key`, moving the
+  element -- now stops it before its request is made. It used to go out into
+  the conversation that replaced it, which after a change of `user-key` put one
+  principal's turn at the top of the next one's conversation.
+- **ArrowUp reaches a turn queued behind a run, and one sent to resume or
+  fork a run.** Arrow-key recall recorded only a turn the composer sent at
+  once. A turn typed while a run was going entered it only if Stop discarded
+  the queue, so ArrowUp skipped it while it waited and after the queue sent it.
+  A turn sent from the checkpoint panel never entered it, though it was typed
+  in the composer like any other. Both are now recorded as they leave the
+  composer, and a turn taken back from the queue stays recallable, as one Stop
+  declined to send already did. Stop no longer adds the queue again, so the
+  history holds each turn once. Queueing or continuing with a turn you walked
+  back to now starts the next walk from the newest turn, as sending one did.
+  Turns a host sends with `sendMessage` are still not recorded, and the purge a
+  change of `user-key` makes still clears them.
+- **Retry and a checkpoint pick keep the rules a send keeps.** `retryLastTurn()`
+  checked only for a run in flight. A Retry made before a send's run had
+  started, or while a picked checkpoint was in flight, started a second run in
+  the same conversation. A Retry is now refused in both cases. It also counts
+  from the call, as a send does, so a `sendMessage()` or a second Retry made
+  before its run starts is refused and the built-in Send queues. A pick made
+  before a send's or a Retry's run has started is now refused with the same hint
+  as a pick during a run. A conversation store, or an activity or tool renderer
+  the Retry redraws through, that starts a new chat or changes `user-key` now
+  stops it, and `retryLastTurn()` returns `false`. The Retry used to go ahead,
+  drawing the old conversation into the new one and asking its answer again.
+  One new refusal follows from the same rule: a Retry from an
+  `ag-ui-run-finished` listener for a picked checkpoint's run returns `false`,
+  because the continuation is still in flight when that event fires. A
+  `sendMessage()` from the same place was already refused for that reason.
+
 ## [0.41.3] — 2026-10-07
 
 ### Fixed

@@ -624,6 +624,31 @@ export class AgUiChat extends HTMLElement {
   // the Send⇄Stop button: `agent.isRunning` is false between frontend-tool
   // rounds, but the user must still be able to stop there.
   #running = false;
+  /**
+   * The send {@link sendMessage} has taken, or the retry {@link retryLastTurn}
+   * has, whose run has not started yet; null otherwise.
+   *
+   * `running` turns on when the client starts the run, a microtask after it is
+   * asked for one, and a send does two things before it asks: it draws the
+   * turn, and it dispatches the submit event, whose listeners run in the middle
+   * of the send. A send from one of them, or a second call in the same task,
+   * passed every guard and started a second run on the same client -- two
+   * requests, and the listener's turn drawn between the user's turn and its
+   * answer. It is the gap a picked checkpoint closes by counting from the pick,
+   * closed the same way for a send. A retry asks for its run the same way, so
+   * it takes the same hold.
+   *
+   * Let go of once the run starts, because `running` holds from then until the
+   * run settles, and a send held past that would refuse a host's follow-up from
+   * the run-finished event, which fires as the run settles. Let go of by the
+   * send's or the retry's end when its run never starts.
+   *
+   * An object rather than a flag, so a send or a retry ending releases only
+   * what it took. By the time either ends, the turn queued behind it has
+   * usually taken the field for itself, and a Stop lets go of it for the next
+   * send to take; the earlier one ending must release neither.
+   */
+  #sending: object | null = null;
   /** The decision a run is suspended on, which a Stop abandons. */
   readonly #decision = new PendingDecision();
   /**
@@ -863,6 +888,7 @@ export class AgUiChat extends HTMLElement {
       // A continuation sends only what the composer holds. The tray is not
       // read, so nothing rides along to be drawn or announced.
       announceTurn: (content) => this.#announceTurn(content, []),
+      recordTurn: (content) => this.#recordTurn(content),
       autoGrow: () => autoGrow(this.#input),
       continuationEnded: () => this.#flushQueued(),
       client: () => this.#client,
@@ -871,7 +897,10 @@ export class AgUiChat extends HTMLElement {
       releaseClient: () => {
         this.#client = null;
       },
-      running: () => this.#running,
+      // A held send or retry is as much in flight to a pick as a run is: it has
+      // asked this element's client for a run that has not started, and a
+      // continuation started beside it was a second run in one conversation.
+      running: () => this.#running || this.#sending !== null,
       cancelRun: () => this.#cancelRun(),
       resetState: () => this.#resetState(),
       setRunning: (running) => this.#setRunning(running),
@@ -1238,7 +1267,8 @@ export class AgUiChat extends HTMLElement {
     // run was cancelled on the way out, and the transcript is rebuilt below
     // from persisted history -- which could only be appended to what is still
     // showing. The composer's recall history is kept, because a move is not a
-    // farewell and disconnecting put the queued messages there on purpose.
+    // farewell, and the Stop on the way out dropped the queued messages because
+    // recall already held them.
     if (this.#connectedBefore) {
       this.#resetConversation();
     }
@@ -1900,8 +1930,12 @@ export class AgUiChat extends HTMLElement {
    *
    * History is truncated to the most recent user message inclusive and the run
    * repeats, so the agent answers what it was asked rather than being told its
-   * last answer was wrong. Returns `false` when there is nothing to retry or a
-   * run is already in flight.
+   * last answer was wrong. Returns `false` when there is nothing to retry, or
+   * while anything that refuses a send is in flight: a run, a send or another
+   * retry whose run has not started yet, or a checkpoint continuation. Also
+   * `false` when host code it runs before its run starts -- the store's save,
+   * or an activity or tool renderer the replay draws through -- has stopped it
+   * by starting a new chat or changing `user-key`.
    *
    * Public because a host with its own message UI wants the same button, and
    * because the failed-run notice reaches it from outside the action row.
@@ -1912,24 +1946,63 @@ export class AgUiChat extends HTMLElement {
    * again -- unless the user waived it for this session.
    */
   async retryLastTurn(): Promise<boolean> {
-    if (this.#running) {
+    // Refused for whatever refuses a send, because it starts a run on the same
+    // client. That includes a send held short of its run, which `running` does
+    // not see yet, and a picked checkpoint, which runs on a client of its own
+    // and leaves this one idle -- so a Retry beside it was a second run in the
+    // one conversation, each saving over the other.
+    if (this.#running || this.#sending !== null || this.#history.continuation !== null) {
       return false;
     }
-    const client = this.#ensureClient();
-    const kept = client.truncateToLastUser();
-    if (kept === null) {
-      return false;
+    // Held from here as a send is, and for the same reason: the client starts
+    // the run a microtask after it is asked, and nothing above sees it until
+    // then. A send in that time went out as a second run on the same client,
+    // the built-in Send sent rather than queued, and a pick started a
+    // continuation beside it. Released once the run starts, by `#setRunning`,
+    // and below when it never does.
+    const hold = {};
+    this.#sending = hold;
+    try {
+      const client = this.#ensureClient();
+      const kept = client.truncateToLastUser();
+      if (kept === null) {
+        return false;
+      }
+      // The truncation saved through the host's store, so host code has run
+      // with the Retry under way, and a store that started a new chat or
+      // changed `user-key` from there has stopped it. Going on drew the
+      // abandoned conversation into the one that replaced it and asked its
+      // answer again on a client nothing holds.
+      if (this.#sending !== hold) {
+        return false;
+      }
+      // Re-render between the truncation and the run: the kept turns replay as
+      // restored history (static, no entrance animation), and only the new
+      // answer arrives live. Streaming into the old transcript would put the
+      // new answer underneath the one it replaces.
+      this.#clearTranscript();
+      for (const message of kept) {
+        this.#history.replay(message);
+        // A replay draws through the host's activity and tool renderers, which
+        // can stop the Retry as the store's save can. Checked after each one,
+        // so the rest of the abandoned conversation is not drawn into the chat
+        // that replaced it, and after the last, so its answer is not asked
+        // again.
+        if (this.#sending !== hold) {
+          return false;
+        }
+      }
+      await client.resume();
+      return true;
+    } finally {
+      // Only its own hold, as a send's end releases only its own. A turn the
+      // composer queued behind it is sent from here when its run never started,
+      // because no run settles to send it.
+      if (this.#sending === hold) {
+        this.#sending = null;
+        this.#flushQueued();
+      }
     }
-    // Re-render between the truncation and the run: the kept turns replay as
-    // restored history (static, no entrance animation), and only the new answer
-    // arrives live. Streaming into the old transcript would put the new answer
-    // underneath the one it replaces.
-    this.#clearTranscript();
-    for (const message of kept) {
-      this.#history.replay(message);
-    }
-    await client.resume();
-    return true;
   }
 
   /**
@@ -2410,24 +2483,24 @@ export class AgUiChat extends HTMLElement {
     // the user has just stopped is the opposite of what stopping meant, and it
     // would arrive after they had already turned away.
     //
-    // Not sending it is not the same as destroying it, though. A queued
-    // message left the composer the moment it was queued, so dropping it here
-    // would take a paragraph the user typed and leave it nowhere -- not on
-    // screen, not in the composer, not recallable. It goes to the front of the
-    // recall history instead, so ArrowUp gets it back. In queue order, which
-    // puts the one typed last first.
+    // Not sending it is not the same as destroying it, though, and nothing is
+    // destroyed here: a queued turn entered the recall history the moment it
+    // left the composer, so ArrowUp gets it back. This used to be where it
+    // entered, which left it out of reach for as long as it waited, and once
+    // it was recorded on the way in, moving it again put each one in twice.
     //
     // This path is also reached from `disconnectedCallback`, where a DOM move
     // and a framework re-render both look like a farewell and neither is one.
-    for (const text of this.#queued) {
-      if (this.#sentDrafts[0] !== text) {
-        this.#sentDrafts.unshift(text);
-      }
-    }
     this.#queued.length = 0;
     this.#renderQueued();
     this.#decision.abort();
     this.#client?.cancel();
+    // A send whose run has not started is ended here too, because nothing else
+    // can reach it: the cancel above lands on a client that has not been asked
+    // for the run yet, and a run resets its own cancellation when it starts.
+    // This is how a submit listener that starts a new chat, switches thread or
+    // moves the element stops the send it is hearing about.
+    this.#sending = null;
     // A checkpoint continuation is as much the run in flight -- the composer
     // offers Stop for it -- but it runs on a client the element does not hold.
     this.#history.stopContinuation();
@@ -2443,6 +2516,13 @@ export class AgUiChat extends HTMLElement {
   #setRunning(running: boolean): void {
     const settled = this.#running && !running;
     this.#running = running;
+    // The send that asked for this run is covered from here until it settles,
+    // so its hold ends now. Held to the send's end instead, it was still held
+    // when the run-finished event fired, and a host's follow-up from it was
+    // refused.
+    if (running) {
+      this.#sending = null;
+    }
     const label = running ? this.#strings.stop : this.#strings.send;
     this.#send.title = label;
     this.#send.setAttribute("aria-label", label);
@@ -2502,6 +2582,28 @@ export class AgUiChat extends HTMLElement {
     }
   }
 
+  /**
+   * Put a turn that has left the composer at the front of the recall history,
+   * and start the next walk from it.
+   *
+   * Every turn the user typed and pressed a key to send comes through here:
+   * sent at once, queued behind a run, or sent to continue a checkpoint. A
+   * host's own `sendMessage` does not, because its text was never in the
+   * composer, and the arrow keys walk back through what the user wrote there.
+   */
+  #recordTurn(content: string): void {
+    // A repeat of the last one is not a second entry: the point is to reach
+    // what was said, not how often. Nothing is recorded for an attachment sent
+    // with no text, which has nothing for the composer to hold.
+    if (content !== "" && this.#sentDrafts[0] !== content) {
+      this.#sentDrafts.unshift(content);
+    }
+    // A press sends without an input event, which is what ends a walk
+    // otherwise. Left where it was, the next ArrowUp stepped past the turn just
+    // taken, or past whichever one now sits where it had walked to.
+    this.#recallIndex = null;
+  }
+
   async #submit(): Promise<void> {
     // Ignore a submit while a run is in flight — the single choke point for
     // both Enter and the Send button. The button already turns into Stop, but
@@ -2528,7 +2630,20 @@ export class AgUiChat extends HTMLElement {
     // an attachment is settled state the tray is holding and the composer has
     // no second copy of, so parking it here would mean deciding what happens
     // when the user then removes the chip.
-    if (this.#running || this.#history.continuation !== null) {
+    //
+    // A send counts from the moment it is taken, for the same reason a pick
+    // does. A second Send in the same task as the first -- a host clicking it
+    // from code -- reaches here before the first's run has started, and
+    // `sendMessage` refuses it then, so without this the box would be cleared
+    // of a turn that went nowhere.
+    //
+    // Recorded for recall before it is queued or sent, because it leaves the
+    // box either way. A turn queued here is the newest thing the user typed,
+    // and it is still the newest while it waits; the queue later sends it
+    // through `sendMessage`, which records nothing, so this is the only point
+    // that sees it as the composer's.
+    this.#recordTurn(content);
+    if (this.#running || this.#sending !== null || this.#history.continuation !== null) {
       if (content !== "") {
         this.#queued.push(content);
         this.#renderQueued();
@@ -2537,13 +2652,6 @@ export class AgUiChat extends HTMLElement {
       }
       return;
     }
-    // Recorded before the box is cleared, newest first, so the arrow keys walk
-    // back through it. A repeat of the last one is not a second entry: the
-    // point is to reach what was said, not how often.
-    if (content !== "" && this.#sentDrafts[0] !== content) {
-      this.#sentDrafts.unshift(content);
-    }
-    this.#recallIndex = null;
     this.#input.value = "";
     autoGrow(this.#input);
     // A file still uploading does not ride along — `readyRefs()` returns only
@@ -2580,29 +2688,57 @@ export class AgUiChat extends HTMLElement {
    *
    * No-ops on an empty message, and while a run or a picked checkpoint's
    * continuation is in flight, since a second concurrent run would orphan the
-   * first. Unlike the built-in Send it does not queue: it returns, and the
-   * caller keeps what it tried to send. Nor does it consult the tray -- what
-   * you pass is what is sent.
+   * first. A send is in flight from the moment it is taken rather than from
+   * its run's start, so this no-ops from a {@link SUBMIT_EVENT} listener and
+   * for a second call in the same task too.
+   * Unlike the built-in Send it does not queue: it returns, and the caller
+   * keeps what it tried to send. Nor does it consult the tray -- what you pass
+   * is what is sent.
    */
   async sendMessage(content: string, attachments: readonly AttachmentRef[] = []): Promise<void> {
     if (
       this.#running ||
+      this.#sending !== null ||
       this.#history.continuation !== null ||
       (content === "" && attachments.length === 0)
     ) {
       return;
     }
-    // Only a send travels. Every other way out of the empty state -- a restored
-    // transcript, a thread picked from the drawer, a resumed checkpoint -- is a
-    // change of context rather than a continuation of what the user was doing,
-    // and snaps. Armed before the bubble lands so both writes reach the same
-    // style recalculation, which is what makes the change a transition rather
-    // than a jump.
-    if (this.#transcript.isEmpty()) {
-      this.setAttribute("data-composer-settling", "");
+    const send = {};
+    this.#sending = send;
+    try {
+      // Only a send travels. Every other way out of the empty state -- a
+      // restored transcript, a thread picked from the drawer, a resumed
+      // checkpoint -- is a change of context rather than a continuation of what
+      // the user was doing, and snaps. Armed before the bubble lands so both
+      // writes reach the same style recalculation, which is what makes the
+      // change a transition rather than a jump.
+      if (this.#transcript.isEmpty()) {
+        this.setAttribute("data-composer-settling", "");
+      }
+      // Taken before the announcement, because its listeners run here: a host's
+      // own send from one is refused as overlapping this one, as it would be
+      // from any later moment of it.
+      this.#announceTurn(content, attachments);
+      // A listener can also have stopped it -- New chat, a thread switch, a
+      // change of principal, moving the element. All of them reach the Stop,
+      // which let go of this send, and the turn would otherwise go out into the
+      // conversation that replaced it, or from an element nothing can stop.
+      if (this.#sending !== send) {
+        return;
+      }
+      await this.#client_send(content, attachments);
+    } finally {
+      // Still held here only if its run never started: no endpoint, or a
+      // client or store that threw before asking for one. No run settles
+      // then, so this is what sends a turn queued behind it. Not released if
+      // it is no longer this send's: the run starting let go of it, or a Stop
+      // did, and the field may hold the next send by now.
+      if (this.#sending === send) {
+        this.#sending = null;
+        this.#flushQueued();
+      }
     }
-    this.#announceTurn(content, attachments);
-    await this.#client_send(content, attachments);
   }
 
   /**

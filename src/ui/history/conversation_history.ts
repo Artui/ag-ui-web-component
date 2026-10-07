@@ -64,6 +64,11 @@ export interface ConversationHistoryHost {
    * own send does before it starts a run.
    */
   readonly announceTurn: (content: string) => void;
+  /**
+   * Record a turn taken from the composer for arrow-key recall, as the
+   * element's own send records one.
+   */
+  readonly recordTurn: (content: string) => void;
   /** Resize the composer to its content. */
   readonly autoGrow: () => void;
   /**
@@ -91,7 +96,10 @@ export interface ConversationHistoryHost {
    * client that is not running.
    */
   readonly releaseClient: () => void;
-  /** Whether an interaction is in flight, which the composer owns. */
+  /**
+   * Whether an interaction is in flight, which the composer owns: from the
+   * moment a send or a retry is taken, not only once its run has started.
+   */
   readonly running: () => boolean;
   /** Stop the in-flight run. */
   readonly cancelRun: () => void;
@@ -326,10 +334,11 @@ export class ConversationHistory {
       // end it. Nor is the earlier run cancelled for it: a pick in a panel is not
       // a Stop, and what is streaming may be the answer the user is waiting on.
       //
-      // Both checks, because they see different moments. `running` is the
-      // composer's own state and spans every round of an interaction, but it
-      // is set when the run's first event arrives; a continuation is recorded
-      // here the moment it starts.
+      // Both checks, because they see different things. `running` is the
+      // composer's own state: it spans every round of an interaction, from the
+      // moment a send or a retry is taken rather than from its run's first
+      // event, which is a microtask behind it. A continuation is not the
+      // composer's, and is recorded here the moment it starts.
       //
       // Said at the composer, as an empty composer is below, because the row
       // closed the panel before this ran. The typed turn stays where it is --
@@ -355,6 +364,12 @@ export class ConversationHistory {
       this.#refuse(this.#host.strings().continueNeedsTurn);
       return;
     }
+    // Typed in the composer and sent by a press, so it is recallable as any
+    // other turn is. Recorded as it leaves the box, where the element's own
+    // send records one, rather than once it is sent: the box is empty from
+    // here, and a continuation that fails before its run starts has still
+    // taken the turn out of it.
+    this.#host.recordTurn(content);
     this.#host.input.value = "";
     this.#host.autoGrow();
     const cleared = this.#cleared;
