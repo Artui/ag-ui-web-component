@@ -94,6 +94,18 @@ function memoryStore(seed?: Snapshot, answered?: Promise<void>): MemoryStore {
   };
 }
 
+/** Everything in `sessionStorage`, by key. */
+function storageEntries(): Record<string, string | null> {
+  const entries: Record<string, string | null> = {};
+  for (let i = 0; i < sessionStorage.length; i += 1) {
+    const key = sessionStorage.key(i);
+    if (key !== null) {
+      entries[key] = sessionStorage.getItem(key);
+    }
+  }
+  return entries;
+}
+
 function copy(messages: readonly Message[]): readonly Message[] {
   return JSON.parse(JSON.stringify(messages)) as readonly Message[];
 }
@@ -918,6 +930,37 @@ describe("a reload that resumes, while the store is still answering", () => {
     expect(shadow(el).querySelector(".tool-call")).toBeNull();
   });
 
+  it("forgets the checkpoint when New chat stops the resume, so the call ends as not finished", async () => {
+    // New chat is a Stop for the run the restore was about to resume. The
+    // checkpoint outlived it: coming back to the conversation later resumed
+    // the navigating call with whatever page was current by then. Cleared for
+    // the thread the restore was reading, which is no longer the active one.
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    const { el, answer } = await reloadAnsweringLater(snapshot);
+    const store = el.conversationStore as MemoryStore;
+    const writes: unknown[][] = [];
+    const save = store.saveCheckpoint.bind(store);
+    store.saveCheckpoint = (threadId, checkpoint) => {
+      writes.push([threadId, checkpoint]);
+      save(threadId, checkpoint);
+    };
+
+    el.newChat();
+    answer();
+    await settle();
+    expect(writes).toEqual([["t1", null]]);
+
+    const { el: later, handle } = await reload(store.snapshot());
+    expect(handle.lastRunParams).toBeNull();
+    expect(cardView(later)).toEqual({
+      status: "interrupted",
+      result: NOT_FINISHED,
+      label: "Not finished",
+    });
+    expect(sent).toEqual([]);
+  });
+
   it("resumes nothing once a renderer the replay draws through starts a new chat", async () => {
     // The replay draws through the host's renderers, which can start a new chat
     // as a Retry's replay can. The resume went ahead regardless, on a client
@@ -943,6 +986,8 @@ describe("a reload that resumes, while the store is still answering", () => {
     expect(sent).toEqual([]);
     expect(transcript(el)).toEqual([]);
     expect(shadow(el).querySelector(".tool-call")).toBeNull();
+    // Stopped from inside the replay, which is a Stop for the run all the same.
+    expect((el.conversationStore as MemoryStore).snapshot().checkpoint).toBeNull();
   });
 
   it("resumes nothing once the landed page's result starts a new chat", async () => {
@@ -990,7 +1035,8 @@ describe("a reload that resumes, while the store is still answering", () => {
     // Leaving the page clears nothing until the element connects again, and
     // connecting restores afresh, so the restore has to see for itself that the
     // element has gone. Otherwise the resume's request went out from a node no
-    // longer on the page.
+    // longer on the page. And it is not a Stop for the run: a move or a
+    // re-render has to resume once the element is back, so the checkpoint stays.
     const snapshot = await atNavigation();
     const sent = stubEndpoint();
     const { el, answer } = await reloadAnsweringLater(snapshot);
@@ -1001,12 +1047,44 @@ describe("a reload that resumes, while the store is still answering", () => {
 
     expect(sent).toEqual([]);
     expect(transcript(el)).toEqual([]);
+    expect((el.conversationStore as MemoryStore).snapshot().checkpoint).toEqual({
+      toolCallId: "nav-1",
+    });
+    document.body.appendChild(el);
+    await settle();
+    expect(sent).toEqual([RESUMED]);
+    expect(transcript(el)).toEqual([
+      ["user", "open the books"],
+      ["assistant", "answer 1"],
+    ]);
+  });
+
+  it("resumes once when the element is moved while the store answers", async () => {
+    // A move inside one task connects again before the store answers, and
+    // connecting clears the conversation and starts a newer restore. The first
+    // stands down for it and forgets the checkpoint it loaded, which the newer
+    // one has already read as it started, so the run still resumes, once.
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    const { el, answer } = await reloadAnsweringLater(snapshot);
+
+    el.remove();
+    document.body.appendChild(el);
+    answer();
+    await settle();
+
+    expect(sent).toEqual([RESUMED]);
+    expect(transcript(el)).toEqual([
+      ["user", "open the books"],
+      ["assistant", "answer 1"],
+    ]);
   });
 
   it("resumes once when the host reloads while the store answers", async () => {
     // A host configuring the element once it has connected calls `reload()`,
     // which starts the restore again with the first still loading. The first
-    // stands down for the second, which resumes the run once.
+    // stands down for the second and forgets the checkpoint it loaded, which
+    // the second read as it started, so the second still resumes the run, once.
     const snapshot = await atNavigation();
     const sent = stubEndpoint();
     const { el, answer } = await reloadAnsweringLater(snapshot);
@@ -1028,9 +1106,13 @@ describe("a reload that resumes, while the store is still answering", () => {
     // newer one's is in the same field by then. Letting go of that opened the
     // composer for the rest of the newer load, and a send in it went out
     // without the conversation, ahead of the resume.
+    //
+    // The host also swaps the store here, so the older restore forgets its
+    // checkpoint in the store it read it from, not in the one now assigned.
     const snapshot = await atNavigation();
     const sent = stubEndpoint();
     const { el, answer } = await reloadAnsweringLater(snapshot);
+    const first = el.conversationStore as MemoryStore;
     let answerAgain: () => void = () => {};
     el.conversationStore = memoryStore(
       snapshot,
@@ -1045,11 +1127,49 @@ describe("a reload that resumes, while the store is still answering", () => {
     await el.sendMessage("meanwhile");
     await settle();
     expect(sent).toEqual([]);
+    expect(first.snapshot().checkpoint).toBeNull();
     answerAgain();
     await reloading;
     await settle();
 
     expect(sent).toEqual([RESUMED]);
+  });
+
+  it("writes nothing into the next principal's storage when a handover stops the resume", async () => {
+    // The handover purges the previous principal's storage and scopes the
+    // store to the next one before the stopped restore forgets its checkpoint.
+    // That clear goes to the store the checkpoint was read from, and is a
+    // removal from a namespace already purged, so nothing anywhere changes.
+    // The built-in store, because a host's store is the host's to scope.
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    document.body.innerHTML = "";
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("user-key", "alice");
+    document.body.appendChild(el);
+    await settle();
+    const alice = el.conversationStore;
+    const thread = alice.threadId();
+    alice.saveMessages(thread, snapshot.messages);
+    alice.saveCheckpoint(thread, snapshot.checkpoint);
+    let answer: () => void = () => {};
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const load = alice.loadMessages.bind(alice);
+    alice.loadMessages = (threadId) => answered.then(() => load(threadId));
+
+    void el.reload();
+    el.setAttribute("user-key", "bob");
+    await settle();
+    const before = storageEntries();
+    answer();
+    await settle();
+
+    expect(storageEntries()).toEqual(before);
+    expect(Object.keys(before).some((key) => key.includes(thread))).toBe(false);
+    expect(sent).toEqual([]);
   });
 
   it("sends what it parked when the store fails to answer", async () => {

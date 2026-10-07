@@ -52,12 +52,16 @@ const STORED = [
 interface GatedStore extends ClientConversationStore {
   /** Answer the `n`th load (from zero) with `messages`. */
   answer(n: number, messages: readonly Message[] | null): void;
+  /** Every checkpoint write, as thread and checkpoint. */
+  readonly checkpointWrites: unknown[][];
 }
 
 function gatedStore(): GatedStore {
   const loads: ((messages: readonly Message[] | null) => void)[] = [];
+  const checkpointWrites: unknown[][] = [];
   return {
     answer: (n, messages) => loads[n]?.(messages),
+    checkpointWrites,
     threadId: () => "t1",
     setActiveThread: () => {},
     loadMessages: (): Promise<readonly Message[] | null> =>
@@ -66,7 +70,9 @@ function gatedStore(): GatedStore {
       }),
     saveMessages: () => {},
     loadCheckpoint: (): NavigationCheckpoint | null => null,
-    saveCheckpoint: () => {},
+    saveCheckpoint: (threadId, checkpoint) => {
+      checkpointWrites.push([threadId, checkpoint]);
+    },
     clear: () => {},
     listThreads: (): Promise<readonly ThreadMeta[]> => Promise.resolve([]),
     renameThread: () => {},
@@ -192,6 +198,9 @@ describe("a restore with nothing to resume, while the store is still answering",
 
     expect(transcript(el)).toEqual([]);
     expect(drawn()).toBe(0);
+    // It loaded no checkpoint, so it has none to forget, and the store's code
+    // is not run for one.
+    expect(store.checkpointWrites).toEqual([]);
     await el.sendMessage("fresh");
     await settle();
     expect(sent).toEqual([[["user", "fresh"]]]);

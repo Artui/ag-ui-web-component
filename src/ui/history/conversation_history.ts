@@ -562,7 +562,9 @@ export class ConversationHistory {
    * resume holds nothing. So the restore asks its generation, which clearing
    * the conversation moves on as a newer restore does, and asks it after the
    * load, after each replayed message -- as a Retry asks after each one -- and
-   * once more before the resume.
+   * once more before the resume. Stopped by anything but the element leaving
+   * the page, it also forgets the checkpoint it loaded, since that was a Stop
+   * for the run it would have resumed; see `#forgetStopped`.
    *
    * What a restore with no run to resume still does not do is refuse a send
    * made while it loads. That send goes out without the stored conversation,
@@ -582,7 +584,13 @@ export class ConversationHistory {
     // keeps it in this tab, so nothing the load fetches can change it. And
     // before the replay, which has to know the one unanswered call a reload was
     // *expected* by, so as not to settle it as abandoned.
-    const checkpoint = this.#host.conversationStore().loadCheckpoint(this.#threadId);
+    //
+    // The thread and the store are taken once, here, because a restore that is
+    // stopped forgets its checkpoint where it read it: by then the active
+    // thread can be a new chat's, and the store scoped to the next principal.
+    const threadId = this.#threadId;
+    const store = this.#host.conversationStore();
+    const checkpoint = store.loadCheckpoint(threadId);
     const hold = checkpoint === null ? UNHELD : this.#host.holdRun();
     try {
       // Held while the store answers. A remote store answers after first paint,
@@ -595,7 +603,7 @@ export class ConversationHistory {
       this.#host.element.setAttribute("data-restoring", "");
       let messages: readonly Message[] | null;
       try {
-        messages = await this.#host.conversationStore().loadMessages(this.#threadId);
+        messages = await store.loadMessages(threadId);
       } finally {
         if (generation === this.#generation) {
           this.#host.element.removeAttribute("data-restoring");
@@ -605,6 +613,7 @@ export class ConversationHistory {
       // left into the chat that replaced it, and resumed its run there, on a
       // client seeded from what the restore had just drawn.
       if (!this.#restoring(generation)) {
+        this.#forgetStopped(generation, store, threadId, checkpoint);
         return;
       }
       if (messages !== null) {
@@ -631,6 +640,7 @@ export class ConversationHistory {
           // conversation being left is not drawn into the chat that replaced it,
           // and after the last, so its run is not resumed there.
           if (!this.#restoring(generation)) {
+            this.#forgetStopped(generation, store, threadId, checkpoint);
             return;
           }
         }
@@ -671,6 +681,47 @@ export class ConversationHistory {
    */
   #restoring(generation: number): boolean {
     return generation === this.#generation && this.#host.element.isConnected;
+  }
+
+  /**
+   * Forget the checkpoint a stopped restore loaded, when what stopped it also
+   * stopped the run it was about to resume.
+   *
+   * New chat, a thread switch, a `user-key` handover and a newer restore all
+   * move the generation, and each is a Stop for that run. Left in the store,
+   * the checkpoint outlived the Stop: coming back to the conversation later
+   * resumed the navigating call with whatever page was current by then.
+   * Forgotten, the call is answered as not finished there, as any stopped call
+   * is.
+   *
+   * Not when the element only left the page, which moves no generation. A move
+   * or a framework re-render is not a farewell, and the restore connecting
+   * starts has to find the checkpoint to resume from. A newer restore of the
+   * same thread -- `reload()`, switching away and back, or a move inside one
+   * task, which connects again before the store answers -- read the checkpoint
+   * as it started, so forgetting it here still leaves that one resuming once.
+   *
+   * Written to the store and the thread it was read from. After a handover
+   * that is the previous principal's: the built-in store's clear is a removal
+   * from a namespace the handover has already purged, so it changes nothing,
+   * and nothing reaches the next principal's. A host's store is the same object
+   * either side of a handover; one the host replaced is held by "still refuses
+   * a send for the newer restore once the older has stood down".
+   *
+   * Two conditions. Clearing on a disconnect too fails "resumes nothing once
+   * the element leaves the page while the store answers", whose re-inserted
+   * element resumes; clearing with no checkpoint fails "draws nothing into a
+   * new chat started while it loads", which runs no store code for one.
+   */
+  #forgetStopped(
+    generation: number,
+    store: ClientConversationStore,
+    threadId: string,
+    checkpoint: NavigationCheckpoint | null,
+  ): void {
+    if (generation !== this.#generation && checkpoint !== null) {
+      store.saveCheckpoint(threadId, null);
+    }
   }
 
   /**
