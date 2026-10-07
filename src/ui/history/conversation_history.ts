@@ -64,6 +64,11 @@ export interface ConversationHistoryHost {
    * own send does before it starts a run.
    */
   readonly announceTurn: (content: string) => void;
+  /**
+   * Record a turn taken from the composer for arrow-key recall, as the
+   * element's own send records one.
+   */
+  readonly recordTurn: (content: string) => void;
   /** Resize the composer to its content. */
   readonly autoGrow: () => void;
   /**
@@ -355,6 +360,12 @@ export class ConversationHistory {
       this.#refuse(this.#host.strings().continueNeedsTurn);
       return;
     }
+    // Typed in the composer and sent by a press, so it is recallable as any
+    // other turn is. Recorded as it leaves the box, where the element's own
+    // send records one, rather than once it is sent: the box is empty from
+    // here, and a continuation that fails before its run starts has still
+    // taken the turn out of it.
+    this.#host.recordTurn(content);
     this.#host.input.value = "";
     this.#host.autoGrow();
     const cleared = this.#cleared;

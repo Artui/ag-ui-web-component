@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   element -- now stops it before its request is made. It used to go out into
   the conversation that replaced it, which after a change of `user-key` put one
   principal's turn at the top of the next one's conversation.
+- **ArrowUp reaches a turn queued behind a run, and one sent to resume or
+  fork a run.** Arrow-key recall recorded only a turn the composer sent at
+  once. A turn typed while a run was going entered it only if Stop discarded
+  the queue, so ArrowUp skipped it while it waited and after the queue sent it.
+  A turn sent from the checkpoint panel never entered it, though it was typed
+  in the composer like any other. Both are now recorded as they leave the
+  composer, and a turn taken back from the queue stays recallable, as one Stop
+  declined to send already did. Stop no longer adds the queue again, so the
+  history holds each turn once. Queueing or continuing with a turn you walked
+  back to now starts the next walk from the newest turn, as sending one did.
+  Turns a host sends with `sendMessage` are still not recorded, and a change of
+  `user-key` still clears all of them.
 
 ## [0.41.3] — 2026-10-07
 

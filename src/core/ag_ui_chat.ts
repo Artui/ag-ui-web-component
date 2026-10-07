@@ -887,6 +887,7 @@ export class AgUiChat extends HTMLElement {
       // A continuation sends only what the composer holds. The tray is not
       // read, so nothing rides along to be drawn or announced.
       announceTurn: (content) => this.#announceTurn(content, []),
+      recordTurn: (content) => this.#recordTurn(content),
       autoGrow: () => autoGrow(this.#input),
       continuationEnded: () => this.#flushQueued(),
       client: () => this.#client,
@@ -2434,20 +2435,14 @@ export class AgUiChat extends HTMLElement {
     // the user has just stopped is the opposite of what stopping meant, and it
     // would arrive after they had already turned away.
     //
-    // Not sending it is not the same as destroying it, though. A queued
-    // message left the composer the moment it was queued, so dropping it here
-    // would take a paragraph the user typed and leave it nowhere -- not on
-    // screen, not in the composer, not recallable. It goes to the front of the
-    // recall history instead, so ArrowUp gets it back. In queue order, which
-    // puts the one typed last first.
+    // Not sending it is not the same as destroying it, though, and nothing is
+    // destroyed here: a queued turn entered the recall history the moment it
+    // left the composer, so ArrowUp gets it back. This used to be where it
+    // entered, which left it out of reach for as long as it waited, and once
+    // it was recorded on the way in, moving it again put each one in twice.
     //
     // This path is also reached from `disconnectedCallback`, where a DOM move
     // and a framework re-render both look like a farewell and neither is one.
-    for (const text of this.#queued) {
-      if (this.#sentDrafts[0] !== text) {
-        this.#sentDrafts.unshift(text);
-      }
-    }
     this.#queued.length = 0;
     this.#renderQueued();
     this.#decision.abort();
@@ -2539,6 +2534,28 @@ export class AgUiChat extends HTMLElement {
     }
   }
 
+  /**
+   * Put a turn that has left the composer at the front of the recall history,
+   * and start the next walk from it.
+   *
+   * Every turn the user typed and pressed a key to send comes through here:
+   * sent at once, queued behind a run, or sent to continue a checkpoint. A
+   * host's own `sendMessage` does not, because its text was never in the
+   * composer, and the arrow keys walk back through what the user wrote there.
+   */
+  #recordTurn(content: string): void {
+    // A repeat of the last one is not a second entry: the point is to reach
+    // what was said, not how often. Nothing is recorded for an attachment sent
+    // with no text, which has nothing for the composer to hold.
+    if (content !== "" && this.#sentDrafts[0] !== content) {
+      this.#sentDrafts.unshift(content);
+    }
+    // A press sends without an input event, which is what ends a walk
+    // otherwise. Left where it was, the next ArrowUp stepped past the turn just
+    // taken, or past whichever one now sits where it had walked to.
+    this.#recallIndex = null;
+  }
+
   async #submit(): Promise<void> {
     // Ignore a submit while a run is in flight — the single choke point for
     // both Enter and the Send button. The button already turns into Stop, but
@@ -2571,6 +2588,13 @@ export class AgUiChat extends HTMLElement {
     // from code -- reaches here before the first's run has started, and
     // `sendMessage` refuses it then, so without this the box would be cleared
     // of a turn that went nowhere.
+    //
+    // Recorded for recall before it is queued or sent, because it leaves the
+    // box either way. A turn queued here is the newest thing the user typed,
+    // and it is still the newest while it waits; the queue later sends it
+    // through `sendMessage`, which records nothing, so this is the only point
+    // that sees it as the composer's.
+    this.#recordTurn(content);
     if (this.#running || this.#sending !== null || this.#history.continuation !== null) {
       if (content !== "") {
         this.#queued.push(content);
@@ -2580,13 +2604,6 @@ export class AgUiChat extends HTMLElement {
       }
       return;
     }
-    // Recorded before the box is cleared, newest first, so the arrow keys walk
-    // back through it. A repeat of the last one is not a second entry: the
-    // point is to reach what was said, not how often.
-    if (content !== "" && this.#sentDrafts[0] !== content) {
-      this.#sentDrafts.unshift(content);
-    }
-    this.#recallIndex = null;
     this.#input.value = "";
     autoGrow(this.#input);
     // A file still uploading does not ride along — `readyRefs()` returns only

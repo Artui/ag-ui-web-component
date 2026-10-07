@@ -1,7 +1,8 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { RunRow } from "../src/core/run_index.js";
 import { makeFakeAgent } from "./helpers/fake_agent.js";
 
 /**
@@ -12,10 +13,12 @@ import { makeFakeAgent } from "./helpers/fake_agent.js";
  * caret, so taking them unconditionally would break editing to add a shortcut.
  */
 
-function mount(): AgUiChat {
+/** Mount, with whatever `configure` sets before the element connects. */
+function mount(configure: (el: AgUiChat) => void = () => {}): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
   el.setAttribute("data-start-open", "");
+  configure(el);
   // Every test here sends, so every test runs the agent. Without a fake the
   // element builds a real HttpAgent, which under happy-dom posts to a localhost
   // port nobody listens on: each run fails behind the test's back, and happy-dom
@@ -26,6 +29,86 @@ function mount(): AgUiChat {
   el.agentFactory = () => handle.agent;
   document.body.appendChild(el);
   return el;
+}
+
+/**
+ * Mount with runs that wait to be let through, so a test can type while one is
+ * in flight. Each reports its start -- which is what makes Enter queue rather
+ * than send -- and then waits at a gate of its own.
+ */
+function mountHeld(): { el: AgUiChat; release: () => Promise<void> } {
+  const gates: (() => void)[] = [];
+  const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+  el.setAttribute("endpoint", "/agent/");
+  el.setAttribute("data-start-open", "");
+  el.agentFactory = () =>
+    makeFakeAgent({
+      script: async (emit) => {
+        emit.runStart();
+        await new Promise<void>((resolve) => gates.push(resolve));
+      },
+    }).agent;
+  document.body.appendChild(el);
+  return {
+    el,
+    // The oldest run still waiting finishes, and the turn that releases from
+    // the queue is given the time to start a run of its own.
+    release: async () => {
+      gates.shift()?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    },
+  };
+}
+
+/** Mount with a runs index that lists one run to continue. */
+function mountWithRuns(): AgUiChat {
+  const run: RunRow = {
+    run_id: "r1",
+    thread_id: "t1",
+    parent_run_id: null,
+    started_at: "2026-07-27T12:00:00+00:00",
+    continuable: true,
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({ ok: true, json: async () => ({ runs: [run] }) })),
+  );
+  const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+  el.setAttribute("endpoint", "/agent/");
+  el.setAttribute("data-start-open", "");
+  el.setAttribute("data-runs-url", "/agent/runs/");
+  // One agent per client, because a continuation builds its own beside the
+  // conversation's.
+  el.agentFactory = () => makeFakeAgent().agent;
+  document.body.appendChild(el);
+  return el;
+}
+
+/**
+ * Open the checkpoints and continue the listed run with what the composer
+ * holds: `text` when given, and otherwise the composer as it stands, which is
+ * how a test continues with a turn it walked back to.
+ */
+async function continueWith(el: AgUiChat, verb: "resume" | "fork", text?: string): Promise<void> {
+  const root = el.shadowRoot as ShadowRoot;
+  (root.querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (text !== undefined) {
+    composer(el).value = text;
+  }
+  (root.querySelector(`.checkpoint-${verb}`) as HTMLButtonElement).click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function bubbles(el: AgUiChat): string[] {
+  const root = el.shadowRoot as ShadowRoot;
+  return [...root.querySelectorAll(".message--user")].map((n) => n.textContent ?? "");
+}
+
+/** The queued turns, as the chips above the composer. */
+function chips(el: AgUiChat): HTMLButtonElement[] {
+  const root = el.shadowRoot as ShadowRoot;
+  return [...root.querySelectorAll<HTMLButtonElement>(".queued-chip")];
 }
 
 function composer(el: AgUiChat): HTMLTextAreaElement {
@@ -57,8 +140,18 @@ async function send(el: AgUiChat, text: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function arrow(el: AgUiChat, key: "ArrowUp" | "ArrowDown"): void {
+function arrow(el: AgUiChat, key: "ArrowUp" | "ArrowDown" | "Enter" | "Escape"): void {
   composer(el).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, composed: true }));
+}
+
+/** Walk back from an empty composer, collecting each step until it holds. */
+function walkBack(el: AgUiChat, steps: number): string[] {
+  const seen: string[] = [];
+  for (let i = 0; i < steps; i += 1) {
+    arrow(el, "ArrowUp");
+    seen.push(composer(el).value);
+  }
+  return seen;
 }
 
 describe("composer history recall", () => {
@@ -139,6 +232,29 @@ describe("composer history recall", () => {
     expect(composer(el).value).toBe("");
   });
 
+  it("records nothing for an attachment sent without text", async () => {
+    // The composer has nothing to hold for it, so an entry would be a step of
+    // the walk that empties the box and goes nowhere.
+    const el = mount((element) => {
+      // Before connect: the tray is wired once, at connect, so an attachments
+      // URL set afterwards arrives too late to build one.
+      element.setAttribute("data-attachments-url", "/uploads/");
+      element.uploadHandler = async (file: File) => ({
+        id: file.name,
+        name: file.name,
+        mime: file.type,
+        size: file.size,
+      });
+    });
+    await send(el, "first");
+    el.attachFile(new File(["x"], "note.txt", { type: "text/plain" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await send(el, "");
+    expect(bubbles(el)).toHaveLength(2);
+
+    expect(walkBack(el, 2)).toEqual(["first", "first"]);
+  });
+
   it("starts the next walk from the newest turn after typing", async () => {
     const el = mount();
     await send(el, "first");
@@ -154,6 +270,117 @@ describe("composer history recall", () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
     arrow(el, "ArrowUp");
     expect(input.value).toBe("second");
+  });
+});
+
+/**
+ * A turn can leave the composer without being sent at that moment: Enter while
+ * a run is going queues it, and a picked checkpoint sends it somewhere else.
+ *
+ * Both are recorded as they leave the box, as a turn sent at once is. What the
+ * history holds is what the user typed and pressed Enter on, newest first, and
+ * that does not depend on when, or whether, it reached the agent.
+ */
+describe("turns that reach the history another way", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it("records a turn typed during a run as soon as it is queued", async () => {
+    // It is the newest thing typed, so it is what ArrowUp reaches first -- while
+    // it waits, not only once the queue has sent it.
+    const { el } = mountHeld();
+    await send(el, "first");
+    await send(el, "second");
+
+    expect(walkBack(el, 2)).toEqual(["second", "first"]);
+  });
+
+  it("holds it once, after the queue has sent it", async () => {
+    // The queue sends through the same call a host's own send does, which
+    // records nothing. Recording there as well as here would put it in twice.
+    const { el, release } = mountHeld();
+    await send(el, "first");
+    await send(el, "second");
+    await release();
+    expect(bubbles(el)).toEqual(["first", "second"]);
+
+    expect(walkBack(el, 3)).toEqual(["second", "first", "first"]);
+  });
+
+  it("holds each queued turn once when Stop declines to send them", async () => {
+    // Stop is where a waiting turn used to enter the history, so that one it
+    // declined to send was not left nowhere. Each one is in it already, and
+    // moving them in again recorded every one twice.
+    const { el } = mountHeld();
+    await send(el, "first");
+    await send(el, "second");
+    await send(el, "third");
+    arrow(el, "Escape");
+    expect(chips(el)).toHaveLength(0);
+
+    expect(walkBack(el, 4)).toEqual(["third", "second", "first", "first"]);
+  });
+
+  it("keeps a turn taken back from the queue", async () => {
+    // Taking it back means not sending it, which is not the same as not having
+    // typed it -- the reason Stop keeps what it declines to send. A chip removed
+    // by mistake is one ArrowUp from being sent after all.
+    const { el } = mountHeld();
+    await send(el, "first");
+    await send(el, "second");
+    expect(chips(el).map((chip) => chip.textContent)).toEqual(["second"]);
+    chips(el)[0]?.click();
+    expect(chips(el)).toHaveLength(0);
+
+    expect(walkBack(el, 2)).toEqual(["second", "first"]);
+  });
+
+  it("starts the next walk from the newest after queueing a turn walked back to", async () => {
+    // Enter fires no input event, which is what otherwise ends a walk. Left
+    // where it was, the next ArrowUp stepped past the turn just queued.
+    const { el, release } = mountHeld();
+    await send(el, "first");
+    await release();
+    await send(el, "second");
+
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe("second");
+    arrow(el, "Enter");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(composer(el).value).toBe("");
+
+    expect(walkBack(el, 1)).toEqual(["second"]);
+  });
+
+  it.each(["resume", "fork"] as const)("records a turn sent to %s an earlier run", async (verb) => {
+    // Typed in the composer and sent by a press, like any other turn; only
+    // where it went differs.
+    const el = mountWithRuns();
+    await send(el, "first");
+    await continueWith(el, verb, "and now sort them");
+    expect(bubbles(el)).toEqual(["first", "and now sort them"]);
+
+    expect(walkBack(el, 3)).toEqual(["and now sort them", "first", "first"]);
+  });
+
+  it("starts the next walk from the newest after continuing with a turn walked back to", async () => {
+    const el = mountWithRuns();
+    await send(el, "first");
+    await send(el, "second");
+
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe("second");
+    await continueWith(el, "resume");
+    expect(composer(el).value).toBe("");
+
+    expect(walkBack(el, 1)).toEqual(["second"]);
   });
 });
 
@@ -177,6 +404,7 @@ describe("what the recall history outlives", () => {
     // is there and every method on it is undefined -- while CI's Node provides
     // a real one, so a bare `.clear()` here passes there and throws here.
     sessionStorage.clear();
+    vi.unstubAllGlobals();
   });
 
   it("forgets the previous conversation's turns on a new chat", async () => {
@@ -209,6 +437,31 @@ describe("what the recall history outlives", () => {
     await send(el, "alice's message");
 
     // The rescope that exists to stop one user seeing another's conversation.
+    el.setAttribute("user-key", "bob");
+
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe("");
+  });
+
+  it("forgets a turn still queued when the principal changes", async () => {
+    // A queued turn is recorded before it is sent, so it is in the history
+    // while the run it waits on is the one the rescope stops.
+    const { el } = mountHeld();
+    el.setAttribute("user-key", "alice");
+    await send(el, "alice's message");
+    await send(el, "alice's queued turn");
+
+    el.setAttribute("user-key", "bob");
+
+    arrow(el, "ArrowUp");
+    expect(composer(el).value).toBe("");
+  });
+
+  it("forgets a continued turn when the principal changes", async () => {
+    const el = mountWithRuns();
+    el.setAttribute("user-key", "alice");
+    await continueWith(el, "resume", "alice's resumed turn");
+
     el.setAttribute("user-key", "bob");
 
     arrow(el, "ArrowUp");
