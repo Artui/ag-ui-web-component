@@ -55,8 +55,11 @@ export interface ToolExecution {
  * Executes a frontend tool call.
  *
  * Returns the {@link ToolExecution} to post back to the agent, or `null` when
- * the call is not a frontend tool the host owns — a server-side tool the server
- * already executed, which the client must not re-run.
+ * there is nothing to post: the call is not a frontend tool the host owns (a
+ * server-side tool the server already executed, which the client must not
+ * re-run), or its run was stopped or handed over while the call waited. A
+ * stopped call is left unanswered here, like the calls after it in the round,
+ * and the next request answers it as not finished.
  */
 export type ExecuteTool = (call: AgUiToolCall) => Promise<ToolExecution | null>;
 

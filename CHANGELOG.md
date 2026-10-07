@@ -155,6 +155,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a live change stops a voice recording in progress before it is transcribed.
   The first arrival of a key, a move that keeps the key, and New chat leave the
   text where it is.
+- **A tool call whose run was stopped or handed over while it waited no longer
+  acts afterwards.** Dispatch awaited the host's `confirmPredicate`, the
+  confirmation card and the handler, and checked after none of them whether
+  the run was still going. A predicate that answered after Stop opened its
+  card or ran its handler for a run the user had ended, and a Confirm clicked
+  in the same task as Stop still ran the call. Across a change of `user-key`,
+  the previous principal's handler ran on the next principal's page, a
+  navigating tool's checkpoint went into the next principal's storage, and a
+  handler failing after the handover cleared their checkpoint instead of its
+  own. Such a call now settles as not finished and posts nothing, so the next
+  request answers it as not finished, and after a handover it draws and
+  writes nothing. Both checkpoint writes go to the thread the call was
+  dispatched under. A plain Stop while a handler runs still keeps its result,
+  since that action did happen on the page.
 - **A voice clip that comes back after a change of `user-key` is dropped, not
   written into the next principal's composer.** The mic checked whether it had
   been taken down only before it posted the clip, so a transcript already on

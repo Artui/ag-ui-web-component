@@ -737,7 +737,8 @@ Whether a call is gated is decided in this order:
    for others, which a static flag can't express). **A predicate that throws or rejects refuses
    the call**: no card, the handler does not run, the tool card settles as declined, and the agent
    gets the `confirmCheckFailed` string as the result and carries on, as after a decline. The
-   error goes to the console, never to the endpoint.
+   error goes to the console, never to the endpoint. A predicate still pending when the run is
+   stopped decides nothing: the call does not run, and its card settles as not finished.
 3. Else if the user has waived this tool name for the session, the call runs.
 4. Else the element falls back to [`isDestructive(parameters)`](src/tools/is_destructive.ts),
    which reads the `x-destructive` JSON-Schema flag.
@@ -2124,10 +2125,12 @@ principal who arrived.
 A handover also ends what the previous principal had in flight. Their run is stopped, and nothing
 it does afterwards is written into the next principal's storage or shared state: not the save a
 stopped run makes once its request closes, not a tool result that comes back after the Stop, not
-state already on its way. What they had typed into the composer and not sent is cleared with the
-transcript, quotations and skill templates included. A voice recording in progress is stopped
-before it is transcribed, and a clip already sent for transcription is dropped when its transcript
-comes back.
+state already on its way. A tool call still waiting on `confirmPredicate` or its confirmation card
+does not run, one whose handler is still running draws nothing when it returns, and a navigating
+tool's checkpoint is never written into the next principal's thread. What they had typed into the
+composer and not sent is cleared with the transcript, quotations and skill templates included. A
+voice recording in progress is stopped before it is transcribed, and a clip already sent for
+transcription is dropped when its transcript comes back.
 
 Set it live, from script, as part of signing out or in:
 
