@@ -96,7 +96,10 @@ export interface ConversationHistoryHost {
    * client that is not running.
    */
   readonly releaseClient: () => void;
-  /** Whether an interaction is in flight, which the composer owns. */
+  /**
+   * Whether an interaction is in flight, which the composer owns: from the
+   * moment a send or a retry is taken, not only once its run has started.
+   */
   readonly running: () => boolean;
   /** Stop the in-flight run. */
   readonly cancelRun: () => void;
@@ -331,10 +334,11 @@ export class ConversationHistory {
       // end it. Nor is the earlier run cancelled for it: a pick in a panel is not
       // a Stop, and what is streaming may be the answer the user is waiting on.
       //
-      // Both checks, because they see different moments. `running` is the
-      // composer's own state and spans every round of an interaction, but it
-      // is set when the run's first event arrives; a continuation is recorded
-      // here the moment it starts.
+      // Both checks, because they see different things. `running` is the
+      // composer's own state: it spans every round of an interaction, from the
+      // moment a send or a retry is taken rather than from its run's first
+      // event, which is a microtask behind it. A continuation is not the
+      // composer's, and is recorded here the moment it starts.
       //
       // Said at the composer, as an empty composer is below, because the row
       // closed the panel before this ran. The typed turn stays where it is --

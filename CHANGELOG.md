@@ -33,6 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back to now starts the next walk from the newest turn, as sending one did.
   Turns a host sends with `sendMessage` are still not recorded, and a change of
   `user-key` still clears all of them.
+- **Retry and a checkpoint pick keep the rules a send keeps.** `retryLastTurn()`
+  checked only for a run in flight. A Retry made before a send's run had
+  started, or while a picked checkpoint was in flight, started a second run in
+  the same conversation. A Retry is now refused in both cases. It also counts
+  from the call, as a send does, so a `sendMessage()` made before its run starts
+  is refused and the built-in Send queues. A pick made before a send's or a
+  Retry's run has started is now refused with the same hint as a pick during a
+  run. A conversation store that starts a new chat or changes `user-key` from
+  the save a Retry makes now stops it. The Retry used to go ahead, drawing the
+  old conversation into the new one and asking its answer again.
 
 ## [0.41.3] — 2026-10-07
 

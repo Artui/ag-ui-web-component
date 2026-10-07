@@ -625,8 +625,8 @@ export class AgUiChat extends HTMLElement {
   // rounds, but the user must still be able to stop there.
   #running = false;
   /**
-   * The send {@link sendMessage} has taken whose run has not started yet; null
-   * otherwise.
+   * The send {@link sendMessage} has taken, or the retry {@link retryLastTurn}
+   * has, whose run has not started yet; null otherwise.
    *
    * `running` turns on when the client starts the run, a microtask after it is
    * asked for one, and a send does two things before it asks: it draws the
@@ -635,7 +635,8 @@ export class AgUiChat extends HTMLElement {
    * passed every guard and started a second run on the same client -- two
    * requests, and the listener's turn drawn between the user's turn and its
    * answer. It is the gap a picked checkpoint closes by counting from the pick,
-   * closed the same way for a send.
+   * closed the same way for a send. A retry asks for its run the same way, so
+   * it takes the same hold.
    *
    * Let go of once the run starts, because `running` holds from then until the
    * run settles, and a send held past that would refuse a host's follow-up from
@@ -896,7 +897,10 @@ export class AgUiChat extends HTMLElement {
       releaseClient: () => {
         this.#client = null;
       },
-      running: () => this.#running,
+      // A held send or retry is as much in flight to a pick as a run is: it has
+      // asked this element's client for a run that has not started, and a
+      // continuation started beside it was a second run in one conversation.
+      running: () => this.#running || this.#sending !== null,
       cancelRun: () => this.#cancelRun(),
       resetState: () => this.#resetState(),
       setRunning: (running) => this.#setRunning(running),
@@ -1925,8 +1929,9 @@ export class AgUiChat extends HTMLElement {
    *
    * History is truncated to the most recent user message inclusive and the run
    * repeats, so the agent answers what it was asked rather than being told its
-   * last answer was wrong. Returns `false` when there is nothing to retry or a
-   * run is already in flight.
+   * last answer was wrong. Returns `false` when there is nothing to retry, or
+   * while anything that refuses a send is in flight: a run, a send or another
+   * retry whose run has not started yet, or a checkpoint continuation.
    *
    * Public because a host with its own message UI wants the same button, and
    * because the failed-run notice reaches it from outside the action row.
@@ -1937,24 +1942,55 @@ export class AgUiChat extends HTMLElement {
    * again -- unless the user waived it for this session.
    */
   async retryLastTurn(): Promise<boolean> {
-    if (this.#running) {
+    // Refused for whatever refuses a send, because it starts a run on the same
+    // client. That includes a send held short of its run, which `running` does
+    // not see yet, and a picked checkpoint, which runs on a client of its own
+    // and leaves this one idle -- so a Retry beside it was a second run in the
+    // one conversation, each saving over the other.
+    if (this.#running || this.#sending !== null || this.#history.continuation !== null) {
       return false;
     }
-    const client = this.#ensureClient();
-    const kept = client.truncateToLastUser();
-    if (kept === null) {
-      return false;
+    // Held from here as a send is, and for the same reason: the client starts
+    // the run a microtask after it is asked, and nothing above sees it until
+    // then. A send in that time went out as a second run on the same client,
+    // the built-in Send sent rather than queued, and a pick started a
+    // continuation beside it. Released once the run starts, by `#setRunning`,
+    // and below when it never does.
+    const hold = {};
+    this.#sending = hold;
+    try {
+      const client = this.#ensureClient();
+      const kept = client.truncateToLastUser();
+      if (kept === null) {
+        return false;
+      }
+      // The truncation saved through the host's store, so host code has run
+      // with the Retry under way, and a store that started a new chat or
+      // changed `user-key` from there has stopped it. Going on drew the
+      // abandoned conversation into the one that replaced it and asked its
+      // answer again on a client nothing holds.
+      if (this.#sending !== hold) {
+        return false;
+      }
+      // Re-render between the truncation and the run: the kept turns replay as
+      // restored history (static, no entrance animation), and only the new
+      // answer arrives live. Streaming into the old transcript would put the
+      // new answer underneath the one it replaces.
+      this.#clearTranscript();
+      for (const message of kept) {
+        this.#history.replay(message);
+      }
+      await client.resume();
+      return true;
+    } finally {
+      // Only its own hold, as a send's end releases only its own. A turn the
+      // composer queued behind it is sent from here when its run never started,
+      // because no run settles to send it.
+      if (this.#sending === hold) {
+        this.#sending = null;
+        this.#flushQueued();
+      }
     }
-    // Re-render between the truncation and the run: the kept turns replay as
-    // restored history (static, no entrance animation), and only the new answer
-    // arrives live. Streaming into the old transcript would put the new answer
-    // underneath the one it replaces.
-    this.#clearTranscript();
-    for (const message of kept) {
-      this.#history.replay(message);
-    }
-    await client.resume();
-    return true;
   }
 
   /**

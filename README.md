@@ -314,6 +314,11 @@ queue, so your composer keeps what it tried to send, and it does **not** consult
 attachment tray: what you pass is what is sent, so your composer stays in charge of its own
 state.
 
+`retryLastTurn()` keeps the same rules, because it starts a run on the same conversation. It
+returns `false` while a run, a send or a continuation is in flight, and it counts from the call
+as a send does: until its run starts, a `sendMessage` is refused, the built-in Send queues, and
+a checkpoint pick is refused.
+
 `attachFile(file)` queues a file into the tray exactly as the picker and drag-and-drop do, with
 the same validation and progress chip. It returns `false` when uploads are not configured
 (no `data-attachments-url` and no `uploadHandler`) — the only way to tell, since with no tray
@@ -1859,7 +1864,7 @@ chat.addEventListener("ag-ui-feedback", (e) => {
   analytics.track("assistant_rating", e.detail); // { content, rating }
 });
 
-await chat.retryLastTurn(); // false when there is nothing to ask again
+await chat.retryLastTurn(); // false when there is nothing to ask again, or a run is in flight
 ```
 
 ## Quoting a selection

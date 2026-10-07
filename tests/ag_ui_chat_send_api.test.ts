@@ -11,6 +11,8 @@ import type { AttachmentRef } from "../src/core/attachment.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import type { AttachmentsDetail } from "../src/core/events/attachments_detail.js";
 import type { SubmitDetail } from "../src/core/events/submit_detail.js";
+import type { RunRow } from "../src/core/run_index.js";
+import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 import { type Emit, type FakeAgentHandle, makeFakeAgent } from "./helpers/fake_agent.js";
 import { type FakeXhrController, installFakeXhr } from "./helpers/fake_xhr.js";
 
@@ -146,11 +148,19 @@ type SentTurns = readonly [string, unknown][];
  * says so. Every request is recorded and answered with "answer N", framed as
  * the SSE stream an endpoint writes.
  */
-function stubEndpoint(): SentTurns[] {
+function stubEndpoint(runs: readonly RunRow[] = []): SentTurns[] {
   const sent: SentTurns[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_url: string, init?: RequestInit) => {
+      // The runs index, which the checkpoint panel reads, is the one request
+      // with no body. It answers `runs` and records nothing: only a run counts.
+      if (init?.body === undefined) {
+        return new Response(JSON.stringify({ runs }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       const body = JSON.parse(String(init?.body)) as { messages: readonly Message[] };
       sent.push(body.messages.map((message) => [message.role, message.content]));
       const n = sent.length;
@@ -392,6 +402,289 @@ describe("a send is in flight from the moment it is taken", () => {
 
     expect(handles.flatMap((handle) => handle.runParams)).toHaveLength(2);
     expect(bubbles(el)).toEqual(["second"]);
+  });
+});
+
+/**
+ * Retry and a checkpoint pick start runs too, so they keep the same rules a
+ * send does: neither starts while a send is held or a continuation is out, and
+ * a Retry is held from the call, as a send is, until its run starts.
+ */
+describe("a Retry and a checkpoint pick count a held send", () => {
+  const RUN: RunRow = {
+    run_id: "r1",
+    thread_id: "t1",
+    parent_run_id: null,
+    started_at: "2026-07-27T12:00:00+00:00",
+    continuable: true,
+  };
+
+  /** Open the checkpoint panel and wait for its rows. */
+  async function openCheckpoints(el: AgUiChat): Promise<void> {
+    (shadow(el).querySelector(".header-btn--checkpoints") as HTMLButtonElement).click();
+    await settle();
+  }
+
+  /** Put `text` in the composer and pick Resume on the listed run. */
+  function pickResume(el: AgUiChat, text: string): void {
+    (shadow(el).querySelector("textarea") as HTMLTextAreaElement).value = text;
+    (shadow(el).querySelector(".checkpoint-resume") as HTMLButtonElement).click();
+  }
+
+  it("refuses a send made before a Retry's run has started", async () => {
+    // A Retry asks the client for a run exactly as a send does, a microtask
+    // before it starts, so it is held from the call as a send is.
+    const sent = stubEndpoint();
+    const el = mountReal();
+    await el.sendMessage("first");
+    await settle();
+
+    const retried = el.retryLastTurn();
+    await el.sendMessage("second");
+    expect(await retried).toBe(true);
+    await settle();
+
+    expect(sent).toEqual([[["user", "first"]], [["user", "first"]]]);
+    expect(transcript(el)).toEqual([
+      ["user", "first"],
+      ["assistant", "answer 2"],
+    ]);
+  });
+
+  it("queues what the built-in Send takes before a Retry's run has started", async () => {
+    const sent = stubEndpoint();
+    const el = mountReal();
+    await el.sendMessage("first");
+    await settle();
+
+    void el.retryLastTurn();
+    sendTurn(el, "second");
+    await settle();
+
+    expect(sent).toEqual([
+      [["user", "first"]],
+      [["user", "first"]],
+      [
+        ["user", "first"],
+        ["assistant", "answer 2"],
+        ["user", "second"],
+      ],
+    ]);
+  });
+
+  it("refuses a Retry made before a send's run has started", async () => {
+    const sent = stubEndpoint();
+    const el = mountReal();
+
+    const first = el.sendMessage("first");
+    expect(await el.retryLastTurn()).toBe(false);
+    await first;
+    await settle();
+
+    expect(sent).toEqual([[["user", "first"]]]);
+    expect(transcript(el)).toEqual([
+      ["user", "first"],
+      ["assistant", "answer 1"],
+    ]);
+  });
+
+  it("refuses a Retry while a picked checkpoint is in flight", async () => {
+    // The continuation runs on a client of its own, so the conversation's
+    // client is idle, and a Retry on it was a second run beside the first.
+    const sent = stubEndpoint([RUN]);
+    const el = mountReal({ "data-runs-url": "/agent/runs/" });
+    await el.sendMessage("first");
+    await settle();
+    await openCheckpoints(el);
+
+    pickResume(el, "and now sort them");
+    expect(await el.retryLastTurn()).toBe(false);
+    await settle();
+
+    expect(sent).toEqual([[["user", "first"]], [["user", "and now sort them"]]]);
+  });
+
+  it("refuses a checkpoint pick made before a send's run has started", async () => {
+    // Said at the composer, as a pick during a run is, and the composer keeps
+    // the turn for when the run is done.
+    const sent = stubEndpoint([RUN]);
+    const el = mountReal({ "data-runs-url": "/agent/runs/" });
+    await openCheckpoints(el);
+
+    const first = el.sendMessage("first");
+    pickResume(el, "and now sort them");
+    await first;
+    await settle();
+
+    expect(sent).toEqual([[["user", "first"]]]);
+    expect((shadow(el).querySelector("textarea") as HTMLTextAreaElement).value).toBe(
+      "and now sort them",
+    );
+    expect(shadow(el).querySelector(".skill-hint")?.textContent).toBe(
+      DEFAULT_UI_STRINGS.continueWhileRunning,
+    );
+  });
+
+  it("refuses a checkpoint pick made before a Retry's run has started", async () => {
+    const sent = stubEndpoint([RUN]);
+    const el = mountReal({ "data-runs-url": "/agent/runs/" });
+    await el.sendMessage("first");
+    await settle();
+    await openCheckpoints(el);
+
+    const retried = el.retryLastTurn();
+    pickResume(el, "and now sort them");
+    await retried;
+    await settle();
+
+    expect(sent).toEqual([[["user", "first"]], [["user", "first"]]]);
+  });
+
+  it("lets a run-finished listener send after a Retry", async () => {
+    // Held only until its run starts, as a send is. Held to the Retry's end,
+    // it would still be held when the run-finished event fires, and refuse a
+    // follow-up from it.
+    const sent = stubEndpoint();
+    const el = mountReal();
+    await el.sendMessage("first");
+    await settle();
+    let followed = false;
+    el.addEventListener(RUN_FINISHED_EVENT, () => {
+      if (!followed) {
+        followed = true;
+        void el.sendMessage("next");
+      }
+    });
+
+    await el.retryLastTurn();
+    await settle();
+
+    expect(sent).toHaveLength(3);
+    expect(sent[2]?.at(-1)).toEqual(["user", "next"]);
+  });
+
+  it.each([
+    ["starts a new chat", {}, (el: AgUiChat) => el.newChat()],
+    // Gone ahead, it drew the first principal's turns into the next one's
+    // conversation and asked their answer again under the next one's headers.
+    [
+      "changes the principal",
+      { "user-key": "alice" },
+      (el: AgUiChat) => el.setAttribute("user-key", "bob"),
+    ],
+  ])("does nothing more once a store that %s has stopped it", async (_, attrs, stop) => {
+    // The client saves the shortened history before the Retry asks it for a
+    // run, and the store is the host's, so it is host code running inside the
+    // Retry, as a submit listener is inside a send.
+    const sent = stubEndpoint();
+    const el = mountReal(attrs);
+    await el.sendMessage("first");
+    await settle();
+    const store = el.conversationStore;
+    const save = store.saveMessages.bind(store);
+    let stopping = true;
+    store.saveMessages = (threadId, messages) => {
+      save(threadId, messages);
+      if (stopping) {
+        stopping = false;
+        stop(el);
+      }
+    };
+
+    expect(await el.retryLastTurn()).toBe(false);
+    await settle();
+
+    expect(sent).toEqual([[["user", "first"]]]);
+    expect(transcript(el)).toEqual([]);
+  });
+
+  it("still sends what it queued when the Retry's run never starts", async () => {
+    // No run started, so none settles to send the turn waiting behind it, and
+    // the Retry's end is what lets it go. Each run here waits to be let
+    // through and then ends without ever reporting a start.
+    const gates: (() => void)[] = [];
+    const handle = makeFakeAgent({
+      script: async () => {
+        await new Promise<void>((resolve) => gates.push(resolve));
+      },
+    });
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    const first = el.sendMessage("first");
+    await flush();
+    gates.shift()?.();
+    await first;
+
+    const retried = el.retryLastTurn();
+    await flush();
+    sendTurn(el, "second");
+    expect(handle.runParams).toHaveLength(2);
+    gates.shift()?.();
+    expect(await retried).toBe(true);
+    await flush();
+
+    expect(handle.runParams).toHaveLength(3);
+    expect(handle.messages.at(-1)).toMatchObject({ role: "user", content: "second" });
+  });
+
+  it("leaves alone the hold of the turn its run released from the queue", async () => {
+    // The Retry ends after its run settles, and that settling sent the turn
+    // queued behind it, which by then holds the field for a run of its own.
+    // Every run after the Retry's waits to be let through before it starts,
+    // so that turn is still short of its run when the Retry ends.
+    const gates: (() => void)[] = [];
+    let runs = 0;
+    const handle = makeFakeAgent({
+      script: async (emit) => {
+        runs += 1;
+        if (runs <= 2) {
+          emit.runStart();
+          await new Promise<void>((resolve) => gates.push(resolve));
+          return;
+        }
+        await new Promise<void>((resolve) => gates.push(resolve));
+        emit.runStart();
+      },
+    });
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.agentFactory = () => handle.agent;
+    document.body.appendChild(el);
+    const first = el.sendMessage("first");
+    await flush();
+    gates.shift()?.();
+    await first;
+
+    const retried = el.retryLastTurn();
+    await flush();
+    // Enter rather than the button, which is Stop while the Retry's run goes.
+    const input = shadow(el).querySelector("textarea") as HTMLTextAreaElement;
+    input.value = "second";
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true }),
+    );
+    gates.shift()?.();
+    expect(await retried).toBe(true);
+    await flush();
+    expect(handle.runParams).toHaveLength(3);
+    // Not awaited: let through, it would wait at its gate like the turn above.
+    void el.sendMessage("third");
+    await flush();
+
+    expect(handle.runParams).toHaveLength(3);
+  });
+
+  it("lets go of its hold when there is nothing to retry", async () => {
+    const sent = stubEndpoint();
+    const el = mountReal();
+
+    expect(await el.retryLastTurn()).toBe(false);
+    await el.sendMessage("first");
+    await settle();
+
+    expect(sent).toEqual([[["user", "first"]]]);
   });
 });
 
