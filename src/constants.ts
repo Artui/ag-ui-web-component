@@ -8,7 +8,9 @@ export const ELEMENT_TAG = "ag-ui-chat";
  * User submitted a message. `detail` is {@link SubmitDetail}.
  *
  * Fires for every turn the user sends: with Send, through `sendMessage`, and
- * as the next turn of a run resumed or forked from the checkpoint panel.
+ * as the next turn of a run resumed or forked from the checkpoint panel. A
+ * listener runs while that turn is already the one in flight, so a
+ * `sendMessage` from it is refused rather than starting a second run.
  */
 export const SUBMIT_EVENT = "ag-ui-submit";
 

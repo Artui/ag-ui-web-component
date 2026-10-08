@@ -14,6 +14,7 @@ import {
   requestConfirmation,
 } from "../ui/interrupts/confirmation_card.js";
 import type { PendingDecision } from "../ui/interrupts/pending_decision.js";
+import type { ToolCallCard } from "../ui/progress/tool_call_card.js";
 import type { Transcript } from "../ui/transcript/transcript.js";
 import type { UiStrings } from "../ui/ui_strings.js";
 import type { ClientTool } from "./client_tool_registry.js";
@@ -56,6 +57,13 @@ export interface ToolDispatchHost {
   readonly conversationStore: () => ClientConversationStore;
   /** The active thread's id. */
   readonly threadId: () => string;
+  /**
+   * The element's current tenure: an identity it replaces on every handover
+   * from one principal to another, and never otherwise. Only ever compared, so
+   * a call can tell whether the principal it was dispatched for is still the
+   * one the element serves.
+   */
+  readonly tenure: () => object;
 }
 
 /**
@@ -118,6 +126,12 @@ export class ToolDispatch {
    * Execute one frontend tool call the round produced, against its own card:
    * refused when the page moved under the round, asked about when a rule gates
    * it, and settled with what the handler returned or threw.
+   *
+   * Every await below is a place the run can end, so each is followed by a
+   * check that it has not. A Stop while the host's predicate is pending ends
+   * the call there, and one while the card is open declines it. A handover
+   * during any of the three leaves the call with no transcript to draw in and
+   * no store to write to, so it does neither.
    */
   async execute(call: AgUiToolCall): Promise<ToolExecution | null> {
     // A skill load already rendered as a notice on the stream; it is never a
@@ -126,6 +140,15 @@ export class ToolDispatch {
     if (skillNameFrom(call) !== null) {
       return null;
     }
+    // Fixed here, as the call is dispatched, rather than read when they are
+    // used. The client calls this in the same task as its own check that the
+    // run was not stopped, so these are the run's principal and thread; read
+    // after the handler instead, they were whoever was current by then. A
+    // navigating handler's failure cleared the checkpoint of the thread New
+    // chat had just moved to, leaving its own behind, and across a handover
+    // it wrote into the next principal's store.
+    const tenure = this.#host.tenure();
+    const threadId = this.#host.threadId();
     const card = this.#host.transcript.cardFor(call);
     this.#host.transcript.forgetCard(call.id);
     // Kept after the card leaves the awaiting cards: a tool that renders into the
@@ -180,7 +203,23 @@ export class ToolDispatch {
       // lives only in the DOM, and the DOM is what a reload throws away.
       return { content: `Error: ${message}`, error: message, outcome: TOOL_OUTCOME.FAILED };
     }
+    // The run is suspended on the host's predicate as much as on a card, and a
+    // predicate is free to take as long as one: it may ask a server. So the
+    // wait is opened for it the same way, and a Stop -- or a handover, which
+    // stops the run first -- aborts it. Unchecked, a predicate that answered
+    // after the Stop opened its card or ran its handler for a run the user had
+    // ended, and after a handover it ran the previous principal's handler on
+    // the next principal's page.
+    //
+    // Held by "draws no card when the predicate answers after Stop", and for
+    // the handover by "does not run the previous principal's handler after a
+    // handover", in tool_dispatch.test.ts.
+    const asking = this.#host.decision.open();
     const rule = await this.#confirmationRule(call, tool);
+    this.#host.decision.close();
+    if (asking.aborted) {
+      return this.#abandoned(card);
+    }
     if (rule === "unanswered") {
       // Settled as a refusal and returned as one, so the run carries on to its
       // next round the way it does after a decline and the agent can say what
@@ -216,6 +255,17 @@ export class ToolDispatch {
       this.#host.transcript.follow();
       const accepted = await decision;
       this.#host.decision.close();
+      // A handover while the card was open declines it, as any Stop does, but
+      // the transcript the decline would be drawn into is the next principal's
+      // by now, and the client the refusal goes to writes nothing for a tenure
+      // that has ended. Unchecked, the pending indicator the decline shows was
+      // left in the next principal's empty transcript with nothing to remove it.
+      //
+      // Held by "draws nothing for the next principal when a handover declines
+      // the card" in tool_dispatch.test.ts.
+      if (this.#host.tenure() !== tenure) {
+        return null;
+      }
       card.recordDecision(accepted ? "approved" : "declined");
       if (!accepted) {
         const message = this.#host.strings().declinedAction;
@@ -227,6 +277,18 @@ export class ToolDispatch {
         // the user had explicitly refused.
         return { content: message, outcome: TOOL_OUTCOME.DENIED };
       }
+      // Answered yes, and then stopped before that answer was heard: a click
+      // on Confirm and a Stop in the same task, so the card had already
+      // resolved by the time the abort reached it. The person agreed to the
+      // call, so it is not declined; the run it belonged to is over, so it does
+      // not run either. The server-side gate treats approve-then-Stop the same
+      // way.
+      //
+      // Held by "does not run a call confirmed in the same task as Stop" in
+      // tool_dispatch.test.ts.
+      if (signal.aborted) {
+        return this.#abandoned(card);
+      }
     }
     // A navigating tool reloads only without a client-side router; with a
     // host `navigate()` (SPA) it routes in-page and the loop just continues.
@@ -235,12 +297,30 @@ export class ToolDispatch {
       // Checkpoint before the handler reloads the page; the history (incl.
       // this tool call) was already persisted when the run that produced it
       // settled. The result is supplied on the next mount via the resume path.
-      this.#host.conversationStore().saveCheckpoint(this.#host.threadId(), { toolCallId: call.id });
+      //
+      // Nothing has been awaited since the last check that the run is still
+      // going, so the live thread is the dispatch one here too. Written under
+      // the dispatch thread all the same, so the clear below is certain to
+      // remove what this wrote.
+      this.#host.conversationStore().saveCheckpoint(threadId, { toolCallId: call.id });
     }
     try {
       // The call id lets a handler that renders into the transcript find its
       // own card; handlers that only act on the page ignore it.
       const result = await tool.handler(call.args, call.id);
+      // A handler cannot be aborted, and a plain Stop while it ran keeps its
+      // result: the action happened on the page, and the agent is told so on
+      // the next request. A handover is different. The transcript this would
+      // draw into is the next principal's now, and the client the result goes
+      // to writes nothing for a tenure that has ended, so the result has no
+      // one left to reach. Unchecked, the pending indicator was drawn into the
+      // next principal's empty transcript, where nothing would ever remove it.
+      //
+      // Held by "draws nothing for the next principal when a handler resolves
+      // after a handover" in tool_dispatch.test.ts.
+      if (this.#host.tenure() !== tenure) {
+        return null;
+      }
       // Drawn from the arguments rather than the result, so the live path and
       // the replay path render the same thing from the same input.
       if (tool.render !== undefined) {
@@ -255,9 +335,20 @@ export class ToolDispatch {
       this.#host.transcript.showPending();
       return { content };
     } catch (error) {
+      // The same handover check as on success, and here it also guards a
+      // write: the store is read live, and after a handover it is the next
+      // principal's, so the clear below removed their checkpoint rather than
+      // this call's -- which the handover's purge had already removed.
+      //
+      // Held by "leaves the next principal's checkpoint alone when a handler
+      // fails after a handover" in tool_dispatch.test.ts.
+      if (this.#host.tenure() !== tenure) {
+        return null;
+      }
       if (navigates) {
-        // The navigation never happened; drop the dangling checkpoint.
-        this.#host.conversationStore().saveCheckpoint(this.#host.threadId(), null);
+        // The navigation never happened; drop the dangling checkpoint, from
+        // the thread it was written to.
+        this.#host.conversationStore().saveCheckpoint(threadId, null);
       }
       // The handler's own message, verbatim, in two places at once: the card,
       // which the user sees, and the tool result, which goes to the endpoint,
@@ -477,6 +568,26 @@ export class ToolDispatch {
       return null;
     }
     return isDestructive(tool.parameters) ? "destructive" : null;
+  }
+
+  /**
+   * Settle a call whose run ended while it waited, and give the loop nothing.
+   *
+   * The card is settled here because nothing else will: dispatch took it out
+   * of the end-of-run sweep before it waited, so left alone it read "running…"
+   * for good. It says the call did not finish, which is true -- nothing ran and
+   * nobody refused it.
+   *
+   * `null` rather than a result, because a stopped run has no next round to
+   * send one in. The loop moves on and finds the run stopped, and the call is
+   * left unanswered like every call after it in the round, so the client
+   * answers it as not finished on the next request -- in the same words as
+   * this card. After a handover the card is in a transcript already cleared,
+   * and settling it there is seen by no one.
+   */
+  #abandoned(card: ToolCallCard): null {
+    card.settle(TOOL_CALL_STATUS.INTERRUPTED, this.#host.strings().callNotFinished);
+    return null;
   }
 
   /**

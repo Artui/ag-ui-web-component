@@ -7,6 +7,180 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] — 2026-10-07
+
+### Fixed
+
+- **A send is in flight from the moment it is taken, not from when its run
+  starts.** A send draws its turn and dispatches `ag-ui-submit` before it asks
+  the client for a run, and only the run counted. So a `sendMessage()` from an
+  `ag-ui-submit` listener, or a second call in the same task, passed every
+  guard and went out as a second request on the same client, with the
+  listener's turn drawn between the user's turn and its answer. Both are now
+  refused, so a listener that sends hears the event once, and the built-in
+  Send queues in that time as it does during a run. A listener that stops the
+  send -- a new chat, a thread switch, a change of `user-key`, moving the
+  element -- now stops it before its request is made. It used to go out into
+  the conversation that replaced it, which after a change of `user-key` put one
+  principal's turn at the top of the next one's conversation.
+- **ArrowUp reaches a turn queued behind a run, and one sent to resume or
+  fork a run.** Arrow-key recall recorded only a turn the composer sent at
+  once. A turn typed while a run was going entered it only if Stop discarded
+  the queue, so ArrowUp skipped it while it waited and after the queue sent it.
+  A turn sent from the checkpoint panel never entered it, though it was typed
+  in the composer like any other. Both are now recorded as they leave the
+  composer, and a turn taken back from the queue stays recallable, as one Stop
+  declined to send already did. Stop no longer adds the queue again, so the
+  history holds each turn once. Queueing or continuing with a turn you walked
+  back to now starts the next walk from the newest turn, as sending one did.
+  Turns a host sends with `sendMessage` are still not recorded, and the purge a
+  change of `user-key` makes still clears them.
+- **Retry and a checkpoint pick keep the rules a send keeps.** `retryLastTurn()`
+  checked only for a run in flight. A Retry made before a send's run had
+  started, or while a picked checkpoint was in flight, started a second run in
+  the same conversation. A Retry is now refused in both cases. It also counts
+  from the call, as a send does, so a `sendMessage()` or a second Retry made
+  before its run starts is refused and the built-in Send queues. A pick made
+  before a send's or a Retry's run has started is now refused with the same hint
+  as a pick during a run. A conversation store, or an activity or tool renderer
+  the Retry redraws through, that starts a new chat or changes `user-key` now
+  stops it, and `retryLastTurn()` returns `false`. The Retry used to go ahead,
+  drawing the old conversation into the new one and asking its answer again.
+  One new refusal follows from the same rule: a Retry from an
+  `ag-ui-run-finished` listener for a picked checkpoint's run returns `false`,
+  because the continuation is still in flight when that event fires. A
+  `sendMessage()` from the same place was already refused for that reason.
+- **A recall walk ends on any write into the composer, not only on typing.**
+  Walking back to a past turn with Up and then quoting text, from the
+  transcript or from the page through `offerQuoteInPage`, or clicking a skill
+  chip that prefills the composer, left the walk running: the next Up replaced
+  what had just been written with an older turn, and Down emptied the box. The
+  walk now checks that the composer still holds the turn it put there, so any
+  other write ends it, including a host page writing the composer itself.
+- **A `user-key` changed while the element is out of the document now hands
+  over when it is inserted again.** The attribute was acted on only while the
+  element was connected, and inserting it again is a reload that keeps the
+  composer's recall on purpose. So removing the element, changing the key and
+  inserting it again left the previous principal's stored conversation in
+  `sessionStorage`, their turns one ArrowUp away, their Always allow waivers
+  live, their shared state seeded into the next principal's first run, their
+  unread count on the launcher, and their threads in a drawer left open.
+  Connecting now compares the key the element's state belongs to with the
+  attribute, and runs the handover a live change runs when they differ. The
+  first key to arrive is still an adoption rather than a purge, and a move that
+  keeps the key, a key that goes away and comes back while detached, and a
+  first connect hand nothing over.
+- **A Stop your own code makes while a turn is starting now stops it.** A
+  conversation store, a `getContext` or `getTools`, or the save that answers a
+  tool call left open, that started a new chat or changed `user-key` during a
+  send or a Retry stopped nothing: the request still went out into the
+  conversation being left, with all of its history. Nothing is sent now. On
+  `AgUiClient`, a `cancel()` from `onPersist`, `getContext` or `getTools` before
+  the request is honoured and fires `onCancelled` and `onSettled` as any Stop
+  does, and a `cancel()` with nothing in flight is still forgotten by the next
+  `send()` or `resume()`. A Retry stopped this way resolves `true`, because the
+  provider runs after the Retry has handed its turn to the client.
+- **A Retry whose save the store refuses leaves the conversation as it was.**
+  `truncateToLastUser()` shortened the history before saving it, so a store
+  that threw left the answer on screen but out of the next request, and the
+  agent was then asked a follow-up about an answer it was never told it gave.
+  It now saves first, so a refused save changes nothing, and `retryLastTurn()`
+  rejects with the store's error.
+- **A reload that resumes a run no longer lets a second run start beside it.**
+  A reload in the middle of a navigating tool's run resumes that run once the
+  conversation store answers, and with a remote store that answer is a real
+  request. A send, a Retry or a checkpoint pick made while it was out was not
+  refused: the send went out without the stored conversation and its save
+  replaced it, then the resume ran beside it on the same client, answering a
+  call the conversation no longer held. A restore that will resume now counts
+  as in flight from the moment it asks the store, so `sendMessage()` returns
+  without sending, the built-in Send queues the turn behind the resumed answer,
+  `retryLastTurn()` returns `false`, and a pick says why at the composer. New
+  chat while the store answers stands the resume down. A host calling
+  `sendMessage()` as the element connects, on a page a navigating tool
+  reloaded, now has that call refused, as it would be behind any run.
+- **A conversation restore stops where New chat, leaving the page or host
+  code stopped it.** A restore stood down only for a newer restore or, when it
+  was about to resume a run, for the Stop New chat makes; a restore with
+  nothing to resume holds nothing for a Stop to let go of. So New chat pressed
+  while a remote store was still answering drew the conversation being left
+  into the new chat, and the first turn sent there carried that whole
+  conversation. An element removed meanwhile ran the host's renderers for a
+  node no longer on the page. An activity or tool renderer that started a new
+  chat during the replay had the rest of the old conversation drawn into the
+  new one, and after a reload mid-run, a renderer, the store's save of the
+  checkpoint or `navigationResult` doing the same still let the resume go out,
+  answering the navigating call from the new chat. Once any of these happens,
+  the restore now draws nothing more and resumes nothing. The navigation
+  checkpoint such a stop leaves behind is forgotten, so coming back to that
+  conversation later answers its navigating call as not finished rather than
+  resuming it from whatever page is current then. When the element only left
+  the page, the checkpoint is kept, and the run resumes once the element is
+  put back. That holds after a `reload()` the host made while the store was
+  answering, too: a restore standing down for a newer restore of the same
+  conversation leaves the checkpoint to it, and the restore that resumes is
+  the one that clears it.
+- **A run stopped by a change of `user-key` no longer saves into the next
+  principal's storage.** The handover stopped the run, but a stopped run saves
+  what it had once its request closes, and by then the store had been purged
+  and scoped to whoever arrived. The previous principal's question and partial
+  answer were filed under their own thread id in the next principal's
+  namespace, and the history drawer listed a conversation titled with a
+  question the new user never asked. A tool result returned after the Stop, a
+  stopped checkpoint continuation, and a key changed while the element was
+  detached did the same. A state snapshot already read off the wire put the
+  previous principal's shared state back after the handover had emptied it, so
+  it went out on the next principal's first run. A client built before a
+  handover now writes nothing at all. A key's first arrival is still an
+  adoption, so a run in flight across it keeps saving into the namespace it
+  moved to, and New chat still files a stopped run's last save under the
+  conversation it left.
+- **A change of `user-key` no longer replaces a conversation store the host
+  assigned after the element connected.** Connecting remembered the element's
+  own store, and a later key change rebuilt that store under the new namespace
+  whether or not it was still the one in use. A store the host assigned to a
+  connected element was swapped for a `sessionStorage` one, and a
+  `RemoteConversationStore` built with `cacheMessages: false` to keep message
+  bodies off the client started caching every one of them in the tab. A store
+  the host assigned is now left alone whenever it was assigned, and scopes
+  itself. The one exception is unchanged: a plain `SessionStorageStore`
+  assigned before connecting is the same kind as the element's own default,
+  so the element still namespaces it as its own.
+- **A change of `user-key` clears the composer.** The transcript and recall
+  history were already cleared so the previous principal's words were not in
+  front of the next one, but a turn they had typed and not sent stayed in the
+  box, on a live change and on one made while detached. A handover now empties
+  the composer, which takes a quotation or a skill's template with it. It also
+  takes down the skill hint, closes a slash palette the text had opened, and on
+  a live change stops a voice recording in progress before it is transcribed.
+  The first arrival of a key, a move that keeps the key, and New chat leave the
+  text where it is.
+- **A tool call whose run was stopped or handed over while it waited no longer
+  acts afterwards.** Dispatch awaited the host's `confirmPredicate`, the
+  confirmation card and the handler, and checked after none of them whether
+  the run was still going. A predicate that answered after Stop opened its
+  card or ran its handler for a run the user had ended, and a Confirm clicked
+  in the same task as Stop still ran the call. Across a change of `user-key`,
+  the previous principal's handler ran on the next principal's page, a
+  navigating tool's checkpoint went into the next principal's storage, and a
+  handler failing after the handover cleared their checkpoint instead of its
+  own. Such a call now settles as not finished and posts nothing, so the next
+  request answers it as not finished, and after a handover it draws and
+  writes nothing. Both checkpoint writes go to the thread the call was
+  dispatched under. A plain Stop while a handler runs still keeps its result,
+  since that action did happen on the page.
+- **A voice clip that comes back after a change of `user-key` is dropped, not
+  written into the next principal's composer.** The mic checked whether it had
+  been taken down only before it posted the clip, so a transcript already on
+  its way when the key changed landed in the composer the change had just
+  emptied, and a failed one drew its error on the old button. The permission
+  prompt had the same gap: a mic granted after the key changed or the element
+  left the page started a recording nobody could see or stop, and its tracks
+  were never released, so the browser's recording indicator stayed lit.
+  Removing the element while a clip transcribes now drops that clip too, as
+  removing it mid-recording already did, and that holds for a move that keeps
+  the key.
+
 ## [0.41.3] — 2026-10-07
 
 ### Fixed
@@ -4250,7 +4424,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.3...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.42.0...HEAD
+[0.42.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.3...v0.42.0
 [0.41.3]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.2...v0.41.3
 [0.41.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.1...v0.41.2
 [0.41.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.0...v0.41.1

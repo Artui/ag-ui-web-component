@@ -55,8 +55,11 @@ export interface ToolExecution {
  * Executes a frontend tool call.
  *
  * Returns the {@link ToolExecution} to post back to the agent, or `null` when
- * the call is not a frontend tool the host owns — a server-side tool the server
- * already executed, which the client must not re-run.
+ * there is nothing to post: the call is not a frontend tool the host owns (a
+ * server-side tool the server already executed, which the client must not
+ * re-run), or its run was stopped or handed over while the call waited. A
+ * stopped call is left unanswered here, like the calls after it in the round,
+ * and the next request answers it as not finished.
  */
 export type ExecuteTool = (call: AgUiToolCall) => Promise<ToolExecution | null>;
 
@@ -317,8 +320,10 @@ export class AgUiClient {
   readonly #unfinishedMessage: string;
   readonly #declinedMessage: string;
   readonly #maxToolRounds: number;
-  // Set by cancel(); reset at the top of each #run(). Checked by the loop so
-  // a cancel between frontend-tool rounds doesn't start another round.
+  // Set by cancel(); reset as send() or resume() begins, before either runs
+  // any host code. Checked by the loop so a cancel between frontend-tool
+  // rounds doesn't start another round, and again just before each request,
+  // so a cancel from host code the round itself runs is not sent anyway.
   #cancelled = false;
 
   constructor(config: AgUiClientConfig) {
@@ -388,6 +393,12 @@ export class AgUiClient {
    * {@link messageAttachments}.
    */
   async send(content: string, attachments: readonly AttachmentRef[] = []): Promise<void> {
+    // A new interaction, so the Stop of the one before it is forgotten here --
+    // ahead of the save below, which is the host's store. Forgotten as the run
+    // began instead, a Stop that store made (a new chat started from the save)
+    // was erased before anything read it, and the turn went out regardless,
+    // into the conversation being left and with all of its history.
+    this.#cancelled = false;
     // In `metadata` because it is the one field on a message `@ag-ui/client`
     // declares open by key. 1.0 strips every undeclared key from the input it
     // sends, so refs at the top level of the message -- where every release
@@ -410,11 +421,14 @@ export class AgUiClient {
    * can be asked again.
    *
    * Returns the retained history, or `null` when there is nothing to retry (no
-   * user message has been sent yet). **Truncates only** -- the caller re-renders
-   * from the returned list and then calls {@link resume}, because the transcript
-   * belongs to the element and a client that reached into it would own two
-   * things. Running here instead would stream the new answer in underneath the
-   * old one.
+   * user message has been sent yet). The shortened history is saved before it
+   * replaces the current one, so a save that throws changes nothing and the
+   * throw propagates.
+   *
+   * **Truncates only** -- the caller re-renders from the returned list and then
+   * calls {@link resume}, because the transcript belongs to the element and a
+   * client that reached into it would own two things. Running here instead
+   * would stream the new answer in underneath the old one.
    *
    * Re-running answers the question the agent was last asked, rather than
    * telling it its answer was wrong, which is what makes the result a
@@ -439,8 +453,15 @@ export class AgUiClient {
       return null;
     }
     const kept = messages.slice(0, lastUser + 1);
+    // Saved before the history is shortened, so a store that throws leaves it
+    // as it was and the throw reaches the caller, as a refused save does from
+    // send(). Shortened first, the refusal left this client without the answer
+    // while the caller's transcript still showed it, and the next request then
+    // asked a follow-up about something the agent was never told it had said.
+    // Handed over directly rather than through #persist, which saves the list
+    // the agent holds, because the agent does not hold this one yet.
+    this.#onPersist(kept);
     this.#agent.setMessages(kept);
-    this.#persist();
     return kept;
   }
 
@@ -450,6 +471,10 @@ export class AgUiClient {
    * message; it continues the conversation already in history.
    */
   async resume(): Promise<void> {
+    // A new interaction, as in send(). No host code runs between here and the
+    // loop, so for a resume this is the same moment the run used to forget a
+    // Stop at; it moved here so that both ways in forget it in one place.
+    this.#cancelled = false;
     await this.#run();
   }
 
@@ -465,6 +490,13 @@ export class AgUiClient {
    * disconnect). Safe to call with no run in flight. Partial text already
    * streamed stays in history; {@link AgUiClientHandlers.onCancelled} fires
    * instead of `onError`, and `onSettled` still follows.
+   *
+   * Also stops a {@link send} or {@link resume} whose request has not been made
+   * yet, when host code it runs on the way calls this: the save of the turn,
+   * the tool and context providers, the save answering a call left open. No
+   * request is made then, and `onCancelled` and `onSettled` fire as for any
+   * other Stop. A cancel with nothing in flight is forgotten when the next
+   * send or resume begins.
    */
   cancel(): void {
     this.#cancelled = true;
@@ -472,7 +504,6 @@ export class AgUiClient {
   }
 
   async #run(): Promise<void> {
-    this.#cancelled = false;
     try {
       await this.#runLoop();
       // `@ag-ui/client` filters abort errors inside `runAgent` (it resolves
@@ -637,7 +668,10 @@ export class AgUiClient {
     let resuming: ReadonlySet<string> = new Set();
     for (let round = 0; round < this.#maxToolRounds; round += 1) {
       // A cancel during the previous round's tool execution lands here: the
-      // running handler completed, but no further round starts.
+      // running handler completed, but no further round starts. The check
+      // before the request below would stop the round as well; this one keeps
+      // a stopped loop from running the providers and the store for a round
+      // it will not send.
       if (this.#cancelled) {
         return;
       }
@@ -651,6 +685,15 @@ export class AgUiClient {
         params.resume = resume;
       }
       this.#answerUnansweredCalls(resuming);
+      // Everything above since the check at the top is host code -- the tool
+      // and context providers, and the store saving the answers just made -- and
+      // any of it can be what stopped the run, by starting a new chat or
+      // changing the principal. `@ag-ui/client` makes a fresh abort controller
+      // for each run, so the abort `cancel()` made in that time reached
+      // nothing, and only this check keeps the request from going out.
+      if (this.#cancelled) {
+        return;
+      }
       await this.#agent.runAgent(params, this.#buildSubscriber(pending, runState));
       resume = undefined;
       resuming = new Set();

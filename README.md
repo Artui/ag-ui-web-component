@@ -307,11 +307,28 @@ the `copyCode` / `copied` / `copyFailed` strings.
 `ag-ui-submit` event, run started. Use it for an "Ask about this order" button, a command
 palette, or a composer of your own replacing the built-in one. It no-ops for an entirely
 empty message, and while a run — or a checkpoint continuation picked from the panel — is in
-flight; a continuation counts from the pick, not from its first event, so the gap where two
-runs could start against one conversation is closed. Unlike the built-in Send it does **not**
-queue, so your composer keeps what it tried to send, and it does **not** consult the
-attachment tray: what you pass is what is sent, so your composer stays in charge of its own
-state.
+flight. A continuation counts from the pick, and a send from the call rather than from when its
+run starts, so a `sendMessage` from an `ag-ui-submit` listener, or a second call in the same
+task, is refused rather than starting a second run. So is one made while a reload resumes a run
+a navigating tool interrupted: the resume counts from the moment the element asks its
+conversation store for the conversation, so a `sendMessage` while a remote store is still
+answering is refused, and the built-in Send queues behind the resumed answer. Your own code
+that runs on the way to the request — the conversation store's save, `getContext`, `getTools` —
+can stop a send by starting a new chat or changing `user-key`, and then nothing is sent. Unlike
+the built-in Send it does **not** queue, so your composer keeps what it tried to send, and it
+does **not** consult the attachment tray: what you pass is what is sent, so your composer stays
+in charge of its own state.
+
+`retryLastTurn()` keeps the same rules, because it starts a run on the same conversation. It
+returns `false` while a run, a send, another Retry, a continuation or a reload's resume is in
+flight, and it counts from the call as a send does: until its run starts, a `sendMessage` or a
+second Retry is refused, the built-in Send queues, and a checkpoint pick is refused. It also
+returns `false` when your own code stops it before its run starts: a conversation store, or an
+activity or tool renderer it redraws through, that starts a new chat or changes `user-key`. A
+`getContext` or `getTools` that does the same stops it too, before anything is sent, but it runs
+after the Retry has handed its turn to the client, so the call resolves `true`. A store that
+throws from the Retry's save leaves the conversation as it was, and `retryLastTurn()` rejects
+with its error.
 
 `attachFile(file)` queues a file into the tray exactly as the picker and drag-and-drop do, with
 the same validation and progress chip. It returns `false` when uploads are not configured
@@ -655,7 +672,10 @@ AG-UI has no server-side cancel route: cancelling **aborts the streaming request
 `cancel()` with no run in flight is a safe no-op. `newChat()` cancels any in-flight run before
 discarding the client, and so do switching conversations, `reload()` and removing the element. A
 [checkpoint continuation](#resuming-a-run) is the run in flight while it lasts, so Stop and all of
-these end it too.
+these end it too. So does a turn that has not made its request yet: called from host code a send
+or a resume runs on the way — the conversation store's save, `getContext`, `getTools` —
+`cancel()` stops it before anything is sent, and `onCancelled()` and `onSettled()` fire as for any
+other Stop.
 
 A cancelled run ends a moment later, once its request has closed or a running tool handler has
 returned. What it does then stays with the conversation it belonged to: its truncated exchange is
@@ -717,7 +737,8 @@ Whether a call is gated is decided in this order:
    for others, which a static flag can't express). **A predicate that throws or rejects refuses
    the call**: no card, the handler does not run, the tool card settles as declined, and the agent
    gets the `confirmCheckFailed` string as the result and carries on, as after a decline. The
-   error goes to the console, never to the endpoint.
+   error goes to the console, never to the endpoint. A predicate still pending when the run is
+   stopped decides nothing: the call does not run, and its card settles as not finished.
 3. Else if the user has waived this tool name for the session, the call runs.
 4. Else the element falls back to [`isDestructive(parameters)`](src/tools/is_destructive.ts),
    which reads the `x-destructive` JSON-Schema flag.
@@ -1078,7 +1099,10 @@ matching JS API:
   server-backed store it stays on the server. Deleting one is the drawer row's own action. A chat
   nothing was ever sent in is the exception — it was never listed, so it is dropped rather than
   left behind. Focus moves to the composer, whichever control started the new chat, unless the
-  widget is collapsed, and the page is not scrolled to it.
+  widget is collapsed, and the page is not scrolled to it. A restore still loading or replaying
+  the conversation being left stops there, so nothing of it is drawn into the new chat, and a
+  run it was about to resume after a reload is not resumed: coming back to that conversation
+  later answers the interrupted call as not finished.
 - `describeSurface()` — where the panel is and what can be done to it: placement, collapsed,
   whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
   the two reasons a move can fail into the one answer a caller needs.
@@ -1110,17 +1134,24 @@ that gap is parked too rather than racing it. What
 is waiting shows above the composer as chips, each of which takes its message
 back when pressed, and the next one is sent when the run settles. Stopping the
 run discards them: sending into a conversation someone has just stopped is the
-opposite of what stopping meant. It is not thrown away, though — a queued
-message has already left the composer, so it goes to the front of the recall
-history below rather than nowhere.
+opposite of what stopping meant. Nothing is lost, though — a queued message
+entered the recall history below when it left the composer, so **Up** gets it
+back after a Stop, and after its chip is taken back.
 
 The composer also walks back through what you have already sent, on **Up** and
-**Down** — the shape every shell and every coding agent uses. Only from an empty
-composer and only with the skills palette closed: an arrow inside text is how you
-move the caret, and taking it unconditionally would break editing to add a
-shortcut. Arrowing forward past the newest turn empties the box again, so the way
-out is the key that got you in. The history is this conversation's: starting a
-new chat, switching threads or changing `user-key` clears it with the transcript.
+**Down** — the shape every shell and every coding agent uses. It holds every turn
+that left the composer: one sent at once, one queued behind a run (from the
+moment it is queued), and one sent to resume or fork a run from the checkpoint
+panel. A message sent with `sendMessage` is not in it, because it was never
+typed there. Only from an empty composer and only with the skills palette closed:
+an arrow inside text is how you move the caret, and taking it unconditionally
+would break editing to add a shortcut. Arrowing forward past the newest turn
+empties the box again, so the way out is the key that got you in. A walk lasts
+only while the composer holds the turn it put there: anything else that writes
+the box — typing, a quotation, a skill, dictation, or the host page itself — ends
+it, so the next arrow moves the caret in what was written rather than replacing
+it. The history is this conversation's: starting a new chat, switching threads
+or changing `user-key` clears it with the transcript.
 
 ### Collapsing to the launcher
 
@@ -1858,7 +1889,7 @@ chat.addEventListener("ag-ui-feedback", (e) => {
   analytics.track("assistant_rating", e.detail); // { content, rating }
 });
 
-await chat.retryLastTurn(); // false when there is nothing to ask again
+await chat.retryLastTurn(); // false when there is nothing to ask again, or a run is in flight
 ```
 
 ## Quoting a selection
@@ -2091,6 +2122,16 @@ waived with *Always allow* are forgotten with it, so the next principal is asked
 sent on the next principal's first run, so a host that seeds shared state assigns it again for the
 principal who arrived.
 
+A handover also ends what the previous principal had in flight. Their run is stopped, and nothing
+it does afterwards is written into the next principal's storage or shared state: not the save a
+stopped run makes once its request closes, not a tool result that comes back after the Stop, not
+state already on its way. A tool call still waiting on `confirmPredicate` or its confirmation card
+does not run, one whose handler is still running draws nothing when it returns, and a navigating
+tool's checkpoint is never written into the next principal's thread. What they had typed into the
+composer and not sent is cleared with the transcript, quotations and skill templates included. A
+voice recording in progress is stopped before it is transcribed, and a clip already sent for
+transcription is dropped when its transcript comes back.
+
 Set it live, from script, as part of signing out or in:
 
 ```js
@@ -2102,10 +2143,17 @@ out through its own router without remounting anything, so the host naming the n
 dropping the attribute — is the only signal the element will ever get. Removing the attribute
 purges too, so a sign-out that simply clears it is safe.
 
+It holds for an element that is out of the document too, such as a view a router keeps alive.
+Nothing is purged while it is detached: the handover runs when it is inserted again, against the
+key it has by then, so a key that changes and changes back while detached hands nothing over. An
+element that is never inserted again leaves the previous principal's conversation in
+`sessionStorage` under their key, where only an element naming that principal again can reach it.
+
 The **first** value to arrive is treated as a host naming the user who was already there, not as a
 handover: the conversation in progress moves into the principal's namespace instead of being
 destroyed. So an element configured by an async auth handshake — the shape described in
-[Framework hosts](#framework-hosts-configure-before-you-insert) — keeps what is on screen.
+[Framework hosts](#framework-hosts-configure-before-you-insert) — keeps what is on screen,
+including a run still streaming and whatever is in the composer.
 
 Two things it deliberately does not do. It does not scope the panel's own collapsed / dragged-size
 / theme preferences, which are this element's UI state and carry no conversation content. And it
@@ -2140,6 +2188,15 @@ chat.conversationStore = new RemoteConversationStore(
   false, // cacheMessages
 );
 ```
+
+A conversation store you assign yourself is never replaced by a change of `user-key`, whether you
+assign it before the element connects or after. The one exception is a plain `SessionStorageStore`
+assigned before the element connects: that is the same kind as the element's own default, which is
+all connecting can see, so the element namespaces it as its own and moves it on every key change.
+Assign it after connecting, or wrap it, to keep it yours. A store that keeps its data somewhere
+the element cannot see has to scope itself; the element purges only its own `sessionStorage`
+namespace and clears what is on screen. If your store wraps a `SessionStorageStore`, build a new
+one per principal.
 
 `SessionStorageStore.purge(namespace)` is the same primitive the element uses, for a host driving
 its own store from its own sign-out path.

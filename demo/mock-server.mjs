@@ -187,6 +187,27 @@ async function handleAgent(res, body) {
       `Added ${approved.length} of ${resume.length}`,
       approved.length === resume.length ? " — all of them." : ", and left the rest alone.",
     ]);
+  } else if (/\becho\b/i.test(prompt)) {
+    // A plain answer and nothing else, which is the shape most turns have and
+    // the one every other branch here dresses up. Sending, the queue behind a
+    // run, ArrowUp recall and Retry are about turns rather than tools, and
+    // looking at them through the article script put a confirmation card in
+    // the way of every run. The pause keeps the run in flight for over a
+    // second, long enough to type and queue a second turn behind it.
+    //
+    // "note" adds an activity of that type ahead of the answer, which no
+    // renderer here draws: a page that registers one for it can look at what
+    // a host's renderer does while the element replays a conversation.
+    await sleep(1200);
+    if (/\bnote\b/i.test(prompt)) {
+      emit(res, {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: id("note"),
+        activityType: "note",
+        content: { text: prompt },
+      });
+    }
+    await streamText(res, id("msg"), ["You said: ", ...prompt.split(/\s+/).map((w) => `${w} `)]);
   } else if (/\bimport\b/i.test(prompt)) {
     // Three gated calls in one run: the case a single approval never shows. Each
     // interrupt is answered independently, and every prompt is the same sentence
