@@ -68,8 +68,20 @@ export class FakeMediaRecorder {
   }
 }
 
+/** One `getUserMedia` call a gated install is holding open for the test to settle. */
+export interface PendingPrompt {
+  /** The stream this call will hand out if granted; stopped-ness is readable either way. */
+  readonly stream: FakeMediaStream;
+  /** Resolve the call with its stream (and record the stream in `streams()`). */
+  grant(): FakeMediaStream;
+  /** Reject the call, as a refused or unavailable mic does. */
+  refuse(): void;
+}
+
 /** Handle returned by {@link installFakeMedia}. */
 export interface FakeMediaController {
+  /** With `gated: true`, every `getUserMedia` call in order; empty otherwise. */
+  prompts(): PendingPrompt[];
   /** The most recently constructed recorder (throws if none). */
   recorder(): FakeMediaRecorder;
   /** Every stream `getUserMedia` has handed out, in order. */
@@ -82,17 +94,21 @@ export interface FakeMediaController {
  * denied / no device). `failConstruct` and `failStart` make that many
  * recorders throw a `NotSupportedError` from the constructor, or from
  * `start()`, before behaving normally: a granted stream the browser then
- * cannot record. Call `restore()` afterwards.
+ * cannot record. With `gated: true`, `getUserMedia` waits on a prompt the test
+ * settles by hand through `prompts()`, in any order, or never. Call `restore()`
+ * afterwards.
  */
 export function installFakeMedia({
   deny = false,
   failConstruct = 0,
   failStart = 0,
+  gated = false,
 } = {}): FakeMediaController {
   FakeMediaRecorder.instances = [];
   FakeMediaRecorder.constructFailures = failConstruct;
   FakeMediaRecorder.startFailures = failStart;
   const streams: FakeMediaStream[] = [];
+  const prompts: PendingPrompt[] = [];
   const g = globalThis as Record<string, unknown>;
   const originalRecorder = g["MediaRecorder"];
   const originalMediaDevices = (globalThis.navigator as { mediaDevices?: unknown }).mediaDevices;
@@ -106,6 +122,22 @@ export function installFakeMedia({
           return Promise.reject(new Error("denied"));
         }
         const stream = new FakeMediaStream();
+        if (gated) {
+          const gate = new Promise<FakeMediaStream>((resolve, reject) => {
+            prompts.push({
+              stream,
+              grant() {
+                streams.push(stream);
+                resolve(stream);
+                return stream;
+              },
+              refuse() {
+                reject(new Error("denied"));
+              },
+            });
+          });
+          return gate;
+        }
         streams.push(stream);
         return Promise.resolve(stream);
       },
@@ -113,6 +145,9 @@ export function installFakeMedia({
   });
 
   return {
+    prompts(): PendingPrompt[] {
+      return prompts;
+    },
     recorder(): FakeMediaRecorder {
       const last = FakeMediaRecorder.instances.at(-1);
       if (last === undefined) {

@@ -4,7 +4,12 @@ import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import { VoiceInput } from "../src/ui/composer/voice_input.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
-import { FakeMediaRecorder, FakeMediaStream, installFakeMedia } from "./helpers/fake_media.js";
+import {
+  FakeMediaRecorder,
+  FakeMediaStream,
+  installFakeMedia,
+  type PendingPrompt,
+} from "./helpers/fake_media.js";
 
 /** Drain microtasks so the async start/finish chain settles. */
 async function flush(): Promise<void> {
@@ -418,6 +423,222 @@ describe("VoiceInput after dispose", () => {
 
     expect(voice.element.title).not.toBe(DEFAULT_UI_STRINGS.transcriptionFailed);
     expect(perceived(voice.element)).toEqual(before);
+  });
+});
+
+describe("VoiceInput with overlapping starts", () => {
+  // The button stays idle for the whole of the permission prompt, so a second
+  // click during it is accepted as a second start. The latest click wins: a
+  // start that settles after a newer one began belongs to a click nobody is
+  // waiting on any more, and must release what it was given without touching
+  // what the newer start owns. Every test here uses a prompt it settles by hand.
+
+  function gatedControl(): { voice: VoiceInput; fake: ReturnType<typeof installFakeMedia> } {
+    const fake = installFakeMedia({ gated: true });
+    media = fake;
+    const voice = new VoiceInput({
+      transcribe: vi.fn().mockResolvedValue("words"),
+      onText: () => {},
+    });
+    return { voice, fake };
+  }
+
+  /** Two clicks while the first prompt is still open. */
+  async function clickTwice(voice: VoiceInput): Promise<void> {
+    voice.element.click();
+    voice.element.click();
+    await flush();
+    expect(voice.element.dataset["state"]).toBe("idle");
+  }
+
+  function prompt(fake: ReturnType<typeof installFakeMedia>, index: number): PendingPrompt {
+    const found = fake.prompts()[index];
+    if (found === undefined) {
+      throw new Error(`getUserMedia was not called ${index + 1} times`);
+    }
+    return found;
+  }
+
+  it("records once when two starts resolve in order, and one stop click ends everything", async () => {
+    vi.useFakeTimers();
+    const { voice, fake } = gatedControl();
+    await clickTwice(voice);
+
+    // The first grant belongs to a click that has been superseded: its mic is
+    // released and nothing records on it.
+    const first = prompt(fake, 0);
+    first.grant();
+    await flush();
+    expect(first.stream.track.stopped).toBe(true);
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+    expect(voice.element.dataset["state"]).toBe("idle");
+
+    const second = prompt(fake, 1);
+    second.grant();
+    await flush();
+    expect(FakeMediaRecorder.instances).toHaveLength(1);
+    expect(second.stream.track.stopped).toBe(false);
+    expect(voice.element.dataset["state"]).toBe("recording");
+
+    voice.element.click(); // one stop click
+    await flush();
+    expect(fake.recorder().state).toBe("inactive");
+    expect(first.stream.track.stopped).toBe(true);
+    expect(second.stream.track.stopped).toBe(true);
+    expect(voice.element.dataset["state"]).toBe("idle");
+    // No cap timer is left armed for a recording that is over.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("records once when the second start resolves first and the first resolves late", async () => {
+    vi.useFakeTimers();
+    const { voice, fake } = gatedControl();
+    await clickTwice(voice);
+
+    const first = prompt(fake, 0);
+    const second = prompt(fake, 1);
+    second.grant();
+    await flush();
+    const recorder = fake.recorder();
+    expect(voice.element.dataset["state"]).toBe("recording");
+
+    // The late grant must not take the recording over, restart it, or arm a
+    // second timer: it only releases its own mic.
+    first.grant();
+    await flush();
+    expect(first.stream.track.stopped).toBe(true);
+    expect(second.stream.track.stopped).toBe(false);
+    expect(FakeMediaRecorder.instances).toEqual([recorder]);
+    expect(recorder.state).toBe("recording");
+    expect(vi.getTimerCount()).toBe(1);
+
+    voice.element.click();
+    await flush();
+    expect(recorder.state).toBe("inactive");
+    expect(second.stream.track.stopped).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("leaves nothing live when the start that wins fails to record", async () => {
+    vi.useFakeTimers();
+    const transcribe = vi.fn().mockResolvedValue("words");
+    const fake = installFakeMedia({ gated: true });
+    media = fake;
+    const voice = new VoiceInput({ transcribe, onText: () => {} });
+    await clickTwice(voice);
+
+    const first = prompt(fake, 0);
+    first.grant();
+    await flush();
+    // Armed after the first settles, so only the second start's recorder throws.
+    FakeMediaRecorder.startFailures = 1;
+    const second = prompt(fake, 1);
+    second.grant();
+    await flush();
+
+    expect(first.stream.track.stopped).toBe(true);
+    expect(second.stream.track.stopped).toBe(true);
+    expect(voice.element.dataset["state"]).toBe("idle");
+    expect(voice.element.title).toBe(DEFAULT_UI_STRINGS.transcriptionFailed);
+    expect(vi.getTimerCount()).toBe(0);
+    // A first recorder that had started would still be running here, with no
+    // handle to stop it by; the cap would fire into nothing.
+    vi.advanceTimersByTime(120_000);
+    await flush();
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
+  it("does not cut a later recording short with an earlier start's timer", async () => {
+    vi.useFakeTimers();
+    const { voice, fake } = gatedControl();
+    await clickTwice(voice);
+    prompt(fake, 0).grant();
+    prompt(fake, 1).grant();
+    await flush();
+    voice.element.click(); // stop, well inside the cap
+    await flush();
+    expect(voice.element.dataset["state"]).toBe("idle");
+
+    // A new, unrelated recording a hundred seconds in.
+    vi.advanceTimersByTime(100_000);
+    voice.element.click();
+    await flush();
+    prompt(fake, 2).grant();
+    await flush();
+    const later = fake.recorder();
+    expect(later.state).toBe("recording");
+
+    // The first start's two minutes are up: only the later recording's own
+    // cap, at 220 s, may stop it.
+    vi.advanceTimersByTime(20_000);
+    await flush();
+    expect(later.state).toBe("recording");
+    expect(voice.element.dataset["state"]).toBe("recording");
+    expect(voice.element.title).not.toBe(DEFAULT_UI_STRINGS.recordingLimit.replace("{n}", "2"));
+    vi.advanceTimersByTime(100_000);
+    await flush();
+    expect(later.state).toBe("inactive");
+  });
+
+  it("keeps the recording the later start made when the earlier one is refused late", async () => {
+    vi.useFakeTimers();
+    const { voice, fake } = gatedControl();
+    await clickTwice(voice);
+
+    const second = prompt(fake, 1);
+    second.grant();
+    await flush();
+    expect(voice.element.dataset["state"]).toBe("recording");
+
+    // A refusal on the superseded click must not release the live stream, drop
+    // the recorder or draw an error over a recording that is going fine.
+    prompt(fake, 0).refuse();
+    await flush();
+    expect(voice.element.dataset["state"]).toBe("recording");
+    expect(voice.element.title).toBe(DEFAULT_UI_STRINGS.stopRecording);
+    expect(second.stream.track.stopped).toBe(false);
+    expect(vi.getTimerCount()).toBe(1);
+
+    voice.element.click();
+    await flush();
+    expect(fake.recorder().state).toBe("inactive");
+    expect(second.stream.track.stopped).toBe(true);
+  });
+
+  it("draws no error for a superseded start that is refused while the newer one waits", async () => {
+    const { voice, fake } = gatedControl();
+    await clickTwice(voice);
+
+    prompt(fake, 0).refuse();
+    await flush();
+    expect(voice.element.title).toBe(DEFAULT_UI_STRINGS.recordVoice);
+
+    prompt(fake, 1).grant();
+    await flush();
+    expect(voice.element.dataset["state"]).toBe("recording");
+  });
+
+  // A guard against the design this fix rejects, not a regression of the leak:
+  // the code before the fix also starts here. A blocking flag that ignored
+  // clicks until getUserMedia settled would fail it, and getUserMedia is allowed
+  // never to settle (a dismissed prompt), which would leave the mic dead.
+  it("still starts on a later click when an earlier prompt never settles", async () => {
+    const { voice, fake } = gatedControl();
+    voice.element.click(); // dismissed without an answer: never settled
+    await flush();
+    expect(voice.element.disabled).toBe(false);
+
+    voice.element.click();
+    await flush();
+    prompt(fake, 1).grant();
+    await flush();
+    expect(voice.element.dataset["state"]).toBe("recording");
+    expect(FakeMediaRecorder.instances).toHaveLength(1);
+
+    voice.element.click();
+    await flush();
+    expect(fake.recorder().state).toBe("inactive");
+    expect(prompt(fake, 1).stream.track.stopped).toBe(true);
   });
 });
 
