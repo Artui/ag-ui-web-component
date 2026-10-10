@@ -232,10 +232,13 @@ describe("AgUiChat", () => {
     expect(captured?.()).toEqual({ Authorization: "Bearer token-2" });
   });
 
-  it("submits on send-button click: appends a user bubble and emits the event", () => {
+  it("submits on send-button click: appends a user bubble and emits the event", async () => {
     // No endpoint here: this asserts the submit-event + user-bubble seam in
     // isolation, without engaging the AG-UI client / network path.
     const el = mount();
+    // Past the restore connecting starts, which holds the composer until it
+    // has drawn the stored conversation, so the send below is not parked.
+    await flush();
     const onSubmit = vi.fn();
     el.addEventListener(SUBMIT_EVENT, (e) => onSubmit((e as CustomEvent<SubmitDetail>).detail));
 
@@ -262,8 +265,11 @@ describe("AgUiChat", () => {
     expect(shadow(el).querySelectorAll(".message")).toHaveLength(0);
   });
 
-  it("submits on Enter without Shift", () => {
+  it("submits on Enter without Shift", async () => {
     const el = mount();
+    // Past the restore connecting starts, which holds the composer until it
+    // has drawn the stored conversation, so the send below is not parked.
+    await flush();
     const onSubmit = vi.fn();
     el.addEventListener(SUBMIT_EVENT, onSubmit);
 
@@ -793,6 +799,9 @@ describe("AgUiChat", () => {
       sawSignal = signal instanceof AbortSignal;
       return true; // approve
     };
+    // Past the restore connecting starts, which holds the composer until it
+    // has drawn the stored conversation, so the send below is not parked.
+    await flush();
 
     sendNoWait(el, "delete x");
     await flush();
@@ -866,6 +875,9 @@ describe("AgUiChat", () => {
       sawSignal = signal instanceof AbortSignal;
       return "from-custom-ui";
     };
+    // Past the restore connecting starts, which holds the composer until it
+    // has drawn the stored conversation, so the send below is not parked.
+    await flush();
 
     sendNoWait(el, "ask");
     await flush();
@@ -1515,6 +1527,9 @@ describe("AgUiChat", () => {
 
   it("refuses to retry when there is nothing to ask again", async () => {
     const el = mount();
+    // Past the restore connecting starts, which refuses a Retry at the guard
+    // until it has drawn the stored conversation, so this reaches the truncation.
+    await flush();
 
     expect(await el.retryLastTurn()).toBe(false);
   });

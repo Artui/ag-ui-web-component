@@ -305,23 +305,49 @@ the `copyCode` / `copied` / `copyFailed` strings.
 
 `sendMessage(content, attachments?)` sends as if the user had typed it — user bubble,
 `ag-ui-submit` event, run started. Use it for an "Ask about this order" button, a command
-palette, or a composer of your own replacing the built-in one. It no-ops for an entirely
-empty message, and while a run — or a checkpoint continuation picked from the panel — is in
-flight. A continuation counts from the pick, and a send from the call rather than from when its
-run starts, so a `sendMessage` from an `ag-ui-submit` listener, or a second call in the same
-task, is refused rather than starting a second run. So is one made while a reload resumes a run
-a navigating tool interrupted: the resume counts from the moment the element asks its
-conversation store for the conversation, so a `sendMessage` while a remote store is still
-answering is refused, and the built-in Send queues behind the resumed answer. Your own code
-that runs on the way to the request — the conversation store's save, `getContext`, `getTools` —
-can stop a send by starting a new chat or changing `user-key`, and then nothing is sent. Unlike
-the built-in Send it does **not** queue, so your composer keeps what it tried to send, and it
-does **not** consult the attachment tray: what you pass is what is sent, so your composer stays
+palette, a prompt fired when your page mounts the chat, or a composer of your own replacing the
+built-in one.
+
+It returns a `Promise<boolean>`. It resolves `true` once the turn has been handed to the agent
+and its run has settled, frontend-tool rounds included, and `false` when nothing was sent:
+
+- for an entirely empty message;
+- while a run, or a checkpoint continuation picked from the panel, is in flight. A continuation
+  counts from the pick, and a send from the call rather than from when its run starts, so a
+  `sendMessage` from an `ag-ui-submit` listener, or a second call in the same task, is refused
+  rather than starting a second run;
+- with no `endpoint` set, which the transcript also says;
+- while a reload resumes a run a navigating tool interrupted. The resume counts from the moment
+  the element asks its conversation store for the conversation, and it ends by starting that
+  run, so a send then is refused, and the built-in Send queues behind the resumed answer;
+- when your own code that runs on the way to the request — an `ag-ui-submit` listener, the
+  conversation store's save — stops it by starting a new chat or changing `user-key`. A
+  `getContext` or `getTools` that does the same stops it too, but after the turn was handed
+  over, so the call resolves `true`.
+
+**While the element restores a stored conversation, a send waits for it.** Every restore —
+when the element connects, on `reload()`, when a thread is picked from the drawer, and when
+`user-key` changes from one principal to another — first asks the conversation store for the conversation, and with
+`data-threads-url` that is a request to your server. A `sendMessage` made in that time waits
+until the conversation is drawn, then sends with it: the bubble, the `ag-ui-submit` event and the
+request all come after the replay, later than the call by the length of the load. So a prompt
+fired on mount needs no timing of its own. If New chat, a thread switch, a change from one
+`user-key` to another or a `reload()` comes while it waits, the conversation it was addressed
+to is gone, so it is dropped and resolves `false` at once. The element leaving the page drops it
+too, but it resolves `false` only once the load answers or the element is inserted again. A
+first `user-key` on an anonymous conversation adopts that conversation rather than replacing
+it, so a send waiting then still goes out. A second `sendMessage` while one waits is refused. The built-in Send queues what is typed during the load ("Waiting to send"),
+and sends it after the conversation is drawn, behind a `sendMessage` that was waiting.
+
+Unlike the built-in Send it does **not** queue, so your composer keeps what it tried to send, and
+it does **not** consult the attachment tray: what you pass is what is sent, so your composer stays
 in charge of its own state.
 
 `retryLastTurn()` keeps the same rules, because it starts a run on the same conversation. It
-returns `false` while a run, a send, another Retry, a continuation or a reload's resume is in
-flight, and it counts from the call as a send does: until its run starts, a `sendMessage` or a
+returns `false` while a run, a send, another Retry or a continuation is in flight, and while
+any restore of the stored conversation is still loading. It does not wait for the load as a send
+does: until the conversation is drawn there is nothing on screen to retry, and afterwards it
+would ask the previous visit's last question again. It counts from the call as a send does: until its run starts, a `sendMessage` or a
 second Retry is refused, the built-in Send queues, and a checkpoint pick is refused. It also
 returns `false` when your own code stops it before its run starts: a conversation store, or an
 activity or tool renderer it redraws through, that starts a new chat or changes `user-key`. A
@@ -499,9 +525,10 @@ function Assistant() {
 
 Writing it as `<ag-ui-chat ref={...} />` in JSX and configuring in the ref callback mostly works —
 the catalog requests are held back one microtask precisely so a ref assigned in the same commit is
-honoured — but the thread-history request is **not** deferred (a deferred replay could land after a
-`sendMessage()` and duplicate the transcript), so that one goes out with whatever was configured at
-insertion.
+honoured — but the thread-history request is **not** deferred, so that one goes out with whatever
+was configured at insertion. It starts at insertion because the restore is what a `sendMessage()`
+from the same commit waits on: a restore that had not started yet would have nothing to hold it,
+and the send would go out without the conversation.
 
 If your credentials can only arrive later still — an awaited token, a passive effect — call
 **`reload()`** once they land:

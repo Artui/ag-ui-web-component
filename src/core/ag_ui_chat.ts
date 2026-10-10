@@ -676,9 +676,9 @@ export class AgUiChat extends HTMLElement {
    * requests, and the listener's turn drawn between the user's turn and its
    * answer. It is the gap a picked checkpoint closes by counting from the pick,
    * closed the same way for a send. A retry asks for its run the same way, so
-   * it takes the same hold, and so does a restore that will resume a run, from
-   * before it asks the store for the conversation, through the history host's
-   * `holdRun`.
+   * it takes the same hold, and so does every restore, from before it asks the
+   * store for the conversation, through the history host's `holdRun`: until
+   * the store answers, the client can only be built from nothing.
    *
    * Let go of once the run starts, because `running` holds from then until the
    * run settles, and a send held past that would refuse a host's follow-up from
@@ -688,9 +688,18 @@ export class AgUiChat extends HTMLElement {
    * An object rather than a flag, so a send or a retry ending releases only
    * what it took. By the time either ends, the turn queued behind it has
    * usually taken the field for itself, and a Stop lets go of it for the next
-   * send to take; the earlier one ending must release neither.
+   * send to take; the earlier one ending must release neither. It is also how
+   * {@link sendMessage} tells the one hold it waits on from all the others it
+   * refuses behind: see {@link #restoreHold}.
    */
   #sending: object | null = null;
+  /**
+   * The hold the latest restore with no run to resume took, and what settles
+   * once that restore has ended or been stopped; `null` when the latest
+   * restore will resume a run. Only meaningful while `#sending` is that hold:
+   * then a host's {@link sendMessage} waits for it rather than refusing.
+   */
+  #restoreHold: { readonly hold: object; readonly restored: Promise<void> } | null = null;
   /** The decision a run is suspended on, which a Stop abandons. */
   readonly #decision = new PendingDecision();
   /**
@@ -945,25 +954,29 @@ export class AgUiChat extends HTMLElement {
       // A held send or retry is as much in flight to a pick as a run is: it has
       // asked this element's client for a run that has not started, and a
       // continuation started beside it was a second run in one conversation.
-      // So is a restore that will resume a run, which holds through the same
-      // field from before the store answers.
+      // So is a restore, which holds through the same field from before the
+      // store answers.
       running: () => this.#running || this.#sending !== null,
-      // The hold a send takes, taken for a restore that will resume a run, so
-      // what refuses a send held short of its run refuses one made while the
-      // store is still answering: `sendMessage` returns, Send parks the turn,
-      // a Retry and a pick refuse. The same field rather than a flag beside it,
-      // because what lets go of a send's hold is right for this one too. The
-      // resumed run starting lets go, in `#setRunning`, so there is no gap
-      // after the resume is asked for, and a Stop does, in `#cancelRun`. A flag
-      // the restore cleared itself would still be set when the resumed run
-      // settles and sends the parked turn, so that send would be refused after
-      // the turn had left the queue, and lost.
+      // The hold a send takes, taken for every restore, so what refuses a send
+      // held short of its run holds one made while the store is still
+      // answering: Send parks the turn, a Retry and a pick refuse, and
+      // `sendMessage` refuses behind a restore that will resume a run and waits
+      // for one that will not -- `restored` is what it waits on, given only for
+      // that kind. The same field rather than a flag beside it, because what
+      // lets go of a send's hold is right for this one too. The resumed run
+      // starting lets go, in `#setRunning`, so there is no gap after the resume
+      // is asked for, and a Stop does, in `#cancelRun`. A flag the restore
+      // cleared itself would still be set when the resumed run settles and
+      // sends the parked turn, so that send would be refused after the turn had
+      // left the queue, and lost.
       //
-      // Whether the restore was stopped is not read off this hold, because one
-      // with nothing to resume takes none; the restore asks its own generation.
-      holdRun: () => {
+      // Whether the restore was stopped is not read off this hold, because a
+      // host's send that waited takes it over; the restore asks its own
+      // generation.
+      holdRun: (restored) => {
         const hold = {};
         this.#sending = hold;
+        this.#restoreHold = restored === null ? null : { hold, restored };
         return {
           release: () => {
             if (this.#sending === hold) {
@@ -2086,9 +2099,12 @@ export class AgUiChat extends HTMLElement {
    * History is truncated to the most recent user message inclusive and the run
    * repeats, so the agent answers what it was asked rather than being told its
    * last answer was wrong. Returns `false` when there is nothing to retry, or
-   * while anything that refuses a send is in flight: a run, a send or another
+   * while anything that holds a send is in flight: a run, a send or another
    * retry whose run has not started yet, a checkpoint continuation, or a
-   * reload's restore that will resume a run. Also `false` when host code it
+   * restore of the stored conversation that is still loading. It does not wait
+   * for a restore as a send does: nothing is on screen to retry yet, and after
+   * the load it would re-ask the previous visit's last question. Also `false`
+   * when host code it
    * runs before its run starts -- the store's save, or an activity or tool
    * renderer the replay draws through -- has stopped it by starting a new chat
    * or changing `user-key`. A tool or context provider that stops it does so
@@ -2866,23 +2882,68 @@ export class AgUiChat extends HTMLElement {
    * `attachments` are durable {@link AttachmentRef}s — what {@link attachFile}
    * resolves to and what {@link ATTACHMENT_EVENT} reports.
    *
-   * No-ops on an empty message, and while a run or a picked checkpoint's
-   * continuation is in flight, since a second concurrent run would orphan the
-   * first. A send is in flight from the moment it is taken rather than from
-   * its run's start, so this no-ops from a {@link SUBMIT_EVENT} listener and
-   * for a second call in the same task too.
+   * Resolves `true` once the turn has been handed to the client for its run,
+   * which is when the interaction settles, frontend-tool rounds included; a
+   * run a tool or context provider then stops still counts, as it does for
+   * {@link retryLastTurn}. Resolves `false` when nothing was sent.
+   *
+   * Nothing is sent for an empty message, nor while a run or a picked
+   * checkpoint's continuation is in flight, since a second concurrent run
+   * would orphan the first. A send is in flight from the moment it is taken
+   * rather than from its run's start, so nothing is sent from a
+   * {@link SUBMIT_EVENT} listener or for a second call in the same task
+   * either. Nor with no `endpoint`, which says so in the transcript. Nor
+   * behind a reload's restore that will resume a run a navigating tool
+   * interrupted, since that restore ends by starting the run.
+   *
+   * **While the element restores a stored conversation with no run to resume
+   * -- on connect, {@link reload}, a thread picked from the drawer, a change
+   * from one `user-key` to another -- it waits, then sends.** The turn has to follow the
+   * conversation it is part of: sent at once, it went out without it, the
+   * conversation was then drawn under it, and its save replaced the stored
+   * one. So the bubble, the {@link SUBMIT_EVENT} and the request all come after
+   * the replay, by the length of the store's load. A New chat, a thread
+   * switch, a change from one `user-key` to another, a reload or the element
+   * leaving the page while it waits drops it, resolving `false`: the
+   * conversation it was addressed to is no longer on screen. Leaving the page
+   * resolves it only once the load answers or the element is back, since
+   * that is when the restore learns it was stopped. A first `user-key` on an
+   * anonymous conversation adopts it rather than replacing it, and stops
+   * nothing. A second call while one waits is
+   * refused, as a second call in the same task is.
+   *
    * Unlike the built-in Send it does not queue: it returns, and the caller
    * keeps what it tried to send. Nor does it consult the tray -- what you pass
    * is what is sent.
    */
-  async sendMessage(content: string, attachments: readonly AttachmentRef[] = []): Promise<void> {
-    if (
-      this.#running ||
-      this.#sending !== null ||
-      this.#history.continuation !== null ||
-      (content === "" && attachments.length === 0)
-    ) {
-      return;
+  async sendMessage(content: string, attachments: readonly AttachmentRef[] = []): Promise<boolean> {
+    if (content === "" && attachments.length === 0) {
+      return false;
+    }
+    const restore = this.#restoreHold;
+    if (restore !== null && this.#sending === restore.hold) {
+      // Taken over from the restore, so a second host call is refused, the
+      // built-in Send parks behind this one rather than going first, and the
+      // restore's own release when it ends lets go of nothing -- this send's
+      // run settling, or its end, is what sends the parked turn.
+      const waiting = {};
+      this.#sending = waiting;
+      await restore.restored;
+      // Anything that stopped the restore let go of this too, by the Stop
+      // that New chat, a thread switch, a principal handover, a reload and the
+      // element leaving all reach. Otherwise let go of here and the guards
+      // asked again from the top, as for a call made now.
+      //
+      // Removing this check fails "drops the waiting send and the queued turn
+      // when New chat is pressed", among the other drop tests.
+      if (this.#sending !== waiting) {
+        return false;
+      }
+      this.#sending = null;
+      return this.sendMessage(content, attachments);
+    }
+    if (this.#running || this.#sending !== null || this.#history.continuation !== null) {
+      return false;
     }
     const send = {};
     this.#sending = send;
@@ -2905,9 +2966,13 @@ export class AgUiChat extends HTMLElement {
       // which let go of this send, and the turn would otherwise go out into the
       // conversation that replaced it, or from an element nothing can stop.
       if (this.#sending !== send) {
-        return;
+        return false;
       }
+      // Read where the request is made, which says why nothing was sent when
+      // there is no endpoint to send to.
+      const connected = this.endpoint !== "";
       await this.#client_send(content, attachments);
+      return connected;
     } finally {
       // Still held here only if its run never started: no endpoint, or a
       // client or store that threw before asking for one. No run settles

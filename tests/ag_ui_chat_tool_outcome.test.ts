@@ -600,6 +600,9 @@ describe("an outcome survives a reload", () => {
       parameters: { type: "object" },
       handler: () => "clicked",
     });
+    // Past the restore connecting starts, which holds the composer until it
+    // has drawn the stored conversation, so the send below is not parked.
+    await flush();
 
     sendNoWait(first, "save it");
     // Between building the round's context and dispatching the call, the page

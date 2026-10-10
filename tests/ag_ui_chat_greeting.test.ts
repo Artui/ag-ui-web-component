@@ -397,9 +397,15 @@ describe("the send that leaves the empty state", () => {
     expect(host.hasAttribute("data-composer-settling")).toBe(true);
 
     document.body.innerHTML = "";
+    // A conversation of its own: the host's send above is stored under the
+    // same namespace, and restoring it would leave no empty state to start from.
+    sessionStorage.clear();
     const starter = mount({ "data-starters": JSON.stringify(["Summarise this page"]) }, (e) => {
       e.agentFactory = () => handle.agent;
     });
+    // Past the restore connecting starts, which holds the composer until it
+    // has drawn the stored conversation, so the send below is not parked.
+    await flush();
     shadow(starter).querySelector<HTMLButtonElement>(".suggestion-chip")?.click();
     await flush();
     expect(starter.hasAttribute("data-composer-settling")).toBe(true);

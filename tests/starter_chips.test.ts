@@ -52,6 +52,7 @@ describe("starter prompts", () => {
     const sent: string[] = [];
     el.sendMessage = async (content: string) => {
       sent.push(content);
+      return true;
     };
 
     const chip = el.shadowRoot?.querySelector(".suggestion-chip");

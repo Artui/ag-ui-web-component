@@ -98,16 +98,21 @@ export interface ConversationHistoryHost {
   readonly releaseClient: () => void;
   /**
    * Whether an interaction is in flight, which the composer owns: from the
-   * moment a send or a retry is taken, or a restore that will resume a run
-   * starts loading, not only once its run has started.
+   * moment a send or a retry is taken, or a restore starts loading, not only
+   * once its run has started.
    */
   readonly running: () => boolean;
   /**
-   * Hold the composer as a send holds it from the moment it is taken: a send
-   * refuses, the built-in Send parks its turn, a Retry and a pick refuse. Let
-   * go of when the run starts, by a Stop, or by {@link RunHold.release}.
+   * Hold the composer as a send holds it from the moment it is taken: the
+   * built-in Send parks its turn, a Retry and a pick refuse. Let go of when the
+   * run starts, by a Stop, or by {@link RunHold.release}.
+   *
+   * A host's send refuses too, unless `restored` is given: then the hold is a
+   * restore's with no run to resume, and a host's send waits for `restored` to
+   * settle and sends after it, with the conversation drawn. `restored` settles
+   * once that restore has ended, or has been stopped, and never rejects.
    */
-  readonly holdRun: () => RunHold;
+  readonly holdRun: (restored: Promise<void> | null) => RunHold;
   /** Stop the in-flight run. */
   readonly cancelRun: () => void;
   /** Drop the in-memory run and transcript, leaving the thread untouched. */
@@ -120,8 +125,9 @@ export interface ConversationHistoryHost {
  * A hold {@link ConversationHistoryHost.holdRun} took.
  *
  * It says nothing about whether the restore that took it was stopped. A
- * restore asks its generation that, because a restore with no run to resume
- * holds nothing and can be stopped all the same -- see
+ * restore asks its generation that, because a host's send that waited on a
+ * restore with no run to resume takes the hold over from it, and a restore
+ * stopped by a newer one finds that one's hold in its place -- see
  * {@link ConversationHistory.rehydrate}.
  */
 interface RunHold {
@@ -131,14 +137,6 @@ interface RunHold {
    */
   readonly release: () => void;
 }
-
-/**
- * What a restore with no run to resume holds: nothing, so it has nothing to
- * let go of. Every restore awaits the store, the built-in one included, and
- * holding all of them would refuse a host's send made as the element connects.
- * Only a restore that is about to start a run has one to collide with.
- */
-const UNHELD: RunHold = Object.freeze({ release: () => {} });
 
 /**
  * The conversation a restore set out to restore: which restore, by its
@@ -201,6 +199,17 @@ export class ConversationHistory {
    * reaches it. `null` when none is running.
    */
   #continuation: AgUiClient | null = null;
+  /**
+   * Settles what a host's send waits on while the restore now current, one
+   * with no run to resume, loads and replays; `null` when no such restore is
+   * under way. Called when that restore ends, and as soon as it is stopped by
+   * anything that moves the generation, so a send waiting on a conversation
+   * that is no longer on screen hears so at once rather than when an
+   * abandoned load answers.
+   *
+   * Also what tells a pick refused for a load from one refused for a run.
+   */
+  #loading: (() => void) | null = null;
 
   constructor(host: ConversationHistoryHost) {
     this.#host = host;
@@ -256,6 +265,19 @@ export class ConversationHistory {
     // being left into the new one once the store answered, and handed it to the
     // new chat's client as the history its first turn would carry.
     this.#generation += 1;
+    // A host's send waiting on that restore is addressed to the conversation
+    // just cleared. The element's Stop has let go of it already; this wakes it
+    // to find so, rather than leaving it waiting on a load nobody wants -- for
+    // good, if that load never answers. The drop tests in
+    // `ag_ui_chat_send_during_restore.test.ts` hang without it.
+    this.#endWait();
+  }
+
+  /** Settle what waits on the restore now loading, if anything does, and forget it. */
+  #endWait(): void {
+    const end = this.#loading;
+    this.#loading = null;
+    end?.();
   }
 
   /** Delete the active thread if nothing was ever sent in it. */
@@ -401,7 +423,15 @@ export class ConversationHistory {
       // closed the panel before this ran. The typed turn stays where it is --
       // it is what the user wants sent once the run is done -- and the caret
       // goes back to it, where Escape stops the run.
-      this.#refuse(this.#host.strings().continueWhileRunning);
+      //
+      // A restore with no run to resume holds the composer too, and there is
+      // no answer to wait for and nothing Escape can stop, so it says the
+      // conversation is still loading instead. A restore that will resume a
+      // run keeps the running wording: what it is loading is that run.
+      const strings = this.#host.strings();
+      this.#refuse(
+        this.#loading === null ? strings.continueWhileRunning : strings.continueWhileLoading,
+      );
       return;
     }
     const content = this.#host.input.value.trim();
@@ -553,16 +583,30 @@ export class ConversationHistory {
    * exclusion is held by "resumes with the landed page's result, and its card says
    * so" in `ag_ui_chat_reload_mid_run.test.ts`.
    *
-   * **A restore that resumes holds the composer from before the load.** The
-   * resume is a run, and it starts only once the store has answered. With a
-   * remote store that is a real request, and a send, a Retry or a pick in it
-   * was refused by nothing: each built the conversation's client before the
-   * conversation had loaded, so a send went out carrying none of it and its
-   * first save replaced the stored one, and the resume then ran on that same
-   * client as a second run, answering a call the request no longer held. So
-   * the composer is held as a send holds it, and the resume gives way to
-   * nothing: what was typed parks behind the resumed run and goes out after its
-   * answer, and a host's send or Retry is refused as it is behind any run.
+   * **Every restore holds the composer from before the load.** Until the
+   * store answers, the conversation's client can only be seeded from nothing.
+   * With a remote store that is a real request, and a send, a Retry or a pick
+   * in it was refused by nothing: each built the conversation's client before
+   * the conversation had loaded, so a send went out carrying none of it, its
+   * first save replaced the stored one, and the replay then drew the stored
+   * conversation under the new turn. The client stayed cached without it, so
+   * every later turn went out without it too. So the composer is held as a
+   * send holds it: what was typed parks and goes out after the replay, and a
+   * Retry and a pick are refused -- a Retry has nothing on screen to retry, and
+   * after the load it would re-ask the previous visit's last question.
+   *
+   * **A host's send waits for a restore with no run to resume.** It is
+   * usually a prompt fired as the element mounts, which no host could time
+   * against a load nothing announces, and refusing it would lose the turn.
+   * So it waits for this restore to end, taking the hold over as it does,
+   * and then sends with the conversation drawn above it; what the built-in
+   * Send parked goes out after its run. Stopped while it waits, it is dropped,
+   * as a send stopped by its own submit listener is.
+   *
+   * **A restore that resumes refuses a host's send instead.** The resume is a
+   * run, and the restore ends by starting it, so a send that waited would only
+   * reach that run and be refused there. The resume gives way to nothing: what
+   * was typed parks behind the resumed run and goes out after its answer.
    *
    * The other way round, the resume standing down for the send, was rejected.
    * The send that got in first had already gone out without the conversation,
@@ -575,8 +619,8 @@ export class ConversationHistory {
    * page can each come while the store answers, and from host code the restore
    * runs itself: the activity and tool renderers each replayed message draws
    * through, and `navigationResult`. From then on it draws nothing more and
-   * resumes nothing. The hold cannot say so, because a restore with no run to
-   * resume holds nothing. So the restore asks its generation, which clearing
+   * resumes nothing. The hold cannot say so, because a host's send that
+   * waited may hold it by then. So the restore asks its generation, which clearing
    * the conversation moves on as a newer restore does, and asks it after the
    * load, after each replayed message -- as a Retry asks after each one -- and
    * once more before the resume. Stopped by anything but the element leaving
@@ -584,10 +628,6 @@ export class ConversationHistory {
    * for the run it would have resumed -- unless what replaced it is a restore
    * of the same conversation, still current, which answers for that run
    * instead; see `#forgetStopped`.
-   *
-   * What a restore with no run to resume still does not do is refuse a send
-   * made while it loads. That send goes out without the stored conversation,
-   * and its save replaces it.
    */
   async rehydrate(): Promise<void> {
     // Claimed before awaiting, and checked by `#restoring` wherever the restore
@@ -618,7 +658,22 @@ export class ConversationHistory {
     // `#claimedByCurrent`.
     this.#claim = { generation, store, threadId };
     const checkpoint = store.loadCheckpoint(threadId);
-    const hold = checkpoint === null ? UNHELD : this.#host.holdRun();
+    // What a host's send waits on, for a restore with no run to resume, and
+    // the hold either kind takes. Taken before the load for the same reason
+    // the checkpoint is read before it: the load is the window.
+    //
+    // No earlier wait is left to settle here: every restore but the first
+    // follows a clear of the conversation on screen -- a reload, a thread
+    // switch, a handover, the element coming back -- and `forgetRestored`
+    // settled and forgot it then. So a restore that will resume finds none.
+    const restored =
+      checkpoint === null
+        ? new Promise<void>((resolve) => {
+            this.#loading = resolve;
+          })
+        : null;
+    const waiting = this.#loading;
+    const hold = this.#host.holdRun(restored);
     try {
       // Held while the store answers. A remote store answers after first paint,
       // and a conversation it is still fetching is more likely to have messages
@@ -684,7 +739,21 @@ export class ConversationHistory {
       // the store rejected the load, or the store or the host threw on the way
       // to the resume -- and then this is what sends a turn the composer parked
       // meanwhile, since no run is going to settle and send it.
+      //
+      // A host's send that waited on this restore has taken the hold over, so
+      // the release does nothing and the send goes first; what was parked goes
+      // out after its run. Woken only after the replay, here, rather than when
+      // the store answers, or its turn would be drawn above the conversation.
+      // Only this restore's wait: one that was stopped was woken by what
+      // stopped it, and the wait now current, if any, is a newer restore's.
+      // Waking that one here sent its turn before its conversation was drawn,
+      // which "drops the waiting send on a drawer switch, and a send then
+      // carries the picked thread" in `ag_ui_chat_send_during_restore.test.ts`
+      // holds.
       hold.release();
+      if (this.#loading === waiting) {
+        this.#endWait();
+      }
     }
   }
 
