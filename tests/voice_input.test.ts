@@ -538,6 +538,8 @@ describe("VoiceInput with overlapping starts", () => {
 
     expect(first.stream.track.stopped).toBe(true);
     expect(second.stream.track.stopped).toBe(true);
+    // The superseded start never built a recorder; only the winner's, which threw.
+    expect(FakeMediaRecorder.instances).toHaveLength(1);
     expect(voice.element.dataset["state"]).toBe("idle");
     expect(voice.element.title).toBe(DEFAULT_UI_STRINGS.transcriptionFailed);
     expect(vi.getTimerCount()).toBe(0);

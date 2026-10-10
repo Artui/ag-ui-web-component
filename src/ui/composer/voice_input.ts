@@ -186,8 +186,8 @@ export class VoiceInput {
    * a detached element.
    *
    * Disposal is final: nothing un-disposes an instance, and the host's next
-   * wiring builds a new one. So the disposed flag alone tells a stale
-   * continuation from a live one, and a clip already posted when this runs is
+   * wiring builds a new one. So the disposed flag alone tells a continuation
+   * that outlived the control from a live one, and a clip already posted when this runs is
    * dropped whenever its answer arrives.
    */
   dispose(): void {
@@ -246,9 +246,10 @@ export class VoiceInput {
   }
 
   #fail(message: string): void {
-    // Both callers reach here after an await, a permission prompt or a
-    // transcription, either of which can settle after dispose. A disposed
-    // control has nothing to release and no tooltip to draw.
+    // A transcription that fails can settle after dispose. (A refused prompt
+    // cannot reach here that way: #start drops a stale or disposed refusal
+    // before it calls this.) A disposed control has nothing to release and no
+    // tooltip to draw.
     if (this.#disposed) {
       return;
     }
