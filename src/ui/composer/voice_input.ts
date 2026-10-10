@@ -58,6 +58,8 @@ export class VoiceInput {
   #capTimer: ReturnType<typeof setTimeout> | null = null;
   #hitCap = false;
   #disposed = false;
+  /** Identifies the newest start; an older one that settles is stale. */
+  #startToken: object = {};
 
   constructor(options: VoiceInputOptions) {
     this.#transcribe = options.transcribe;
@@ -93,21 +95,36 @@ export class VoiceInput {
   }
 
   async #start(): Promise<void> {
-    let stream: MediaStream;
+    // The button reads idle for the whole of the permission prompt, so a second
+    // click during it is a second start. The latest click wins: this token is
+    // replaced by every start, and whichever one settles while it is not the
+    // newest is stale. It is a token and not an in-flight flag on purpose:
+    // getUserMedia may never settle (a dismissed prompt), and a flag waiting
+    // for it would leave the button dead until reload.
+    const token = {};
+    this.#startToken = token;
+    let stream: MediaStream | null;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      this.#fail(this.#strings.transcriptionFailed);
-      return;
+      stream = null;
     }
-    if (this.#disposed) {
-      // The permission prompt outlived the control: the element left, or
-      // user-key changed, while it was open. Recording now would light the
-      // browser's indicator for a button nobody can see or stop, and dispose
-      // has already run, so nothing else would ever release these tracks.
-      for (const track of stream.getTracks()) {
+    if (token !== this.#startToken || this.#disposed) {
+      // Superseded by a later click, or the prompt outlived the control: the
+      // element left, or user-key changed, while it was open. Whatever this
+      // call was granted is released and nothing shared is touched: #stream,
+      // #recorder and the cap timer belong to the newer start, and recording
+      // now on a disposed control would light the browser's indicator for a
+      // button nobody can see or stop (dispose has already run, so nothing
+      // else would ever release these tracks). A refusal is dropped the same
+      // way, so a click nobody is waiting on draws no error over the newer one.
+      for (const track of stream?.getTracks() ?? []) {
         track.stop();
       }
+      return;
+    }
+    if (stream === null) {
+      this.#fail(this.#strings.transcriptionFailed);
       return;
     }
     this.#stream = stream;
@@ -169,8 +186,8 @@ export class VoiceInput {
    * a detached element.
    *
    * Disposal is final: nothing un-disposes an instance, and the host's next
-   * wiring builds a new one. So the disposed flag alone tells a stale
-   * continuation from a live one, and a clip already posted when this runs is
+   * wiring builds a new one. So the disposed flag alone tells a continuation
+   * that outlived the control from a live one, and a clip already posted when this runs is
    * dropped whenever its answer arrives.
    */
   dispose(): void {
@@ -229,9 +246,10 @@ export class VoiceInput {
   }
 
   #fail(message: string): void {
-    // Both callers reach here after an await, a permission prompt or a
-    // transcription, either of which can settle after dispose. A disposed
-    // control has nothing to release and no tooltip to draw.
+    // A transcription that fails can settle after dispose. (A refused prompt
+    // cannot reach here that way: #start drops a stale or disposed refusal
+    // before it calls this.) A disposed control has nothing to release and no
+    // tooltip to draw.
     if (this.#disposed) {
       return;
     }

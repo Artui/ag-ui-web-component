@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A second click on the mic while its permission prompt is open no longer
+  leaves a recording nothing can stop.** The mic button reads idle for as long
+  as the browser's prompt is up, which is seconds the first time an origin asks
+  and a few milliseconds after that, so a double click or an impatient second
+  click started twice. Both starts recorded and held a live track, but the
+  control kept only the second: one stop click ended that one, the first kept
+  recording with the browser's recording indicator on for a button reading
+  idle, and `dispose()` could not reach it either. The first start's two-minute
+  cap timer was orphaned too, and when it fired it stopped whatever recording
+  was current, so a later, unrelated one was cut short with "Stopped at the
+  2-minute limit". If the second start's recorder then failed, the failure
+  released the second stream and hid the first. The latest click now wins: a
+  start that settles after a newer one began, or after the control was disposed,
+  releases the microphone it was granted and touches nothing the newer start
+  owns, and a refusal on such a start no longer draws an error over the newer
+  one. The button is not blocked while a prompt is open, so a prompt the user
+  dismissed without answering, which a browser may leave pending forever, does
+  not stop the next click from asking again. Nothing for a host to opt into.
+
 - **A send made while a stored conversation loads no longer goes out without
   it.** Every restore asks the conversation store for the conversation first:
   on connect, on `reload()`, when a thread is picked from the drawer, and when
