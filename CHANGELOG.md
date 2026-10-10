@@ -128,10 +128,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the turn was handed to the agent and the interaction settled, and `false`
   when nothing was sent: an empty message, a run or a send already in flight, a
   reload's resume, no `endpoint`, or a send dropped while it waited for a
-  restore. The change is additive: code typed against `Promise<void>` still
-  compiles, and code that ignores the result behaves as before. A test double
-  that replaces `sendMessage` on the element now has to return a boolean to
-  type-check.
+  restore. Code that ignores the result behaves as before, but type-checking
+  breaks wherever `sendMessage` is annotated, implemented, overridden or
+  replaced as returning `Promise<void>`: a wrapper's ref type declaring it, a
+  subclass override, and a test double that replaces it on the element all have
+  to return a boolean to type-check.
 
 ## [0.42.0] — 2026-10-07
 
