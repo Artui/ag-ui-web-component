@@ -326,6 +326,14 @@
         >Unread badge
         <input type="checkbox" id="cfg-badge" checked />
       </label>
+      <label title="Every conversation load waits 3 seconds, as a slow data-threads-url would"
+        >Slow store
+        <input type="checkbox" id="cfg-slow-store" />
+      </label>
+      <button type="button" id="cfg-restore-send" title="reload(), then sendMessage() at once">
+        Reload + send
+      </button>
+      <output id="cfg-restore-out"></output>
       <button type="button" id="cfg-ping">Collapse + ping</button>
       <button type="button" id="cfg-reset-size">Reset size</button>
       <button type="button" id="cfg-spotlight">Spotlight form</button>

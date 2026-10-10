@@ -269,6 +269,9 @@ describe("a send is in flight from the moment it is taken", () => {
   it("queues what the built-in Send takes in that time, and sends it once the answer is in", async () => {
     const sent = stubEndpoint();
     const el = mountReal();
+    // Past the restore connecting starts, which holds the composer until it
+    // has drawn the stored conversation, so the send below is not parked.
+    await flush();
 
     sendTurn(el, "first");
     sendTurn(el, "second");
@@ -757,6 +760,9 @@ describe("a Retry and a checkpoint pick count a held send", () => {
   it("lets go of its hold when there is nothing to retry", async () => {
     const sent = stubEndpoint();
     const el = mountReal();
+    // Past the restore connecting starts, which refuses a Retry at the guard
+    // until it has drawn the stored conversation, so this reaches the truncation.
+    await settle();
 
     expect(await el.retryLastTurn()).toBe(false);
     await el.sendMessage("first");

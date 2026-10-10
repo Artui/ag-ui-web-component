@@ -120,6 +120,11 @@ export interface UiStrings {
   continueNeedsTurn: string;
   /** Composer hint when a run continuation was picked while a run is in flight. */
   continueWhileRunning: string;
+  /**
+   * Composer hint when a run continuation was picked while the stored
+   * conversation is still loading.
+   */
+  continueWhileLoading: string;
 
   // ── Composer ────────────────────────────────────────────────────────────────
   /** `aria-label` of the message textarea. */
@@ -388,6 +393,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   notConnected: "This chat isn’t connected to an agent, so the message wasn’t sent.",
   continueNeedsTurn: "Type the next turn in the composer first, then pick a run to continue.",
   continueWhileRunning: "Wait for the current answer or stop it, then pick a run to continue.",
+  continueWhileLoading: "Wait for the conversation to finish loading, then pick a run to continue.",
   skillNeeds: "“{title}” needs {fields} — fill it in below, then send.",
 
   message: "Message",

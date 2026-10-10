@@ -240,6 +240,53 @@ $("cfg-ping").addEventListener("click", () => {
   void chat.sendMessage("/ping");
 });
 
+// A slow conversation store, for looking at what happens while a stored
+// conversation loads. The built-in store answers in a microtask, so nothing a
+// person does can land in that window; a server-backed one (data-threads-url)
+// costs a round trip on every restore. With the box ticked, every load the
+// element asks for -- reload(), a thread picked from the drawer -- waits three
+// seconds first. Type and press Send in that time: the turn queues as "Waiting
+// to send" and goes out under the restored conversation. Open the checkpoint
+// panel and pick a run: the composer says it is still loading.
+//
+// Patched onto the store object the element holds now, and again whenever the
+// element is handed a new one (a user-key change rebuilds it), so it is checked
+// before each use rather than once.
+let slowLoads = false;
+const SLOW = Symbol("slow");
+const slowStore = () => {
+  const store = chat.conversationStore;
+  if (store[SLOW]) {
+    return;
+  }
+  const load = store.loadMessages.bind(store);
+  store.loadMessages = async (threadId) => {
+    if (slowLoads) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+    return load(threadId);
+  };
+  store[SLOW] = true;
+};
+$("cfg-slow-store").addEventListener("change", (event) => {
+  slowLoads = event.target.checked;
+  slowStore();
+});
+
+// A host's prompt fired as a restore starts, as one fired on mount would be.
+// It waits for the conversation, then sends under it, and says what
+// sendMessage resolved to: true once it sent, false if New chat, a thread
+// switch or another reload came while it waited.
+$("cfg-restore-send").addEventListener("click", () => {
+  slowStore();
+  const out = $("cfg-restore-out");
+  out.textContent = "waiting...";
+  void chat.reload();
+  void chat.sendMessage("/ping").then((sent) => {
+    out.textContent = `sent: ${sent}`;
+  });
+});
+
 // A dragged size outlives the tab now, which is confusing when you are
 // flipping placements to compare handles.
 //

@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A send made while a stored conversation loads no longer goes out without
+  it.** Every restore asks the conversation store for the conversation first:
+  on connect, on `reload()`, when a thread is picked from the drawer, and when
+  `user-key` changes from one principal to another. With `data-threads-url`
+  that is a request to the server,
+  and nothing held the composer while it was out unless the restore was about
+  to resume a run. So a send in that time went out carrying only its own turn,
+  and the agent answered without the conversation. Its save replaced the
+  stored conversation with the new exchange, and the replay then drew the
+  stored conversation under the new turn. The client the send built stayed
+  cached without the history, so every later turn on that page went out
+  without it too. A Retry in the window was refused, but it left the same
+  empty client cached, so the first send after the load lost the history the
+  same way. With the built-in store the window is one microtask, so it was
+  reached only by a send in the same task as the insertion: a script right
+  after `append`, a framework ref callback, or a layout effect.
+  Now every restore holds the composer until the conversation is drawn:
+  - A host's `sendMessage()` waits for the restore, then sends with the
+    conversation. Its bubble, its `ag-ui-submit` event and its request all move
+    to after the replay, so they arrive later than the call by the length of
+    the load. A host that listens on `ag-ui-submit` hears it that much later.
+  - If New chat, a thread switch, a change from one `user-key` to another or
+    `reload()` comes while the send waits, the send is dropped and resolves
+    `false` at once, because the conversation it was addressed to is no longer
+    on screen. If the element leaves the page, the send is dropped too, but it
+    resolves `false` only once the load answers or the element is inserted
+    again. A first `user-key` on an anonymous conversation adopts it rather than
+    replacing it, so a send waiting then still goes out. A second
+    `sendMessage()` while one waits is refused.
+  - The built-in Send queues what is typed during the load, showing it as
+    "Waiting to send", and sends it after the conversation is drawn, behind a
+    `sendMessage()` that was waiting.
+  - `retryLastTurn()` resolves `false` during the load, before it builds a
+    client.
+  - A checkpoint pick is refused during the load with a new composer hint,
+    `continueWhileLoading` ("Wait for the conversation to finish loading, then
+    pick a run to continue."). Hosts that translate the UI strings can override
+    it in `data-strings`; until they do, it shows in English. `UiStrings` gains
+    the key. The `strings` property and `data-strings` take a partial table, so
+    only code that builds a complete `UiStrings` object of its own has to add
+    it.
+  - A restore that will resume a run a navigating tool interrupted keeps
+    refusing a host's `sendMessage()`, as in 0.42.0, because that restore ends
+    by starting the run.
+
+  No host opt-in is needed: this applies to every element as soon as it is
+  upgraded. A host that sends on mount gets the conversation without changing
+  anything. The cost is that the composer queues for as long as each load
+  takes, and the load has no timeout of its own, so a request that hangs keeps
+  it queueing until the request fails.
+
+### Changed
+
+- **`sendMessage()` resolves to whether it sent.** It returns
+  `Promise<boolean>` where it returned `Promise<void>`. It resolves `true` once
+  the turn was handed to the agent and the interaction settled, and `false`
+  when nothing was sent: an empty message, a run or a send already in flight, a
+  reload's resume, no `endpoint`, or a send dropped while it waited for a
+  restore. The change is additive: code typed against `Promise<void>` still
+  compiles, and code that ignores the result behaves as before. A test double
+  that replaces `sendMessage` on the element now has to return a boolean to
+  type-check.
+
 ## [0.42.0] — 2026-10-07
 
 ### Fixed
