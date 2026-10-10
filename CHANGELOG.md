@@ -58,7 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   upgraded. A host that sends on mount gets the conversation without changing
   anything. The cost is that the composer queues for as long as each load
   takes, and the load has no timeout of its own, so a request that hangs keeps
-  it queueing until the request fails.
+  it queueing until the request fails. A store whose load rejects ends the wait
+  too, and what waited then goes out into the empty conversation the page is left
+  showing, so a custom store that rejects loses its stored copy to that send, as
+  a turn typed after the failure always has. The built-in remote store falls back
+  to its local cache on a failed fetch instead of rejecting.
 
 ### Changed
 

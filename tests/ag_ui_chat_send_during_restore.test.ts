@@ -638,6 +638,14 @@ describe("a send while a stored conversation with no run to resume loads", () =>
       ["assistant", "answer 1"],
     ]);
     expect(sendingResult).toBe(true);
+    // Pinned, not endorsed: the page shows an empty conversation after the
+    // failure, so what waited goes into it and its save replaces what the store
+    // held. The built-in remote store falls back to its local cache on a failed
+    // fetch rather than rejecting, so this reaches a custom store.
+    expect(stored(store.held("t1"))).toEqual([
+      ["user", "meanwhile"],
+      ["assistant", "answer 1"],
+    ]);
   });
 
   it("carries the conversation for a send in the same task as the insertion, over the built-in store", async () => {
