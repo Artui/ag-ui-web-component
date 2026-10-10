@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-10-10
+
 ### Fixed
 
 - **A second click on the mic while its permission prompt is open no longer
@@ -4548,7 +4550,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.42.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.43.0...HEAD
+[0.43.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.3...v0.42.0
 [0.41.3]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.2...v0.41.3
 [0.41.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.1...v0.41.2
