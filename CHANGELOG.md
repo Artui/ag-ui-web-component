@@ -84,6 +84,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   No host opt-in is needed: this applies to every element as soon as it is
   upgraded, and nothing about the tool registry or its handlers changes.
 
+- **A microphone the browser grants but cannot record no longer fails silently.**
+  With `data-transcribe-url` set, the mic button asks for the microphone and
+  then builds a `MediaRecorder` on the stream. If the browser refuses that, as
+  Chromium does with `NotSupportedError` for a stream whose tracks have already
+  ended, the click ended in an unhandled promise rejection and the button stayed
+  idle with no message. Any track of the stream that was still live kept
+  running, so the browser's recording indicator stayed lit, and starting again
+  replaced the stream without stopping it. Now a recorder that cannot start is
+  treated as a refused microphone: the tracks are released, the button shows
+  "Transcription failed" as it does for a denied permission, and it stays idle,
+  ready to try again. The message reuses that existing string, so `UiStrings` is
+  unchanged.
+
+  No host opt-in is needed: this applies to every element as soon as it is
+  upgraded.
+
 ### Changed
 
 - **`sendMessage()` resolves to whether it sent.** It returns

@@ -22,11 +22,19 @@ export class FakeMediaStream {
 /** A fake `MediaRecorder` driven by {@link stop} (which flushes data + fires stop). */
 export class FakeMediaRecorder {
   static instances: FakeMediaRecorder[] = [];
+  /** How many more constructions throw, then how many more `start()` calls. */
+  static constructFailures = 0;
+  static startFailures = 0;
   mimeType = "audio/webm";
   state: "inactive" | "recording" = "inactive";
   readonly #listeners = new Map<string, Listener[]>();
 
   constructor(readonly stream: FakeMediaStream) {
+    // Before the push, so recorder() answers with the one that did construct.
+    if (FakeMediaRecorder.constructFailures > 0) {
+      FakeMediaRecorder.constructFailures -= 1;
+      throw new DOMException("The stream cannot be recorded", "NotSupportedError");
+    }
     FakeMediaRecorder.instances.push(this);
   }
 
@@ -37,6 +45,13 @@ export class FakeMediaRecorder {
   }
 
   start(): void {
+    // Chromium leaves a recorder whose start() threw reporting "recording", with
+    // no events fired until something calls stop() on it.
+    if (FakeMediaRecorder.startFailures > 0) {
+      FakeMediaRecorder.startFailures -= 1;
+      this.state = "recording";
+      throw new DOMException("The recorder could not start", "NotSupportedError");
+    }
     this.state = "recording";
   }
 
@@ -57,15 +72,27 @@ export class FakeMediaRecorder {
 export interface FakeMediaController {
   /** The most recently constructed recorder (throws if none). */
   recorder(): FakeMediaRecorder;
+  /** Every stream `getUserMedia` has handed out, in order. */
+  streams(): FakeMediaStream[];
   restore(): void;
 }
 
 /**
  * Install the fakes. With `deny: true`, `getUserMedia` rejects (permission
- * denied / no device). Call `restore()` afterwards.
+ * denied / no device). `failConstruct` and `failStart` make that many
+ * recorders throw a `NotSupportedError` from the constructor, or from
+ * `start()`, before behaving normally: a granted stream the browser then
+ * cannot record. Call `restore()` afterwards.
  */
-export function installFakeMedia({ deny = false } = {}): FakeMediaController {
+export function installFakeMedia({
+  deny = false,
+  failConstruct = 0,
+  failStart = 0,
+} = {}): FakeMediaController {
   FakeMediaRecorder.instances = [];
+  FakeMediaRecorder.constructFailures = failConstruct;
+  FakeMediaRecorder.startFailures = failStart;
+  const streams: FakeMediaStream[] = [];
   const g = globalThis as Record<string, unknown>;
   const originalRecorder = g["MediaRecorder"];
   const originalMediaDevices = (globalThis.navigator as { mediaDevices?: unknown }).mediaDevices;
@@ -74,8 +101,14 @@ export function installFakeMedia({ deny = false } = {}): FakeMediaController {
   Object.defineProperty(globalThis.navigator, "mediaDevices", {
     configurable: true,
     value: {
-      getUserMedia: () =>
-        deny ? Promise.reject(new Error("denied")) : Promise.resolve(new FakeMediaStream()),
+      getUserMedia: () => {
+        if (deny) {
+          return Promise.reject(new Error("denied"));
+        }
+        const stream = new FakeMediaStream();
+        streams.push(stream);
+        return Promise.resolve(stream);
+      },
     },
   });
 
@@ -87,7 +120,12 @@ export function installFakeMedia({ deny = false } = {}): FakeMediaController {
       }
       return last;
     },
+    streams(): FakeMediaStream[] {
+      return streams;
+    },
     restore(): void {
+      FakeMediaRecorder.constructFailures = 0;
+      FakeMediaRecorder.startFailures = 0;
       g["MediaRecorder"] = originalRecorder;
       Object.defineProperty(globalThis.navigator, "mediaDevices", {
         configurable: true,
