@@ -646,6 +646,26 @@ export class AgUiChat extends HTMLElement {
    */
   #tenure: object = {};
   /**
+   * The conversation on screen: replaced every time the transcript is cleared
+   * for another one -- New chat, a drawer switch, deleting the active thread,
+   * `reload()`, re-insertion and a handover all pass through
+   * {@link #resetConversation} -- and captured by each frontend tool call as it
+   * is dispatched, so the call can tell whether the conversation it was drawn
+   * in is still the one showing.
+   *
+   * A call outlives the reset that stops its run. A handler cannot be aborted,
+   * and a card open at the time is declined, so the call resumes once the new
+   * conversation is showing; drawing the run's pending indicator then put it
+   * in a conversation with no run to take it down.
+   *
+   * Not {@link #tenure}, which only a handover replaces. A reset is not a
+   * change of principal: the call still belongs to someone this element
+   * serves, so it still settles its card, clears its checkpoint and returns
+   * its result, and only the drawing is skipped. The tenure checks end the
+   * call before any of that.
+   */
+  #conversation: object = {};
+  /**
    * The remote store `data-threads-url` wrapped around the conversation store,
    * and the store inside it, so connecting again can wrap that store rather
    * than the wrapper.
@@ -794,6 +814,8 @@ export class AgUiChat extends HTMLElement {
       // Read live and compared, the way each client compares the one it was
       // built with: see #tenure.
       tenure: () => this.#tenure,
+      // The same, for the conversation on screen: see #conversation.
+      conversation: () => this.#conversation,
     });
     this.#runHandlers = new RunHandlers({
       element: this,
@@ -2060,6 +2082,9 @@ export class AgUiChat extends HTMLElement {
     // not draw into this one, put a new run's Stop back to Send, or report the
     // new conversation's tools as its own.
     this.#runHandlers.detach();
+    // A frontend tool call of that run can resume later still, for the same
+    // reason, and must not draw into this one either: see #conversation.
+    this.#conversation = {};
     this.#clearTranscript();
     this.#history.forgetRestored();
   }
