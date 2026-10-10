@@ -140,6 +140,44 @@ describe("VoiceInput", () => {
     expect(voice.element.title).toBe("Transcription failed");
   });
 
+  // A granted stream the browser then cannot record. The click discards the
+  // promise, so each test awaits toggle() itself: a rejection is what an
+  // unhandled one looks like from outside.
+  it.each([
+    ["constructor throws", { failConstruct: 1 }],
+    ["start() throws", { failStart: 1 }],
+  ])("treats a recorder that fails to start like a refused mic (%s)", async (_name, options) => {
+    media = installFakeMedia(options);
+    const voice = new VoiceInput({ transcribe: async () => "x", onText: () => {} });
+    await expect(voice.toggle()).resolves.toBeUndefined();
+    expect(media.streams()).toHaveLength(1);
+    expect(media.streams()[0]?.track.stopped).toBe(true);
+    expect(voice.element.dataset["state"]).toBe("idle");
+    expect(voice.element.title).toBe("Transcription failed");
+  });
+
+  it.each([
+    ["constructor throws", { failConstruct: 1 }],
+    ["start() throws", { failStart: 1 }],
+  ])(
+    "records normally after a failed start releases the first stream (%s)",
+    async (_name, options) => {
+      media = installFakeMedia(options);
+      const onText = vi.fn();
+      const voice = new VoiceInput({ transcribe: async () => "heard", onText });
+      // Swallowed so that, unfixed, the assertions below still run and name
+      // the leaked first stream rather than the rejection.
+      await voice.toggle().catch(() => {});
+      await voice.toggle();
+      expect(voice.element.dataset["state"]).toBe("recording");
+      await voice.toggle();
+      await flush();
+      expect(onText).toHaveBeenCalledWith("heard");
+      expect(media.streams()).toHaveLength(2);
+      expect(media.streams().map((stream) => stream.track.stopped)).toEqual([true, true]);
+    },
+  );
+
   it("surfaces a transcription failure on the button title", async () => {
     media = installFakeMedia();
     const voice = new VoiceInput({
