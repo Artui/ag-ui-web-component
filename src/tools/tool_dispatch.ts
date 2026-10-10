@@ -64,6 +64,13 @@ export interface ToolDispatchHost {
    * one the element serves.
    */
   readonly tenure: () => object;
+  /**
+   * The conversation on screen: an identity the element replaces every time it
+   * clears the transcript for another conversation, a handover included. Only
+   * ever compared, so a call can tell whether the conversation it was
+   * dispatched in is still the one it would draw into.
+   */
+  readonly conversation: () => object;
 }
 
 /**
@@ -131,7 +138,10 @@ export class ToolDispatch {
    * check that it has not. A Stop while the host's predicate is pending ends
    * the call there, and one while the card is open declines it. A handover
    * during any of the three leaves the call with no transcript to draw in and
-   * no store to write to, so it does neither.
+   * no store to write to, so it does neither. Any other reset of the
+   * conversation -- New chat, a drawer switch, `reload()` -- leaves the call
+   * its store and its result but not the transcript, so it still settles and
+   * returns, and does not show the run waiting in a conversation it is not in.
    */
   async execute(call: AgUiToolCall): Promise<ToolExecution | null> {
     // A skill load already rendered as a notice on the stream; it is never a
@@ -148,6 +158,7 @@ export class ToolDispatch {
     // chat had just moved to, leaving its own behind, and across a handover
     // it wrote into the next principal's store.
     const tenure = this.#host.tenure();
+    const conversation = this.#host.conversation();
     const threadId = this.#host.threadId();
     const card = this.#host.transcript.cardFor(call);
     this.#host.transcript.forgetCard(call.id);
@@ -270,7 +281,16 @@ export class ToolDispatch {
       if (!accepted) {
         const message = this.#host.strings().declinedAction;
         card.settle(TOOL_CALL_STATUS.DECLINED, message);
-        this.#host.transcript.showPending();
+        // New chat or a drawer switch with the card open declines it too, and
+        // the indicator would land in the conversation that replaced this one,
+        // whose run is not this one and which nothing would take it down from.
+        // Only the drawing is skipped: the refusal is still this run's to send.
+        //
+        // Held by "draws nothing into the new chat when New chat declines the
+        // open card" in tool_dispatch.test.ts.
+        if (this.#host.conversation() === conversation) {
+          this.#host.transcript.showPending();
+        }
         // The one outcome with no error text and no server involvement at all:
         // a person said no in this browser. Nothing else records that, so
         // without the annotation the reload showed a green card for an action
@@ -332,7 +352,16 @@ export class ToolDispatch {
       }
       const content = JSON.stringify(result ?? null);
       card.settle(TOOL_CALL_STATUS.DONE, content);
-      this.#host.transcript.showPending();
+      // The same check for a reset that is not a handover. The result is kept,
+      // as after a Stop, but the conversation on screen is not the one it was
+      // dispatched in, so the run is not shown waiting there.
+      //
+      // Held by "draws nothing into the new chat when a handler resolves after
+      // New chat" in tool_dispatch.test.ts, and for the other resets by the
+      // tests beside it.
+      if (this.#host.conversation() === conversation) {
+        this.#host.transcript.showPending();
+      }
       return { content };
     } catch (error) {
       // The same handover check as on success, and here it also guards a
@@ -358,7 +387,14 @@ export class ToolDispatch {
       // invisible from the host's side and is not one it can take back.
       const message = error instanceof Error ? error.message : String(error);
       card.settle(TOOL_CALL_STATUS.ERROR, message);
-      this.#host.transcript.showPending();
+      // As on success: the failure is still reported, and not drawn as a run
+      // waiting in a conversation the call is no longer in.
+      //
+      // Held by "draws nothing into the new chat when a handler fails after
+      // New chat" in tool_dispatch.test.ts.
+      if (this.#host.conversation() === conversation) {
+        this.#host.transcript.showPending();
+      }
       return { content: `Error: ${message}`, error: message, outcome: TOOL_OUTCOME.FAILED };
     }
   }

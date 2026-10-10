@@ -64,6 +64,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a turn typed after the failure always has. The built-in remote store falls back
   to its local cache on a failed fetch instead of rejecting.
 
+- **Clearing the conversation while a frontend tool waits no longer leaves a
+  "thinking" indicator in the next one.** A handler cannot be aborted, and a
+  confirmation card that is open when the run stops is declined, so the call
+  resumes after the conversation has been cleared. It then showed the run
+  waiting on its next round in whatever conversation had replaced it: the
+  indicator's answer group hid the greeting and the starter chips, and nothing
+  took it down until the next run there ended. This happened after New chat,
+  picking another thread from the drawer, deleting the active thread,
+  `reload()` and re-inserting the element, each with a handler still running
+  or a confirmation card open. A `user-key` handover already drew nothing there, as of 0.42.0.
+  Now the call draws nothing once the conversation it was dispatched in has
+  been cleared. Everything else it did is unchanged:
+  - Its card still settles as done, failed or declined.
+  - A failed navigating tool still clears its checkpoint from the thread it
+    was written to.
+  - Its result still goes to the run it belonged to, as after a Stop.
+
+  No host opt-in is needed: this applies to every element as soon as it is
+  upgraded, and nothing about the tool registry or its handlers changes.
+
 ### Changed
 
 - **`sendMessage()` resolves to whether it sent.** It returns

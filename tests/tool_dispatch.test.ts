@@ -356,3 +356,257 @@ describe("a handler still running when the run ends", () => {
     expect(storedCheckpoints()).toEqual([]);
   });
 });
+
+/** Run every queued task, deep enough for a drawer to list and a thread to replay. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+/**
+ * Whether the conversation reads as empty: the greeting region showing and the
+ * host stamped `data-empty`. A stray answer group hides both.
+ */
+function emptyStateShowing(el: AgUiChat): boolean {
+  const empty = shadow(el).querySelector<HTMLElement>(".empty");
+  return empty !== null && !empty.hidden && el.hasAttribute("data-empty");
+}
+
+describe("a call still waiting when the conversation is reset", () => {
+  // New chat, a drawer switch, reload() and re-insertion all stop the run and
+  // clear the transcript, and none of them is a change of principal. A handler
+  // cannot be aborted and a declined card still resolves, so the call resumes
+  // after the reset. What it did is still settled and still returned; what it
+  // must not do is show the run waiting on a next round in a conversation that
+  // has no run, where nothing would ever take the indicator down.
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  it("draws nothing into the new chat when a handler resolves after New chat", async () => {
+    const result = deferred<string>();
+    const drawn = document.createElement("div");
+    const { el, handle } = mountCalling("highlight");
+    el.registerTool({
+      name: "highlight",
+      description: "Highlight a row",
+      parameters: { type: "object" },
+      handler: () => result.promise,
+      render: () => drawn,
+    });
+
+    await send(el, "highlight row 7");
+    const card = toolCard(el);
+    expect(card).not.toBeNull();
+    el.newChat();
+    expect(emptyStateShowing(el)).toBe(true);
+    result.resolve("highlighted");
+    await flush();
+
+    expect.soft(shadow(el).querySelector(".pending")).toBeNull();
+    expect(emptyStateShowing(el)).toBe(true);
+    // The output a rendering tool draws beside its card has no card to go
+    // beside: the reset forgot it, so the anchor is detached.
+    expect(drawn.isConnected).toBe(false);
+    // Only the drawing is skipped. The call still settled, and the result
+    // still reached the run it belonged to.
+    expect(card?.getAttribute("data-status")).toBe("done");
+    expect(handle.messages.find((message) => message.role === "tool")?.content).toBe(
+      JSON.stringify("highlighted"),
+    );
+  });
+
+  it("draws nothing into the new chat when a handler fails after New chat", async () => {
+    const result = deferred<string>();
+    const { el, handle } = mountCalling("highlight");
+    el.registerTool({
+      name: "highlight",
+      description: "Highlight a row",
+      parameters: { type: "object" },
+      handler: () => result.promise,
+    });
+
+    await send(el, "highlight row 7");
+    const card = toolCard(el);
+    el.newChat();
+    result.reject(new Error("row 7 is gone"));
+    await flush();
+
+    expect.soft(shadow(el).querySelector(".pending")).toBeNull();
+    expect(emptyStateShowing(el)).toBe(true);
+    expect(card?.getAttribute("data-status")).toBe("error");
+    expect(handle.messages.find((message) => message.role === "tool")?.content).toBe(
+      "Error: row 7 is gone",
+    );
+  });
+
+  it("draws nothing into the new chat when New chat declines the open card", async () => {
+    const handler = vi.fn(() => "deleted");
+    const { el, handle } = mountCalling("delete_record");
+    el.registerTool({
+      name: "delete_record",
+      description: "Delete a record",
+      parameters: { type: "object", "x-destructive": true },
+      handler,
+    });
+
+    await send(el, "delete record 7");
+    expect(shadow(el).querySelector(".confirm")).not.toBeNull();
+    const card = toolCard(el);
+    el.newChat();
+    await flush();
+
+    expect(shadow(el).querySelector(".confirm")).toBeNull();
+    expect.soft(shadow(el).querySelector(".pending")).toBeNull();
+    expect(emptyStateShowing(el)).toBe(true);
+    expect(handler).not.toHaveBeenCalled();
+    // Declined, and said so to the run it belonged to.
+    expect(card?.getAttribute("data-decision")).toBe("declined");
+    expect(card?.getAttribute("data-status")).toBe("declined");
+    expect(handle.messages.find((message) => message.role === "tool")).toBeDefined();
+  });
+
+  it("draws nothing into the picked thread when a handler resolves after a drawer switch", async () => {
+    const result = deferred<string>();
+    const { el } = mountCalling("highlight");
+    el.registerTool({
+      name: "highlight",
+      description: "Highlight a row",
+      parameters: { type: "object" },
+      handler: () => result.promise,
+    });
+    // A thread with nothing in it yet, so the picked conversation is empty and
+    // anything drawn into it is the stray.
+    el.conversationStore.saveMessages("picked", []);
+
+    await send(el, "highlight row 7");
+    el.openThreads();
+    await settle();
+    const row = [...shadow(el).querySelectorAll<HTMLElement>(".drawer-row")].find(
+      (candidate) => !candidate.classList.contains("drawer-row--active"),
+    );
+    expect(row).toBeDefined();
+    row?.querySelector<HTMLButtonElement>(".drawer-row-select")?.click();
+    await settle();
+    expect(el.conversationStore.threadId()).toBe("picked");
+    result.resolve("highlighted");
+    await settle();
+
+    expect.soft(shadow(el).querySelector(".pending")).toBeNull();
+    expect(emptyStateShowing(el)).toBe(true);
+  });
+
+  it("draws nothing into the picked thread when a drawer switch declines the open card", async () => {
+    const handler = vi.fn(() => "deleted");
+    const { el } = mountCalling("delete_record");
+    el.registerTool({
+      name: "delete_record",
+      description: "Delete a record",
+      parameters: { type: "object", "x-destructive": true },
+      handler,
+    });
+    el.conversationStore.saveMessages("picked", []);
+
+    await send(el, "delete record 7");
+    expect(shadow(el).querySelector(".confirm")).not.toBeNull();
+    const card = toolCard(el);
+    el.openThreads();
+    await settle();
+    const row = [...shadow(el).querySelectorAll<HTMLElement>(".drawer-row")].find(
+      (candidate) => !candidate.classList.contains("drawer-row--active"),
+    );
+    expect(row).toBeDefined();
+    row?.querySelector<HTMLButtonElement>(".drawer-row-select")?.click();
+    await settle();
+    expect(el.conversationStore.threadId()).toBe("picked");
+
+    expect(shadow(el).querySelector(".confirm")).toBeNull();
+    expect.soft(shadow(el).querySelector(".pending")).toBeNull();
+    expect(emptyStateShowing(el)).toBe(true);
+    expect(handler).not.toHaveBeenCalled();
+    expect(card?.getAttribute("data-decision")).toBe("declined");
+  });
+
+  it("draws nothing into the fresh chat when a handler resolves after its thread is deleted", async () => {
+    const result = deferred<string>();
+    const { el } = mountCalling("highlight");
+    el.registerTool({
+      name: "highlight",
+      description: "Highlight a row",
+      parameters: { type: "object" },
+      handler: () => result.promise,
+    });
+
+    await send(el, "highlight row 7");
+    const deleted = el.conversationStore.threadId();
+    el.openThreads();
+    await settle();
+    const remove = shadow(el).querySelector<HTMLButtonElement>(
+      ".drawer-row--active .drawer-row-delete",
+    );
+    expect(remove).not.toBeNull();
+    remove?.click();
+    shadow(el).querySelector<HTMLButtonElement>(".drawer-confirm-yes")?.click();
+    await settle();
+    expect(el.conversationStore.threadId()).not.toBe(deleted);
+    result.resolve("highlighted");
+    await settle();
+
+    expect.soft(shadow(el).querySelector(".pending")).toBeNull();
+    expect(emptyStateShowing(el)).toBe(true);
+  });
+
+  // reload() and re-insertion rebuild the same thread from what is stored, so
+  // the conversation on screen is not empty afterwards. What the call must not
+  // do is add to it: the transcript stays exactly as the replay drew it.
+
+  it("adds nothing to the replay when a handler resolves after reload()", async () => {
+    const result = deferred<string>();
+    const { el } = mountCalling("highlight");
+    el.registerTool({
+      name: "highlight",
+      description: "Highlight a row",
+      parameters: { type: "object" },
+      handler: () => result.promise,
+    });
+
+    await send(el, "highlight row 7");
+    void el.reload();
+    await settle();
+    const replayed = shadow(el).querySelector(".messages")?.innerHTML;
+    expect(replayed).toBeDefined();
+    result.resolve("highlighted");
+    await settle();
+
+    expect.soft(shadow(el).querySelector(".pending")).toBeNull();
+    expect(shadow(el).querySelector(".messages")?.innerHTML).toBe(replayed);
+  });
+
+  it("adds nothing to the replay when a handler resolves after re-insertion", async () => {
+    // Re-insertion clears the conversation without clearing the composer's
+    // recall history, so it is the one path that reaches the seam without
+    // passing through New chat's own reset.
+    const result = deferred<string>();
+    const { el } = mountCalling("highlight");
+    el.registerTool({
+      name: "highlight",
+      description: "Highlight a row",
+      parameters: { type: "object" },
+      handler: () => result.promise,
+    });
+
+    await send(el, "highlight row 7");
+    el.remove();
+    document.body.appendChild(el);
+    await settle();
+    const replayed = shadow(el).querySelector(".messages")?.innerHTML;
+    expect(replayed).toBeDefined();
+    result.resolve("highlighted");
+    await settle();
+
+    expect.soft(shadow(el).querySelector(".pending")).toBeNull();
+    expect(shadow(el).querySelector(".messages")?.innerHTML).toBe(replayed);
+  });
+});
