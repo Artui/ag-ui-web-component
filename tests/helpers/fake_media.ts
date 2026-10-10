@@ -45,9 +45,11 @@ export class FakeMediaRecorder {
   }
 
   start(): void {
-    // The state stays inactive, as it does for a recorder the browser refused.
+    // Chromium leaves a recorder whose start() threw reporting "recording", with
+    // no events fired until something calls stop() on it.
     if (FakeMediaRecorder.startFailures > 0) {
       FakeMediaRecorder.startFailures -= 1;
+      this.state = "recording";
       throw new DOMException("The recorder could not start", "NotSupportedError");
     }
     this.state = "recording";

@@ -126,14 +126,15 @@ export class VoiceInput {
       recorder.start();
     } catch {
       // A granted stream the browser will not record: one whose tracks have
-      // already ended (Chromium throws NotSupportedError from start), an
-      // unsupported codec, or a device that went away between the grant and
-      // the start. It is a refused mic by another route, so it ends the same
-      // way: the tracks are released (the stream is already stored, and
-      // nothing else would stop it), the button shows the failure, and
-      // nothing reaches the click handler, which discards the promise. The
-      // recorder's listeners stay attached to an object nobody references
-      // again; a recorder whose start threw fires no events.
+      // already ended (Chromium throws NotSupportedError from start), a device
+      // that went away between the grant and the start, or no MediaRecorder at
+      // all. It is a refused mic by another route, so it ends the same way: the
+      // tracks are released (the stream is already stored, and nothing else
+      // would stop it), the button shows the failure, and nothing reaches the
+      // click handler, which discards the promise. A recorder whose start threw
+      // can still report "recording" and still holds its listeners, but #fail
+      // clears #recorder, so neither #stop nor dispose can reach it and its stop
+      // listener never runs #finish.
       this.#fail(this.#strings.transcriptionFailed);
       return;
     }
