@@ -1916,7 +1916,7 @@ chat.addEventListener("ag-ui-feedback", (e) => {
   analytics.track("assistant_rating", e.detail); // { content, rating }
 });
 
-await chat.retryLastTurn(); // false when there is nothing to ask again, or a run is in flight
+await chat.retryLastTurn(); // false when there is nothing to ask again, a run is in flight, or a restore is loading
 ```
 
 ## Quoting a selection
@@ -2507,6 +2507,11 @@ another continuation's — is refused the same way: the hint asks you to wait or
 stop it, and what you typed stays in the composer for the pick after. The run in
 flight is not cancelled for you, since a continuation starting over it would
 leave two answers streaming into one transcript with Stop reaching only one.
+
+Picking a row while a stored conversation is still loading is refused the same
+way, with a hint asking you to wait for the load: a continuation sends only the
+new turn, so it must not start before the history it continues is on screen. The
+wording is the `continueWhileLoading` string.
 
 ### One URL, three endpoints
 
