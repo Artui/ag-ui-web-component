@@ -35,9 +35,10 @@ export interface AgUiMessageIds {
   /**
    * The run that streamed it, as that run's `RUN_STARTED` declared it.
    *
-   * Absent when no `RUN_STARTED` was seen, which `@ag-ui/client` 1.0 does not
-   * let a real stream do: there is no other source that names the run the
-   * server recorded, so none is substituted.
+   * Absent when no `RUN_STARTED` was seen. `@ag-ui/client` 1.0 rejects a
+   * stream whose first event is anything else, so over a real agent this is
+   * always present; nothing else names the run the server recorded, so
+   * nothing is substituted when it is not.
    */
   readonly runId?: string;
 }

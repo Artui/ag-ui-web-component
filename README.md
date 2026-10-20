@@ -1943,11 +1943,14 @@ chat.addEventListener("ag-ui-feedback", (e) => {
 ```
 
 > [!NOTE]
-> **A message keeps its id across a reload only if the server persists the ids
-> it streamed.** A restored message is named by whatever `id` the conversation
-> store holds for it. If the server stores the conversation under fresh ids, a
-> rating made live and a rating made after a reload name the same answer by two
-> different ids. Live, the id is always the one on the wire.
+> **A restored message is named by whatever `id` the conversation store returns
+> for it.** The built-in browser store saves the conversation as it streamed, so
+> there a message keeps its id across a reload. With `data-threads-url` or a
+> `conversationStore` of your own, the conversation comes back from your server,
+> and a message keeps its id only if the server persists the ids it streamed:
+> one that stores the conversation under fresh ids makes a rating made live and a
+> rating made after a reload name the same answer by two different ids. Live,
+> the id is always the one on the wire.
 
 ## Quoting a selection
 

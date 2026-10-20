@@ -18,13 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversation it belongs to; and `runId`, the run whose `RUN_STARTED` streamed
   it. `runId` is present only on a message that arrived live: a stored AG-UI
   message carries no run id, so the key is absent on a restored one rather than
-  guessed. A rating made after a reload names the same message as one made live
-  only where the server persists the ids it streamed. Additive: `content` and
+  guessed. A restored message is named by the id its store returns: the
+  built-in browser store keeps the streamed ids, and with `data-threads-url` or
+  a host's own store a rating made after a reload names the same message as one
+  made live only where the server persists the ids it streamed. Additive: `content` and
   `rating` are unchanged. **A host has to opt in to use it**: the rating pair is
   still off unless `data-message-actions` lists `feedback`, and a host already
   listening reads the new fields from the same event. `AgUiClientHandlers.onTextEnd`
   gains a second argument, `AgUiMessageIds`, naming the completed message; a
-  handler that ignores it is unaffected.
+  handler that ignores it is unaffected, and code that calls a handler table's
+  `onTextEnd` itself has to pass it.
 - **The `data-message-actions` row of the README's attribute table said all
   three actions are on by default.** Absent means copy and retry; the rating
   pair has been opt-in since it was found latching with no listener. The row now

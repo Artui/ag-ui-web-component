@@ -9,8 +9,9 @@ export interface FeedbackDetail {
    *
    * What a host stores a rating against. `content` cannot be: two answers can
    * read the same, and the text says nothing about which stored message it
-   * was. The id survives a reload only where the server persists the ids it
-   * streamed, since a restored message carries whatever id the store holds.
+   * was. A restored message carries whatever id its store returns: the
+   * built-in browser store keeps the streamed ids, and a server-backed one
+   * keeps them only where the server persists the ids it streamed.
    */
   readonly messageId: string;
   /** The conversation the message belongs to: the element's thread when it was drawn. */

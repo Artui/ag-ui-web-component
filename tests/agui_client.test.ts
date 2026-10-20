@@ -1197,10 +1197,20 @@ describe("over the real HttpAgent", () => {
       ended.push([buffer, message]);
     };
 
-    await new AgUiClient({ agent: createHttpAgent({ endpoint: "/agent/" }), handlers }).send("hi");
+    let saved: readonly Message[] = [];
+    await new AgUiClient({
+      agent: createHttpAgent({ endpoint: "/agent/" }),
+      handlers,
+      onPersist: (messages) => {
+        saved = messages;
+      },
+    }).send("hi");
 
     expect(bodies[0]?.["runId"]).not.toBe("r1");
     expect(ended).toEqual([["Sure.", { messageId: "srv-m1", runId: "r1" }]]);
+    // And the save carries the same id, which is why a conversation restored
+    // from the browser's own store names a message as it was named live.
+    expect(saved.filter((m) => m.role === "assistant").map((m) => m.id)).toEqual(["srv-m1"]);
   });
 
   it("delivers the outcome a result states in its metadata", async () => {

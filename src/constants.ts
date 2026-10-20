@@ -106,8 +106,10 @@ export const INVALIDATE_EVENT = "ag-ui-invalidate";
  * `messageId` and the `threadId` it belongs to, plus the `runId` that streamed
  * it when it arrived live (absent on a restored message, which carries no run
  * id) -- with its text and the rating. A host stores the rating against
- * `messageId`, not `content`: two answers can read the same. The id holds
- * across a reload only where the server persists the ids it streamed.
+ * `messageId`, not `content`: two answers can read the same. A restored
+ * message is named by the id its store returns, so with a server-backed store
+ * the id holds across a reload only where the server persists the ids it
+ * streamed; the built-in browser store keeps them as they streamed.
  *
  * **Nothing is stored** -- a rating belongs to whatever the host already uses
  * to hold product signals, and a write-only table inside a chat widget is a
