@@ -43,6 +43,15 @@ if (german) {
   $("cfg-i18n").checked = true;
 }
 
+// The rating pair is opt-in, and set before the definition upgrades the
+// element so a reload draws the restored answers with it too -- rating one of
+// those is half of what the readout is for.
+const ratings = sessionStorage.getItem("demo:ratings") === "1";
+if (ratings) {
+  chat.setAttribute("data-message-actions", "copy,retry,feedback");
+  $("cfg-ratings").checked = true;
+}
+
 defineAgUiChat();
 
 // Charts, both routes. Opt-in by construction: nothing draws one unless a host
@@ -218,6 +227,21 @@ $("cfg-icons").addEventListener("change", (event) => {
       chat.appendChild(span);
     }
   }
+});
+
+$("cfg-ratings").addEventListener("change", (event) => {
+  sessionStorage.setItem("demo:ratings", event.target.checked ? "1" : "0");
+  window.location.reload();
+});
+
+// What a host files a rating under. The ids are shortened to their tails,
+// which is where the mock server's fresh ids differ.
+chat.addEventListener("ag-ui-feedback", (event) => {
+  const { rating, messageId, threadId, runId } = event.detail;
+  const tail = (id) => id.slice(-6);
+  $("cfg-ratings-out").textContent =
+    `${rating} msg ${tail(messageId)} thread ${tail(threadId)} ` +
+    (runId === undefined ? "no run" : `run ${tail(runId)}`);
 });
 
 $("cfg-i18n").addEventListener("change", (event) => {

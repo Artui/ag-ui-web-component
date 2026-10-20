@@ -334,6 +334,11 @@
         Reload + send
       </button>
       <output id="cfg-restore-out"></output>
+      <label title="Adds the rating pair (data-message-actions) and shows what each rating names"
+        >Ratings
+        <input type="checkbox" id="cfg-ratings" />
+      </label>
+      <output id="cfg-ratings-out"></output>
       <button type="button" id="cfg-ping">Collapse + ping</button>
       <button type="button" id="cfg-reset-size">Reset size</button>
       <button type="button" id="cfg-spotlight">Spotlight form</button>
@@ -423,6 +428,13 @@
               <strong>Resize.</strong> Drag the panel's top-left grip. Switch
               <em>Placement</em> to see the axes change: <code>side</code> is width-only,
               <code>full</code> and <code>page</code> have no grip at all.
+            </li>
+            <li>
+              <strong>Ratings.</strong> Tick <em>Ratings</em> (the page reloads), send
+              <em>echo hello</em> twice and rate both answers: they read the same, and the
+              readout beside the box names two different messages, each with the run
+              that streamed it. Reload and rate the first again: same message id, same
+              thread, and <em>no run</em>, since a stored message carries none.
             </li>
             <li>
               <strong>Header icons / Deutsch.</strong> Both check that the chrome is

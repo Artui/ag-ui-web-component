@@ -916,7 +916,20 @@ export class ConversationHistory {
         // wrap words.
         const restoredBubble = this.#host.appendMessage(MESSAGE_ROLE.ASSISTANT, text);
         restoredBubble.classList.add("message--restored");
-        this.#host.actions.attach(restoredBubble);
+        // The stored id, which is the streamed one wherever the store kept
+        // it. A Retry re-renders the turns it keeps through here too, so a
+        // kept answer stays the message it was. No run id: a stored message
+        // does not carry one.
+        //
+        // Narrowed rather than trusted, like the fields below: a host store or
+        // a `data-threads-url` server can return a message with no id, and a
+        // rating that names nothing is a pair of buttons that lead nowhere.
+        // Such an answer keeps its copy and loses only the rating.
+        const id: unknown = message.id;
+        this.#host.actions.attach(
+          restoredBubble,
+          typeof id === "string" && id !== "" ? { messageId: id } : { rateable: false },
+        );
       }
       // Narrowed rather than trusted, for the same reason `messageAttachments`
       // narrows the neighbouring field: anything that throws in this loop aborts

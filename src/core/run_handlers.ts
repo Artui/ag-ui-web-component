@@ -235,7 +235,7 @@ export class RunHandlers {
         this.#host.stream.queue(buffer);
         this.#host.stream.countDelta();
       },
-      onTextEnd: (buffer) => {
+      onTextEnd: (buffer, message) => {
         // A text message that carried no content is a declaration, not an
         // answer, and drawing one puts an empty bubble above every tool call.
         //
@@ -265,7 +265,7 @@ export class RunHandlers {
           this.#host.transcript.revealWords(bubble);
         }
         attachCopyButtons(bubble, this.#host.strings());
-        this.#host.actions.attach(bubble);
+        this.#host.actions.attach(bubble, message);
         this.#host.stream.end();
         this.#host.noteUnread();
       },

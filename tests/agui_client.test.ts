@@ -787,6 +787,25 @@ describe("AgUiClient", () => {
   });
 });
 
+describe("the message an answer ends", () => {
+  it("names no run when no RUN_STARTED named one", async () => {
+    // The key is left out rather than set to undefined: a host spreading the
+    // detail into a request body, or testing `"runId" in detail`, would
+    // otherwise be told a run was looked up and came back empty.
+    const fake = makeFakeAgent({ script: (emit) => emit.textEnd("an answer", "m1") });
+    const ended: unknown[] = [];
+    const handlers = recordingHandlers();
+    handlers.onTextEnd = (_buffer, message) => {
+      ended.push(message);
+    };
+
+    await new AgUiClient({ agent: fake.agent, handlers }).send("hi");
+
+    expect(ended).toEqual([{ messageId: "m1" }]);
+    expect(ended[0]).not.toHaveProperty("runId");
+  });
+});
+
 describe("duplicate message ids", () => {
   it("warns when a server reuses a message id it already closed", async () => {
     // The merge is silent and durable: @ag-ui/client appends to the existing
@@ -1178,6 +1197,147 @@ describe("over the real HttpAgent", () => {
     };
     return { handlers, seen };
   }
+
+  it("ends an answer with the message id and run id the server streamed", async () => {
+    // What a rating names, so it has to be what the server stored: the id on
+    // the wire's `TEXT_MESSAGE_*`, and the run `RUN_STARTED` declared. The
+    // run id the client minted for the request is a different string here --
+    // `r1` is the server's -- so this also pins which of the two is reported.
+    const bodies = stubFetch(
+      run(
+        { type: "TEXT_MESSAGE_START", messageId: "srv-m1", role: "assistant" },
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "srv-m1", delta: "Sure." },
+        { type: "TEXT_MESSAGE_END", messageId: "srv-m1" },
+      ),
+    );
+    const ended: unknown[] = [];
+    const handlers = recordingHandlers();
+    handlers.onTextEnd = (buffer, message) => {
+      ended.push([buffer, message]);
+    };
+
+    let saved: readonly Message[] = [];
+    await new AgUiClient({
+      agent: createHttpAgent({ endpoint: "/agent/" }),
+      handlers,
+      onPersist: (messages) => {
+        saved = messages;
+      },
+    }).send("hi");
+
+    expect(bodies[0]?.["runId"]).not.toBe("r1");
+    expect(ended).toEqual([["Sure.", { messageId: "srv-m1", runId: "r1" }]]);
+    // And the save carries the same id, which is why a conversation restored
+    // from the browser's own store names a message as it was named live.
+    expect(saved.filter((m) => m.role === "assistant").map((m) => m.id)).toEqual(["srv-m1"]);
+  });
+
+  /** Every `onTextEnd` as `[buffer, message]`, on otherwise recording handlers. */
+  function endings(): { handlers: AgUiClientHandlers; ended: unknown[] } {
+    const ended: unknown[] = [];
+    const handlers = recordingHandlers();
+    handlers.onTextEnd = (buffer, message) => {
+      ended.push([buffer, message]);
+    };
+    return { handlers, ended };
+  }
+
+  it("names each round's answer by the run that streamed it", async () => {
+    // A host tool call ends the first request and the client sends a second,
+    // which the server answers as a run of its own.
+    const bodies = stubFetch(
+      [
+        { type: "RUN_STARTED", threadId: "t1", runId: "srv-r1" },
+        { type: "TEXT_MESSAGE_START", messageId: "m1", role: "assistant" },
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: "Checking." },
+        { type: "TEXT_MESSAGE_END", messageId: "m1" },
+        {
+          type: "TOOL_CALL_START",
+          toolCallId: "fc1",
+          toolCallName: "fill_field",
+          parentMessageId: "m1",
+        },
+        { type: "TOOL_CALL_ARGS", toolCallId: "fc1", delta: "{}" },
+        { type: "TOOL_CALL_END", toolCallId: "fc1" },
+        { type: "RUN_FINISHED", threadId: "t1", runId: "srv-r1" },
+      ],
+      [
+        { type: "RUN_STARTED", threadId: "t1", runId: "srv-r2" },
+        { type: "TEXT_MESSAGE_START", messageId: "m2", role: "assistant" },
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "m2", delta: "Done." },
+        { type: "TEXT_MESSAGE_END", messageId: "m2" },
+        { type: "RUN_FINISHED", threadId: "t1", runId: "srv-r2" },
+      ],
+    );
+    const { handlers, ended } = endings();
+
+    await new AgUiClient({
+      agent: createHttpAgent({ endpoint: "/agent/" }),
+      handlers,
+      executeTool: async () => ({ content: "ok" }),
+    }).send("hi");
+
+    expect(bodies).toHaveLength(2);
+    expect(ended).toEqual([
+      ["Checking.", { messageId: "m1", runId: "srv-r1" }],
+      ["Done.", { messageId: "m2", runId: "srv-r2" }],
+    ]);
+  });
+
+  it("names a second run inside one stream by its own RUN_STARTED", async () => {
+    // The latest `RUN_STARTED` wins, so an answer is never filed under a run
+    // that had already finished when it streamed.
+    stubFetch([
+      { type: "RUN_STARTED", threadId: "t1", runId: "a" },
+      { type: "TEXT_MESSAGE_START", messageId: "ma", role: "assistant" },
+      { type: "TEXT_MESSAGE_CONTENT", messageId: "ma", delta: "A" },
+      { type: "TEXT_MESSAGE_END", messageId: "ma" },
+      { type: "RUN_FINISHED", threadId: "t1", runId: "a" },
+      { type: "RUN_STARTED", threadId: "t1", runId: "b" },
+      { type: "TEXT_MESSAGE_START", messageId: "mb", role: "assistant" },
+      { type: "TEXT_MESSAGE_CONTENT", messageId: "mb", delta: "B" },
+      { type: "TEXT_MESSAGE_END", messageId: "mb" },
+      { type: "RUN_FINISHED", threadId: "t1", runId: "b" },
+    ]);
+    const { handlers, ended } = endings();
+
+    await new AgUiClient({ agent: createHttpAgent({ endpoint: "/agent/" }), handlers }).send("hi");
+
+    expect(ended).toEqual([
+      ["A", { messageId: "ma", runId: "a" }],
+      ["B", { messageId: "mb", runId: "b" }],
+    ]);
+  });
+
+  it("names text a sub-agent streams through the parent's run by the parent's run", async () => {
+    // The stream that carried it is the parent's, and AG-UI names no other run
+    // a host could file it under; `subagentRunId` names the delegation, which
+    // the progress panel reports, not the run the answer was recorded in.
+    stubFetch(
+      run(
+        { type: "SUBAGENT_STARTED", subagentRunId: "child-1", name: "researcher" },
+        {
+          type: "TEXT_MESSAGE_START",
+          messageId: "sm",
+          role: "assistant",
+          subagentRunId: "child-1",
+        },
+        {
+          type: "TEXT_MESSAGE_CONTENT",
+          messageId: "sm",
+          delta: "child says",
+          subagentRunId: "child-1",
+        },
+        { type: "TEXT_MESSAGE_END", messageId: "sm", subagentRunId: "child-1" },
+        { type: "SUBAGENT_FINISHED", subagentRunId: "child-1" },
+      ),
+    );
+    const { handlers, ended } = endings();
+
+    await new AgUiClient({ agent: createHttpAgent({ endpoint: "/agent/" }), handlers }).send("hi");
+
+    expect(ended).toEqual([["child says", { messageId: "sm", runId: "r1" }]]);
+  });
 
   it("delivers the outcome a result states in its metadata", async () => {
     stubFetch(run(...serverToolCall({ metadata: { outcome: "failed" } })));

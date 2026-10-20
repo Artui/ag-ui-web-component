@@ -1,4 +1,5 @@
 import { FEEDBACK_EVENT, ICON_RETRY, MESSAGE_ACTIONS } from "../../constants.js";
+import type { AgUiMessageIds } from "../../core/agui_client.js";
 import type { FeedbackDetail } from "../../core/events/feedback_detail.js";
 import { commaTokens } from "../../core/utils.js";
 import { copyPayload } from "../excerpts/copy_payload.js";
@@ -13,6 +14,13 @@ export interface AnswerActionsHost {
   readonly strings: () => UiStrings;
   /** Retry the last turn, as the element's public `retryLastTurn` does. */
   readonly retry: () => void;
+  /** The element's current conversation thread. */
+  readonly threadId: () => string;
+}
+
+/** A finished bubble that is not an answer, and so carries no rating. */
+interface Unrateable {
+  readonly rateable: false;
 }
 
 /**
@@ -55,15 +63,26 @@ export class AnswerActions {
    * something survives to go in it: an empty row still takes its margin, still
    * answers to the `message-actions` part, and still reads to a screen reader
    * as a group of actions with none in it.
+   *
+   * `message` names the answer, which is what a rating is filed under; a bubble
+   * that is not an answer says so instead, and has no id to give.
    */
-  attach(bubble: HTMLDivElement, options: { rateable?: boolean } = {}): void {
+  attach(bubble: HTMLDivElement, message: AgUiMessageIds | Unrateable): void {
     const enabled = this.#enabled();
     const copyable = enabled.has(MESSAGE_ACTIONS.COPY);
     // A failed run is copyable -- error text is what people paste into a bug
     // report -- but not rateable: a rating is a statement about an *answer*,
     // and mixing "the connection dropped" into that signal makes the host's
     // feedback data say less than it did before.
-    const rateable = options.rateable !== false && enabled.has(MESSAGE_ACTIONS.FEEDBACK);
+    const answer = "messageId" in message ? message : null;
+    const rateable = answer !== null && enabled.has(MESSAGE_ACTIONS.FEEDBACK);
+    // Read now rather than at click time. Every path that moves the element to
+    // another thread -- New chat, a switch, a change of principal -- clears
+    // the transcript, so today the two agree; the bubble can only be rated
+    // while the thread it was drawn in is current. Were a later path to change
+    // the thread and keep the bubbles, the thread the message was drawn from is
+    // still the one it is stored in, and that is what a host files it under.
+    const threadId = this.#host.threadId();
     if (copyable || rateable) {
       attachMessageActions(bubble, {
         strings: this.#host.strings(),
@@ -83,7 +102,16 @@ export class AnswerActions {
               onFeedback: (rating: "up" | "down") => {
                 this.#host.element.dispatchEvent(
                   new CustomEvent<FeedbackDetail>(FEEDBACK_EVENT, {
-                    detail: { content: copyPayload(bubble).text, rating },
+                    detail: {
+                      content: copyPayload(bubble).text,
+                      rating,
+                      messageId: answer.messageId,
+                      threadId,
+                      // Omitted rather than undefined: a restored message has
+                      // no run, and a key holding nothing reads as one that
+                      // was looked up and came back empty.
+                      ...(answer.runId === undefined ? {} : { runId: answer.runId }),
+                    },
                     bubbles: true,
                     composed: true,
                   }),

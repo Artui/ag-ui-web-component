@@ -445,6 +445,8 @@ export class AgUiChat extends HTMLElement {
     retry: () => {
       void this.retryLastTurn();
     },
+    // Late-bound: the history is built in the constructor, after this field.
+    threadId: () => this.#history.threadId,
   });
 
   readonly #root: ShadowRoot;
