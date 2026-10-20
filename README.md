@@ -199,7 +199,7 @@ another origin, add `credentials="include"` too; see
 | `data-unread-badge` | — | **On by default.** `="false"` hides the launcher's unread badge; the count and the `ag-ui-unread` event keep running. See [Collapsing to the launcher](#collapsing-to-the-launcher). |
 | `data-launcher-drag` | — | **On by default.** `="false"` leaves the widget wherever your CSS puts it. Otherwise the collapsed launcher can be dragged anywhere on screen (the panel opens into the clearest space) and the open panel can be dragged by its header. See [Moving the launcher](#moving-the-launcher) and [Moving the panel](#moving-the-panel). |
 | `data-quote-selection` | — | **On by default.** `="false"` stops the transcript offering to quote a selection. `quote()` keeps working either way. See [Quoting a selection](#quoting-a-selection). |
-| `data-message-actions` | — | **All on by default.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry"`). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
+| `data-message-actions` | — | **Copy and retry by default; feedback is opt-in.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry,feedback"` to add the rating pair, which needs an `ag-ui-feedback` listener). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
 | `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` / `chat` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
@@ -1912,12 +1912,42 @@ still takes its margin and still announces itself as a group of actions.
 `retryLastTurn()` is public, for a host driving its own message UI.
 
 ```js
-chat.addEventListener("ag-ui-feedback", (e) => {
-  analytics.track("assistant_rating", e.detail); // { content, rating }
-});
-
 await chat.retryLastTurn(); // false when there is nothing to ask again, a run is in flight, or a restore is loading
 ```
+
+### Storing a rating
+
+`ag-ui-feedback` names the message that was rated, so a host can file the
+rating against it rather than against its text — two answers can read the same,
+and nothing about the text survives a reload:
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `messageId` | `string` | The AG-UI id of the rated assistant message: the id it streamed under (`TEXT_MESSAGE_START` / `TEXT_MESSAGE_END`), or the stored message's `id` when it was restored from history. |
+| `threadId` | `string` | The conversation it belongs to: the element's thread when the message was drawn. |
+| `runId` | `string`, optional | The run that streamed it, as that run's `RUN_STARTED` named it. **Absent on a restored message** — an AG-UI message carries no run id, so there is none to give and the key is left out rather than guessed. |
+| `content` | `string` | The message's text, as rendered. |
+| `rating` | `"up"` \| `"down"` | Which button. |
+
+```js
+chat.setAttribute("data-message-actions", "copy,retry,feedback");
+chat.addEventListener("ag-ui-feedback", (e) => {
+  const { messageId, threadId, runId, rating } = e.detail;
+  // Keyed by message: rating the same answer again replaces the earlier rating.
+  fetch(`/api/threads/${threadId}/ratings/${messageId}/`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rating, ...(runId === undefined ? {} : { runId }) }),
+  });
+});
+```
+
+> [!NOTE]
+> **A message keeps its id across a reload only if the server persists the ids
+> it streamed.** A restored message is named by whatever `id` the conversation
+> store holds for it. If the server stores the conversation under fresh ids, a
+> rating made live and a rating made after a reload name the same answer by two
+> different ids. Live, the id is always the one on the wire.
 
 ## Quoting a selection
 
@@ -2655,6 +2685,7 @@ re-export point. Internal modules import from leaf paths.
 | `AgUiClient` | class | Orchestration layer over an AG-UI `AbstractAgent`. |
 | `AgUiClientConfig` / `AgUiClientHandlers` / `AgUiRunInputs` | type | Client config, lifecycle handlers, per-run input providers. |
 | `AgUiToolCall` / `ToolExecution` / `ExecuteTool` | type | Tool-call shape, execution result, executor signature. |
+| `AgUiMessageIds` | type | Which message `AgUiClientHandlers.onTextEnd` completed: its `messageId`, and the `runId` its `RUN_STARTED` named. |
 | `ToolOutcome` | type | The `TOOL_OUTCOME` values as a union. |
 | `toolStatusFromOutcome` | function | Map a wire outcome to the card status it settles into; anything absent or unrecognised is a success. |
 | `ConnectionLostError` | class | Raised (→ `onError`) when a run's stream closes with no terminal AG-UI event. |
@@ -2700,7 +2731,7 @@ re-export point. Internal modules import from leaf paths.
 | `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
 | `CustomAgentDetail` | type | `ag-ui-custom` detail: an AG-UI `CUSTOM` event's `name` and `value`, verbatim. |
 | `InvalidateDetail` | type | `ag-ui-invalidate` detail: the resource `keys` that moved, and the `reason`. |
-| `FeedbackDetail` | type | `ag-ui-feedback` detail: the rated message's `content` and the `rating`. |
+| `FeedbackDetail` | type | `ag-ui-feedback` detail: the rated message's `messageId`, its `threadId`, the `runId` that streamed it (live only), its `content` and the `rating`. See [Storing a rating](#storing-a-rating). |
 | `relativeTime` | function | The built-in locale-neutral timestamp formatter (`"5m ago"`), for a host building on it. |
 | `RelativeTimeFormatter` | type | What `formatRelativeTime` takes: an epoch-ms timestamp in, row text out. |
 | `renderSuggestionChips` | function | Draw a `suggestions` activity as chips that send themselves; `null` when nothing survives. |

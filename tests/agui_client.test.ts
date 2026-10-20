@@ -1179,6 +1179,30 @@ describe("over the real HttpAgent", () => {
     return { handlers, seen };
   }
 
+  it("ends an answer with the message id and run id the server streamed", async () => {
+    // What a rating names, so it has to be what the server stored: the id on
+    // the wire's `TEXT_MESSAGE_*`, and the run `RUN_STARTED` declared. The
+    // run id the client minted for the request is a different string here --
+    // `r1` is the server's -- so this also pins which of the two is reported.
+    const bodies = stubFetch(
+      run(
+        { type: "TEXT_MESSAGE_START", messageId: "srv-m1", role: "assistant" },
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "srv-m1", delta: "Sure." },
+        { type: "TEXT_MESSAGE_END", messageId: "srv-m1" },
+      ),
+    );
+    const ended: unknown[] = [];
+    const handlers = recordingHandlers();
+    handlers.onTextEnd = (buffer, message) => {
+      ended.push([buffer, message]);
+    };
+
+    await new AgUiClient({ agent: createHttpAgent({ endpoint: "/agent/" }), handlers }).send("hi");
+
+    expect(bodies[0]?.["runId"]).not.toBe("r1");
+    expect(ended).toEqual([["Sure.", { messageId: "srv-m1", runId: "r1" }]]);
+  });
+
   it("delivers the outcome a result states in its metadata", async () => {
     stubFetch(run(...serverToolCall({ metadata: { outcome: "failed" } })));
     const { handlers, seen } = outcomes();

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ag-ui-feedback` now says which message was rated.** Its detail carried only
+  the message's text and the rating, so a host could not tell two answers that
+  read the same apart, and could not find a rated message again after a reload.
+  The detail now also carries `messageId`, the AG-UI id of the rated assistant
+  message (the id it streamed under, or the stored message's `id` when it was
+  restored from history, including the turns a Retry keeps); `threadId`, the
+  conversation it belongs to; and `runId`, the run whose `RUN_STARTED` streamed
+  it. `runId` is present only on a message that arrived live: a stored AG-UI
+  message carries no run id, so the key is absent on a restored one rather than
+  guessed. A rating made after a reload names the same message as one made live
+  only where the server persists the ids it streamed. Additive: `content` and
+  `rating` are unchanged. **A host has to opt in to use it**: the rating pair is
+  still off unless `data-message-actions` lists `feedback`, and a host already
+  listening reads the new fields from the same event. `AgUiClientHandlers.onTextEnd`
+  gains a second argument, `AgUiMessageIds`, naming the completed message; a
+  handler that ignores it is unaffected.
+- **The `data-message-actions` row of the README's attribute table said all
+  three actions are on by default.** Absent means copy and retry; the rating
+  pair has been opt-in since it was found latching with no listener. The row now
+  says so.
+
 ## [0.43.0] — 2026-10-10
 
 ### Fixed

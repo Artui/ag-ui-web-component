@@ -916,7 +916,11 @@ export class ConversationHistory {
         // wrap words.
         const restoredBubble = this.#host.appendMessage(MESSAGE_ROLE.ASSISTANT, text);
         restoredBubble.classList.add("message--restored");
-        this.#host.actions.attach(restoredBubble);
+        // The stored id, which is the streamed one wherever the store kept
+        // it. A Retry re-renders the turns it keeps through here too, so a
+        // kept answer stays the message it was. No run id: a stored message
+        // does not carry one.
+        this.#host.actions.attach(restoredBubble, { messageId: message.id });
       }
       // Narrowed rather than trusted, for the same reason `messageAttachments`
       // narrows the neighbouring field: anything that throws in this loop aborts

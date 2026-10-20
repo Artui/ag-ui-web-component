@@ -15,6 +15,7 @@ import type {
 } from "../src/core/conversation_store.js";
 import { SessionStorageStore } from "../src/core/conversation_store.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { FeedbackDetail } from "../src/core/events/feedback_detail.js";
 import type { SubmitDetail } from "../src/core/events/submit_detail.js";
 import type { UnreadDetail } from "../src/core/events/unread_detail.js";
 import { RemoteConversationStore } from "../src/core/remote_conversation_store.js";
@@ -1570,7 +1571,145 @@ describe("AgUiChat", () => {
     await send(el, "go");
     shadow(el).querySelector<HTMLButtonElement>(".message-action--up")?.click();
 
-    expect(seen).toEqual([{ content: "an answer", rating: "up" }]);
+    // `msg` is the fake's default `TEXT_MESSAGE_END` id. No `runId`: this
+    // script streams no `RUN_STARTED`, so no run was named, and the detail
+    // does not make one up.
+    expect(seen).toEqual([
+      {
+        content: "an answer",
+        rating: "up",
+        messageId: "msg",
+        threadId: el.conversationStore.threadId(),
+      },
+    ]);
+  });
+
+  /** The detail of every rating `el` dispatches, in order. */
+  function ratings(el: AgUiChat): FeedbackDetail[] {
+    const seen: FeedbackDetail[] = [];
+    el.addEventListener(FEEDBACK_EVENT, (e) =>
+      seen.push((e as CustomEvent<FeedbackDetail>).detail),
+    );
+    return seen;
+  }
+
+  it("names the rated message by the id it streamed under, and the run that streamed it", async () => {
+    // `content` cannot say which answer was rated: two answers can read the
+    // same, and nothing about the text survives a reload. The id the message
+    // streamed under is what the server stored it as.
+    const { el } = mountWithAgent((emit) => {
+      emit.runStarted("run-7");
+      emit.textStart("m-live");
+      emit.textEnd("an answer", "m-live");
+    });
+    el.setAttribute("data-message-actions", "feedback");
+    const seen = ratings(el);
+
+    await send(el, "go");
+    shadow(el).querySelector<HTMLButtonElement>(".message-action--down")?.click();
+
+    expect(seen).toEqual([
+      {
+        content: "an answer",
+        rating: "down",
+        messageId: "m-live",
+        threadId: el.conversationStore.threadId(),
+        runId: "run-7",
+      },
+    ]);
+  });
+
+  it("tells two answers with the same text apart", async () => {
+    // The report this field exists for: "Sure." twice in one conversation, and
+    // a host holding two ratings it cannot attach to either.
+    let turn = 0;
+    const { el } = mountWithAgent((emit) => {
+      turn += 1;
+      emit.runStarted(`run-${turn}`);
+      emit.textEnd("Sure.", `m-${turn}`);
+    });
+    el.setAttribute("data-message-actions", "feedback");
+    const seen = ratings(el);
+
+    await send(el, "one");
+    await send(el, "two");
+    for (const up of shadow(el).querySelectorAll<HTMLButtonElement>(".message-action--up")) {
+      up.click();
+    }
+
+    expect(seen.map((d) => [d.content, d.messageId, d.runId])).toEqual([
+      ["Sure.", "m-1", "run-1"],
+      ["Sure.", "m-2", "run-2"],
+    ]);
+  });
+
+  it("names a restored message by its stored id, and states no run for it", async () => {
+    // A stored AG-UI message carries no run id, so a restored rating has none
+    // to give -- absent, rather than a value that only looks like one.
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [
+      { id: "u-1", role: "user", content: "hi" },
+      { id: "stored-a1", role: "assistant", content: "hello" },
+    ] as never);
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-message-actions", "feedback");
+    el.conversationStore = store;
+    document.body.appendChild(el);
+    await flush();
+    const seen = ratings(el);
+
+    shadow(el).querySelector<HTMLButtonElement>(".message-action--up")?.click();
+
+    expect(seen).toEqual([
+      { content: "hello", rating: "up", messageId: "stored-a1", threadId: tid },
+    ]);
+    expect(seen[0]).not.toHaveProperty("runId");
+  });
+
+  it("keeps the kept turns' ids through a Retry's re-render", async () => {
+    // Retry clears the transcript and replays every turn it keeps, so the
+    // replay is the path that draws them -- and a kept answer rated after a
+    // Retry is the same message it was before one.
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [
+      { id: "u-1", role: "user", content: "one" },
+      { id: "kept-a1", role: "assistant", content: "first" },
+      { id: "u-2", role: "user", content: "two" },
+      { id: "dropped-a2", role: "assistant", content: "second" },
+    ] as never);
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStarted("run-retry");
+        emit.textEnd("second, again", "m-retry");
+      },
+    });
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-start-open", "");
+    el.setAttribute("data-message-actions", "retry,feedback");
+    el.conversationStore = store;
+    // Seeded the way the real factory seeds an `HttpAgent`; the fake starts
+    // empty, and a Retry truncates the agent's own list.
+    el.agentFactory = (config) => {
+      handle.agent.setMessages([...(config.initialMessages ?? [])]);
+      return handle.agent;
+    };
+    document.body.appendChild(el);
+    await flush();
+    const seen = ratings(el);
+
+    expect(await el.retryLastTurn()).toBe(true);
+    for (const up of shadow(el).querySelectorAll<HTMLButtonElement>(".message-action--up")) {
+      up.click();
+    }
+
+    expect(seen.map((d) => [d.content, d.messageId, d.runId])).toEqual([
+      ["first", "kept-a1", undefined],
+      ["second, again", "m-retry", "run-retry"],
+    ]);
   });
 
   it("draws server-pushed follow-up chips and sends the one that is clicked", async () => {

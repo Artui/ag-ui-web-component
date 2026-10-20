@@ -14,6 +14,14 @@ export type ActivityContent = Record<string, unknown>;
 /** A scripted emitter handed to a fake agent's run script. */
 export interface Emit {
   runStart(): void;
+  /**
+   * Emit `RUN_STARTED` naming `runId`, as the real client always sees first.
+   *
+   * Separate from {@link runStart}, which is `onRunInitialized` and carries no
+   * event: most scripts never needed a run id, and stating one on every run
+   * would be inventing a field those tests do not read.
+   */
+  runStarted(runId: string): void;
   text(buffer: string): void;
   /** Open a text message with an explicit id (the real client always sends one). */
   textStart(messageId: string): void;
@@ -165,6 +173,10 @@ function emitter(s: AgentSubscriber, state: EmitState, agent: FakeAgentInternals
 
   return {
     runStart: () => dispatch(s, "onRunInitialized", {}),
+    runStarted: (runId) =>
+      dispatch(s, "onRunStartedEvent", {
+        event: { type: EventType.RUN_STARTED, threadId: "thread", runId },
+      }),
     // Only the buffer: the component reads that and not the event, and stating
     // an event here would be inventing a delta the caller never supplied.
     text: (textMessageBuffer) => dispatch(s, "onTextMessageContentEvent", { textMessageBuffer }),

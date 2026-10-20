@@ -25,6 +25,23 @@ export interface AgUiToolCall {
   readonly args: Record<string, unknown>;
 }
 
+/**
+ * Which message an answer surfaced by {@link AgUiClient} is, as the stream
+ * named it.
+ */
+export interface AgUiMessageIds {
+  /** The id the message streamed under, on its `TEXT_MESSAGE_START`/`END`. */
+  readonly messageId: string;
+  /**
+   * The run that streamed it, as that run's `RUN_STARTED` declared it.
+   *
+   * Absent when no `RUN_STARTED` was seen, which `@ag-ui/client` 1.0 does not
+   * let a real stream do: there is no other source that names the run the
+   * server recorded, so none is substituted.
+   */
+  readonly runId?: string;
+}
+
 /** The result of executing a frontend tool, destined for a tool-result message. */
 export interface ToolExecution {
   /** String content for the AG-UI tool-result message. */
@@ -92,8 +109,11 @@ export interface AgUiClientHandlers {
   onRunStart(): void;
   /** Fired on every streamed token; `buffer` is the full text so far. */
   onTextDelta(buffer: string): void;
-  /** Fired when the assistant message completes; `buffer` is the final text. */
-  onTextEnd(buffer: string): void;
+  /**
+   * Fired when the assistant message completes; `buffer` is the final text,
+   * and `message` names it as the stream did.
+   */
+  onTextEnd(buffer: string, message: AgUiMessageIds): void;
   /** Fired when the agent finishes calling a tool (server- or frontend-side). */
   onToolCall(call: AgUiToolCall): void;
   /**
@@ -786,9 +806,20 @@ export class AgUiClient {
     // Charts whose patch has been dispatched but not yet applied. Scoped to the
     // subscriber, so it cannot outlive the run that created it.
     const pendingDeltas = new Set<string>();
+    // The run this round's stream declared. Per subscriber, so per round: a
+    // turn that calls a tool is two runs, and its answer belongs to the second.
+    //
+    // Taken from `RUN_STARTED` rather than the `runId` the request carried.
+    // The client mints that one, and a server is free to record the run under
+    // the id it streams back; the event is the server's own statement of
+    // which run this is, so it is the id a host can find again.
+    let runId: string | undefined;
     return {
       onRunInitialized() {
         h.onRunStart();
+      },
+      onRunStartedEvent({ event }) {
+        runId = event.runId;
       },
       onTextMessageStartEvent({ event }) {
         // A reused message id merges two answers into one persisted transcript
@@ -809,7 +840,10 @@ export class AgUiClient {
       },
       onTextMessageEndEvent({ event, textMessageBuffer }) {
         closed.add(event.messageId);
-        h.onTextEnd(textMessageBuffer);
+        h.onTextEnd(textMessageBuffer, {
+          messageId: event.messageId,
+          ...(runId === undefined ? {} : { runId }),
+        });
       },
       onToolCallEndEvent({ event, toolCallName, toolCallArgs }) {
         const call: AgUiToolCall = {
