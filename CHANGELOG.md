@@ -18,7 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversation it belongs to; and `runId`, the run whose `RUN_STARTED` streamed
   it. `runId` is present only on a message that arrived live: a stored AG-UI
   message carries no run id, so the key is absent on a restored one rather than
-  guessed. A restored message is named by the id its store returns: the
+  guessed; text a sub-agent streams through the parent run carries the
+  parent's `runId`. A restored answer whose store returned no id keeps its Copy
+  but offers no rating pair, since a rating has to name a message. A restored
+  message is named by the id its store returns: the
   built-in browser store keeps the streamed ids, and with `data-threads-url` or
   a host's own store a rating made after a reload names the same message as one
   made live only where the server persists the ids it streamed. Additive: `content` and

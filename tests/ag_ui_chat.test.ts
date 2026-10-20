@@ -1668,6 +1668,120 @@ describe("AgUiChat", () => {
     expect(seen[0]).not.toHaveProperty("runId");
   });
 
+  it("offers no rating on a restored answer its store gave no id", async () => {
+    // A host store, or a server behind `data-threads-url`, can hand back an
+    // assistant message without one. A rating then names nothing a host can
+    // file it under -- `ratings/undefined/` in the README's own example -- which
+    // is the pair of buttons that lead nowhere. Copy still works: it needs none.
+    const store = new SessionStorageStore();
+    const tid = store.threadId();
+    store.saveMessages(tid, [
+      { id: "u-1", role: "user", content: "hi" },
+      { role: "assistant", content: "no id at all" },
+      { id: "", role: "assistant", content: "an empty id" },
+      { id: 7, role: "assistant", content: "a number for an id" },
+    ] as never);
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("data-message-actions", "copy,feedback");
+    el.conversationStore = store;
+    document.body.appendChild(el);
+    await flush();
+
+    expect(shadow(el).querySelectorAll(".message--assistant")).toHaveLength(3);
+    expect(shadow(el).querySelectorAll(".message-action--copy")).toHaveLength(3);
+    expect(shadow(el).querySelectorAll(".message-action--up")).toHaveLength(0);
+    expect(shadow(el).querySelectorAll(".message-action--down")).toHaveLength(0);
+  });
+
+  it("offers no rating on a failed run, with feedback asked for", async () => {
+    // The guard the failed bubble's `{ rateable: false }` stands on: with the
+    // pair off by default, the test above it cannot tell the two apart.
+    const { el } = mountWithAgent((emit) => {
+      emit.error("Connection lost");
+    });
+    el.setAttribute("data-message-actions", "copy,retry,feedback");
+
+    await send(el, "go");
+
+    const failed = shadow(el).querySelector(".message--failed");
+    const actions = [...(failed?.nextElementSibling?.querySelectorAll(".message-action") ?? [])];
+    expect(actions.map((b) => b.className.split("--")[1])).toEqual(["retry", "copy"]);
+  });
+
+  it("rates each round's answer under its own run, over the real HttpAgent", async () => {
+    // A turn that calls a host tool is two requests, so two runs, each with
+    // its own `RUN_STARTED`. The answer before the call and the one after it
+    // belong to different runs, and a rating names the one that streamed it.
+    const sse = (events: readonly Record<string, unknown>[]): Response =>
+      new Response(events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    const runs = [
+      [
+        { type: "RUN_STARTED", threadId: "t", runId: "srv-r1" },
+        { type: "TEXT_MESSAGE_START", messageId: "m1", role: "assistant" },
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: "Checking." },
+        { type: "TEXT_MESSAGE_END", messageId: "m1" },
+        {
+          type: "TOOL_CALL_START",
+          toolCallId: "fc1",
+          toolCallName: "fill_field",
+          parentMessageId: "m1",
+        },
+        { type: "TOOL_CALL_ARGS", toolCallId: "fc1", delta: "{}" },
+        { type: "TOOL_CALL_END", toolCallId: "fc1" },
+        { type: "RUN_FINISHED", threadId: "t", runId: "srv-r1" },
+      ],
+      [
+        { type: "RUN_STARTED", threadId: "t", runId: "srv-r2" },
+        { type: "TEXT_MESSAGE_START", messageId: "m2", role: "assistant" },
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "m2", delta: "Done." },
+        { type: "TEXT_MESSAGE_END", messageId: "m2" },
+        { type: "RUN_FINISHED", threadId: "t", runId: "srv-r2" },
+      ],
+    ];
+    let requests = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(sse(runs[requests++] ?? []))),
+    );
+    try {
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      el.setAttribute("data-start-open", "");
+      el.setAttribute("data-message-actions", "feedback");
+      document.body.appendChild(el);
+      el.registerTool({
+        name: "fill_field",
+        description: "fill",
+        parameters: { type: "object" },
+        handler: () => "ok",
+      });
+      const seen = ratings(el);
+
+      await send(el, "go");
+      // Real streams settle on timers rather than microtasks, so wait for the
+      // second answer's row rather than counting ticks.
+      await vi.waitFor(() => {
+        expect(shadow(el).querySelectorAll(".message-action--up")).toHaveLength(2);
+      });
+      for (const up of shadow(el).querySelectorAll<HTMLButtonElement>(".message-action--up")) {
+        up.click();
+      }
+
+      expect(requests).toBe(2);
+      const thread = el.conversationStore.threadId();
+      expect(seen.map((d) => [d.content, d.messageId, d.runId, d.threadId])).toEqual([
+        ["Checking.", "m1", "srv-r1", thread],
+        ["Done.", "m2", "srv-r2", thread],
+      ]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps the kept turns' ids through a Retry's re-render", async () => {
     // Retry clears the transcript and replays every turn it keeps, so the
     // replay is the path that draws them -- and a kept answer rated after a

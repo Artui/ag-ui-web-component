@@ -39,6 +39,11 @@ export interface AgUiMessageIds {
    * stream whose first event is anything else, so over a real agent this is
    * always present; nothing else names the run the server recorded, so
    * nothing is substituted when it is not.
+   *
+   * Text a sub-agent streams through the parent run carries the parent's run
+   * id: that is the stream it arrived on, and the delegation's
+   * `subagentRunId` names the child's work rather than a run the answer is
+   * recorded under.
    */
   readonly runId?: string;
 }

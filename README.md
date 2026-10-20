@@ -1923,9 +1923,9 @@ and nothing about the text survives a reload:
 
 | Field | Type | What it is |
 | --- | --- | --- |
-| `messageId` | `string` | The AG-UI id of the rated assistant message: the id it streamed under (`TEXT_MESSAGE_START` / `TEXT_MESSAGE_END`), or the stored message's `id` when it was restored from history. |
+| `messageId` | `string` | The AG-UI id of the rated assistant message: the id it streamed under (`TEXT_MESSAGE_START` / `TEXT_MESSAGE_END`), or the stored message's `id` when it was restored from history. A restored answer whose store returned no id offers no rating pair, since a rating has to name a message. |
 | `threadId` | `string` | The conversation it belongs to: the element's thread when the message was drawn. |
-| `runId` | `string`, optional | The run that streamed it, as that run's `RUN_STARTED` named it. **Absent on a restored message** — an AG-UI message carries no run id, so there is none to give and the key is left out rather than guessed. |
+| `runId` | `string`, optional | The run that streamed it, as that run's `RUN_STARTED` named it. Text a sub-agent streams through the parent run carries the parent's `runId`. **Absent on a restored message** — an AG-UI message carries no run id, so there is none to give and the key is left out rather than guessed. |
 | `content` | `string` | The message's text, as rendered. |
 | `rating` | `"up"` \| `"down"` | Which button. |
 
