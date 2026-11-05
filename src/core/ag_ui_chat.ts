@@ -4,11 +4,7 @@ import {
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
-  ICON_ATTACH,
-  ICON_LAUNCHER,
   ICON_MOON,
-  ICON_SEND,
-  ICON_STOP,
   ICON_SUN,
   MESSAGE_ROLE,
   STATE_EVENT,
@@ -37,6 +33,7 @@ import { renderChart } from "../ui/charts/chart_block.js";
 import { chartSpecFrom } from "../ui/charts/chart_spec_from.js";
 import { CHART_TOOL_NAME, createChartTool } from "../ui/charts/chart_tool.js";
 import { autoGrow } from "../ui/composer/auto_grow.js";
+import { buildComposer } from "../ui/composer/build_composer.js";
 import { ComposerAttachments } from "../ui/composer/composer_attachments.js";
 import { ComposerVoice } from "../ui/composer/composer_voice.js";
 import { SkillsMenu } from "../ui/composer/skills_menu.js";
@@ -51,23 +48,23 @@ import { type ApprovalRenderer } from "../ui/interrupts/approval_card.js";
 import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
-import { isCollapsiblePlacement } from "../ui/placement/is_collapsible_placement.js";
-import { isDraggablePlacement } from "../ui/placement/is_draggable_placement.js";
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
+import { surfaceFor } from "../ui/placement/surface_for.js";
 import { RunAnnouncer } from "../ui/progress/run_announcer.js";
 import { renderRunNotice } from "../ui/progress/run_notice.js";
 import { SubAgentProgress } from "../ui/progress/subagent_progress.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type ToolDisplayMode, type ToolPayloadFormatter } from "../ui/progress/tool_call_card.js";
 import { adoptStyles } from "../ui/shell/adopt_styles.js";
-import { glyphSlot } from "../ui/shell/glyph_slot.js";
-import { headerButton } from "../ui/shell/header_button.js";
+import { buildHeader } from "../ui/shell/build_header.js";
+import { buildLauncher } from "../ui/shell/build_launcher.js";
 import { iconElement } from "../ui/shell/icon_element.js";
 import { isUnreadBadgeEnabled } from "../ui/shell/is_unread_badge_enabled.js";
 import { readLauncherIconUrl } from "../ui/shell/read_launcher_icon_url.js";
 import { AnswerActions } from "../ui/transcript/answer_actions.js";
 import { AnswerStream } from "../ui/transcript/answer_stream.js";
 import { renderAttachmentChips } from "../ui/transcript/attachment_chips.js";
+import { buildTranscript } from "../ui/transcript/build_transcript.js";
 import { renderStarterChips } from "../ui/transcript/starter_chips.js";
 import { renderSuggestionChips } from "../ui/transcript/suggestion_chips.js";
 import { Transcript } from "../ui/transcript/transcript.js";
@@ -91,6 +88,8 @@ import type { SubmitDetail } from "./events/submit_detail.js";
 import type { ToggleDetail } from "./events/toggle_detail.js";
 import type { UnreadDetail } from "./events/unread_detail.js";
 import type { MessageRole } from "./message_role.js";
+import { readFlag } from "./read_flag.js";
+import { readJsonAttribute } from "./read_json_attribute.js";
 import { readMaxToolRounds } from "./read_max_tool_rounds.js";
 import { RemoteConversationStore } from "./remote_conversation_store.js";
 import { RunHandlers } from "./run_handlers.js";
@@ -839,7 +838,7 @@ export class AgUiChat extends HTMLElement {
       root: this.#root,
       connected: () => this.#connected,
       collapsed: () => this.collapsed,
-      collapsible: () => isCollapsiblePlacement(this.getAttribute("placement")),
+      collapsible: () => surfaceFor(this.getAttribute("placement")).collapseTo !== null,
       strings: () => this.#strings,
       readPreference: (base) => this.#storage.readPreference(base),
       writePreference: (base, value) => this.#storage.writePreference(base, value),
@@ -912,8 +911,8 @@ export class AgUiChat extends HTMLElement {
       hint: this.#composerHint,
       strings: () => this.#strings,
       context: () => this.skillContext(),
-      flag: (name) => this.#flag(name),
-      readJsonAttribute: (name) => this.#readJsonAttribute(name),
+      flag: (name) => readFlag(this, name),
+      readJsonAttribute: (name) => readJsonAttribute(this, name),
       fetchInit: (url) => this.#fetchInit(url),
       send: (content) => {
         void this.sendMessage(content);
@@ -1055,7 +1054,7 @@ export class AgUiChat extends HTMLElement {
       // not just stop offering it: the control is gone from the header the
       // moment the attribute changes, so a panel collapsed under the previous
       // placement would have no way back.
-      if (!isCollapsiblePlacement(this.getAttribute("placement")) && this.collapsed) {
+      if (surfaceFor(this.getAttribute("placement")).collapseTo === null && this.collapsed) {
         this.setCollapsed(false);
       }
       // Placement also moves the panel, so the edges its layout holds still
@@ -1420,7 +1419,7 @@ export class AgUiChat extends HTMLElement {
     // namespaced per instance but not per placement, so a tab that collapsed a
     // floating panel and later loaded the same instance as a page would restore
     // a state that placement has no way out of.
-    if (isCollapsiblePlacement(this.getAttribute("placement")) && this.#startsCollapsed()) {
+    if (surfaceFor(this.getAttribute("placement")).collapseTo !== null && this.#startsCollapsed()) {
       this.setAttribute("collapsed", "");
     }
     this.#syncLauncher();
@@ -1558,53 +1557,9 @@ export class AgUiChat extends HTMLElement {
     this.#announcer.dispose();
   }
 
-  /**
-   * Read an opt-in flag attribute the way HTML reads a boolean attribute.
-   *
-   * Present means on: bare (`data-prompt-chips`), empty (`=""`), or any value
-   * except the literal `"false"`. Comparing against `"true"` instead would make
-   * the bare spelling every native boolean attribute uses silently disable the
-   * feature it names. `="false"` still turns it off.
-   */
-  #flag(name: string): boolean {
-    const value = this.getAttribute(name);
-    return value !== null && value !== "false";
-  }
-
-  /**
-   * Parse a JSON-valued attribute, saying so when it will not parse.
-   *
-   * `null` for an absent attribute, and `null` again for one that is not JSON --
-   * but not quietly the second time. Quoting JSON inside an HTML attribute is
-   * fiddly, and the result of getting it wrong is indistinguishable from the
-   * feature being switched off: no chips appear, or the strings stay English,
-   * with nothing anywhere saying why. That is the same failure `data-paste-attach`
-   * already reports for a value it cannot read.
-   *
-   * Console only. A page author's typo is not the reader's business, nothing the
-   * reader did was refused, and the degraded widget is still perfectly usable.
-   */
-  #readJsonAttribute(name: string): unknown {
-    const raw = this.getAttribute(name);
-    if (raw === null) {
-      return null;
-    }
-    try {
-      return JSON.parse(raw);
-    } catch {
-      console.warn(
-        `<ag-ui-chat>: ${name} is not valid JSON, so it was ignored entirely and ` +
-          "the built-in default is being used. Check the quoting -- JSON inside " +
-          "an HTML attribute needs single quotes around the attribute value, or " +
-          "its own double quotes escaped.",
-      );
-      return null;
-    }
-  }
-
   /** Parse the inline `data-strings` JSON overrides (empty when absent/malformed). */
   #readStringOverrides(): Partial<UiStrings> {
-    const parsed = this.#readJsonAttribute("data-strings");
+    const parsed = readJsonAttribute(this, "data-strings");
     // A JSON number or string parses fine and overrides nothing. Not warned
     // about separately: it is the same "this attribute did not take effect"
     // as a parse failure, and the warning above already covers the spelling
@@ -1723,7 +1678,7 @@ export class AgUiChat extends HTMLElement {
    * its own chrome.
    */
   setCollapsed(collapsed: boolean, options: { readonly announce?: boolean } = {}): void {
-    if (collapsed && !isCollapsiblePlacement(this.getAttribute("placement"))) {
+    if (collapsed && surfaceFor(this.getAttribute("placement")).collapseTo === null) {
       return;
     }
     // Announced before the state changes, so the notice is written into a
@@ -1800,7 +1755,8 @@ export class AgUiChat extends HTMLElement {
       return stored === "1";
     }
     return (
-      isDraggablePlacement(this.getAttribute("placement")) && !this.hasAttribute("data-start-open")
+      surfaceFor(this.getAttribute("placement")).startsCollapsed &&
+      !this.hasAttribute("data-start-open")
     );
   }
 
@@ -2238,96 +2194,44 @@ export class AgUiChat extends HTMLElement {
     this.#chat.className = "chat";
     this.#chat.setAttribute("part", "panel");
 
-    const header = document.createElement("div");
-    header.className = "header";
-    header.setAttribute("part", "header");
-
-    const title = this.#title;
-    title.className = "header-title";
-    title.setAttribute("part", "title");
-    title.textContent = this.getAttribute("title-text") ?? this.#strings.title;
-
-    // Optional header icon: a slot (any markup) with a `data-icon-url` <img>
-    // fallback. Rendered only when one of the two is provided, so the header has
-    // no phantom gap otherwise.
-    if (
-      this.querySelector('[slot="icon"]') !== null ||
-      this.getAttribute("data-icon-url") !== null
-    ) {
-      header.append(iconElement("icon", "icon", null, this.getAttribute("data-icon-url")));
-    }
-
-    // A coarse slot for host-provided header actions, between title and controls.
-    const headerActions = document.createElement("slot");
-    headerActions.name = "header-actions";
-
-    const controls = document.createElement("div");
-    controls.className = "header-controls";
-    controls.setAttribute("part", "header-controls");
-
-    // Both controls delegate to the public methods, so a host chrome driving
-    // them imperatively takes exactly the path the built-in button takes.
-    const history = headerButton("history", this.#strings.chatHistory, "☰");
-    history.addEventListener("click", () => this.openThreads());
-
-    // ↺ rather than ⭯: the same idea in a glyph that has a font behind it in
-    // every browser. The obscure one rendered as an unreadable mark at 14px, and a
-    // header control nobody can name is one nobody presses.
-    const checkpoints = headerButton("checkpoints", this.#strings.checkpoints, "↺");
-    checkpoints.addEventListener("click", () => this.toggleCheckpoints());
-
-    const newChat = headerButton("new", this.#strings.newChat, "✚");
-    newChat.addEventListener("click", () => this.newChat());
-
-    const collapse = headerButton("collapse", this.#strings.collapse, "—");
-    collapse.addEventListener("click", () => this.toggleCollapsed());
-
-    // Only offered when the server actually indexes runs — without
-    // `data-runs-url` there is nothing to continue and the button would open
-    // a permanently empty panel. Asks the history's run index rather than
-    // re-testing the attribute, so "configured" means one thing everywhere (an
-    // empty value is unset, not a relative URL to the current page).
-    if (this.#history.runs() !== null) {
-      controls.append(history, checkpoints, newChat);
-    } else {
-      controls.append(history, newChat);
-    }
-    // Optional built-in theme toggle: off unless the host opts in, so
-    // it never competes with a host-supplied switch in `slot="header-actions"`.
-    if (this.getAttribute("data-theme-toggle") !== null) {
-      this.#themeToggle.type = "button";
-      this.#themeToggle.className = "header-btn header-btn--theme";
-      this.#themeToggle.setAttribute("part", "header-button theme-toggle");
-      this.#themeToggle.title = this.#strings.toggleTheme;
-      this.#themeToggle.setAttribute("aria-label", this.#strings.toggleTheme);
-      this.#themeToggle.addEventListener("click", () => this.toggleTheme(), { signal });
+    const titleText = this.getAttribute("title-text") ?? this.#strings.title;
+    const themed = this.getAttribute("data-theme-toggle") !== null;
+    const { header, checkpoints } = buildHeader({
+      host: this,
+      title: this.#title,
+      titleText,
+      iconUrl: this.getAttribute("data-icon-url"),
+      strings: this.#strings,
+      // Asks the history's run index rather than re-testing the attribute, so
+      // "configured" means one thing everywhere (an empty value is unset, not a
+      // relative URL to the current page).
+      withCheckpoints: this.#history.runs() !== null,
+      themeToggle: themed ? this.#themeToggle : null,
+      signal,
+      onHistory: () => this.openThreads(),
+      onCheckpoints: () => this.toggleCheckpoints(),
+      onNewChat: () => this.newChat(),
+      onCollapse: () => this.toggleCollapsed(),
+      onToggleTheme: () => this.toggleTheme(),
+    });
+    if (themed) {
       this.#syncThemeGlyph();
-      controls.append(this.#themeToggle);
     }
-    controls.append(collapse);
-    header.append(title, headerActions, controls);
 
     // A panel is a window and a header is its title bar.
     this.#placement.enablePanelDrag(header);
 
-    this.#messages.className = "messages";
-    this.#messages.setAttribute("part", "messages");
-    this.#messages.setAttribute("role", "log");
-    // NOT a live region. The streaming bubble's innerHTML is replaced inside
-    // this element on every animation frame, and `role="log"` already implies
-    // polite announcement whose default `aria-relevant` includes text
-    // additions -- so a screen reader was asked to re-announce the whole answer
-    // tens of times as it streamed. `aria-live="off"` is an explicit override
-    // of the role's implicit value, which is why the role can stay: the log
-    // semantics are what let the transcript be navigated as one, and only the
-    // announcing is the defect. Status goes to #announcer instead.
-    this.#messages.setAttribute("aria-live", "off");
-    this.#messages.setAttribute("aria-label", this.#strings.conversation);
-
-    this.#jumpButton.className = "jump-latest";
-    this.#jumpButton.type = "button";
-    this.#jumpButton.setAttribute("part", "jump-latest");
-    this.#jumpButton.textContent = this.#strings.jumpToLatest;
+    buildTranscript({
+      messages: this.#messages,
+      jumpButton: this.#jumpButton,
+      emptyWrap: this.#emptyWrap,
+      greetingText: this.#greetingText,
+      starters: renderStarterChips(this, this.#strings, (prompt) => {
+        void this.sendMessage(prompt);
+      }),
+      strings: this.#strings,
+    });
+    this.#syncGreeting();
 
     // The quote offer, and the transcript's settled selections it listens for.
     this.#excerpts.mount(signal);
@@ -2338,82 +2242,25 @@ export class AgUiChat extends HTMLElement {
 
     this.#announcer.mount();
 
-    // Empty-state region: a host slot at the top of the list, hidden as soon as
-    // anything renders.
-    this.#emptyWrap.className = "empty";
-    this.#emptyWrap.setAttribute("part", "empty");
-    // The greeting heads the empty state, in a slot of its own: a host that
-    // replaces the starters keeps the greeting, and a host that replaces the
-    // greeting keeps the starters. A div rather than a heading, because this
-    // sits inside somebody else's page, which owns the document outline.
-    const greeting = document.createElement("div");
-    greeting.className = "greeting";
-    greeting.setAttribute("part", "greeting");
-    const greetingSlot = document.createElement("slot");
-    greetingSlot.name = "greeting";
-    greetingSlot.append(this.#greetingText);
-    greeting.append(greetingSlot);
-    this.#syncGreeting();
-    const emptySlot = document.createElement("slot");
-    emptySlot.name = "empty";
-    // Fallback content, so a host that slots its own gets exactly that and
-    // nothing of ours: the starters live *inside* the slot rather than beside
-    // it, which is the difference between an offer and an imposition.
-    const starters = renderStarterChips(this, this.#strings, (prompt) => {
-      void this.sendMessage(prompt);
-    });
-    if (starters !== null) {
-      emptySlot.append(starters);
-    }
-    this.#emptyWrap.replaceChildren(greeting, emptySlot);
-    this.#queuedRow.className = "queued";
-    this.#queuedRow.setAttribute("part", "queued");
-    this.#queuedRow.setAttribute("role", "group");
-    this.#queuedRow.setAttribute("aria-label", this.#strings.queued);
-    this.#queuedRow.hidden = true;
     this.#messages.append(this.#emptyWrap);
     // Stamped from the first frame, so a page that mounts empty is laid out as
     // empty rather than switching to it on the first change.
     this.#transcript.updateEmptyState();
 
-    const inputRow = document.createElement("div");
-    inputRow.className = "input-row";
-    inputRow.setAttribute("part", "composer");
-
-    // One bordered surface holds the field and the tool row under it, so the
-    // icon buttons stop competing with the field for weight.
-    const composer = document.createElement("div");
-    composer.className = "composer";
-    composer.setAttribute("part", "composer-surface");
-
-    const tools = document.createElement("div");
-    tools.className = "composer-tools";
-    tools.setAttribute("part", "composer-tools");
-
-    this.#input.className = "input";
-    this.#input.setAttribute("part", "input");
-    this.#input.setAttribute("aria-label", this.#strings.message);
-    this.#input.rows = 1;
-    this.#input.placeholder = this.#strings.inputPlaceholder;
-    this.#input.addEventListener("keydown", (event) => this.#onKeydown(event), { signal });
-    this.#input.addEventListener("input", () => this.#onInput(), { signal });
-
-    // Icon-only, with both glyphs mounted at once and CSS showing the one the
-    // state calls for — swapping a single glyph would leave a host that slotted
-    // its own Send mark holding a stop icon mid-run.
-    this.#send.className = "send";
-    this.#send.type = "button";
-    this.#send.setAttribute("part", "send");
-    this.#send.replaceChildren(
-      glyphSlot("icon-send", "send-send", ICON_SEND),
-      glyphSlot("icon-stop", "send-stop", ICON_STOP),
-    );
-    this.#send.title = this.#strings.send;
-    this.#send.setAttribute("aria-label", this.#strings.send);
-    this.#send.dataset["state"] = "idle";
-    this.#send.addEventListener(
-      "click",
-      () => {
+    const inputRow = buildComposer({
+      input: this.#input,
+      send: this.#send,
+      attachButton: this.#attachButton,
+      fileInput: this.#fileInput,
+      voiceSlot: this.#voiceSlot,
+      hint: this.#composerHint,
+      queuedRow: this.#queuedRow,
+      attachSlot: this.#attachSlot,
+      strings: this.#strings,
+      signal,
+      onKeydown: (event) => this.#onKeydown(event),
+      onInput: () => this.#onInput(),
+      onSend: () => {
         // One button, two states: Send while idle, Stop while a run is in
         // flight (no layout change).
         if (this.#running) {
@@ -2422,53 +2269,21 @@ export class AgUiChat extends HTMLElement {
         }
         void this.#submit();
       },
-      { signal },
-    );
-
-    this.#composerHint.className = "skill-hint";
-    this.#composerHint.setAttribute("part", "skill-hint");
-    this.#composerHint.hidden = true;
-
-    // File-upload affordance: a paperclip button (hidden until
-    // `data-attachments-url` is wired) opening a hidden multi-file input.
-    // Drag-and-drop covers the whole shell (wired by ComposerAttachments).
-    this.#attachButton.className = "attach-btn";
-    this.#attachButton.type = "button";
-    this.#attachButton.setAttribute("part", "attach-button");
-    this.#attachButton.replaceChildren(glyphSlot("icon-attach", "attach-glyph", ICON_ATTACH));
-    this.#attachButton.title = this.#strings.attachFiles;
-    this.#attachButton.setAttribute("aria-label", this.#strings.attachFiles);
-    this.#attachButton.hidden = true;
-    this.#attachButton.addEventListener("click", () => this.#fileInput.click(), { signal });
-
-    this.#fileInput.className = "attach-input";
-    this.#fileInput.type = "file";
-    this.#fileInput.multiple = true;
-    this.#fileInput.hidden = true;
-    this.#fileInput.addEventListener("change", () => this.#attachments.onFilesPicked(), {
-      signal,
+      onFilesPicked: () => this.#attachments.onFilesPicked(),
     });
-
-    this.#attachSlot.className = "attachment-slot";
-
-    // Mic button mount point (kept empty until ComposerVoice mounts the control).
-    this.#voiceSlot.className = "voice-slot";
 
     // A coarse footer slot below the composer.
     const footer = document.createElement("slot");
     footer.name = "footer";
 
-    tools.append(this.#attachButton, this.#voiceSlot, this.#send);
-    composer.append(this.#input, tools);
-    inputRow.append(composer, this.#fileInput);
-    // Composer surfaces sit just above the input: the skills palette (opens on
-    // `/`), the chips, the hint saying what the composer still needs, and the
-    // pending-attachments tray.
     this.#messagesWrap.className = "messages-wrap";
     // Sibling of the list inside a shared box, not a child of it: the
     // affordance offering to scroll must not scroll away with the content.
     this.#messagesWrap.replaceChildren(this.#messages, this.#jumpButton, this.#excerpts.button);
 
+    // Composer surfaces sit just above the input: the skills palette (opens on
+    // `/`), the chips, the hint saying what the composer still needs, the
+    // queued messages and the pending-attachments tray.
     this.#chat.replaceChildren(
       header,
       this.#messagesWrap,
@@ -2506,34 +2321,16 @@ export class AgUiChat extends HTMLElement {
       { signal },
     );
 
-    // What a collapsed widget shrinks to: a round floating button, or the slim
-    // edge rail under `placement="sidebar"` — one element, shaped by CSS.
-    // A sibling of the panel, so it survives the panel being hidden.
-    this.#launcher.className = "launcher";
-    this.#launcher.type = "button";
-    this.#launcher.setAttribute("part", "launcher");
-    this.#launcher.setAttribute("aria-label", this.#strings.expand);
-    this.#badge.className = "launcher-badge";
-    this.#badge.setAttribute("part", "launcher-badge");
-    // The count is announced through the launcher's own label, so the badge is
-    // decoration to a screen reader rather than a second, context-free number.
-    this.#badge.setAttribute("aria-hidden", "true");
-    this.#badge.hidden = true;
-    // Only the edge rail shows this. A full-height column carrying one small
-    // icon reads as a coloured stripe rather than a way back into a
-    // conversation -- it is the widest collapsed state there is and the one
-    // that says least about itself. Written here and hidden in CSS everywhere
-    // else, because the launcher is one element shaped by placement.
-    this.#railLabel.className = "rail-label";
-    this.#railLabel.setAttribute("part", "rail-label");
-    this.#railLabel.setAttribute("aria-hidden", "true");
-    this.#railLabel.textContent = this.getAttribute("title-text") ?? this.#strings.title;
-    this.#launcher.replaceChildren(
-      iconElement("launcher", "launcher-icon", ICON_LAUNCHER, readLauncherIconUrl(this)),
-      this.#railLabel,
-      this.#badge,
-    );
-    this.#launcher.addEventListener("click", () => this.setCollapsed(false), { signal });
+    buildLauncher({
+      launcher: this.#launcher,
+      badge: this.#badge,
+      railLabel: this.#railLabel,
+      titleText,
+      iconUrl: readLauncherIconUrl(this),
+      strings: this.#strings,
+      signal,
+      onOpen: () => this.setCollapsed(false),
+    });
     this.#placement.enableLauncherDrag(signal);
 
     this.#placement.mountResizeGrips(this.#chat);
