@@ -312,8 +312,9 @@
       <label
         >Tool cards
         <select id="cfg-tools">
+          <option value="grouped" selected>grouped</option>
           <option value="full">full</option>
-          <option value="compact" selected>compact</option>
+          <option value="compact">compact</option>
           <option value="minimal">minimal</option>
           <option value="inline">inline</option>
         </select>
@@ -363,10 +364,17 @@
           <summary>What to try</summary>
           <ul>
             <li>
-              <strong>Tool cards.</strong> Run <em>Fill the article</em>, then flip
-              <em>Tool cards</em> in the bar. The mode now applies to cards already on
-              screen; each settled card separates <em>Arguments</em> from
-              <em>Result</em> behind its own toggle.
+              <strong>Step group.</strong> Run <em>Fill the article</em>: its calls fold
+              into one row, <em>Worked through 5 steps</em>, with the cards one click
+              down and the second <em>Fill field</em> numbered <em>(2)</em>. Ask it to
+              <em>delegate</em> to watch the folded row name the sub-agent, or to
+              <em>import</em> to watch it open for three approvals.
+            </li>
+            <li>
+              <strong>Tool cards.</strong> Flip <em>Tool cards</em> in the bar to a card
+              mode. It applies to cards already on screen, and flattens the groups;
+              each settled card separates <em>Arguments</em> from <em>Result</em> behind
+              its own toggle.
             </li>
             <li>
               <strong>Confirmation.</strong> The same run ends on a destructive
@@ -493,7 +501,7 @@
           user-name="Ada"
           data-start-open
           data-text-animation="fade"
-          data-tool-display="compact"
+          data-tool-display="grouped"
           data-slash-commands="true"
           data-prompt-chips="true"
           data-transcribe-url="/transcribe/"

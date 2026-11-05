@@ -337,8 +337,10 @@ export const DEFAULT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 
 /**
  * How much detail a tool-call card shows. Set via `data-tool-display`; the
- * default is `full`.
+ * default is `grouped`.
  *
+ * - `grouped` — a run's consecutive calls fold into one quiet row ("Worked
+ *   through 5 steps"), with the calls one click down as `full` cards.
  * - `inline` — one status row (icon + summary), no card chrome, result behind
  *   its own toggle. Reads as a line of the answer rather than a boxed card.
  * - `minimal` — tool name + status pill only. No args, no result body.
@@ -346,6 +348,7 @@ export const DEFAULT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
  * - `full` — args inline, result behind its own toggle.
  */
 export const TOOL_DISPLAY = {
+  GROUPED: "grouped",
   INLINE: "inline",
   MINIMAL: "minimal",
   COMPACT: "compact",

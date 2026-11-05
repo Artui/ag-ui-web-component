@@ -105,6 +105,11 @@ const INTERNAL_ATTRIBUTES = new Set([
   "aria-expanded",
   // A feedback button's own pressed state, read back on click.
   "aria-pressed",
+  // Read by a step group off the nodes it holds: a card's status, the group's
+  // own disclosure state, and the name a sub-agent panel stamps on itself.
+  "data-status",
+  "data-open",
+  "data-agent",
   // On the nodes of rendered markdown, while sanitising them.
   "href",
   "class",

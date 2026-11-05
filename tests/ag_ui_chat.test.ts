@@ -190,10 +190,11 @@ describe("AgUiChat", () => {
   });
 
   it("reads the tool-display mode from the data-tool-display attribute", () => {
-    expect(mount().toolDisplay).toBe("full");
+    expect(mount().toolDisplay).toBe("grouped");
     expect(mount({ "data-tool-display": "minimal" }).toolDisplay).toBe("minimal");
     expect(mount({ "data-tool-display": "compact" }).toolDisplay).toBe("compact");
-    expect(mount({ "data-tool-display": "bogus" }).toolDisplay).toBe("full");
+    expect(mount({ "data-tool-display": "full" }).toolDisplay).toBe("full");
+    expect(mount({ "data-tool-display": "bogus" }).toolDisplay).toBe("grouped");
   });
 
   it("renders assistant content as markdown but keeps user content literal", () => {

@@ -184,6 +184,29 @@ export interface UiStrings {
   /** Label on the toggle that expands a tool card's body. */
   details: string;
 
+  // ── Tool-step group ─────────────────────────────────────────────────────────
+  // The row a run's consecutive calls fold into under the default
+  // data-tool-display. A group of one shows that call's own label instead, so
+  // the three labels are filled with 2 or more; the notes count from 1.
+  /** The group's label while a step waits on the user. Token: `{count}` (steps). */
+  toolGroupSteps: string;
+  /** The group's label while a step runs. Token: `{count}` (steps). */
+  toolGroupWorking: string;
+  /** The group's label once every step has settled. Token: `{count}` (steps). */
+  toolGroupWorked: string;
+  /** Note on the group's row: steps waiting on the user. Token: `{count}`. */
+  toolGroupWaiting: string;
+  /** Note on the group's row: steps that failed. Token: `{count}`. */
+  toolGroupFailed: string;
+  /** Note on the group's row: steps that were declined. Token: `{count}`. */
+  toolGroupDeclined: string;
+  /**
+   * Set after a step's label when an earlier step in its group has the same
+   * one, so two "Fill field" steps read "Fill field" and "Fill field (2)".
+   * Grouped mode only. Token: `{n}` (which occurrence, from 2).
+   */
+  toolStepRepeat: string;
+
   // ── Delegated sub-agent ─────────────────────────────────────────────────────
   /**
    * The delegation row's text before the server's own status line lands.
@@ -422,6 +445,14 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   declinedLabel: "Declined",
   interruptedLabel: "Not finished",
   details: "Details",
+
+  toolGroupSteps: "{count} steps",
+  toolGroupWorking: "Working through {count} steps",
+  toolGroupWorked: "Worked through {count} steps",
+  toolGroupWaiting: "{count} waiting for you",
+  toolGroupFailed: "{count} failed",
+  toolGroupDeclined: "{count} declined",
+  toolStepRepeat: "({n})",
 
   subAgentWorking: "Working…",
   subAgentDelegatedTo: "Delegated to {agent}",
