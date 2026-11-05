@@ -4,19 +4,22 @@
   "canonicalized": [
     "timestamp",
     "messageId",
-    "parentMessageId"
+    "parentMessageId",
+    "entityId"
   ],
   "events": [
     {
       "type": "RUN_STARTED",
       "timestamp": 1735689600000,
       "threadId": "thread-fixture",
-      "runId": "run-fixture"
+      "runId": "run-fixture",
+      "protocolVersion": "1.0"
     },
     {
       "type": "TEXT_MESSAGE_START",
       "timestamp": 1735689600000,
-      "messageId": "message-1"
+      "messageId": "message-1",
+      "role": "assistant"
     },
     {
       "type": "TEXT_MESSAGE_END",
@@ -128,7 +131,8 @@
     {
       "type": "TEXT_MESSAGE_START",
       "timestamp": 1735689600000,
-      "messageId": "message-3"
+      "messageId": "message-3",
+      "role": "assistant"
     },
     {
       "type": "TEXT_MESSAGE_END",
@@ -171,13 +175,21 @@
       "timestamp": 1735689600000,
       "messageId": "message-4",
       "toolCallId": "call-2",
-      "content": "Sub-agent 'auditor' failed: the auditor model went away\n\nFix the errors and try again.",
+      "content": "Sub-agent 'auditor' failed: the auditor model went away",
       "role": "tool"
+    },
+    {
+      "type": "REASONING_ENCRYPTED_VALUE",
+      "timestamp": 1735689600000,
+      "subtype": "message",
+      "entityId": "message-4",
+      "encryptedValue": "{\"pydantic_ai\": {\"outcome\": \"retried\", \"retry\": {\"cause\": \"model_retry\", \"attempt\": 1, \"max_retries\": 2}}}"
     },
     {
       "type": "TEXT_MESSAGE_START",
       "timestamp": 1735689600000,
-      "messageId": "message-5"
+      "messageId": "message-5",
+      "role": "assistant"
     },
     {
       "type": "TEXT_MESSAGE_CONTENT",
