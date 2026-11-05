@@ -16,7 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tool steps, interrupts, history and charts in theirs. The composed sheet is
   the old one with every rule in the same order; only two comments changed
   wording. Nothing a host sees changes, and **no host has to opt in**: tokens,
-  parts, attributes and the published `.d.ts` are as they were.
+  parts, attributes and the public type declarations are as they were.
+- **One record per placement.** What each `placement` does on the script side
+  -- what it collapses to, whether its launcher can be dragged, which axes it
+  resizes on, whether a first mount starts collapsed -- is now one descriptor
+  per placement in `src/ui/placement/surface_for.ts`, replacing three separate
+  tables that each listed placements. Every placement behaves as before, an
+  unknown value included, and **no host has to opt in**.
 
 ## [0.44.0] — 2026-10-20
 

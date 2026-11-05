@@ -51,9 +51,8 @@ import { type ApprovalRenderer } from "../ui/interrupts/approval_card.js";
 import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
-import { isCollapsiblePlacement } from "../ui/placement/is_collapsible_placement.js";
-import { isDraggablePlacement } from "../ui/placement/is_draggable_placement.js";
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
+import { surfaceFor } from "../ui/placement/surface_for.js";
 import { RunAnnouncer } from "../ui/progress/run_announcer.js";
 import { renderRunNotice } from "../ui/progress/run_notice.js";
 import { SubAgentProgress } from "../ui/progress/subagent_progress.js";
@@ -839,7 +838,7 @@ export class AgUiChat extends HTMLElement {
       root: this.#root,
       connected: () => this.#connected,
       collapsed: () => this.collapsed,
-      collapsible: () => isCollapsiblePlacement(this.getAttribute("placement")),
+      collapsible: () => surfaceFor(this.getAttribute("placement")).collapseTo !== null,
       strings: () => this.#strings,
       readPreference: (base) => this.#storage.readPreference(base),
       writePreference: (base, value) => this.#storage.writePreference(base, value),
@@ -1055,7 +1054,7 @@ export class AgUiChat extends HTMLElement {
       // not just stop offering it: the control is gone from the header the
       // moment the attribute changes, so a panel collapsed under the previous
       // placement would have no way back.
-      if (!isCollapsiblePlacement(this.getAttribute("placement")) && this.collapsed) {
+      if (surfaceFor(this.getAttribute("placement")).collapseTo === null && this.collapsed) {
         this.setCollapsed(false);
       }
       // Placement also moves the panel, so the edges its layout holds still
@@ -1420,7 +1419,7 @@ export class AgUiChat extends HTMLElement {
     // namespaced per instance but not per placement, so a tab that collapsed a
     // floating panel and later loaded the same instance as a page would restore
     // a state that placement has no way out of.
-    if (isCollapsiblePlacement(this.getAttribute("placement")) && this.#startsCollapsed()) {
+    if (surfaceFor(this.getAttribute("placement")).collapseTo !== null && this.#startsCollapsed()) {
       this.setAttribute("collapsed", "");
     }
     this.#syncLauncher();
@@ -1723,7 +1722,7 @@ export class AgUiChat extends HTMLElement {
    * its own chrome.
    */
   setCollapsed(collapsed: boolean, options: { readonly announce?: boolean } = {}): void {
-    if (collapsed && !isCollapsiblePlacement(this.getAttribute("placement"))) {
+    if (collapsed && surfaceFor(this.getAttribute("placement")).collapseTo === null) {
       return;
     }
     // Announced before the state changes, so the notice is written into a
@@ -1800,7 +1799,8 @@ export class AgUiChat extends HTMLElement {
       return stored === "1";
     }
     return (
-      isDraggablePlacement(this.getAttribute("placement")) && !this.hasAttribute("data-start-open")
+      surfaceFor(this.getAttribute("placement")).startsCollapsed &&
+      !this.hasAttribute("data-start-open")
     );
   }
 
