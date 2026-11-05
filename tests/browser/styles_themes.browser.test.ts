@@ -282,20 +282,31 @@ describe("text on the accent (real browser)", () => {
   });
 
   /**
-   * The built-in sheet with the relative colour block deleted, which is the
-   * sheet an engine without relative colour syntax applies: Firefox 120 to
-   * 127, and Safari 17.5. Deleted from a parsed sheet rather than cut out of
-   * the source text, and counted, so a change to the block's condition cannot
-   * leave this testing the full sheet under another name.
+   * The built-in sheet as an engine without relative colour syntax applies
+   * it (Firefox 120 to 127, and Safari 17.5): the block that asks for it
+   * deleted, and the block that asks for its absence unwrapped in place.
+   * Edited in a parsed sheet rather than in the source text, and counted, so
+   * a change to either condition cannot leave this testing the full sheet
+   * under another name.
    */
   function withoutRelativeColour(): CSSStyleSheet {
-    const stripped = sheet(STYLES);
-    const blocks = [...stripped.cssRules].flatMap((rule, index) =>
-      rule instanceof CSSSupportsRule && rule.conditionText.includes("color(from") ? [index] : [],
+    const edited = sheet(STYLES);
+    const blocks = [...edited.cssRules].flatMap((rule, index) =>
+      rule instanceof CSSSupportsRule && rule.conditionText.includes("color(from")
+        ? [{ rule, index }]
+        : [],
     );
-    expect(blocks).toHaveLength(1);
-    stripped.deleteRule(blocks[0] as number);
-    return stripped;
+    const [present, absent] = blocks;
+    expect(blocks).toHaveLength(2);
+    // The second block is the first's exact negation.
+    expect(absent?.rule.conditionText).toBe(`not ${present?.rule.conditionText}`);
+    const inner = [...(absent?.rule.cssRules ?? [])].map((rule) => rule.cssText);
+    edited.deleteRule(absent?.index as number);
+    for (const [offset, text] of inner.entries()) {
+      edited.insertRule(text, (absent?.index as number) + offset);
+    }
+    edited.deleteRule(present?.index as number);
+    return edited;
   }
 
   /** The colour the element resolves for text on its accent, read from a probe. */
@@ -347,8 +358,8 @@ describe("text on the accent (real browser)", () => {
   });
 
   it("keeps the computed pick over classic's fallback on a pale host accent", () => {
-    // Classic's white fallback is a seed the computed rule reads past, not a
-    // value set over it, so a pale brand accent still gets dark text.
+    // Classic's white is set only where the pick cannot be computed, so a
+    // pale brand accent still gets dark text wherever it can.
     const el = mount({ theme: "classic dark" }, (e) => {
       e.style.setProperty("--ag-ui-accent", "#fde68a");
     });

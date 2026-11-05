@@ -86,13 +86,11 @@ export const TOKEN_STYLES: string = `
      colour has white-on-pale with no way to correct it, which is the one
      theming change that makes a control unreadable rather than merely off. */
   /* Picked from the accent's own luminance where relative colour syntax is
-     supported (the block after this rule). Without it, the fallback below:
-     the scheme's colour, which is the right side for each newer theme's own
-     accent in both schemes. A theme sets the fallback rather than the value,
-     so a theme rule never outweighs the computed pick; classic and code set
-     white, the colour they always drew. */
-  --_on-accent-fallback: light-dark(#ffffff, #111111);
-  --_on-accent: var(--ag-ui-on-accent, var(--_on-accent-fallback));
+     supported (the first block after this rule). Without it, this value: the
+     scheme's colour, which is the right side for each newer theme's own
+     accent in both schemes. Classic and code take white instead, in the
+     second block. */
+  --_on-accent: var(--ag-ui-on-accent, light-dark(#ffffff, #111111));
   --_on-danger: var(--ag-ui-on-danger, #ffffff);
 
   /* Resize grips: the corner squares and the edge strips between them. Wide
@@ -381,13 +379,26 @@ export const TOKEN_STYLES: string = `
    the same expression over the linear channels, so the result is pure black
    or pure white. A host that sets a mid-tone brand accent in the dark scheme
    would otherwise get the scheme's near-black on it. Relative colour syntax
-   with channel arithmetic is Chrome 119, Firefox 128 and Safari 18; Safari 17
-   parses an older form of it, so the test below asks for the exact expression
-   this uses, and an engine that cannot read it keeps the scheme-based
-   fallback above. */
+   with channel arithmetic is Chrome 119, Firefox 128 and Safari 18. Of the
+   browsers at or above this package's floor (Chrome 123, Firefox 120, Safari
+   17.5), Firefox 120 to 127 lack it, and Safari 17.5 parses an older draft
+   that rejects this expression, so the test below asks for the exact
+   expression and those engines keep the fallback above. light-dark needs no
+   such test: the floor is set where every engine has it. */
 @supports (color: color(from red srgb-linear clamp(0, (0.179 - (0.2126 * r + 0.7152 * g + 0.0722 * b)) * 100000, 1) 0 0)) {
   :host {
     --_on-accent: var(--ag-ui-on-accent, color(from var(--_accent) srgb-linear clamp(0, (0.179 - (0.2126 * r + 0.7152 * g + 0.0722 * b)) * 100000, 1) clamp(0, (0.179 - (0.2126 * r + 0.7152 * g + 0.0722 * b)) * 100000, 1) clamp(0, (0.179 - (0.2126 * r + 0.7152 * g + 0.0722 * b)) * 100000, 1)));
+  }
+}
+
+/* Without relative colour syntax, classic and code keep the white they drew
+   before the theme set, not the scheme's colour: their accents are dark in
+   both schemes. Only on that path, so where the pick can be computed it is.
+   The condition is the one above, negated, and must stay its exact twin. */
+@supports not (color: color(from red srgb-linear clamp(0, (0.179 - (0.2126 * r + 0.7152 * g + 0.0722 * b)) * 100000, 1) 0 0)) {
+  :host([theme~="classic"]),
+  :host([theme~="code"]) {
+    --_on-accent: var(--ag-ui-on-accent, #ffffff);
   }
 }
 `;
