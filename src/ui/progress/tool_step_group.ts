@@ -148,6 +148,22 @@ export class ToolStepGroup {
   }
 
   /**
+   * Open the group now, for the wait that is about to start.
+   *
+   * The group opens itself from its mutation observer, which runs a tick after
+   * the card is marked deferred. The approval prompt is drawn, and takes focus,
+   * in the same tick as the mark, while the list is still out of the layout: the
+   * focus is dropped and the scroll it would cause never happens. So the caller
+   * that is about to draw the prompt opens the group first, and this marks the
+   * wait as already answered for, so the observer's later refresh does not open
+   * it again over a user who folded it.
+   */
+  reveal(): void {
+    this.#openedForWait = true;
+    this.setOpen(true);
+  }
+
+  /**
    * The row's note for a running sub-agent, naming it, or `null` when no step
    * is delegating right now. Only a step that is itself still running counts.
    */

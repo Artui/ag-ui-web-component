@@ -477,6 +477,16 @@ export class Transcript {
   }
 
   /**
+   * Open the step group ``card`` sits in, at once, ahead of a prompt about to be
+   * drawn inside it. A no-op for a card drawn in a card display mode, which has
+   * no group.
+   */
+  revealStep(card: ToolCallCard): void {
+    const group = card.element.closest(".tool-group");
+    (group === null ? undefined : this.#stepGroups.get(group))?.reveal();
+  }
+
+  /**
    * The step group a new card joins. Consecutive cards share one, and so do
    * cards separated only by the group's own rendered output; anything else in
    * between (text, a confirmation, a question) starts the next. The pending

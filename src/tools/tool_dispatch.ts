@@ -458,6 +458,11 @@ export class ToolDispatch {
           request.args = card.args;
         }
         card?.mark(TOOL_CALL_STATUS.DEFERRED);
+        // Before either renderer runs: the built-in card focuses its approve
+        // button as it is drawn, and a folded step group has no box to focus in.
+        if (card !== undefined) {
+          this.#host.transcript.revealStep(card);
+        }
         // The built-in card renders into the gated call's own card, falling back
         // to the answer group when the interrupt names no call we hold one for.
         const builtIn = (): Promise<boolean> =>

@@ -275,6 +275,35 @@ describe("a group that waits on the user", () => {
     expect(head.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("hands focus to the approve button and scrolls it into view, as under full", async () => {
+    const long = Array.from({ length: 80 }, (_, i) => `Line ${i} of a long answer.`).join("\n\n");
+    const el = mount((emit, params) => {
+      emit.runStart();
+      if (params.resume === undefined) {
+        emit.text(long);
+        emit.textEnd(long);
+        emit.toolCall("e1", "create_event", { title: "Design sync" });
+        emit.toolCall("e2", "create_event", { title: "Retro" });
+        emit.toolResult("e2", "ok");
+        emit.interrupt([interrupt("e1")]);
+        return;
+      }
+      emit.runEnd();
+    });
+    await send(el, "import");
+    // The scroll that focus causes is smooth, so give it time to land.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    // The group was folded when the prompt rendered, so focus had nothing on
+    // screen to land on unless the group opened first, synchronously.
+    const approve = part(shadow(el), ".approval-btn--approve");
+    expect(shadow(el).activeElement).toBe(approve);
+    const button = approve.getBoundingClientRect();
+    const list = part(shadow(el), ".messages").getBoundingClientRect();
+    expect(button.top).toBeGreaterThanOrEqual(list.top);
+    expect(button.bottom).toBeLessThanOrEqual(list.bottom);
+  });
+
   it("leaves a question in view beside the folded group", async () => {
     let round = 0;
     const el = mount((emit) => {
