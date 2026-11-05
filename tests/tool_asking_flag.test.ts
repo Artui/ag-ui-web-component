@@ -154,6 +154,21 @@ describe("a question open on a card", () => {
     warn.mockRestore();
   });
 
+  it("ends quietly when a handover has already taken the card out of the transcript", async () => {
+    const el = mountCalling("ask_user", "alice");
+    el.askUser = true;
+    await send(el);
+    expect(card(el).hasAttribute("data-asking")).toBe(true);
+
+    // The transcript forgets its cards with the rest of the principal's chat,
+    // so the question's end finds no card to clear: nothing to do, not a fault.
+    el.setAttribute("user-key", "bob");
+    await flush();
+    await flush();
+    expect(shadow(el).querySelector(".question")).toBeNull();
+    expect(shadow(el).querySelector(".tool-call")).toBeNull();
+  });
+
   it("clears it when the renderer rejects because the wait was abandoned", async () => {
     const el = mountCalling("ask_user");
     el.askUser = true;

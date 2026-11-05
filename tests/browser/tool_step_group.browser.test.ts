@@ -1,9 +1,11 @@
 import type { Interrupt } from "@ag-ui/core";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { cdp } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 import { type Emit, type FakeRunParams, makeFakeAgent } from "../helpers/fake_agent.js";
+import { FIXTURE_CUSTOM_NAME, subAgentValue } from "../helpers/subagent_fixture.js";
 
 /**
  * The step group, the default way a run's tool calls are drawn: consecutive
@@ -90,12 +92,30 @@ function fiveSteps(emit: Emit): void {
   emit.runEnd();
 }
 
+/** A promise the script awaits and the test opens, to put a frame in a later task. */
+function gate(): { wait: Promise<void>; open: () => void } {
+  let open: () => void = () => {};
+  const wait = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { wait, open };
+}
+
+/** Long enough for a mutation callback to run and the row to be redrawn. */
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20));
+
+function approvalFor(toolCallId: string): Interrupt {
+  return { id: `int-${toolCallId}`, reason: "tool_call", toolCallId, message: "Go?" } as never;
+}
+
 beforeAll(() => {
   defineAgUiChat();
 });
 
-afterEach(() => {
+afterEach(async () => {
   document.body.replaceChildren();
+  // A test that emulated reduced motion must not leave it on for the next.
+  await cdp().send("Emulation.setEmulatedMedia", { features: [] });
 });
 
 describe("a run's tool calls under the default display", () => {
@@ -328,6 +348,44 @@ describe("a group that waits on the user", () => {
   });
 });
 
+describe("a second wait in the same group", () => {
+  it("opens the group again after the user folded it during the first", async () => {
+    const second = gate();
+    const el = mount(async (emit, params) => {
+      emit.runStart();
+      if (params.resume === undefined) {
+        emit.toolCall("e1", "create_event", { title: "A" });
+        emit.interrupt([approvalFor("e1")]);
+        return;
+      }
+      if (JSON.stringify(params.resume).includes("int-e1")) {
+        emit.toolResult("e1", "ok");
+        // Held so the second approval is a later wait, not the tail of the first.
+        await second.wait;
+        emit.toolCall("e2", "create_event", { title: "B" });
+        emit.interrupt([approvalFor("e2")]);
+        return;
+      }
+      emit.runEnd();
+    });
+    await send(el, "two waits");
+    const group = part(shadow(el), ".tool-group");
+    const head = part(group, ".tool-group-head");
+    expect(head.getAttribute("aria-expanded")).toBe("true");
+    part(shadow(el), ".approval-btn--approve").click();
+    await tick();
+    head.click();
+    expect(head.getAttribute("aria-expanded")).toBe("false");
+
+    second.open();
+    await tick();
+    await tick();
+    expect(all(el, ".tool-group")).toHaveLength(1);
+    expect(group.getAttribute("data-state")).toBe("waiting");
+    expect(head.getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
 describe("a group whose step is asking the user", () => {
   /** One call that already settled, then the call that opens a prompt. */
   function askAfterLookup(call: (emit: Emit) => void): AgUiChat {
@@ -468,6 +526,83 @@ describe("a group whose step delegated to a sub-agent", () => {
   });
 });
 
+describe("the folded row follows a sub-agent frame by frame", () => {
+  /**
+   * A run delegating from its second call, whose frames each arrive in a task
+   * of their own: the row hears of a frame by the attribute it stamps and by
+   * nothing else, since the card's own status has not changed.
+   */
+  async function delegation(
+    after: (emit: Emit) => void,
+  ): Promise<{ meta: () => string; step: (n: number) => void }> {
+    const gates = [gate(), gate(), gate()] as const;
+    const el = mount(async (emit) => {
+      emit.runStart();
+      emit.toolCall("s1", "search_docs", { q: "refunds" });
+      emit.toolResult("s1", "three pages");
+      emit.toolCall("s2", "delegate_task", { task: "summarise" });
+      await gates[0].wait;
+      emit.subAgentStarted("sub-1", "researcher", "s2");
+      await gates[1].wait;
+      after(emit);
+      await gates[2].wait;
+      emit.runEnd();
+    });
+    await send(el, "go");
+    return {
+      meta: () => part(shadow(el), ".tool-group-meta").textContent ?? "",
+      step: (n) => gates[n]?.open(),
+    };
+  }
+
+  it("names the sub-agent when it starts in a later frame", async () => {
+    const { meta, step } = await delegation(() => {});
+    expect(meta()).not.toContain("researcher");
+    step(0);
+    await tick();
+    expect(meta()).toContain("Delegated to researcher");
+    step(1);
+    step(2);
+  });
+
+  for (const phase of ["tool_call", "tool_result"]) {
+    it(`keeps the name through the sub-agent's ${phase} frame`, async () => {
+      const frame = subAgentValue((v) => v.phase === phase && v.tool?.toolCallId === "sub-1");
+      const { meta, step } = await delegation((emit) => {
+        emit.custom(FIXTURE_CUSTOM_NAME, { ...frame, delegationId: "s2" });
+      });
+      step(0);
+      await tick();
+      step(1);
+      await tick();
+      expect(meta()).toContain("Delegated to");
+      step(2);
+    });
+  }
+
+  it("drops the name once the sub-agent finishes, before the call settles", async () => {
+    const { meta, step } = await delegation((emit) => emit.subAgentFinished("sub-1"));
+    step(0);
+    await tick();
+    expect(meta()).toContain("researcher");
+    step(1);
+    await tick();
+    expect(meta()).not.toContain("researcher");
+    step(2);
+  });
+
+  it("drops the name once the delegating call settles, even with the panel unfinished", async () => {
+    const { meta, step } = await delegation((emit) => emit.toolResult("s2", "summary"));
+    step(0);
+    await tick();
+    expect(meta()).toContain("researcher");
+    step(1);
+    await tick();
+    expect(meta()).not.toContain("researcher");
+    step(2);
+  });
+});
+
 describe("a card mode set after groups were drawn", () => {
   const MODES = ["inline", "minimal", "compact", "full"] as const;
 
@@ -527,5 +662,117 @@ describe("the step group under a theme", () => {
     expect(getComputedStyle(part(shadow(ledger), ".tool-group-head")).textTransform).toBe(
       "uppercase",
     );
+  });
+});
+
+describe("a one-step group", () => {
+  it("names its step once, in the label, and adds no note repeating it", async () => {
+    const held = gate();
+    const el = mount(async (emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "fill_field", { field: "title" });
+      await held.wait;
+      emit.runEnd();
+    });
+    await send(el, "fill the title");
+
+    const group = part(shadow(el), ".tool-group");
+    expect(group.getAttribute("data-state")).toBe("running");
+    expect(part(group, ".tool-group-label").textContent).toBe("Fill field");
+    // The running step is the only step, so a note naming it would say the same
+    // thing twice in one line.
+    expect(part(group, ".tool-group-meta").textContent).toBe("");
+    expect(part(group, ".tool-group-meta").hidden).toBe(true);
+    held.open();
+  });
+});
+
+describe("client tool rounds", () => {
+  it("join one group across the pending dots between them", async () => {
+    let round = 0;
+    const el = mount((emit) => {
+      emit.runStart();
+      if (round < 3) {
+        emit.toolCall(`k${round}`, "tick", { n: round });
+      } else {
+        emit.text("done");
+        emit.textEnd("done");
+      }
+      round += 1;
+      emit.runEnd();
+    });
+    el.registerTool({
+      name: "tick",
+      description: "ticks",
+      parameters: { type: "object", properties: { n: { type: "number" } } },
+      handler: () => "ticked",
+    });
+    await send(el, "tick");
+    await settle();
+    await settle();
+
+    // The dots come back at the foot of the turn between rounds, and a call
+    // takes them down before it draws its card, so they never split the group.
+    expect(all(el, ".tool-call")).toHaveLength(3);
+    expect(all(el, ".tool-group")).toHaveLength(1);
+  });
+});
+
+describe("the step group's row", () => {
+  it("stops spinning when the reader asked for reduced motion", async () => {
+    const held = gate();
+    const el = mount(async (emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "fill_field", { field: "title" });
+      emit.toolCall("c2", "fill_field", { field: "slug" });
+      await held.wait;
+      emit.runEnd();
+    });
+    await send(el, "fill the form");
+    const icon = part(shadow(el), ".tool-group-icon");
+    expect(getComputedStyle(icon).animationName).toBe("ag-ui-tool-spin");
+
+    await cdp().send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
+    expect(getComputedStyle(icon).animationName).toBe("none");
+    held.open();
+  });
+
+  it("draws its focus outline in the ring token", async () => {
+    const el = mount(fiveSteps);
+    el.style.setProperty("--ag-ui-ring", "rgb(255, 0, 0)");
+    await send(el, "fill the form");
+    const head = part(shadow(el), ".tool-group-head");
+    head.focus({ focusVisible: true } as FocusOptions);
+    expect(shadow(el).activeElement).toBe(head);
+    expect(getComputedStyle(head).outlineColor).toBe("rgb(255, 0, 0)");
+
+    el.style.setProperty("--ag-ui-ring", "rgb(0, 0, 255)");
+    expect(getComputedStyle(head).outlineColor).toBe("rgb(0, 0, 255)");
+  });
+
+  it("takes no space in any part once that part is hidden, as every class with a display does", async () => {
+    const el = mount(fiveSteps);
+    await send(el, "fill the form");
+    const group = part(shadow(el), ".tool-group");
+    part(group, ".tool-group-head").click();
+    const parts = [".tool-group-head", ".tool-group-list", ".tool-group"];
+    for (const selector of parts) {
+      expect(height(part(shadow(el), selector))).toBeGreaterThan(0);
+    }
+    for (const selector of parts) {
+      const node = part(shadow(el), selector);
+      node.hidden = true;
+      expect(height(node)).toBe(0);
+      expect(getComputedStyle(node).display).toBe("none");
+      node.hidden = false;
+    }
+
+    // The group is display: contents under a card mode, which a bare hidden
+    // would not undo either.
+    el.setAttribute("data-tool-display", "full");
+    group.hidden = true;
+    expect(getComputedStyle(group).display).toBe("none");
   });
 });

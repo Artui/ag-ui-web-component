@@ -191,6 +191,7 @@ describe("AgUiChat", () => {
 
   it("reads the tool-display mode from the data-tool-display attribute", () => {
     expect(mount().toolDisplay).toBe("grouped");
+    expect(mount({ "data-tool-display": "inline" }).toolDisplay).toBe("inline");
     expect(mount({ "data-tool-display": "minimal" }).toolDisplay).toBe("minimal");
     expect(mount({ "data-tool-display": "compact" }).toolDisplay).toBe("compact");
     expect(mount({ "data-tool-display": "full" }).toolDisplay).toBe("full");

@@ -1521,9 +1521,12 @@ steps and `data-open` whether the cards are showing; the head is a button with `
 
 - **It opens itself while a step waits on you.** A server-side approval renders inside the gated
   call's own card, so a folded group would hide the question it is asking: the group opens when a
-  step goes `deferred`, once per wait, and stays folded if you fold it again. A client-side
+  step goes `deferred`, once per wait, and stays folded if you fold it again. It opens before the
+  approval is drawn, so the Approve button takes focus and scrolls into view. A client-side
   confirmation and an `ask_user` question render in the answer beside the group rather than inside
-  a card, so they are in view without it opening.
+  a card, so they are in view without it opening; the row still reads `waiting` ("1 waiting for
+  you") while one is open, as the card carries a `data-asking` flag for the group to read, and its
+  `data-status` stays `pending`.
 - **A running sub-agent does not open it.** The row keeps its spinner and names the delegation
   instead, "Delegated to researcher" (the `subAgentDelegatedTo` string).
 - **Repeated labels are told apart.** Two "Fill field" steps read "Fill field" and "Fill field

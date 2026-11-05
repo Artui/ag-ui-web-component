@@ -25,6 +25,13 @@ function text(group: ToolStepGroup, selector: string): string {
   return group.element.querySelector(selector)?.textContent ?? "";
 }
 
+/** Let the group's mutation observer run. */
+const observed = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+function open(group: ToolStepGroup): string | null {
+  return group.element.getAttribute("data-open");
+}
+
 describe("ToolStepGroup", () => {
   it("reads a step with no status as settled", () => {
     const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
@@ -75,5 +82,53 @@ describe("ToolStepGroup", () => {
     expect(text(group, ".tool-group-label")).toBe("2 Schritte erledigt");
     expect(text(group, ".tool-group-meta")).toBe("2 abgelehnt");
     expect(text(group, ".tool-call-repeat")).toBe("#2");
+  });
+
+  describe("opening for a wait", () => {
+    it("opens again for a second wait after the user folded the group during the first", async () => {
+      const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+      const first = step("pending");
+      group.add(first, "Create event");
+      first.setAttribute("data-status", "deferred");
+      await observed();
+      expect(open(group)).toBe("true");
+
+      // Answered, then folded by the user.
+      first.setAttribute("data-status", "pending");
+      await observed();
+      group.setOpen(false);
+
+      const second = step("pending");
+      group.add(second, "Create event");
+      second.setAttribute("data-status", "deferred");
+      await observed();
+      expect(open(group)).toBe("true");
+    });
+
+    it("stays folded when revealed ahead of the observer and then folded by the user", async () => {
+      const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+      const card = step("pending");
+      group.add(card, "Create event");
+      // What a gated call does: marked deferred and revealed in one task, the
+      // observer still to run. A fold before it runs must not be undone by it.
+      card.setAttribute("data-status", "deferred");
+      group.reveal();
+      expect(open(group)).toBe("true");
+      group.setOpen(false);
+      await observed();
+      expect(open(group)).toBe("false");
+    });
+
+    it("does not open for a question, which is drawn beside the group", async () => {
+      const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+      const card = step("pending");
+      group.add(card, "Ask user");
+      card.setAttribute("data-asking", "");
+      await observed();
+
+      expect(open(group)).toBe("false");
+      expect(group.element.getAttribute("data-state")).toBe("waiting");
+      expect(text(group, ".tool-group-meta")).toBe("1 waiting for you");
+    });
   });
 });

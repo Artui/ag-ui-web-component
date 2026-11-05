@@ -67,7 +67,7 @@ export class Transcript {
    * the moment its call is dispatched, and a handler that opens a prompt on its
    * own card is still running long after, so it is found here.
    */
-  readonly #running = new Map<string, ToolCallCard>();
+  readonly #running = new Map<string | undefined, ToolCallCard>();
   /**
    * Call ids whose card was already settled from a streamed server-side result
    * (`TOOL_CALL_RESULT`), so the post-run executeTool sweep doesn't overwrite
@@ -230,7 +230,7 @@ export class Transcript {
    * none, or one no card was held for, has no card to say it on.
    */
   setAsking(callId: string | undefined, asking: boolean): void {
-    (callId === undefined ? undefined : this.#running.get(callId))?.setAsking(asking);
+    this.#running.get(callId)?.setAsking(asking);
   }
 
   /** Empty the list back to its empty-state region. The last half of wiping it. */
@@ -509,21 +509,23 @@ export class Transcript {
   /**
    * The step group a new card joins. Consecutive cards share one, and so do
    * cards separated only by the group's own rendered output; anything else in
-   * between (text, a confirmation, a question) starts the next. The pending
-   * dots are skipped over, since they sit at the foot of the turn and move
-   * with it, and a new group goes in after the last thing that is not them.
+   * between (text, a confirmation, a question) starts the next.
+   *
+   * The pending dots are not skipped over: a tool call takes them down before
+   * its card is drawn, so they are never what a card finds at the foot of the
+   * turn.
    */
   #stepGroup(): ToolStepGroup {
     const answer = this.ensureGroup();
-    const last = [...answer.children].filter((child) => child !== this.#pending).at(-1);
+    const last = answer.lastElementChild;
     const existing =
-      last === undefined ? undefined : this.#stepGroups.get(this.#outputGroups.get(last) ?? last);
+      last === null ? undefined : this.#stepGroups.get(this.#outputGroups.get(last) ?? last);
     if (existing !== undefined) {
       return existing;
     }
     const group = new ToolStepGroup(this.#host.strings());
     this.#stepGroups.set(group.element, group);
-    if (last === undefined) {
+    if (last === null) {
       answer.prepend(group.element);
     } else {
       last.after(group.element);

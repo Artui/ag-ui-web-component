@@ -219,4 +219,14 @@ ${CARDS} .tool-group-head,
 ${CARDS} .tool-call-repeat {
   display: none;
 }
+
+/* Each of these declares its own display, which beats the user-agent rule for
+   the hidden attribute, so each needs its own. The host prefix is there for
+   weight, not scope: it lifts these over the card-mode rules above that set
+   display, which are heavier than a bare class and attribute. */
+:host .tool-group[hidden],
+:host .tool-group-head[hidden],
+:host .tool-group-list[hidden] {
+  display: none;
+}
 `;
