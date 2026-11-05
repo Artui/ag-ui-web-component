@@ -18,8 +18,9 @@
  * double describing a wire no server writes makes every test that uses it agree
  * with the bug, which has happened in this family more than once.
  *
- * Two fields are canonicalized by the generator and only two: `timestamp` (the
- * wall clock) and `messageId` / `parentMessageId` (fresh UUIDs). Every
+ * Three fields are canonicalized by the generator and only three: `timestamp`
+ * (the wall clock), `messageId` / `parentMessageId` (fresh UUIDs), and the
+ * `entityId` a `REASONING_ENCRYPTED_VALUE` points at (a message id). Every
  * `toolCallId` is what the server wrote, which matters here because both
  * carriers key on them, and so is every `subagentRunId` -- the server derives
  * those from the delegation's tool call id rather than minting them, so they

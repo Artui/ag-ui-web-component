@@ -318,6 +318,29 @@ describe("a delegation, from recorded bytes (real browser)", () => {
     expect(step.width).toBeGreaterThan(0);
   });
 
+  it("carries on past the reasoning event the retry is recorded on", async () => {
+    // The server records a tool retry on a REASONING_ENCRYPTED_VALUE that names
+    // the retried result's message, and the run's closing answer follows it.
+    // The element has no subscriber for that event, so what it does with one is
+    // the client's: validate it and go on. This pins that the run survives the
+    // event, not that it is applied to the message it names.
+    // Every other assertion here settles on rows that close before it, so
+    // without this one a client that broke on the event would pass them all.
+    const retry = FIXTURE_EVENTS.filter((event) => event["type"] === "REASONING_ENCRYPTED_VALUE");
+    expect(retry).toHaveLength(1);
+    const closing = FIXTURE_EVENTS.filter(
+      (event) => event["type"] === "TEXT_MESSAGE_CONTENT" && typeof event["delta"] === "string",
+    ).at(-1);
+    const answer = String(closing?.["delta"]);
+    const el = mount(SIDEBAR);
+
+    await replay(el);
+
+    const text = shadow(el).textContent ?? "";
+    expect(text).toContain(answer);
+    expect(text).not.toContain(DEFAULT_UI_STRINGS.announceFailed);
+  });
+
   it("costs one row until someone opens it", async () => {
     // The whole reason the collapsed shape was chosen: a child with ten steps
     // must not be ten rows in the transcript by default.
