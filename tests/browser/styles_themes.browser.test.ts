@@ -266,6 +266,12 @@ describe("classic's contrast fixes (real browser)", () => {
     const fill = rgba(getComputedStyle(part(el, ".composer")).backgroundColor);
     expect(contrast(ink(field, "::placeholder"), fill)).toBeGreaterThanOrEqual(4.5);
   });
+
+  it("keeps the indigo user bubble whatever the host's accent", () => {
+    const el = mount({ theme: "classic", style: `--ag-ui-accent: ${BRAND_ORANGE}` });
+    const userBg = getComputedStyle(el).getPropertyValue("--_user-bg").trim();
+    expect(rgba(userBg)).toEqual([79, 70, 229, 1]);
+  });
 });
 
 describe("text on the accent (real browser)", () => {

@@ -10,7 +10,7 @@ export const CLASSIC_TOKENS: string = `
   --_bg: var(--ag-ui-bg, light-dark(#ffffff, #15151f));
   --_fg: var(--ag-ui-fg, light-dark(#1a1a2e, #e8e8f2));
   --_accent: var(--ag-ui-accent, #4f46e5);
-  --_user-bg: var(--ag-ui-user-bg, var(--_accent));
+  --_user-bg: var(--ag-ui-user-bg, #4f46e5);
   --_user-fg: var(--ag-ui-user-fg, #ffffff);
   --_assistant-bg: var(--ag-ui-assistant-bg, light-dark(#f1f1f6, #25253a));
   --_hover: var(--ag-ui-hover, light-dark(#e7e7ee, #303049));

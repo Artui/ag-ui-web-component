@@ -56,8 +56,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set `--ag-ui-header-bg`, `--ag-ui-launcher-bg` and `--ag-ui-tool-fg` to
   the accent and `--ag-ui-header-fg` and `--ag-ui-launcher-fg` to the
   colour on it.
-- **Under `classic`, the user bubble follows `--ag-ui-accent`.** It was
-  indigo whatever the accent; set `--ag-ui-user-bg: #4f46e5` to keep that.
 - **One chip row and one action row per answer**, under every theme but
   `classic` and `code`. The skill chips show on the empty state only and,
   once a message is sent, live in the slash palette alone. In an answer
