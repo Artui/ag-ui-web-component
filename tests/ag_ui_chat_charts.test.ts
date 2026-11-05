@@ -235,6 +235,9 @@ describe("the agent-called route", () => {
       },
       ["tool"],
     );
+    // Per-call cards, so the chart's neighbour is the card itself; under the
+    // default step group it is the group, held in tool_step_group.browser.test.
+    el.setAttribute("data-tool-display", "full");
     await send(el, "chart it");
     const block = shadow(el).querySelector(".chart-block");
     expect(block).not.toBeNull();

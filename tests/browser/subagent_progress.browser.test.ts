@@ -101,6 +101,9 @@ function mount(width: string): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", ENDPOINT);
   el.setAttribute("placement", "embedded");
+  // Per-call cards: these measure the delegation row against the card it
+  // hangs off, which the default step group folds one click down.
+  el.setAttribute("data-tool-display", "full");
   el.style.width = width;
   document.body.appendChild(el);
   return el;

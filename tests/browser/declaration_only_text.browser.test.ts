@@ -37,6 +37,9 @@ describe("a declaration-only text message before a tool call", () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
     el.setAttribute("data-start-open", "");
     el.setAttribute("endpoint", "/agent/");
+    // Per-call cards: the measurement is against the card itself, which the
+    // default step group folds one click down.
+    el.setAttribute("data-tool-display", "full");
     const handle = makeFakeAgent({
       script: (emit) => {
         emit.runStart();

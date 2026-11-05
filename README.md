@@ -177,7 +177,7 @@ another origin, add `credentials="include"` too; see
 | `endpoint` | `endpoint` | The AG-UI endpoint URL. Required to send: without it a send is refused with a `console.error` naming the missing attribute and a `not-connected` run notice in the transcript. Reflecting getter + setter. |
 | `credentials` | `credentials` | Cookie policy for every request the element makes: `omit` / `same-origin` / `include`. Unset means the browser default (`same-origin`), which sends no cookies cross-origin. See [Authenticating requests](#authenticating-requests). |
 | `title-text` | — | Header label; defaults to `"Assistant"`. Live: writing it after the element connects re-labels the header. See [When each attribute is read](#when-each-attribute-is-read). |
-| `data-tool-display` | `toolDisplay` | Tool-call card detail: `inline` / `minimal` / `compact` / `full` (default `full`). |
+| `data-tool-display` | `toolDisplay` | How tool calls are drawn: `grouped` (the default: a run's consecutive calls fold into one row) / `inline` / `minimal` / `compact` / `full` (per-call cards; `full` was the default before `grouped`). An unknown value reads as `grouped`. See [Tool-call display modes](#tool-call-display-modes). |
 | `data-text-animation` | — | Incoming-text reveal: `none` (default) / `fade` / `word`. |
 | `data-prompt-chips` | — | Present (bare, or any value but `"false"`) to surface skills as chips. |
 | `data-slash-commands` | — | Present (bare, or any value but `"false"`) to enable the `/`-command palette. |
@@ -1475,15 +1475,22 @@ is the honest answer to "I pushed a chart and nothing happened".
 
 ## Tool-call display modes
 
-How much a tool-call card shows is set via the `data-tool-display` attribute (or `toolDisplay`
-property), one of `inline` / `minimal` / `compact` / `full` (default `full`):
+How tool calls are drawn is set via the `data-tool-display` attribute (or `toolDisplay`
+property), one of `grouped` / `inline` / `minimal` / `compact` / `full` (default `grouped`; an
+absent or unknown value reads as `grouped`):
 
+- `grouped` — the default. A run's consecutive tool calls fold into one quiet row, **"Worked
+  through 5 steps"**, with a note such as **"1 failed"** beside it, and the calls one click down
+  as `full` cards. Anything else in the turn (text, a confirmation, a question) ends the group, and
+  the next call starts a new one; a call's own rendered output does not. A group of one call shows that call's own label. See
+  [The step group](#the-step-group).
 - `inline` — the lightest mode: a single status row (icon + summary, no card chrome) with the
   result behind its own toggle. Reads as one line of the answer — pairs with [the answer
   well](#the-answer-well).
 - `minimal` — tool name + status pill only.
 - `compact` — name + status, with arguments *and* result behind a single collapsed toggle.
-- `full` — arguments visible, result behind the toggle (the default).
+- `full` — arguments visible, result behind the toggle. The default before `grouped`: set
+  `data-tool-display="full"` to keep per-call cards.
 
 Whichever mode is on, a settled card's body holds **two labelled regions** — `Arguments` and
 `Result` (or `Error` / `Declined`) — each with its own part and each pretty-printed. They are
@@ -1491,9 +1498,55 @@ never run together into one block, so where the call ends and the answer begins 
 visible. Style them via the `tool-card-args` / `tool-card-result` parts, their headings via
 `tool-card-section-label`, and the whole body via `tool-card-body`.
 
-**The attribute is live.** Changing `data-tool-display` restyles every card already in the
-transcript, the way `data-answer-well` does — the modes are pure visibility over one DOM shape,
-selected by the shadow CSS from the host attribute.
+**The attribute is live.** Changing `data-tool-display` between the four card modes restyles every
+card already in the transcript, the way `data-answer-well` does — the modes are pure visibility
+over one DOM shape, selected by the shadow CSS from the host attribute. Grouping is decided as
+each card is built: switching **to** `grouped` folds only the calls drawn afterwards, and
+switching **away** from it flattens the groups already drawn, by CSS, into exactly the cards the
+new mode builds (the group stops generating a box and its row is hidden).
+
+### The step group
+
+Under `grouped` the row reads, by state:
+
+| State (`data-state` on the `tool-group` part) | Label | Mark |
+| --- | --- | --- |
+| `running` | "Working through 3 steps", and the running step's label as a note | spinner |
+| `waiting` | "3 steps", with "1 waiting for you" | accent dot |
+| `done` | "Worked through 3 steps" | check |
+| `error` | "Worked through 3 steps", with "1 failed" in the danger colour | error mark |
+
+"N declined" is added as a note whenever a step was declined. `data-count` carries the number of
+steps and `data-open` whether the cards are showing; the head is a button with `aria-expanded`.
+
+- **It opens itself while a step waits on you.** A server-side approval renders inside the gated
+  call's own card, so a folded group would hide the question it is asking: the group opens when a
+  step goes `deferred`, once per wait, and stays folded if you fold it again. It opens before the
+  approval is drawn, so the Approve button takes focus and scrolls into view. A client-side
+  confirmation and an `ask_user` question render in the answer beside the group rather than inside
+  a card, so they are in view without it opening; the row still reads `waiting` ("1 waiting for
+  you") while one is open, as the card carries a `data-asking` flag for the group to read, and its
+  `data-status` stays `pending`.
+- **A running sub-agent does not open it.** The row keeps its spinner and names the delegation
+  instead, "Delegated to researcher" (the `subAgentDelegatedTo` string).
+- **Repeated labels are told apart.** Two "Fill field" steps read "Fill field" and "Fill field
+  (2)": the ordinal is an element of its own (part `tool-card-repeat`) beside the card's name, so
+  `tool-card-name` is never rewritten, and a card mode hides the ordinal.
+- **Rendered output stays in view.** A tool's `render` output is placed after the group, in call
+  order, rather than inside it, so a chart is never one click down. It does not end the group: a
+  later call joins the group above it, which is also how a restored conversation draws the run.
+
+Parts: `tool-group`, `tool-group-head` (the button), `tool-group-icon`, `tool-group-label`,
+`tool-group-meta` (holding one `.tool-group-note` per note), `tool-group-list` (the cards), and
+`tool-card-repeat` on a repeated step. The focus ring is `--ag-ui-ring` and the disclosure chevron
+`--ag-ui-ico-chevron`. Strings (`strings` / `data-strings`): `toolGroupSteps`,
+`toolGroupWorking`, `toolGroupWorked` (each with `{count}`, always 2 or more), `toolGroupWaiting`,
+`toolGroupFailed`, `toolGroupDeclined` (each with `{count}`) and `toolStepRepeat` (with `{n}`).
+
+```html
+<!-- Keep per-call cards, as before grouped was the default -->
+<ag-ui-chat endpoint="/agent/" data-tool-display="full"></ag-ui-chat>
+```
 
 ### Drawing a card's body yourself
 
@@ -2960,7 +3013,8 @@ first, so each stays an override point. The tokens the themes add:
   placement squares or flattens.
 - **Charts:** `--ag-ui-chart-1` to `--ag-ui-chart-6`. A host's value beats the theme's.
 - **Status marks:** `--ag-ui-ico-check`, `--ag-ui-ico-error`, `--ag-ui-ico-declined`, mask images
-  drawn in the state's colour.
+  drawn in the state's colour, and `--ag-ui-ico-chevron`, the step group's disclosure chevron.
+- **Focus:** `--ag-ui-ring`, the step group head's focus outline (the accent at 55%).
 
 The font is part of the theme: Quiet, Soft and Ledger set their own stack (Inter, then the system
 UI font), and Classic inherits the page's font as the component always did. Set
@@ -3297,7 +3351,8 @@ component sets, so a new one cannot ship undocumented.
 | Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`), and the icon holder inside each: `message-action-icon` (plus `message-action-icon-retry`, `message-action-icon-copy`, `message-action-icon-up`, `message-action-icon-down`) |
 | Queued messages | `queued`, `queued-chip` |
 | Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`, `run-notice-surface`, `run-notice-not-connected`), `run-notice-icon`, `run-notice-text`, `run-notice-undo` |
-| Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent` |
+| Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent`, `tool-card-repeat` |
+| Tool-step group | `tool-group`, `tool-group-head`, `tool-group-icon`, `tool-group-label`, `tool-group-meta`, `tool-group-list` |
 | Delegated sub-agents | `subagent`, `subagent-row`, `subagent-icon`, `subagent-status`, `subagent-steps`, `subagent-step`, `subagent-step-icon`, `subagent-step-name` |
 | Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`, `confirm-always`) |
 | Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`), `approval-edit`, `approval-args`, `approval-error` |

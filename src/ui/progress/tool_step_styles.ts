@@ -196,8 +196,6 @@ export const TOOL_STEP_STYLES: string = `
   padding: 6px 8px;
   max-height: 160px;
   overflow: auto;
-  /* Scrolling past the end of this must not scroll the page behind it. */
-  overscroll-behavior: contain;
   background: var(--_bg);
   border: 1px solid var(--_border);
   border-radius: 6px;

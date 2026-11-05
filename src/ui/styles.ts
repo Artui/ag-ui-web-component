@@ -32,6 +32,7 @@ import { SIDEBAR_STYLES } from "./placement/sidebar_styles.js";
 import { SMALL_VIEWPORT_STYLES } from "./placement/small_viewport_styles.js";
 import { RUN_NOTICE_STYLES } from "./progress/run_notice_styles.js";
 import { THOUGHTS_STYLES } from "./progress/thoughts_styles.js";
+import { TOOL_GROUP_STYLES } from "./progress/tool_group_styles.js";
 import { TOOL_STEP_STYLES } from "./progress/tool_step_styles.js";
 import { FRAME_STYLES } from "./shell/frame_styles.js";
 import { THEME_STYLES } from "./shell/theme_styles.js";
@@ -87,6 +88,10 @@ export const STYLES: string = [
   QUESTION_STYLES,
   SKILL_STYLES,
   HISTORY_STYLES,
+  // The step group restates, inside a group, card rules the modules above set
+  // at rest; it outweighs them rather than relying on order, and sits ahead
+  // of the themes so a theme restating a group rule at equal weight wins.
+  TOOL_GROUP_STYLES,
   // Each theme's structure comes last: it restates rules the modules above
   // set at rest, at equal weight. Classic and code have no structural
   // module; they are the base stylesheet, and classic adds only its

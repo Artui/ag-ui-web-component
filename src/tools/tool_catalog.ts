@@ -36,6 +36,11 @@ export interface ToolCatalogHost {
   readonly askUserRenderer: () => QuestionRenderer | null;
   /** The decision a run is suspended on, which a Stop abandons. */
   readonly decision: PendingDecision;
+  /**
+   * Mark the card of ``callId`` as asking the user, or no longer. The call id is
+   * absent for a handler run outside a tool call, which has no card to mark.
+   */
+  readonly setAsking: (callId: string | undefined, asking: boolean) => void;
   /** The current answer group, opening one if none is open. */
   readonly ensureGroup: () => HTMLDivElement;
   /** The resolved string table. */
@@ -293,17 +298,25 @@ export class ToolCatalog {
     // A host-supplied renderer takes full control of the UI.
     const renderer = this.#host.askUserRenderer();
     let answer: string;
-    if (renderer === null) {
-      answer = await builtIn();
-    } else {
-      // Awaited here rather than inside a helper, so an answering renderer
-      // takes exactly as many turns to be heard as it always did.
-      try {
-        // Called on the element, as `this.askUserRenderer(...)` always was.
-        answer = await renderer.call(this.#host.element, request, { signal });
-      } catch (error) {
-        answer = await this.#afterRendererFailed(error, signal, callId, builtIn);
+    // The card says it is asking for as long as a question is open on it, an
+    // answer, a Stop and a renderer that failed alike, so the step group's row
+    // does not read as running while the run waits on a person.
+    this.#host.setAsking(callId, true);
+    try {
+      if (renderer === null) {
+        answer = await builtIn();
+      } else {
+        // Awaited here rather than inside a helper, so an answering renderer
+        // takes exactly as many turns to be heard as it always did.
+        try {
+          // Called on the element, as `this.askUserRenderer(...)` always was.
+          answer = await renderer.call(this.#host.element, request, { signal });
+        } catch (error) {
+          answer = await this.#afterRendererFailed(error, signal, callId, builtIn);
+        }
       }
+    } finally {
+      this.#host.setAsking(callId, false);
     }
     this.#host.decision.close();
     this.#host.updateEmptyState();

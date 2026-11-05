@@ -59,6 +59,26 @@ export const SOFT_STYLES: string = `
   color: var(--_accent-ink);
 }
 
+/* The step group's row as a tinted pill. Unscoped to grouped mode: a card
+   mode hides the row and drops the list's box, so neither reaches a
+   flattened card. */
+:host([theme~="soft"]) .tool-group-head {
+  background: var(--_tint);
+  border: 1px solid var(--_border);
+  border-radius: 999px;
+  padding: 5px 12px 5px 9px;
+  margin-left: 0;
+}
+
+:host([theme~="soft"]) .tool-group-head:hover {
+  background: var(--_tint-2);
+}
+
+:host([theme~="soft"]) .tool-group-list {
+  border-left-color: var(--_tint-2);
+  margin-left: 14px;
+}
+
 :host([theme~="soft"]) .chart-block {
   background: var(--_bg);
   border: 1px solid var(--_border);

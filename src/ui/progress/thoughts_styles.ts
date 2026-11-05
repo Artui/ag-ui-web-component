@@ -48,8 +48,6 @@ export const THOUGHTS_STYLES: string = `
   border-left: 2px solid var(--_border);
   max-height: 220px;
   overflow: auto;
-  /* Scrolling past the end of this must not scroll the page behind it. */
-  overscroll-behavior: contain;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;

@@ -8,8 +8,14 @@ import { fillUiString } from "../fill_ui_string.js";
 import { prettifyToolName } from "../progress/prettify_tool_name.js";
 import { renderRunNotice } from "../progress/run_notice.js";
 import { ThoughtsBlock } from "../progress/thoughts_block.js";
-import { ToolCallCard, type ToolPayload } from "../progress/tool_call_card.js";
+import {
+  ToolCallCard,
+  type ToolDisplayMode,
+  type ToolPayload,
+} from "../progress/tool_call_card.js";
+import { ToolStepGroup } from "../progress/tool_step_group.js";
 import type { UiStrings } from "../ui_strings.js";
+import { groupsToolSteps } from "./groups_tool_steps.js";
 import { renderMarkdown } from "./render_markdown.js";
 import { renderOrWarn } from "./render_or_warn.js";
 import { wrapWords } from "./reveal_words.js";
@@ -35,6 +41,8 @@ export interface TranscriptHost {
   readonly serverSummary: (name: string) => string | undefined;
   /** The element's `formatToolPayload`, asked per region of a card. */
   readonly formatToolPayload: (payload: ToolPayload) => Node | string | null;
+  /** The element's `toolDisplay`, read per card: it decides whether calls fold into a step group. */
+  readonly toolDisplay: () => ToolDisplayMode;
 }
 
 /**
@@ -55,6 +63,12 @@ export class Transcript {
   /** Card elements by call id, so a rendering handler can find its own card. */
   readonly #cardElements = new Map<string, HTMLElement>();
   /**
+   * Cards whose call is being run, by call id. A card leaves the awaiting ones
+   * the moment its call is dispatched, and a handler that opens a prompt on its
+   * own card is still running long after, so it is found here.
+   */
+  readonly #running = new Map<string | undefined, ToolCallCard>();
+  /**
    * Call ids whose card was already settled from a streamed server-side result
    * (`TOOL_CALL_RESULT`), so the post-run executeTool sweep doesn't overwrite
    * the real output with the generic "executed on the server" fallback.
@@ -74,6 +88,24 @@ export class Transcript {
   // the answer group while a reasoning model thinks and collapsed once the
   // answer's first text token arrives. `null` outside a reasoning turn.
   #thoughts: ThoughtsBlock | null = null;
+  /** The step group behind each group element, so a new card can find its run. */
+  readonly #stepGroups = new WeakMap<Element, ToolStepGroup>();
+  /**
+   * An empty comment after each step group that has rendered output, which
+   * every later output is placed before, so a group's outputs come out in call
+   * order. Every card of a round joins its group before any handler runs, so
+   * placing each output straight after the group would put the newest first;
+   * and a marker rather than the last output, because an output may be a
+   * fragment, which leaves nothing behind to place the next one after.
+   */
+  readonly #groupEnds = new WeakMap<Element, Comment>();
+  /**
+   * The step group element each placed output belongs to. A tool's own output
+   * does not end its group: the next call joins the group above it. Without
+   * that, replay -- which draws each restored call's output before the next
+   * call's card -- would split a run the live stream drew as one group.
+   */
+  readonly #outputGroups = new WeakMap<Node, Element>();
 
   constructor(host: TranscriptHost) {
     this.#host = host;
@@ -185,6 +217,20 @@ export class Transcript {
   forgetCards(): void {
     this.#serverSettled.clear();
     this.#cardElements.clear();
+    this.#running.clear();
+  }
+
+  /** Remember the card of a call being run, for {@link setAsking}. */
+  holdRunning(callId: string, card: ToolCallCard): void {
+    this.#running.set(callId, card);
+  }
+
+  /**
+   * Say whether a prompt is open on the card of a running call. A call id of
+   * none, or one no card was held for, has no card to say it on.
+   */
+  setAsking(callId: string | undefined, asking: boolean): void {
+    this.#running.get(callId)?.setAsking(asking);
   }
 
   /** Empty the list back to its empty-state region. The last half of wiping it. */
@@ -383,7 +429,26 @@ export class Transcript {
     // `after` rather than an insert-or-append branch: both callers set the card
     // element immediately before calling, and a parentless anchor makes `after`
     // a no-op, so the alternative would be a branch nothing can reach.
-    this.#cardElements.get(call.id)?.after(node);
+    //
+    // A card folded into a step group has its output placed after the group
+    // rather than inside it, so a chart is never hidden one click down.
+    const anchor = this.#cardElements.get(call.id);
+    const group = anchor?.closest(".tool-group");
+    if (group === null || group === undefined) {
+      anchor?.after(node);
+    } else {
+      let end = this.#groupEnds.get(group);
+      if (end === undefined) {
+        end = document.createComment("");
+        group.after(end);
+        this.#groupEnds.set(group, end);
+      }
+      const placed = node instanceof DocumentFragment ? [...node.children] : [node];
+      end.before(node);
+      for (const output of placed) {
+        this.#outputGroups.set(output, group);
+      }
+    }
     this.afterGrew();
   }
 
@@ -421,9 +486,50 @@ export class Transcript {
       formatPayload: (payload) => this.#host.formatToolPayload(payload),
     });
     this.#toolCards.set(call.id, card);
-    this.ensureGroup().appendChild(card.element);
+    if (groupsToolSteps(this.#host.toolDisplay())) {
+      this.#stepGroup().add(card.element, summary);
+    } else {
+      this.ensureGroup().appendChild(card.element);
+    }
     this.updateEmptyState();
     this.follow();
     return card;
+  }
+
+  /**
+   * Open the step group ``card`` sits in, at once, ahead of a prompt about to be
+   * drawn inside it. A no-op for a card drawn in a card display mode, which has
+   * no group.
+   */
+  revealStep(card: ToolCallCard): void {
+    const group = card.element.closest(".tool-group");
+    (group === null ? undefined : this.#stepGroups.get(group))?.reveal();
+  }
+
+  /**
+   * The step group a new card joins. Consecutive cards share one, and so do
+   * cards separated only by the group's own rendered output; anything else in
+   * between (text, a confirmation, a question) starts the next.
+   *
+   * The pending dots are not skipped over: a tool call takes them down before
+   * its card is drawn, so they are never what a card finds at the foot of the
+   * turn.
+   */
+  #stepGroup(): ToolStepGroup {
+    const answer = this.ensureGroup();
+    const last = answer.lastElementChild;
+    const existing =
+      last === null ? undefined : this.#stepGroups.get(this.#outputGroups.get(last) ?? last);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const group = new ToolStepGroup(this.#host.strings());
+    this.#stepGroups.set(group.element, group);
+    if (last === null) {
+      answer.prepend(group.element);
+    } else {
+      last.after(group.element);
+    }
+    return group;
   }
 }

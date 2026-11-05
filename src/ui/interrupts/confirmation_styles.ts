@@ -28,8 +28,6 @@ export const CONFIRMATION_STYLES: string = `
   padding: 8px 10px;
   max-height: 140px;
   overflow: auto;
-  /* Scrolling past the end of this must not scroll the page behind it. */
-  overscroll-behavior: contain;
   font-size: 12px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   background: var(--_assistant-bg);

@@ -130,8 +130,6 @@ export const MESSAGE_STYLES: string = `
 .message--assistant pre {
   padding: 8px 10px;
   overflow: auto;
-  /* Scrolling past the end of this must not scroll the page behind it. */
-  overscroll-behavior: contain;
   background: var(--_bg);
   border: 1px solid var(--_border);
   border-radius: 6px;

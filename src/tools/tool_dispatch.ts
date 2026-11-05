@@ -166,6 +166,7 @@ export class ToolDispatch {
     // transcript places itself against its own card, and by the time it runs the
     // card is no longer reachable by id.
     this.#host.transcript.setCardElement(call.id, card.element);
+    this.#host.transcript.holdRunning(call.id, card);
     // Scoped out of this round's catalog ⇒ not a frontend tool of ours, for
     // this round. A host that offers `delete_record` only on the page where
     // deleting makes sense has said something about *this* run, and a call
@@ -254,17 +255,26 @@ export class ToolDispatch {
       // to the message list made it a sibling *after* the group, so anything
       // that streamed afterwards rendered above it and the prompt drifted to
       // the foot of the turn no matter when it was asked.
-      const decision = requestConfirmation(this.#host.transcript.ensureGroup(), request, {
-        signal,
-        strings: this.#host.strings(),
-        // Offered only where it can be honoured -- see `#confirmationRule`.
-        ...(rule === "destructive"
-          ? { onAlwaysAllow: () => this.#sessionApproved.add(call.name) }
-          : {}),
-      });
-      this.#host.transcript.updateEmptyState();
-      this.#host.transcript.follow();
-      const accepted = await decision;
+      //
+      // The card says it is asking for as long as the prompt is open, however it
+      // ends, so a step group's row reads "waiting for you" rather than running.
+      card.setAsking(true);
+      let accepted: boolean;
+      try {
+        const decision = requestConfirmation(this.#host.transcript.ensureGroup(), request, {
+          signal,
+          strings: this.#host.strings(),
+          // Offered only where it can be honoured -- see `#confirmationRule`.
+          ...(rule === "destructive"
+            ? { onAlwaysAllow: () => this.#sessionApproved.add(call.name) }
+            : {}),
+        });
+        this.#host.transcript.updateEmptyState();
+        this.#host.transcript.follow();
+        accepted = await decision;
+      } finally {
+        card.setAsking(false);
+      }
       this.#host.decision.close();
       // A handover while the card was open declines it, as any Stop does, but
       // the transcript the decline would be drawn into is the next principal's
@@ -458,6 +468,11 @@ export class ToolDispatch {
           request.args = card.args;
         }
         card?.mark(TOOL_CALL_STATUS.DEFERRED);
+        // Before either renderer runs: the built-in card focuses its approve
+        // button as it is drawn, and a folded step group has no box to focus in.
+        if (card !== undefined) {
+          this.#host.transcript.revealStep(card);
+        }
         // The built-in card renders into the gated call's own card, falling back
         // to the answer group when the interrupt names no call we hold one for.
         const builtIn = (): Promise<boolean> =>

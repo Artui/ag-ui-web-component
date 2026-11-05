@@ -767,6 +767,7 @@ export class AgUiChat extends HTMLElement {
     askUser: () => this.askUser,
     askUserRenderer: () => this.askUserRenderer,
     decision: this.#decision,
+    setAsking: (callId, asking) => this.#transcript.setAsking(callId, asking),
     ensureGroup: () => this.#transcript.ensureGroup(),
     strings: () => this.#strings,
     hidePending: () => this.#transcript.hidePending(),
@@ -820,6 +821,7 @@ export class AgUiChat extends HTMLElement {
       resolveTool: (name) => this.#tools.resolve(name),
       toolSummaries: () => this.toolSummaries,
       serverSummary: (name) => this.#tools.summary(name),
+      toolDisplay: () => this.toolDisplay,
       // A thunk over the live property, not the property itself: the card keeps
       // this for the life of the call, and the result region is filled when the
       // tool settles -- which can be long after a host set the hook.
@@ -1377,22 +1379,28 @@ export class AgUiChat extends HTMLElement {
 
   /**
    * How much detail tool-call cards show, from the `data-tool-display`
-   * attribute (`minimal` / `inline` / `compact` / `full`). Defaults to `full`.
+   * attribute (`grouped` / `minimal` / `inline` / `compact` / `full`).
+   * Defaults to `grouped`, for an absent attribute and for a value the
+   * element does not know; `full` is the per-call card default before
+   * `grouped` existed.
    *
-   * Applied by the shadow CSS from the attribute itself, so changing it
-   * restyles every card already in the transcript rather than only the ones
-   * built afterwards.
+   * The four card modes are applied by the shadow CSS from the attribute
+   * itself, so changing between them restyles every card already in the
+   * transcript. Whether calls fold into a step group is decided as each card
+   * is built: switching to `grouped` folds only the calls drawn afterwards,
+   * and switching away flattens the existing groups, again by CSS.
    */
   get toolDisplay(): ToolDisplayMode {
     const attr = this.getAttribute("data-tool-display");
     if (
       attr === TOOL_DISPLAY.INLINE ||
       attr === TOOL_DISPLAY.MINIMAL ||
-      attr === TOOL_DISPLAY.COMPACT
+      attr === TOOL_DISPLAY.COMPACT ||
+      attr === TOOL_DISPLAY.FULL
     ) {
       return attr;
     }
-    return TOOL_DISPLAY.FULL;
+    return TOOL_DISPLAY.GROUPED;
   }
 
   set toolDisplay(value: ToolDisplayMode) {
