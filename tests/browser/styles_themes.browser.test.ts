@@ -106,7 +106,9 @@ function doneCard(el: AgUiChat): HTMLElement {
 /** The colour an element resolves for `var(<token>)`, read from a probe appended into its shadow root. */
 function tokenColour(el: AgUiChat, token: string): Rgba {
   const probe = document.createElement("span");
-  probe.style.color = `var(${token})`;
+  // A sentinel fallback: an undefined token would otherwise inherit the host's
+  // text colour, which is what several tokens read here are expected to equal.
+  probe.style.color = `var(${token}, rgb(1, 2, 3))`;
   el.shadowRoot?.appendChild(probe);
   return ink(probe);
 }
@@ -335,6 +337,9 @@ describe("the chart series colours, per theme and scheme (real browser)", () => 
   ])("draws the first series of theme %j in the colour of %s", (theme, token) => {
     const el = mount(theme === "" ? {} : { theme });
     expect(tokenColour(el, "--_chart-1")).toEqual(tokenColour(el, token));
+    // And it is not the other seed, which a swap would leave it on.
+    const other = token === "--_fg" ? "--_accent" : "--_fg";
+    expect(tokenColour(el, "--_chart-1")).not.toEqual(tokenColour(el, other));
   });
 
   it.each([

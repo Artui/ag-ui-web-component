@@ -585,6 +585,9 @@ describe("AgUiChat — UX & customization", () => {
       ["   ", "dark"],
       // A host's own word that contains the scheme's is a name, not a scheme.
       ["darkroom", "darkroom dark"],
+      // CSS ~= splits on any whitespace, so the toggle has to as well.
+      ["soft\tdark", "soft light"],
+      ["soft\ndark acme", "soft acme light"],
     ])("flips theme %j to %j", (theme, flipped) => {
       const el = mount({ "data-theme-toggle": "", theme });
       el.toggleTheme();
@@ -609,6 +612,10 @@ describe("AgUiChat — UX & customization", () => {
       sessionStorage.setItem("ag-ui-chat:theme", "dark light");
       expect(mount({ "data-theme-toggle": "", theme: "soft" }).getAttribute("theme")).toBe(
         "soft light",
+      );
+      sessionStorage.setItem("ag-ui-chat:theme", "light\tdark");
+      expect(mount({ "data-theme-toggle": "", theme: "soft" }).getAttribute("theme")).toBe(
+        "soft dark",
       );
       sessionStorage.setItem("ag-ui-chat:theme", " ledger   auto ");
       expect(mount({ "data-theme-toggle": "", theme: "soft" }).getAttribute("theme")).toBe(
