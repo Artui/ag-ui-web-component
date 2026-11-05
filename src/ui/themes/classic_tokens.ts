@@ -36,6 +36,9 @@ export const CLASSIC_TOKENS: string = `
   --_launcher-icon-size: var(--ag-ui-launcher-icon-size, 26px);
   --_chart-1: var(--ag-ui-chart-1, #4f7cff);
   --_chart-2: var(--ag-ui-chart-2, #21b573);
+  /* Where the accent's luminance cannot be computed, white, as before the
+     theme set; where it can, the computed pick still wins. */
+  --_on-accent-fallback: #ffffff;
 }
 
 /* Classic's contrast fixes, which code does not share. The indigo accent

@@ -4,6 +4,7 @@ import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 import { ToolCallCard } from "../../src/ui/progress/tool_call_card.js";
+import { STYLES } from "../../src/ui/styles.js";
 
 /**
  * The theme attribute, resolved against a real cascade.
@@ -263,6 +264,94 @@ describe("classic's contrast fixes (real browser)", () => {
     const field = part(el, ".input");
     const fill = rgba(getComputedStyle(part(el, ".composer")).backgroundColor);
     expect(contrast(ink(field, "::placeholder"), fill)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("text on the accent (real browser)", () => {
+  const WHITE: Rgba = [255, 255, 255, 1];
+  const BLACK: Rgba = [0, 0, 0, 1];
+  const NEAR_BLACK: Rgba = [17, 17, 17, 1];
+
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  /**
+   * The built-in sheet with the relative colour block deleted, which is the
+   * sheet an engine without relative colour syntax applies: Firefox 120 to
+   * 127, and Safari 17.5. Deleted from a parsed sheet rather than cut out of
+   * the source text, and counted, so a change to the block's condition cannot
+   * leave this testing the full sheet under another name.
+   */
+  function withoutRelativeColour(): CSSStyleSheet {
+    const stripped = sheet(STYLES);
+    const blocks = [...stripped.cssRules].flatMap((rule, index) =>
+      rule instanceof CSSSupportsRule && rule.conditionText.includes("color(from") ? [index] : [],
+    );
+    expect(blocks).toHaveLength(1);
+    stripped.deleteRule(blocks[0] as number);
+    return stripped;
+  }
+
+  /** The colour the element resolves for text on its accent, read from a probe. */
+  function onAccent(el: AgUiChat): Rgba {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--_on-accent)";
+    el.shadowRoot?.appendChild(probe);
+    return ink(probe);
+  }
+
+  // Without relative colour syntax each theme falls back to a fixed colour.
+  // Quiet, Soft and Ledger take the scheme's, which is the right pick for
+  // their own accents in both schemes; classic and code take white, the one
+  // colour they always drew.
+  it.each([
+    ["", WHITE],
+    ["dark", NEAR_BLACK],
+    ["soft", WHITE],
+    ["soft dark", NEAR_BLACK],
+    ["ledger", WHITE],
+    ["ledger dark", NEAR_BLACK],
+    ["classic", WHITE],
+    ["classic dark", WHITE],
+    ["code", WHITE],
+  ])("falls back for theme %j without relative colour syntax", (theme, expected) => {
+    const el = mount(theme === "" ? {} : { theme });
+    if (el.shadowRoot === null) {
+      throw new Error("expected a shadow root");
+    }
+    el.shadowRoot.adoptedStyleSheets = [withoutRelativeColour()];
+    expect(onAccent(el)).toEqual(expected);
+  });
+
+  // Where it can compute, the pick matches the fallback's side on every
+  // built-in accent but code's green, where white measures 2.4:1 and black
+  // 8.7:1.
+  it.each([
+    ["", WHITE],
+    ["dark", BLACK],
+    ["soft", WHITE],
+    ["soft dark", BLACK],
+    ["ledger", WHITE],
+    ["ledger dark", BLACK],
+    ["classic", WHITE],
+    ["classic dark", WHITE],
+    ["code", BLACK],
+  ])("computes the pick for theme %j from its accent", (theme, expected) => {
+    expect(onAccent(mount(theme === "" ? {} : { theme }))).toEqual(expected);
+  });
+
+  it("keeps the computed pick over classic's fallback on a pale host accent", () => {
+    // Classic's white fallback is a seed the computed rule reads past, not a
+    // value set over it, so a pale brand accent still gets dark text.
+    const el = mount({ theme: "classic dark" }, (e) => {
+      e.style.setProperty("--ag-ui-accent", "#fde68a");
+    });
+    expect(onAccent(el)).toEqual(BLACK);
   });
 });
 

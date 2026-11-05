@@ -85,10 +85,14 @@ export const TOKEN_STYLES: string = `
      tokens because they are not free: a host that themes the accent to a pale
      colour has white-on-pale with no way to correct it, which is the one
      theming change that makes a control unreadable rather than merely off. */
-  /* Picked from the accent's own lightness where relative colour syntax is
-     supported (the block after this rule); this scheme-based value is the
-     fallback for engines without it. */
-  --_on-accent: var(--ag-ui-on-accent, light-dark(#ffffff, #111111));
+  /* Picked from the accent's own luminance where relative colour syntax is
+     supported (the block after this rule). Without it, the fallback below:
+     the scheme's colour, which is the right side for each newer theme's own
+     accent in both schemes. A theme sets the fallback rather than the value,
+     so a theme rule never outweighs the computed pick; classic and code set
+     white, the colour they always drew. */
+  --_on-accent-fallback: light-dark(#ffffff, #111111);
+  --_on-accent: var(--ag-ui-on-accent, var(--_on-accent-fallback));
   --_on-danger: var(--ag-ui-on-danger, #ffffff);
 
   /* Resize grips: the corner squares and the edge strips between them. Wide
