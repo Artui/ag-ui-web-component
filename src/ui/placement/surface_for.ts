@@ -3,6 +3,13 @@ import type { ResizeAxis } from "./resize_handle.js";
 /**
  * What a collapsed panel shrinks to.
  *
+ * Only `null` versus not-`null` is read today: every caller asks whether the
+ * surface can collapse at all, never which target it collapses to. The three
+ * names below therefore describe the surface rather than drive it, and nothing
+ * relies on them (changing one fails only the test of this record). The
+ * bottom-bar collapse is expected to read or replace them, and a reader that
+ * does should come with a test outside this record's own.
+ *
  * - `launcher` -- the round button in a corner.
  * - `rail` -- the slim full-height edge the sidebar docks against; the same
  *   launcher element, shaped by the stylesheet.
@@ -29,7 +36,11 @@ export type CollapseTarget = "launcher" | "rail" | "header" | null;
  * under this directory); this is the part of a surface that code decides.
  */
 export interface Surface {
-  /** What collapsing shrinks the panel to; `null` when it cannot collapse. */
+  /**
+   * What collapsing shrinks the panel to; `null` when it cannot collapse. Only
+   * the `null` test is authoritative: the non-null names are descriptive (see
+   * {@link CollapseTarget}), and nothing branches on which one a surface has.
+   */
   readonly collapseTo: CollapseTarget;
   /**
    * Whether a gesture may move the launcher. The rest have nowhere to put it:
