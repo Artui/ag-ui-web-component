@@ -144,8 +144,33 @@ function isCredentialsMode(value: string): value is RequestCredentials {
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
 
-/** Per-tab persistence key for the built-in theme toggle. */
+/**
+ * Persistence key for the built-in theme toggle. It holds the user's scheme
+ * word only: the theme name belongs to the host's markup, and one saved value
+ * is restored on every page that shares the key.
+ */
 const THEME_KEY = "ag-ui-chat:theme";
+
+/** The scheme words of the `theme` attribute; every other word names a theme. */
+const SCHEME_WORDS: readonly string[] = ["light", "dark", "auto"];
+
+/**
+ * The last scheme word in a saved value, or `undefined` when it names none. A
+ * value saved before only the scheme was kept (`"soft dark"`) still gives up
+ * just its scheme.
+ */
+function savedScheme(saved: string): string | undefined {
+  return saved
+    .split(/\s+/)
+    .filter((word) => SCHEME_WORDS.includes(word))
+    .at(-1);
+}
+
+/** `theme`'s words with its scheme word, if any, replaced by `scheme`. */
+function withScheme(theme: string, scheme: string): string {
+  const names = theme.split(/\s+/).filter((word) => word !== "" && !SCHEME_WORDS.includes(word));
+  return [...names, scheme].join(" ");
+}
 
 /**
  * `<ag-ui-chat>` — a framework-free chat sidebar Web Component over AG-UI.
@@ -449,6 +474,10 @@ export class AgUiChat extends HTMLElement {
   });
 
   readonly #root: ShadowRoot;
+  /** The built-in stylesheet once rendered, kept so `extraStyles` can re-adopt beside it. */
+  #builtInSheet: CSSStyleSheet | null = null;
+  /** The host's own sheets, adopted after the built-in one. */
+  #extraStyles: readonly CSSStyleSheet[] = [];
   /** The screen-reader-only status region the run and its tool calls report into. */
   readonly #announcer = new RunAnnouncer();
   /** Return-to-foot affordance, shown only once something has been missed. */
@@ -1370,6 +1399,29 @@ export class AgUiChat extends HTMLElement {
     this.setAttribute("data-tool-display", value);
   }
 
+  /**
+   * The host's own constructed stylesheets, adopted after the built-in one.
+   *
+   * The escape hatch for structure that neither the tokens nor the parts
+   * reach. Per element, like the built-in sheet: two elements on one page can
+   * carry different sheets. Constructed sheets are not subject to a
+   * `style-src` policy, so this works under the same strict CSP the
+   * built-in sheet does. Setting it re-adopts at once; the array is copied, so
+   * mutating the one passed in changes nothing until it is set again.
+   *
+   * Unstable: reaches shadow class names, which may change in any minor.
+   */
+  get extraStyles(): readonly CSSStyleSheet[] {
+    return this.#extraStyles;
+  }
+
+  set extraStyles(sheets: readonly CSSStyleSheet[]) {
+    this.#extraStyles = [...sheets];
+    if (this.#builtInSheet !== null) {
+      this.#root.adoptedStyleSheets = [this.#builtInSheet, ...this.#extraStyles];
+    }
+  }
+
   connectedCallback(): void {
     // A fresh signal per connection: disconnecting aborted the last one, and
     // with it every listener the last connection added.
@@ -1404,12 +1456,14 @@ export class AgUiChat extends HTMLElement {
     // Resolve the string table before rendering any chrome (defaults are the
     // floor; `data-strings` then the `strings` property layer over them).
     this.#strings = mergeUiStrings({ ...this.#readStringOverrides(), ...this.strings });
-    // Restore a theme the built-in toggle persisted last visit (opt-in only, so
-    // it never overrides a host that drives `theme` itself).
+    // Restore the scheme the built-in toggle persisted last visit onto the
+    // markup's theme name (opt-in only, so it never overrides a host that
+    // drives `theme` itself).
     if (this.getAttribute("data-theme-toggle") !== null) {
       const saved = this.#storage.readPreference(THEME_KEY);
-      if (saved !== null) {
-        this.setAttribute("theme", saved);
+      const scheme = saved === null ? undefined : savedScheme(saved);
+      if (scheme !== undefined) {
+        this.setAttribute("theme", withScheme(this.getAttribute("theme") ?? "", scheme));
       }
     }
     this.#render();
@@ -1794,15 +1848,21 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Flip the `theme` attribute between `light` and `dark` and persist the choice
-   * per tab. Bound to the optional built-in header theme toggle
-   * (`data-theme-toggle`); any non-dark theme (incl. `auto` / `code`) flips to
-   * `dark` first.
+   * Flip the scheme word of the `theme` attribute between `light` and `dark`
+   * and persist the choice per tab. Bound to the optional built-in header theme
+   * toggle (`data-theme-toggle`). The theme name and any host words are kept:
+   * `soft` becomes `soft dark`, and `soft dark` becomes `soft light`. Any
+   * scheme but `dark` (including `auto`) flips to `dark` first.
    */
   toggleTheme(): void {
-    const next = this.getAttribute("theme") === "dark" ? "light" : "dark";
-    this.setAttribute("theme", next);
-    this.#storage.writePreference(THEME_KEY, next);
+    // Only the scheme word flips, so a named theme survives the toggle:
+    // "soft" becomes "soft dark", and "soft dark" becomes "soft light". And
+    // only the scheme word is saved: the name is the host's, and a name saved
+    // on one page would replace another page's theme on restore.
+    const theme = this.getAttribute("theme") ?? "";
+    const scheme = theme.split(/\s+/).includes("dark") ? "light" : "dark";
+    this.setAttribute("theme", withScheme(theme, scheme));
+    this.#storage.writePreference(THEME_KEY, scheme);
     this.#syncThemeGlyph();
   }
 
@@ -1920,7 +1980,7 @@ export class AgUiChat extends HTMLElement {
 
   /** Reflect the current theme on the toggle: show the destination's glyph. */
   #syncThemeGlyph(): void {
-    const dark = this.getAttribute("theme") === "dark";
+    const dark = (this.getAttribute("theme") ?? "").split(/\s+/).includes("dark");
     // Replaced wholesale rather than toggling a class: the two marks are
     // different paths, not one path in two states, and the slot has to keep
     // working so a host can still supply its own.
@@ -2334,7 +2394,7 @@ export class AgUiChat extends HTMLElement {
     this.#placement.enableLauncherDrag(signal);
 
     this.#placement.mountResizeGrips(this.#chat);
-    adoptStyles(this.#root);
+    this.#builtInSheet = adoptStyles(this.#root, this.#extraStyles);
     const probe = this.#placement.probe;
     probe.className = "viewport-probe";
     probe.setAttribute("aria-hidden", "true");

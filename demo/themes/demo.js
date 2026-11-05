@@ -166,7 +166,26 @@ const bind = (id, attr) => {
     chat.setAttribute(attr, event.target.value);
   });
 };
-bind("cfg-theme", "theme");
+// The theme attribute is two words, a name and a scheme, so the two pickers
+// compose it. The header toggle flips the scheme word on its own, so the
+// scheme picker follows the attribute back.
+const SCHEMES = ["light", "dark", "auto"];
+const applyTheme = () => {
+  const value = [$("cfg-theme").value, $("cfg-scheme").value].filter(Boolean).join(" ");
+  if (value === "") {
+    chat.removeAttribute("theme");
+  } else {
+    chat.setAttribute("theme", value);
+  }
+};
+$("cfg-theme").addEventListener("change", applyTheme);
+$("cfg-scheme").addEventListener("change", applyTheme);
+new MutationObserver(() => {
+  const words = (chat.getAttribute("theme") ?? "").split(/\s+/);
+  const scheme = words.find((word) => SCHEMES.includes(word)) ?? "";
+  $("cfg-scheme").value = scheme === "light" ? "" : scheme;
+  $("cfg-theme").value = words.find((word) => !SCHEMES.includes(word) && word !== "") ?? "";
+}).observe(chat, { attributes: true, attributeFilter: ["theme"] });
 bind("cfg-density", "density");
 bind("cfg-placement", "placement");
 bind("cfg-text", "data-text-animation");

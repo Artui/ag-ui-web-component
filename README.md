@@ -64,6 +64,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
 - [Host seams: the SPA story](#host-seams-the-spa-story)
 - [Public API surface](#public-api-surface)
 - [Theming, density, and placement](#theming-density-and-placement)
+  - [Themes](#themes)
 - [Internationalization (i18n)](#internationalization-i18n)
 - [Building the bundle](#building-the-bundle)
 - [Compatibility](#compatibility)
@@ -213,7 +214,7 @@ another origin, add `credentials="include"` too; see
 | `data-paste-attach` | — | When to turn a long text paste into an attachment instead of composer text: absent for the 5000-character default, `off` to never, or a positive number of characters. Only acts where `data-attachments-url` (or a custom `uploadHandler`) gives it somewhere to go. |
 | `data-starters` | — | JSON array of prompts offered on an empty transcript, e.g. `'["Summarise this page"]'`. Fallback content for `slot="empty"`, so slotting your own replaces them. Shares the four-prompt and 120-character limits with the suggestion chips a run pushes. Read once at connect. |
 | `data-start-open` | — | Mount the panel open on a first visit. The corner placements otherwise rest at their launcher, the way every corner chat does; a stored choice wins over both. The placements that place themselves are unaffected. |
-| `theme` | — | CSS-only: `light` (default) / `dark` / `auto` / `code`. |
+| `theme` | — | CSS-only: an optional theme name (`quiet` (default) / `soft` / `ledger` / `classic`, or a word of your own) and an optional scheme (`light` (default) / `dark` / `auto`), in any order, e.g. `soft dark`. See [Themes](#themes). |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
 | `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded`. |
 
@@ -263,7 +264,7 @@ element after the fact.
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
 `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
-`resolvePageTarget`, `sharedState`, plus the read-only `unread` and `unhandledActivityTypes`, and
+`resolvePageTarget`, `sharedState`, `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread` and `unhandledActivityTypes`, and
 the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `collapsed` /
 `credentials`.
 
@@ -1182,7 +1183,7 @@ or changing `user-key` clears it with the transcript.
 
 ### Collapsing to the launcher
 
-A collapsed widget shrinks to a round **floating launcher** in the corner it already occupies: the
+A collapsed widget shrinks to a **floating launcher** in the corner it already occupies: the
 panel scales down into it and fades, the launcher grows out of the same point, and clicking the
 launcher reverses it. Only `transform` and `opacity` animate, so the motion is compositor-only and
 never reflows your page. Two placements collapse to something else instead — `sidebar` slides out
@@ -1204,14 +1205,18 @@ speech bubble.
 
 ```css
 ag-ui-chat {
-  --ag-ui-launcher-size: 56px;
-  --ag-ui-launcher-radius: 50%;   /* 12px for a squircle */
-  --ag-ui-launcher-bg: #14532d;   /* defaults to the header background */
-  --ag-ui-launcher-fg: #ffffff;
-  --ag-ui-launcher-icon-size: 26px;
+  --ag-ui-launcher-size: 48px;
+  --ag-ui-launcher-radius: 14px;  /* 50% for a circle */
+  --ag-ui-launcher-bg: #14532d;   /* defaults to the panel background */
+  --ag-ui-launcher-fg: #ffffff;   /* defaults to the text colour */
+  --ag-ui-launcher-icon-size: 22px;
   --ag-ui-launcher-inset: auto 0 0 auto;  /* which corner of the widget's box */
 }
 ```
+
+The sizes and defaults above are Quiet's. The other themes bring their own launcher: `classic`
+the 56px circle in the header's colours, `soft` a 56px accent tile, and `ledger` a 44px tile in
+the text colour.
 
 > **The collapsed host keeps its box.** Animating the element's own width and height would animate
 > layout; instead the box stays put with `pointer-events: none`, and the launcher takes the clicks.
@@ -2873,19 +2878,20 @@ ag-ui-chat { --ag-ui-accent: #b91c1c; }  /* one widget */
 > form did anything and the wrapper form silently did nothing. The defaults now sit behind an
 > internal alias, so all three forms work.
 
-A few of the knobs:
+A few of the knobs, at Quiet's light values:
 
 ```css
 ag-ui-chat {
-  --ag-ui-accent: #4f46e5;
-  --ag-ui-bg: #ffffff;
-  --ag-ui-fg: #1a1a2e;
+  --ag-ui-accent: #232326;        /* #f0f0f2 in the dark scheme */
+  --ag-ui-bg: #ffffff;            /* #161618 */
+  --ag-ui-fg: #1b1b1d;            /* #ececee */
   --ag-ui-radius: 12px;
   --ag-ui-header-btn-size: 30px;  /* the header's controls; 44px on touch */
   --ag-ui-header-gap: 4px;
 
-  /* What is drawn on top of the accent and danger fills. Change these with
-     the fills: a pale accent leaves white-on-pale everywhere they are used. */
+  /* What is drawn on top of the accent and danger fills. Unset, the one on
+     the accent is white or black by the accent's luminance (see Text on the
+     accent below); set it to pin a colour of your own. */
   --ag-ui-on-accent: #ffffff;
   --ag-ui-on-danger: #ffffff;
 
@@ -2893,7 +2899,7 @@ ag-ui-chat {
   --ag-ui-width: 380px;
   --ag-ui-height: 560px;
   --ag-ui-inset: auto 24px 24px auto;
-  --ag-ui-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
+  --ag-ui-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 12px 32px -16px rgb(0 0 0 / 0.22);
 }
 ```
 
@@ -2902,7 +2908,152 @@ the panel that have no radius of their own: the answer well, the conversation li
 button and filter field, and the *Undo* on a run notice. The frame is the exception where it meets
 the edge of the window. `page` and `sidebar` draw it square, and so does every placement but
 `embedded` on a small viewport, while the corners inside keep the theme's radius, since none of them
-meets that edge. `--ag-ui-panel-radius` sets the frame on its own, in any placement.
+meets that edge. `--ag-ui-panel-radius` sets the frame on its own, in any placement. Each theme
+gives the floating frame a radius of its own (`--ag-ui-frame-radius`: 14px in Quiet against 12px
+inside), and a host's `--ag-ui-radius` still sets both.
+
+### Themes
+
+`theme` is up to two words, in any order, matched as words (`~=`):
+
+```
+theme = [name] [scheme]
+name   = quiet | soft | ledger | classic | <a word of your own>
+scheme = light | dark | auto            default: light
+```
+
+| Value | Result |
+| --- | --- |
+| *(absent)* | Quiet, light |
+| `dark` | Quiet, dark |
+| `auto` | Quiet, following the system's `prefers-color-scheme` |
+| `soft`, `soft dark`, `ledger auto` | that theme in that scheme |
+| `classic`, `classic dark` | the look from before themes, for a host that pins it |
+| `acme` | a word the component does not ship adds no rules, so this is Quiet, ready for your `[theme~="acme"]` CSS |
+| `soft acme` | starts from Soft; your `[theme~="acme"]` rules layer on top |
+
+The built-in themes:
+
+| Theme | Look |
+| --- | --- |
+| `quiet` | The default. Neutral graphite on white, no bubble for the agent's turn, hairlines, status as an icon. Set one brand accent and the user's turn, the send button and the links follow it. |
+| `soft` | Rounded and tinted: surfaces mixed from the accent, pill chips, a deep frame shadow. Violet by default. |
+| `ledger` | Dense and editorial: paper and ink, square corners, serif for what the agent says and monospace for the chrome. |
+| `classic` | The look before themes: the indigo header, the accent user bubble, the status pill and the round launcher. Pin it to keep that look. |
+
+**The default scheme is `light`, not `auto`**, because the widget sits on your page and only you
+know that page's scheme. A light admin screen on a machine in dark mode would otherwise get a dark
+panel on a white page. If your page follows the system, say `auto`.
+
+Each theme is three seeds, `--ag-ui-bg`, `--ag-ui-fg` and `--ag-ui-accent`, each declared with
+`light-dark()` so the scheme word picks the half. Every other colour is mixed from them with
+`color-mix(in oklch, ...)` -- hover, borders, the secondary text inks, washes, the user's turn (the
+accent at 12% over the background) -- and every derived value still reads its own public token
+first, so each stays an override point. The tokens the themes add:
+
+- **Inks and lines:** `--ag-ui-ink-2`, `--ag-ui-ink-3`, `--ag-ui-line`, `--ag-ui-line-strong`.
+- **Surfaces:** `--ag-ui-wash`, `--ag-ui-accent-ink`, `--ag-ui-tint`, `--ag-ui-tint-2`.
+- **Type:** `--ag-ui-text-xs`, `--ag-ui-text-sm`, `--ag-ui-text-md`, `--ag-ui-text-lg`,
+  `--ag-ui-leading`, `--ag-ui-serif`.
+- **Frame:** `--ag-ui-frame-radius`, `--ag-ui-frame-shadow`. These are what a theme sets for the
+  frame; `--ag-ui-panel-radius` and `--ag-ui-shadow` stay the final say, and are what a docked
+  placement squares or flattens.
+- **Charts:** `--ag-ui-chart-1` to `--ag-ui-chart-6`. A host's value beats the theme's.
+- **Status marks:** `--ag-ui-ico-check`, `--ag-ui-ico-error`, `--ag-ui-ico-declined`, mask images
+  drawn in the state's colour.
+
+The font is part of the theme: Quiet, Soft and Ledger set their own stack (Inter, then the system
+UI font), and Classic inherits the page's font as the component always did. Set
+`--ag-ui-font: inherit` to take the page's font under any theme.
+
+#### Text on the accent
+
+`--ag-ui-on-accent`, unless you set it, is picked from the accent's own luminance: white on an
+accent darker than WCAG relative luminance 0.179, black on a lighter one, which is the better of
+the two on every colour (never under 4.58:1). It is computed with relative colour syntax with
+channel arithmetic, behind `@supports` for that exact expression: Chrome 119, Firefox 128, Safari
+18.
+
+**The fallback.** Two browsers at or above the floor cannot compute it: Firefox 120 to 127, which
+lack relative colour syntax, and Safari 17.5 and 17.6, which shipped an earlier draft that rejects
+this expression. They keep a fixed colour per theme instead:
+
+| Theme | Without relative colour syntax |
+| --- | --- |
+| `quiet`, `soft`, `ledger` | the scheme's: white in the light scheme, near-black (`#111111`) in the dark one |
+| `classic`, `code` | white in both schemes, the colour they always drew |
+
+On every built-in accent but code's the fixed colour is on the same side as the computed one, so
+those browsers see the same contrast. On code's green the computed pick is black (8.3:1) and the
+fallback white (2.5:1), as it always was. What they miss is the correction for a host's accent: a
+mid-tone brand accent can fall under 4.5:1 there, under any theme. If you support those browsers
+and set a mid-tone accent, set `--ag-ui-on-accent` yourself. There is no script path.
+
+#### Overriding a theme, lightest layer first
+
+Four layers, each documented and each lighter than the next. Reach for the first one that does
+the job.
+
+##### (a) Tokens
+
+Any `--ag-ui-*` token, on the element or any ancestor, as above. Per theme, from your own CSS:
+
+```css
+body { --ag-ui-accent: #0f766e; }          /* accent only: the rest follows */
+ag-ui-chat[theme~="soft"] { --ag-ui-accent: #c2410c; --ag-ui-frame-radius: 12px; }
+```
+
+A page rule always beats the theme's own value, because the theme only ever sets the private
+alias behind the public token.
+
+##### (b) Parts
+
+`::part()` reaches the structural elements, as listed in [Parts and slots](#parts-and-slots):
+
+```css
+ag-ui-chat::part(header) { background: linear-gradient(#f2f7f6, transparent); }
+```
+
+##### (c) A theme of your own
+
+Name it, and style the name. An unknown word adds no built-in rules, so it starts from Quiet (or
+from the built-in theme beside it):
+
+```html
+<ag-ui-chat theme="acme dark"></ag-ui-chat>
+```
+
+```css
+ag-ui-chat[theme~="acme"] {
+  --ag-ui-bg: light-dark(#fbfaf7, #10161c);
+  --ag-ui-fg: light-dark(#14212b, #e4ebf0);
+  --ag-ui-accent: light-dark(#0b5cad, #6cb2ff);
+  --ag-ui-frame-radius: 4px;
+}
+```
+
+Use `light-dark()` in the seeds and the scheme word, and the theme toggle, work for your theme
+too.
+
+##### (d) `extraStyles`: the last mile
+
+> **Unstable.** `extraStyles` reaches the class names inside the shadow root, and those are not a
+> public API: they may change in any minor release. Layers (a) to (c) are the supported ones; use
+> this for what they cannot reach, and expect to revisit it on upgrade.
+
+```ts
+const sheet = new CSSStyleSheet();
+sheet.replaceSync(`.message--assistant { padding: 10px 12px; border-radius: 10px; }`);
+chat.extraStyles = [sheet];
+```
+
+- `extraStyles: readonly CSSStyleSheet[]`, per element, default `[]`. Two elements can carry
+  different sheets.
+- Adopted after the built-in sheet, so a rule of equal specificity wins.
+- Setting it re-adopts at once. The array is copied, so changing the one you passed does nothing
+  until you set it again; changing a sheet's rules does apply, since the sheet itself is shared.
+- Constructed sheets are not subject to `style-src`, so this works under the same strict CSP as
+  the built-in sheet. There is no string form and no `<style>` injection.
 
 ### Small viewports
 
@@ -3082,7 +3233,7 @@ highlights too. Without it they fall back to the package indigo.
 For the common cases there are three CSS-reactive **preset attributes** (no JS API), so you don't
 have to hand-tune the variables:
 
-- `theme` — `light` (default) / `dark` / `auto` (follow the OS) / `code`.
+- `theme` — a theme name and a scheme; see [Themes](#themes).
 - `density` — `comfortable` (default) / `compact`.
 - `placement` — `floating` (default) / `sidebar` / `page` / `embedded`. `embedded` drops the
   fixed positioning and z-index so the widget sits in normal document flow; `page` is a
@@ -3368,8 +3519,12 @@ mic appears even with no `data-transcribe-url`.
 
 `theme` is a plain attribute you can set yourself, and a host can always drop its own switch into
 `slot="header-actions"`. For convenience, the boolean `data-theme-toggle` attribute adds a built-in
-light⇄dark toggle to the header (part `theme-toggle`) that flips `theme` and persists the choice
-per tab. Off by default so it never competes with a host-supplied control.
+light⇄dark toggle to the header (part `theme-toggle`) that flips the scheme word of `theme` and
+persists the choice per tab. Only the scheme changes: `soft` becomes `soft dark`, `soft dark`
+becomes `soft light`, and `auto` becomes `dark`, an explicit choice. Only the scheme is saved, too:
+on the next load it is put beside whatever theme name the markup carries, so `dark` chosen on a
+`soft` page restores as `classic dark` on a `classic` one. Off by default so it never competes with
+a host-supplied control.
 
 ```html
 <ag-ui-chat endpoint="/agent/" data-theme-toggle></ag-ui-chat>
@@ -3440,12 +3595,14 @@ Other workflow targets (all identical in name to the sibling Python packages):
 | Component | Floor | Tested |
 | --- | --- | --- |
 | Node (tooling/tests only) | 22 | 22, 24 |
-| Browsers (runtime target) | ES2022 / evergreen | Chrome / Firefox / Safari 17+ |
+| Browsers (runtime target) | Chrome 123, Firefox 120, Safari 17.5 | Chromium |
 | `@ag-ui/client`, `@ag-ui/core` | 1.0 | 1.0 |
 | django-ag-ui (server) | 0.63.0 | — |
 
-The shipped artefact targets evergreen browsers (Shadow DOM, Custom Elements v1, ES2022). Node is
-only the build/test runtime, not a runtime target.
+The shipped artefact targets evergreen browsers (Shadow DOM, Custom Elements v1, ES2022). The
+browser floor is set by `light-dark()`, which every theme declares its colours with: below Chrome
+123, Firefox 120 or Safari 17.5 those colours do not resolve. Node is only the build/test runtime,
+not a runtime target.
 
 The server floor is a wire contract rather than a dependency. A tool call's outcome and a user
 message's attachment refs travel in `metadata`, since `@ag-ui/client` 1.0 strips every key its

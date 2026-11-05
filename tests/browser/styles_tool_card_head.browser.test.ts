@@ -34,9 +34,12 @@ import { ToolCallCard } from "../../src/ui/progress/tool_call_card.js";
  */
 const PANEL = "400px";
 
-function mount(): AgUiChat {
+function mount(theme: string | null = null): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
+  if (theme !== null) {
+    el.setAttribute("theme", theme);
+  }
   el.setAttribute("placement", "embedded");
   el.style.width = PANEL;
   document.body.appendChild(el);
@@ -99,8 +102,11 @@ describe("tool card head (real browser)", () => {
     expect(name.getBoundingClientRect().height).toBeCloseTo(singleLineHeight(head), 0);
   });
 
+  // Pinned on classic, the theme that still draws the status pill: the pill
+  // is the badge too many for the row. The other themes hide the pill and
+  // keep the status as an icon, so their row has room for the decision.
   it("wraps the decision badge onto its own row rather than squeezing the name", () => {
-    const el = mount();
+    const el = mount("classic");
     const head = part(approvedCard(el), ".tool-call-head");
     const name = part(head, ".tool-call-name");
     const decision = part(head, ".tool-call-decision");

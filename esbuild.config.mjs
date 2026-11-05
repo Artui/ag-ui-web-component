@@ -16,7 +16,7 @@ import { build } from "esbuild";
 const SHARED = {
   bundle: true,
   format: "esm",
-  target: ["es2022", "chrome120", "firefox120", "safari17"],
+  target: ["es2022", "chrome123", "firefox120", "safari17.5"],
   platform: "browser",
   sourcemap: true,
   loader: { ".css": "css" },

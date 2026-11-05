@@ -28,13 +28,20 @@ const DESKTOP = { width: 1280, height: 800 };
 
 const INNER = [".answer", ".drawer-new", ".drawer-filter", ".run-notice-undo"] as const;
 
-function mount(placement: string, wrapperTokens: Record<string, string> = {}): AgUiChat {
+function mount(
+  placement: string,
+  wrapperTokens: Record<string, string> = {},
+  theme: string | null = null,
+): AgUiChat {
   const wrapper = document.createElement("div");
   for (const [name, value] of Object.entries(wrapperTokens)) {
     wrapper.style.setProperty(name, value);
   }
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("placement", placement);
+  if (theme !== null) {
+    el.setAttribute("theme", theme);
+  }
   el.setAttribute("data-answer-well", "");
   wrapper.appendChild(el);
   document.body.appendChild(wrapper);
@@ -77,8 +84,17 @@ describe("corners inside the panel (real browser)", () => {
   }
 
   it("leaves the floating panel as it was, frame and inside alike", () => {
-    const el = mount("floating");
+    // Classic's frame takes the theme's radius, like everything inside it.
+    const el = mount("floating", {}, "classic");
     expect(radius(el, ".chat")).toBe("12px");
+    for (const selector of INNER) {
+      expect(radius(el, selector), selector).toBe("12px");
+    }
+  });
+
+  it("gives the default theme's floating frame its own radius, a step rounder than the inside", () => {
+    const el = mount("floating");
+    expect(radius(el, ".chat")).toBe("14px");
     for (const selector of INNER) {
       expect(radius(el, selector), selector).toBe("12px");
     }

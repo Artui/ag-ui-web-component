@@ -488,12 +488,58 @@ describe("AgUiChat — UX & customization", () => {
       expect(el.getAttribute("theme")).toBe("light");
     });
 
+    it("flips only the scheme word of a named theme", () => {
+      const el = mount({ "data-theme-toggle": "", theme: "ledger  acme" });
+      el.toggleTheme();
+      expect(el.getAttribute("theme")).toBe("ledger acme dark");
+      expect(sessionStorage.getItem("ag-ui-chat:theme")).toBe("dark");
+      el.toggleTheme();
+      expect(el.getAttribute("theme")).toBe("ledger acme light");
+      el.setAttribute("theme", "auto soft");
+      el.toggleTheme();
+      expect(el.getAttribute("theme")).toBe("soft dark");
+    });
+
     it("restores a persisted theme on connect (opt-in only)", () => {
       sessionStorage.setItem("ag-ui-chat:theme", "dark");
       // Without the opt-in the persisted value is ignored…
       expect(mount().getAttribute("theme")).toBeNull();
       // …with it, the theme is restored.
       expect(mount({ "data-theme-toggle": "" }).getAttribute("theme")).toBe("dark");
+    });
+
+    // The saved value is the user's scheme, not the host's theme: a tab that
+    // toggled on one page must not carry that page's theme name to another.
+    it.each([
+      ["dark", "classic", "classic dark"],
+      // What this release's first cut saved: a whole value, name included.
+      ["soft dark", "ledger", "ledger dark"],
+      // What the toggle before themes saved: a bare scheme.
+      ["light", "soft", "soft light"],
+      ["dark", "auto soft", "soft dark"],
+      ["light", "ledger dark acme", "ledger acme light"],
+    ])("restores saved %j onto markup %j as %j", (saved, markup, restored) => {
+      sessionStorage.setItem("ag-ui-chat:theme", saved);
+      expect(mount({ "data-theme-toggle": "", theme: markup }).getAttribute("theme")).toBe(
+        restored,
+      );
+    });
+
+    it("leaves the markup alone when the saved value names no scheme", () => {
+      sessionStorage.setItem("ag-ui-chat:theme", "code");
+      expect(mount({ "data-theme-toggle": "", theme: "ledger" }).getAttribute("theme")).toBe(
+        "ledger",
+      );
+      expect(mount({ "data-theme-toggle": "" }).getAttribute("theme")).toBeNull();
+    });
+
+    it("saves only the scheme word, never the theme name", () => {
+      const el = mount({ "data-theme-toggle": "", theme: "soft" });
+      el.toggleTheme();
+      expect(el.getAttribute("theme")).toBe("soft dark");
+      expect(sessionStorage.getItem("ag-ui-chat:theme")).toBe("dark");
+      el.toggleTheme();
+      expect(sessionStorage.getItem("ag-ui-chat:theme")).toBe("light");
     });
   });
 });

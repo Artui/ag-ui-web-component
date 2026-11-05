@@ -27,18 +27,27 @@ const nextFrame = (): Promise<number> => new Promise((resolve) => requestAnimati
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * The composer row's top, on the tenth-of-a-pixel grid the samples use. A
+ * reading compared against the samples has to be on the same grid, or a row
+ * that never moved counts as two positions whenever its top is fractional, as
+ * it is under the default theme's 1.55 line height.
+ */
+function rowTop(el: AgUiChat): number {
+  return Math.round(part(el, ".input-row").getBoundingClientRect().top * 10) / 10;
+}
+
+/**
  * The composer row's top on every animation frame for `ms`, starting on the
  * frame after the call. The caller's own action goes between starting this and
  * awaiting it, so the first sample is already the first frame the action could
  * reach.
  */
 function sampleTops(el: AgUiChat, ms: number): Promise<number[]> {
-  const row = part(el, ".input-row");
   const tops: number[] = [];
   const start = performance.now();
   return new Promise((resolve) => {
     const tick = (): void => {
-      tops.push(Math.round(row.getBoundingClientRect().top * 10) / 10);
+      tops.push(rowTop(el));
       if (performance.now() - start < ms) {
         requestAnimationFrame(tick);
       } else {
@@ -216,8 +225,11 @@ describe("the send that leaves an empty page", () => {
       e.agentFactory = holdingAgent();
     });
     await nextFrame();
-    const centred = part(el, ".input-row").getBoundingClientRect().top;
+    // Typed before the reading: the field resizes to its text, which can move
+    // a centred row by a fraction of a pixel that is not the dock's travel.
     const input = type(el, "hello there");
+    await nextFrame();
+    const centred = rowTop(el);
 
     const sampling = sampleTops(el, 300);
     pressEnter(input);
@@ -309,7 +321,7 @@ describe("the ways back to the centre, and out of it, that snap", () => {
     expect(
       Math.abs(middle(empty) - middle(part(el, ".messages").getBoundingClientRect())),
     ).toBeLessThanOrEqual(1);
-    const held = part(el, ".input-row").getBoundingClientRect().top;
+    const held = rowTop(el);
 
     const tops = await sampleTops(el, 450);
 
