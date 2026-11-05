@@ -63,6 +63,12 @@ export class Transcript {
   /** Card elements by call id, so a rendering handler can find its own card. */
   readonly #cardElements = new Map<string, HTMLElement>();
   /**
+   * Cards whose call is being run, by call id. A card leaves the awaiting ones
+   * the moment its call is dispatched, and a handler that opens a prompt on its
+   * own card is still running long after, so it is found here.
+   */
+  readonly #running = new Map<string, ToolCallCard>();
+  /**
    * Call ids whose card was already settled from a streamed server-side result
    * (`TOOL_CALL_RESULT`), so the post-run executeTool sweep doesn't overwrite
    * the real output with the generic "executed on the server" fallback.
@@ -211,6 +217,20 @@ export class Transcript {
   forgetCards(): void {
     this.#serverSettled.clear();
     this.#cardElements.clear();
+    this.#running.clear();
+  }
+
+  /** Remember the card of a call being run, for {@link setAsking}. */
+  holdRunning(callId: string, card: ToolCallCard): void {
+    this.#running.set(callId, card);
+  }
+
+  /**
+   * Say whether a prompt is open on the card of a running call. A call id of
+   * none, or one no card was held for, has no card to say it on.
+   */
+  setAsking(callId: string | undefined, asking: boolean): void {
+    (callId === undefined ? undefined : this.#running.get(callId))?.setAsking(asking);
   }
 
   /** Empty the list back to its empty-state region. The last half of wiping it. */

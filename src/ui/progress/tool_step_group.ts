@@ -31,12 +31,19 @@ interface Step {
 }
 
 /**
- * The attributes the row is drawn from: each card's `data-status`, and the
+ * The attributes the row is drawn from: each card's `data-status`, its
+ * `data-asking` while a question or a confirmation is open on it, and the
  * `data-phase` and `data-agent` a sub-agent panel stamps on itself inside the
- * card that delegated to it. Watched rather than told, so a step settled or
- * delegated by any path updates the row without the group being called.
+ * card that delegated to it. Watched rather than told, so a step settled,
+ * asked about or delegated by any path updates the row without the group being
+ * called.
  */
-const WATCHED_ATTRIBUTES: readonly string[] = ["data-status", "data-phase", "data-agent"];
+const WATCHED_ATTRIBUTES: readonly string[] = [
+  "data-status",
+  "data-asking",
+  "data-phase",
+  "data-agent",
+];
 
 /**
  * Consecutive tool calls folded into one quiet row, "Worked through 5 steps",
@@ -191,13 +198,21 @@ export class ToolStepGroup {
     const count = (status: string): number => statuses.filter((s) => s === status).length;
     const failed = count(TOOL_CALL_STATUS.ERROR);
     const declined = count(TOOL_CALL_STATUS.DECLINED);
-    const waiting = count(TOOL_CALL_STATUS.DEFERRED);
+    const deferred = count(TOOL_CALL_STATUS.DEFERRED);
+    // A step is waiting on the user when its approval is pending on the server,
+    // or when a question or confirmation is open on it. The second kind keeps
+    // its status at running, so it is read off its own flag.
+    const asking = steps.filter((step) => step.element.hasAttribute("data-asking")).length;
+    const waiting = deferred + asking;
     const total = steps.length;
 
-    if (waiting > 0 && !this.#openedForWait) {
+    // Opens for a deferred step only. An approval renders inside its card, which
+    // a folded group would hide; a question or confirmation renders beside the
+    // group, in view, so there is nothing for it to open.
+    if (deferred > 0 && !this.#openedForWait) {
       this.#openedForWait = true;
       this.setOpen(true);
-    } else if (waiting === 0) {
+    } else if (deferred === 0) {
       this.#openedForWait = false;
     }
 

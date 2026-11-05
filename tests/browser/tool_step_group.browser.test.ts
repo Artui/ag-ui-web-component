@@ -328,6 +328,101 @@ describe("a group that waits on the user", () => {
   });
 });
 
+describe("a group whose step is asking the user", () => {
+  /** One call that already settled, then the call that opens a prompt. */
+  function askAfterLookup(call: (emit: Emit) => void): AgUiChat {
+    let round = 0;
+    const el = mount((emit) => {
+      emit.runStart();
+      if (round === 0) {
+        emit.toolCall("q0", "lookup_docs", { q: "deadline" });
+        emit.toolResult("q0", "two dates");
+        // The prompt opens only once the round is over, a task after the
+        // card was drawn, so the row hears of it by the attribute alone.
+        call(emit);
+      }
+      round += 1;
+      emit.runEnd();
+    });
+    return el;
+  }
+
+  function wipeTool(el: AgUiChat): void {
+    el.registerTool({
+      name: "wipe",
+      description: "wipes",
+      parameters: { type: "object", properties: {}, "x-destructive": true } as never,
+      handler: () => "wiped",
+    });
+  }
+
+  function expectWaiting(el: AgUiChat): void {
+    const group = part(shadow(el), ".tool-group");
+    expect(group.getAttribute("data-state")).toBe("waiting");
+    expect(part(group, ".tool-group-label").textContent).toBe("2 steps");
+    expect(part(group, ".tool-group-meta").textContent).toContain("1 waiting for you");
+    // The prompt sits beside the group, so there is nothing for it to open.
+    expect(group.getAttribute("data-open")).toBe("false");
+  }
+
+  function expectDone(el: AgUiChat): void {
+    const group = part(shadow(el), ".tool-group");
+    expect(group.getAttribute("data-state")).toBe("done");
+    expect(part(group, ".tool-group-label").textContent).toBe("Worked through 2 steps");
+    expect(part(group, ".tool-group-meta").textContent).not.toContain("waiting for you");
+  }
+
+  it("reads as waiting while a question is open, and as done once it is answered", async () => {
+    const el = askAfterLookup((emit) =>
+      emit.toolCall("q1", "ask_user", { question: "Which date?", options: ["Friday", "Monday"] }),
+    );
+    el.askUser = true;
+    await send(el, "when is it due");
+    expectWaiting(el);
+
+    const friday = part(shadow(el), ".question-choice input");
+    friday.click();
+    part(shadow(el), ".question-btn").click();
+    await settle();
+    expectDone(el);
+  });
+
+  it("stops reading as waiting when a Stop abandons the question", async () => {
+    const el = askAfterLookup((emit) =>
+      emit.toolCall("q1", "ask_user", { question: "Which date?", options: ["Friday", "Monday"] }),
+    );
+    el.askUser = true;
+    await send(el, "when is it due");
+    expectWaiting(el);
+
+    part(shadow(el), ".send").click();
+    await settle();
+    expectDone(el);
+  });
+
+  it("reads as waiting while a confirmation is open, and not once it is declined", async () => {
+    const el = askAfterLookup((emit) => emit.toolCall("x1", "wipe", {}));
+    wipeTool(el);
+    await send(el, "wipe it");
+    expectWaiting(el);
+
+    part(shadow(el), ".confirm-btn--cancel").click();
+    await settle();
+    expectDone(el);
+  });
+
+  it("reads as waiting while a confirmation is open, and not after a Stop", async () => {
+    const el = askAfterLookup((emit) => emit.toolCall("x1", "wipe", {}));
+    wipeTool(el);
+    await send(el, "wipe it");
+    expectWaiting(el);
+
+    part(shadow(el), ".send").click();
+    await settle();
+    expectDone(el);
+  });
+});
+
 describe("a group whose step delegated to a sub-agent", () => {
   it("stays folded, and names the sub-agent beside the running mark", async () => {
     let release: () => void = () => {};

@@ -767,6 +767,7 @@ export class AgUiChat extends HTMLElement {
     askUser: () => this.askUser,
     askUserRenderer: () => this.askUserRenderer,
     decision: this.#decision,
+    setAsking: (callId, asking) => this.#transcript.setAsking(callId, asking),
     ensureGroup: () => this.#transcript.ensureGroup(),
     strings: () => this.#strings,
     hidePending: () => this.#transcript.hidePending(),

@@ -288,6 +288,17 @@ export class ToolCallCard {
   }
 
   /**
+   * Say whether a prompt is open on this call, a question it asked or a
+   * confirmation it needs. A flag of its own beside the status, which stays
+   * `pending`: the call is still running as far as the status goes, and a card
+   * display mode that reads the status draws it exactly as before. The step
+   * group reads the flag to tell a call waiting on a person from one working.
+   */
+  setAsking(asking: boolean): void {
+    this.element.toggleAttribute("data-asking", asking);
+  }
+
+  /**
    * Record that a human approved or declined this call, as a line in the card.
    * The prompt disappears once answered, so this is the only lasting trace that
    * the call was gated at all.
