@@ -322,7 +322,8 @@ describe("a delegation, from recorded bytes (real browser)", () => {
     // The server records a tool retry on a REASONING_ENCRYPTED_VALUE that names
     // the retried result's message, and the run's closing answer follows it.
     // The element has no subscriber for that event, so what it does with one is
-    // the client's: validate it, apply it to the message it names, and go on.
+    // the client's: validate it and go on. This pins that the run survives the
+    // event, not that it is applied to the message it names.
     // Every other assertion here settles on rows that close before it, so
     // without this one a client that broke on the event would pass them all.
     const retry = FIXTURE_EVENTS.filter((event) => event["type"] === "REASONING_ENCRYPTED_VALUE");
