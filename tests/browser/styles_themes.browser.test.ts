@@ -5,6 +5,7 @@ import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 import { ToolCallCard } from "../../src/ui/progress/tool_call_card.js";
 import { STYLES } from "../../src/ui/styles.js";
+import { makeFakeAgent } from "../helpers/fake_agent.js";
 
 /**
  * The theme attribute, resolved against a real cascade.
@@ -398,6 +399,54 @@ describe("which structure each theme wears (real browser)", () => {
 
   it("gives code neither", () => {
     expect(wears("code")).toEqual({ quietType: false, iconStatus: false });
+  });
+});
+
+describe("one action row per answer (real browser)", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  /** One run that answers in two bubbles with a tool call between them. */
+  async function interimTurn(theme: string): Promise<HTMLElement[]> {
+    const el = mount({ theme }, (e) => {
+      const handle = makeFakeAgent({
+        script: (emit) => {
+          emit.runStart();
+          emit.textStart("message-1");
+          emit.textEnd("Let me look that up.", "message-1");
+          emit.toolCall("call-1", "lookup_docs", { q: "settlement" });
+          emit.toolResult("call-1", "three mentions");
+          emit.textStart("message-2");
+          emit.textEnd("It is mentioned three times.", "message-2");
+          emit.runEnd();
+        },
+      });
+      e.agentFactory = () => handle.agent;
+    });
+    const input = part(el, ".input") as HTMLTextAreaElement;
+    input.value = "check the handbook";
+    part(el, ".send").click();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(el.shadowRoot?.querySelectorAll(".message--assistant")).toHaveLength(2);
+    return [...(el.shadowRoot?.querySelectorAll<HTMLElement>(".message-actions") ?? [])];
+  }
+
+  it("hides the row under an interim bubble and keeps the last one", async () => {
+    const rows = await interimTurn("quiet");
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.getBoundingClientRect().height > 0)).toEqual([false, true]);
+  });
+
+  it("keeps every row under classic", async () => {
+    const rows = await interimTurn("classic");
+    expect(rows.map((row) => row.getBoundingClientRect().height > 0)).toEqual([true, true]);
   });
 });
 
