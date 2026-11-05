@@ -86,7 +86,7 @@ function dragLauncher(launcher: HTMLElement): void {
   drag(launcher, [956, 748], [156, 148]);
 }
 
-/** Drag the grip at one panel corner 40px outwards, as a visitor resizing would. */
+/** Drag the grip named by `name` from one point to another, as a visitor resizing would. */
 function dragGrip(el: AgUiChat, name: string, from: [number, number], to: [number, number]): void {
   drag(shadow(el).querySelector(`.resize-handle--${name}`) as HTMLElement, from, to);
 }
@@ -124,6 +124,20 @@ describe("an unrecognised placement", () => {
     expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
     expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe("");
     expect(el.hasAttribute("data-expand-corner")).toBe(false);
+  });
+
+  it("still opens on a click that slid, because a launcher that cannot drag must not swallow it", () => {
+    const { el, launcher } = mount("bottom-right");
+    el.setCollapsed(true);
+
+    dragLauncher(launcher);
+
+    // A press that travelled past the threshold on a draggable launcher is a
+    // drag, and the click that follows it is suppressed. Here nothing may have
+    // started one, so the insets staying empty is not enough on its own.
+    expect(launcher.hasAttribute("data-dragging")).toBe(false);
+    launcher.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    expect(el.collapsed).toBe(false);
   });
 
   it("resizes on both axes from a corner grip", () => {
