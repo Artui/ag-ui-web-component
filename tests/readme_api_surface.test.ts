@@ -204,6 +204,10 @@ function publicMethods(): string[] {
 /**
  * Every attribute name the element reads, from a literal.
  *
+ * The two reader helpers are matched in both spellings: a controller's host
+ * callback (`flag("x")`) and the element calling the free function
+ * (`readJsonAttribute(this, "x")`).
+ *
  * Read across all of `src/` rather than the element's own file. The element
  * delegates to controllers that hold its private state, and a read that moves
  * into one would otherwise leave this scan without a sound: the check below
@@ -213,7 +217,7 @@ function publicMethods(): string[] {
 function attributesRead(): string[] {
   const names = new Set<string>();
   for (const match of SOURCE.matchAll(
-    /(?:getAttribute|hasAttribute|\bflag|\breadJsonAttribute)\("([a-z][a-z0-9-]*)"\)/g,
+    /(?:getAttribute|hasAttribute|\bflag|\breadJsonAttribute)\((?:this, )?"([a-z][a-z0-9-]*)"\)/g,
   )) {
     names.add(match[1] ?? "");
   }

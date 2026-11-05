@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per placement in `src/ui/placement/surface_for.ts`, replacing three separate
   tables that each listed placements. Every placement behaves as before, an
   unknown value included, and **no host has to opt in**.
+- **The element builds its DOM through free functions.** The header, the
+  transcript and empty state, the composer and the launcher are each built by
+  a function in the directory of their concern (`ui/shell/build_header.ts`,
+  `ui/transcript/build_transcript.ts`, `ui/composer/build_composer.ts`,
+  `ui/shell/build_launcher.ts`), and the flag and JSON attribute readers are
+  free functions under `core/`. Internal restructuring: the DOM, its parts,
+  slots and listeners are the same and mount in the same order, the public
+  type declarations are unchanged, and **no host has to opt in**.
 
 ## [0.44.0] — 2026-10-20
 
