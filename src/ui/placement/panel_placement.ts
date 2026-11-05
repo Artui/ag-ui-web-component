@@ -3,7 +3,6 @@ import type { ChatCorner, ChatSurfaceReport } from "../../tools/chat_surface_too
 import type { UiStrings } from "../ui_strings.js";
 import { clampLauncher } from "./clamp_launcher.js";
 import { clampPanel } from "./clamp_panel.js";
-import { isDraggablePlacement } from "./is_draggable_placement.js";
 import { enableLauncherDrag } from "./launcher_drag.js";
 import {
   type ExpandCorner,
@@ -23,6 +22,7 @@ import {
   type ResizeGrip,
   type ResizeSize,
 } from "./resize_handle.js";
+import { surfaceFor } from "./surface_for.js";
 
 /** Per-tab persistence key for a dragged panel size. */
 const SIZE_KEY = "ag-ui-chat:size";
@@ -400,16 +400,7 @@ export class PanelPlacement {
    * per interaction, because `placement` is a live attribute.
    */
   #resizeAxis(): ResizeAxis {
-    switch (this.#host.element.getAttribute("placement")) {
-      case "full":
-      case "page":
-        return "none";
-      case "sidebar":
-      case "side":
-        return "width";
-      default:
-        return "both";
-    }
+    return surfaceFor(this.#host.element.getAttribute("placement")).resizeAxis;
   }
 
   /**
@@ -559,7 +550,7 @@ export class PanelPlacement {
   #launcherDraggable(): boolean {
     return (
       this.#host.element.getAttribute("data-launcher-drag") !== "false" &&
-      isDraggablePlacement(this.#host.element.getAttribute("placement"))
+      surfaceFor(this.#host.element.getAttribute("placement")).launcherDraggable
     );
   }
 
