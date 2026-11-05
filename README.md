@@ -1183,7 +1183,7 @@ or changing `user-key` clears it with the transcript.
 
 ### Collapsing to the launcher
 
-A collapsed widget shrinks to a round **floating launcher** in the corner it already occupies: the
+A collapsed widget shrinks to a **floating launcher** in the corner it already occupies: the
 panel scales down into it and fades, the launcher grows out of the same point, and clicking the
 launcher reverses it. Only `transform` and `opacity` animate, so the motion is compositor-only and
 never reflows your page. Two placements collapse to something else instead — `sidebar` slides out
@@ -1205,14 +1205,18 @@ speech bubble.
 
 ```css
 ag-ui-chat {
-  --ag-ui-launcher-size: 56px;
-  --ag-ui-launcher-radius: 50%;   /* 12px for a squircle */
-  --ag-ui-launcher-bg: #14532d;   /* defaults to the header background */
-  --ag-ui-launcher-fg: #ffffff;
-  --ag-ui-launcher-icon-size: 26px;
+  --ag-ui-launcher-size: 48px;
+  --ag-ui-launcher-radius: 14px;  /* 50% for a circle */
+  --ag-ui-launcher-bg: #14532d;   /* defaults to the panel background */
+  --ag-ui-launcher-fg: #ffffff;   /* defaults to the text colour */
+  --ag-ui-launcher-icon-size: 22px;
   --ag-ui-launcher-inset: auto 0 0 auto;  /* which corner of the widget's box */
 }
 ```
+
+The sizes and defaults above are Quiet's. The other themes bring their own launcher: `classic`
+the 56px circle in the header's colours, `soft` a 56px accent tile, and `ledger` a 44px tile in
+the text colour.
 
 > **The collapsed host keeps its box.** Animating the element's own width and height would animate
 > layout; instead the box stays put with `pointer-events: none`, and the launcher takes the clicks.
@@ -2874,19 +2878,20 @@ ag-ui-chat { --ag-ui-accent: #b91c1c; }  /* one widget */
 > form did anything and the wrapper form silently did nothing. The defaults now sit behind an
 > internal alias, so all three forms work.
 
-A few of the knobs:
+A few of the knobs, at Quiet's light values:
 
 ```css
 ag-ui-chat {
-  --ag-ui-accent: #4f46e5;
-  --ag-ui-bg: #ffffff;
-  --ag-ui-fg: #1a1a2e;
+  --ag-ui-accent: #232326;        /* #f0f0f2 in the dark scheme */
+  --ag-ui-bg: #ffffff;            /* #161618 */
+  --ag-ui-fg: #1b1b1d;            /* #ececee */
   --ag-ui-radius: 12px;
   --ag-ui-header-btn-size: 30px;  /* the header's controls; 44px on touch */
   --ag-ui-header-gap: 4px;
 
-  /* What is drawn on top of the accent and danger fills. Change these with
-     the fills: a pale accent leaves white-on-pale everywhere they are used. */
+  /* What is drawn on top of the accent and danger fills. Unset, the one on
+     the accent is white or black by the accent's luminance (see Text on the
+     accent below); set it to pin a colour of your own. */
   --ag-ui-on-accent: #ffffff;
   --ag-ui-on-danger: #ffffff;
 
@@ -2894,7 +2899,7 @@ ag-ui-chat {
   --ag-ui-width: 380px;
   --ag-ui-height: 560px;
   --ag-ui-inset: auto 24px 24px auto;
-  --ag-ui-shadow: 0 12px 32px rgba(20, 20, 50, 0.18);
+  --ag-ui-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 12px 32px -16px rgb(0 0 0 / 0.22);
 }
 ```
 
@@ -2969,12 +2974,20 @@ the two on every colour (never under 4.58:1). It is computed with relative colou
 channel arithmetic, behind `@supports` for that exact expression: Chrome 119, Firefox 128, Safari
 18.
 
-**The Safari 17 fallback.** Safari 16.4 to 17 shipped an earlier draft of relative colour syntax,
-and an engine that cannot read the expression keeps the scheme-based fallback instead: white in
-the light scheme, near-black (`#111111`) in the dark one. That is the colour the component always
-drew, so nothing gets worse there, but on Safari 17 a mid-tone brand accent in the dark scheme can
-still fall under 4.5:1. If you support Safari 17 and set a mid-tone accent, set
-`--ag-ui-on-accent` yourself. There is no script path.
+**The fallback.** Two browsers at or above the floor cannot compute it: Firefox 120 to 127, which
+lack relative colour syntax, and Safari 17.5, which shipped an earlier draft that rejects this
+expression. They keep a fixed colour per theme instead:
+
+| Theme | Without relative colour syntax |
+| --- | --- |
+| `quiet`, `soft`, `ledger` | the scheme's: white in the light scheme, near-black (`#111111`) in the dark one |
+| `classic`, `code` | white in both schemes, the colour they always drew |
+
+On every built-in accent but code's the fixed colour is on the same side as the computed one, so
+those browsers see the same contrast. On code's green the computed pick is black (8.7:1) and the
+fallback white (2.4:1), as it always was. What they miss is the correction for a host's accent: a mid-tone
+brand accent can fall under 4.5:1 there, under any theme. If you support those browsers and set a
+mid-tone accent, set `--ag-ui-on-accent` yourself. There is no script path.
 
 #### Overriding a theme, lightest layer first
 
@@ -3508,8 +3521,10 @@ mic appears even with no `data-transcribe-url`.
 `slot="header-actions"`. For convenience, the boolean `data-theme-toggle` attribute adds a built-in
 light⇄dark toggle to the header (part `theme-toggle`) that flips the scheme word of `theme` and
 persists the choice per tab. Only the scheme changes: `soft` becomes `soft dark`, `soft dark`
-becomes `soft light`, and `auto` becomes `dark`, an explicit choice. Off by default so it never
-competes with a host-supplied control.
+becomes `soft light`, and `auto` becomes `dark`, an explicit choice. Only the scheme is saved, too:
+on the next load it is put beside whatever theme name the markup carries, so `dark` chosen on a
+`soft` page restores as `classic dark` on a `classic` one. Off by default so it never competes with
+a host-supplied control.
 
 ```html
 <ag-ui-chat endpoint="/agent/" data-theme-toggle></ag-ui-chat>
@@ -3580,12 +3595,14 @@ Other workflow targets (all identical in name to the sibling Python packages):
 | Component | Floor | Tested |
 | --- | --- | --- |
 | Node (tooling/tests only) | 22 | 22, 24 |
-| Browsers (runtime target) | ES2022 / evergreen | Chrome / Firefox / Safari 17+ |
+| Browsers (runtime target) | Chrome 123, Firefox 120, Safari 17.5 | Chromium |
 | `@ag-ui/client`, `@ag-ui/core` | 1.0 | 1.0 |
 | django-ag-ui (server) | 0.63.0 | — |
 
-The shipped artefact targets evergreen browsers (Shadow DOM, Custom Elements v1, ES2022). Node is
-only the build/test runtime, not a runtime target.
+The shipped artefact targets evergreen browsers (Shadow DOM, Custom Elements v1, ES2022). The
+browser floor is set by `light-dark()`, which every theme declares its colours with: below Chrome
+123, Firefox 120 or Safari 17.5 those colours do not resolve. Node is only the build/test runtime,
+not a runtime target.
 
 The server floor is a wire contract rather than a dependency. A tool call's outcome and a user
 message's attachment refs travel in `metadata`, since `@ag-ui/client` 1.0 strips every key its

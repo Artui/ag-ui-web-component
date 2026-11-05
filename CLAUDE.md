@@ -204,12 +204,13 @@ the collision the registry exists to catch.
 | Component | Floor | Tested |
 | --- | --- | --- |
 | Node (tooling/tests) | 22 | 22, 24 |
-| Browsers (runtime target) | ES2022 / evergreen | Chrome/Firefox/Safari 17+ |
+| Browsers (runtime target) | Chrome 123, Firefox 120, Safari 17.5 (ES2022, `light-dark()`) | Chromium |
 | `@ag-ui/client`, `@ag-ui/core` | 1.0 | 1.0 |
 | django-ag-ui (server) | 0.63.0 | — |
 
-The shipped artefact targets evergreen browsers (Shadow DOM, Custom Elements v1, ES2022). Node
-is only the build/test runtime, not a runtime target.
+The shipped artefact targets evergreen browsers (Shadow DOM, Custom Elements v1, ES2022). The
+browser floor is `light-dark()`'s, which every theme declares its colours with and which is used
+without a fallback. Node is only the build/test runtime, not a runtime target.
 
 The server row is a wire contract, not a dependency. `@ag-ui/client` 1.0 strips every key its
 schemas do not declare, off an inbound event and off the outgoing `RunAgentInput`, so a tool

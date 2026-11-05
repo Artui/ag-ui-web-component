@@ -1408,6 +1408,8 @@ export class AgUiChat extends HTMLElement {
    * `style-src` policy, so this works under the same strict CSP the
    * built-in sheet does. Setting it re-adopts at once; the array is copied, so
    * mutating the one passed in changes nothing until it is set again.
+   *
+   * Unstable: reaches shadow class names, which may change in any minor.
    */
   get extraStyles(): readonly CSSStyleSheet[] {
     return this.#extraStyles;

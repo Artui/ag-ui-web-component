@@ -21,9 +21,10 @@ import { STYLES } from "../styles.js";
  * they inherit the same CSP immunity.
  *
  * No fallback: constructible `CSSStyleSheet` is Chrome 73, Firefox 101 and
- * Safari 16.4, all below this package's declared Safari 17 runtime target. A
- * guard here would be code no supported browser can reach, and the only way
- * to keep it would be to exempt it from the coverage gate.
+ * Safari 16.4, all below this package's browser floor (Chrome 123, Firefox
+ * 120, Safari 17.5). A guard here would be code no supported browser can
+ * reach, and the only way to keep it would be to exempt it from the coverage
+ * gate.
  */
 export function adoptStyles(root: ShadowRoot, extra: readonly CSSStyleSheet[] = []): CSSStyleSheet {
   const sheet = new CSSStyleSheet();

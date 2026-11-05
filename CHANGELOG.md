@@ -33,7 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Text on the accent follows the accent.** Unless `--ag-ui-on-accent` is
   set, it is white or black by the accent's luminance, whichever contrasts
   more, where relative colour syntax is supported (Chrome 119, Firefox 128,
-  Safari 18). Safari 17 keeps the old scheme-based colour.
+  Safari 18). Firefox 120 to 127 and Safari 17.5 cannot compute it and keep
+  a fixed colour: white under `classic` and `code`, as before, and the
+  scheme's colour (white light, `#111111` dark) under `quiet`, `soft` and
+  `ledger`. Every built-in accent but `code`'s gets the same side either
+  way; a host's mid-tone accent there needs `--ag-ui-on-accent` set by hand.
 
 ### Changed
 
@@ -43,16 +47,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own font stack instead of the page's, and a 48px launcher. `theme="dark"`
   is Quiet in the dark scheme. **A host that wants the old look must opt in
   with `theme="classic"`** (or `theme="classic dark"`); explicitly set tokens
-  keep working under every theme.
-- **`ledger` replaces `code`.** `theme="code"` keeps working, unchanged, but
-  is no longer documented; Ledger is the monospace look now.
+  keep working under every theme. Set `--ag-ui-font: inherit` to keep the
+  page's font under any theme.
+- **A host that sets only `--ag-ui-accent` loses the accent header and
+  launcher.** Quiet draws both in the panel's own colours, and its user
+  bubble is the accent at 12% rather than the fixed indigo it was. To get
+  them back, opt in with `theme="classic"`, or keep Quiet and set
+  `--ag-ui-header-bg`, `--ag-ui-header-fg`, `--ag-ui-launcher-bg` and
+  `--ag-ui-launcher-fg` to the accent and the colour on it.
+- **Under `classic`, the user bubble follows `--ag-ui-accent`.** It was
+  indigo whatever the accent; set `--ag-ui-user-bg: #4f46e5` to keep that.
+- **One chip row and one action row per answer**, under every theme but
+  `classic` and `code`. The skill chips show on the empty state only and,
+  once a message is sent, live in the slash palette alone. In an answer
+  that spans several bubbles (text, a tool call, more text), only the last
+  bubble keeps its copy, retry and feedback row.
+- **`ledger` replaces `code`.** `theme="code"` keeps working but is no
+  longer documented; Ledger is the monospace look now. `code` changes in
+  two ways: it sets `color-scheme: dark`, so native controls, scrollbars
+  and the placeholder draw dark, and text on its green accent (the send
+  icon) is black where relative colour syntax is supported, 8.7:1 where
+  white was 2.4:1.
+- **The browser floor rises to Chrome 123, Firefox 120 and Safari 17.5**,
+  from Chrome 120 and Safari 17. Every theme declares its colours with
+  `light-dark()`, which those versions are the first to support, and it is
+  used without a fallback: below the floor the colours do not resolve and
+  the widget draws without them. There is nothing to opt in to; a host
+  that must support an older browser stays on the previous release.
 - **`classic` meets AA contrast.** The status pill's text in both schemes,
   the indigo tool names in the dark scheme (2.38:1) and the dark composer
   placeholder (3.93:1) now clear 4.5:1, and the done mark in the dark scheme
   clears 3:1. Otherwise classic is the old look.
 - **The theme toggle flips only the scheme word**, so `soft` becomes
   `soft dark` and `soft dark` becomes `soft light`. Before, any value but
-  `dark` became `dark`, which dropped a theme name.
+  `dark` became `dark`, which dropped a theme name. It saves only the scheme
+  word, and a load puts the saved scheme beside the markup's own theme name,
+  so a scheme chosen on one page never carries that page's theme to
+  another. A value saved by an earlier release (`light` or `dark`) restores
+  as before.
 - **Chart series read the theme's palette.** `--ag-ui-chart-1` to
   `--ag-ui-chart-6` still win; without them each theme supplies its own first
   two series.
