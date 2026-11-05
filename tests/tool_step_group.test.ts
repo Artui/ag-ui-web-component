@@ -131,4 +131,47 @@ describe("ToolStepGroup", () => {
       expect(text(group, ".tool-group-meta")).toBe("1 waiting for you");
     });
   });
+
+  describe("redrawing from a sub-agent panel", () => {
+    /** A running step holding a panel in the phase it is given, as a delegation draws one. */
+    function delegating(
+      phase: string,
+      agent: string | null,
+    ): { group: ToolStepGroup; panel: HTMLElement } {
+      const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+      const card = step("pending");
+      const slot = document.createElement("div");
+      slot.className = "tool-call-subagent";
+      const panel = document.createElement("div");
+      panel.className = "subagent";
+      panel.setAttribute("data-phase", phase);
+      if (agent !== null) {
+        panel.setAttribute("data-agent", agent);
+      }
+      slot.append(panel);
+      card.append(slot);
+      group.add(card, "Delegate task");
+      return { group, panel };
+    }
+
+    // The panel stamps both on most updates, so each has to be watched on its
+    // own for the case where only that one changes.
+    it("drops the name when only the phase changes", async () => {
+      const { group, panel } = delegating("started", "researcher");
+      expect(text(group, ".tool-group-meta")).toBe("Delegated to researcher");
+
+      panel.setAttribute("data-phase", "finished");
+      await observed();
+      expect(text(group, ".tool-group-meta")).toBe("");
+    });
+
+    it("takes up the name when only the agent changes", async () => {
+      const { group, panel } = delegating("started", null);
+      expect(text(group, ".tool-group-meta")).toBe(DEFAULT_UI_STRINGS.subAgentWorking);
+
+      panel.setAttribute("data-agent", "researcher");
+      await observed();
+      expect(text(group, ".tool-group-meta")).toBe("Delegated to researcher");
+    });
+  });
 });
