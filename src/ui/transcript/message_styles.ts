@@ -130,8 +130,11 @@ export const MESSAGE_STYLES: string = `
 .message--assistant pre {
   padding: 8px 10px;
   overflow: auto;
-  /* Scrolling past the end of this must not scroll the page behind it. */
-  overscroll-behavior: contain;
+  /* The transcript already holds the page, so past the end of this the wheel
+     goes on to scroll the transcript; contained, it was swallowed here and the
+     transcript sat still under the pointer. Only sideways is contained, so a
+     swipe along a wide block does not trigger the browser's back navigation. */
+  overscroll-behavior-x: contain;
   background: var(--_bg);
   border: 1px solid var(--_border);
   border-radius: 6px;

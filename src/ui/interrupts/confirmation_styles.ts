@@ -28,8 +28,11 @@ export const CONFIRMATION_STYLES: string = `
   padding: 8px 10px;
   max-height: 140px;
   overflow: auto;
-  /* Scrolling past the end of this must not scroll the page behind it. */
-  overscroll-behavior: contain;
+  /* The transcript already holds the page, so past the end of this the wheel
+     goes on to scroll the transcript; contained, it was swallowed here and the
+     transcript sat still under the pointer. Only sideways is contained, so a
+     swipe along a wide block does not trigger the browser's back navigation. */
+  overscroll-behavior-x: contain;
   font-size: 12px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   background: var(--_assistant-bg);

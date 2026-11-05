@@ -21,8 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   draws the row as a tinted pill and Ledger as a monospace heading.
   - The group opens itself while a step waits on the user (a server-side
     approval, which renders inside its card), once per wait; the user can
-    fold it again. A client-side confirmation or an `ask_user` question
-    renders beside the group and is in view without it opening.
+    fold it again. It opens before the approval is drawn, so the Approve
+    button takes focus and scrolls into view, as it does under `full`. A
+    client-side confirmation or an `ask_user` question renders beside the
+    group and is in view without it opening, and the row reads "waiting for
+    you" for as long as one is open rather than "running".
   - A running sub-agent does not open it: the folded row keeps its spinner
     and names the delegation ("Delegated to researcher").
   - Repeated labels are told apart inside a group, "Fill field" then "Fill
@@ -46,6 +49,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `toolGroupWaiting`, `toolGroupFailed`, `toolGroupDeclined` (`{count}`) and
   `toolStepRepeat` (`{n}`).
 - `TOOL_DISPLAY.GROUPED`.
+- A `data-asking` attribute on a tool-call card while a question or a
+  confirmation is open on it. It is internal, read by the step group; the
+  card's `data-status` is unchanged.
+
+### Fixed
+
+- **The wheel scrolls the transcript when the pointer rests on a tool call's
+  arguments or result, a code block, the reasoning or a confirmation's
+  arguments.** Those blocks swallowed the wheel even when they had nothing
+  left to scroll, so the transcript sat still until the pointer moved to plain
+  text. They now hand the wheel on to the transcript; a sideways swipe along a
+  wide block is still kept from navigating the browser back. This is not new in
+  this release (it dates from 0.45.0) and needs no opt-in.
 
 ## [0.45.0] — 2026-11-05
 
