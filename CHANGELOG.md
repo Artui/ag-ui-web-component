@@ -7,7 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A theme set.** `theme` is now up to two words in any order, a theme name
+  and a scheme, matched as words: `soft`, `soft dark`, `ledger auto`. The
+  names are `quiet` (the new default), `soft` (rounded, tinted from the
+  accent), `ledger` (dense, serif and monospace) and `classic` (the look
+  before this release). The schemes are `light` (the default), `dark` and
+  `auto`, which follows `prefers-color-scheme`. A word the component does not
+  ship adds no rules, so `theme="acme"` is Quiet and a hook for the host's own
+  `[theme~="acme"]` CSS, and `soft acme` starts from Soft.
+- **Three seeds theme everything.** Each theme declares `--ag-ui-bg`,
+  `--ag-ui-fg` and `--ag-ui-accent` with `light-dark()`, and every other colour
+  is mixed from them in oklch while still reading its own public token first.
+  New tokens: `--ag-ui-ink-2`, `--ag-ui-ink-3`, `--ag-ui-line`,
+  `--ag-ui-line-strong`, `--ag-ui-wash`, `--ag-ui-accent-ink`, `--ag-ui-tint`,
+  `--ag-ui-tint-2`, the type scale `--ag-ui-text-xs` to `--ag-ui-text-lg`,
+  `--ag-ui-leading`, `--ag-ui-serif`, `--ag-ui-frame-radius`,
+  `--ag-ui-frame-shadow`, and the status masks `--ag-ui-ico-check`,
+  `--ag-ui-ico-error` and `--ag-ui-ico-declined`.
+- **`extraStyles` (unstable).** A per-element `CSSStyleSheet[]` adopted after
+  the built-in sheet, for structure the tokens and parts cannot reach. It
+  works under a strict `style-src` CSP. It reaches class names inside the
+  shadow root, which are not a stable API and may change in any minor release.
+- **Text on the accent follows the accent.** Unless `--ag-ui-on-accent` is
+  set, it is white or black by the accent's luminance, whichever contrasts
+  more, where relative colour syntax is supported (Chrome 119, Firefox 128,
+  Safari 18). Safari 17 keeps the old scheme-based colour.
+
 ### Changed
+
+- **The default look changes for every host that sets no `theme`.** The
+  default is now Quiet: a neutral panel with the header on the panel itself,
+  no bubble for the agent's turn, status as an icon rather than a pill, its
+  own font stack instead of the page's, and a 48px launcher. `theme="dark"`
+  is Quiet in the dark scheme. **A host that wants the old look must opt in
+  with `theme="classic"`** (or `theme="classic dark"`); explicitly set tokens
+  keep working under every theme.
+- **`ledger` replaces `code`.** `theme="code"` keeps working, unchanged, but
+  is no longer documented; Ledger is the monospace look now.
+- **`classic` meets AA contrast.** The status pill's text in both schemes,
+  the indigo tool names in the dark scheme (2.38:1) and the dark composer
+  placeholder (3.93:1) now clear 4.5:1, and the done mark in the dark scheme
+  clears 3:1. Otherwise classic is the old look.
+- **The theme toggle flips only the scheme word**, so `soft` becomes
+  `soft dark` and `soft dark` becomes `soft light`. Before, any value but
+  `dark` became `dark`, which dropped a theme name.
+- **Chart series read the theme's palette.** `--ag-ui-chart-1` to
+  `--ag-ui-chart-6` still win; without them each theme supplies its own first
+  two series.
 
 - **The shadow stylesheet is split by concern.** `src/ui/styles.ts`, one
   3,774-line string, is now composed from 27 modules, each in the directory of
