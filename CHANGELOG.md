@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The sub-agent test fixture is the wire django-ag-ui 0.72.0 writes.** The
+  recorded run was a copy from before pydantic-ai 2.63, which django-ag-ui now
+  floors. The regenerated one carries `role` on every `TEXT_MESSAGE_START`, a
+  `protocolVersion` on `RUN_STARTED`, an `entityId` on the reasoning event
+  that records a tool retry (a `REASONING_ENCRYPTED_VALUE`, new to the run),
+  and a retry result that no longer ends in pydantic-ai's "Fix the errors and
+  try again." prompt. The component reads none of the new keys: it takes message
+  ids from the events and builds the card from the `SUBAGENT_*` and
+  `ag_ui.subagent` events, and the unit and Chromium sub-agent tests, the
+  latter through the element's real `HttpAgent`, pass on the new file unchanged.
+  The demo's mock server sends the same retry-free result. A Chromium test now
+  asserts the run's closing answer renders past the new event; it fails on a
+  fixture whose event is malformed, where every delegation assertion settled
+  before it and passed. Test and demo only, nothing shipped changes,
+  and **a host owes nothing**.
+
 ## [0.44.0] — 2026-10-20
 
 ### Fixed

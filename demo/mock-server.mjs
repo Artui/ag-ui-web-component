@@ -320,7 +320,7 @@ async function handleAgent(res, body) {
     emitToolResult(
       res,
       second,
-      "Sub-agent 'auditor' failed: the auditor model went away\n\nFix the errors and try again.",
+      "Sub-agent 'auditor' failed: the auditor model went away",
     );
 
     await streamText(res, id("msg"), [
