@@ -59,9 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arguments or result, a code block, the reasoning or a confirmation's
   arguments.** Those blocks swallowed the wheel even when they had nothing
   left to scroll, so the transcript sat still until the pointer moved to plain
-  text. They now hand the wheel on to the transcript; a sideways swipe along a
-  wide block is still kept from navigating the browser back. This is not new in
-  this release (it dates from 0.45.0) and needs no opt-in.
+  text. They now hand the wheel on to the transcript, including a wheel that
+  carries a little sideways motion, as a real mouse or trackpad nearly always
+  does. This is long-standing and needs no opt-in.
 
 ## [0.45.0] — 2026-11-05
 

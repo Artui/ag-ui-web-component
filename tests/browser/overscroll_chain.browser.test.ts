@@ -144,7 +144,7 @@ describe("a wheel turned over a block inside the transcript", () => {
         type: "mouseWheel",
         x: box.left + box.width / 2,
         y: box.top + box.height / 2,
-        deltaX: 0,
+        deltaX: 1,
         deltaY: down ? 120 : -120,
       });
       await settle();
@@ -154,9 +154,16 @@ describe("a wheel turned over a block inside the transcript", () => {
       } else {
         expect(messages.scrollTop).toBeLessThan(before);
       }
-      // Sideways stays contained: a swipe along a wide block must not navigate
-      // the browser back.
-      expect(getComputedStyle(block).overscrollBehaviorX).toBe("contain");
+      // No nested box contains anything. Chromium stops a wheel with any
+      // sideways delta at a box that contains x, even a short one, and real
+      // wheels and trackpads almost always send some. The transcript's own
+      // containment is what holds the page.
+      const style = getComputedStyle(block);
+      expect(style.overscrollBehaviorX).toBe("auto");
+      expect(style.overscrollBehaviorY).toBe("auto");
+      const outer = getComputedStyle(messages);
+      expect(outer.overscrollBehaviorX).toBe("contain");
+      expect(outer.overscrollBehaviorY).toBe("contain");
     });
   }
 });
