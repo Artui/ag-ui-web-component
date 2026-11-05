@@ -19,7 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ids from the events and builds the card from the `SUBAGENT_*` and
   `ag_ui.subagent` events, and the unit and Chromium sub-agent tests, the
   latter through the element's real `HttpAgent`, pass on the new file unchanged.
-  Test-only, nothing shipped changes, and **a host owes nothing**.
+  The demo's mock server sends the same retry-free result. A Chromium test now
+  asserts the run's closing answer renders past the new event; it fails on a
+  fixture whose event is malformed, where every other sub-agent assertion
+  settled before it and passed. Test and demo only, nothing shipped changes,
+  and **a host owes nothing**.
 
 ## [0.44.0] — 2026-10-20
 
