@@ -9,6 +9,7 @@ import { prettifyToolName } from "../progress/prettify_tool_name.js";
 import { renderRunNotice } from "../progress/run_notice.js";
 import { ThoughtsBlock } from "../progress/thoughts_block.js";
 import { ToolCallCard, type ToolPayload } from "../progress/tool_call_card.js";
+import { ToolStepGroup } from "../progress/tool_step_group.js";
 import type { UiStrings } from "../ui_strings.js";
 import { renderMarkdown } from "./render_markdown.js";
 import { renderOrWarn } from "./render_or_warn.js";
@@ -74,6 +75,8 @@ export class Transcript {
   // the answer group while a reasoning model thinks and collapsed once the
   // answer's first text token arrives. `null` outside a reasoning turn.
   #thoughts: ThoughtsBlock | null = null;
+  /** PROTOTYPE: the step group behind each group element, for data-tool-group. */
+  readonly #stepGroups = new WeakMap<Element, ToolStepGroup>();
 
   constructor(host: TranscriptHost) {
     this.#host = host;
@@ -383,7 +386,10 @@ export class Transcript {
     // `after` rather than an insert-or-append branch: both callers set the card
     // element immediately before calling, and a parentless anchor makes `after`
     // a no-op, so the alternative would be a branch nothing can reach.
-    this.#cardElements.get(call.id)?.after(node);
+    // PROTOTYPE: a rendered node goes after a folded step group rather than
+    // inside it, so a chart is never hidden one click down.
+    const anchor = this.#cardElements.get(call.id);
+    (anchor?.closest(".tool-group") ?? anchor)?.after(node);
     this.afterGrew();
   }
 
@@ -421,9 +427,38 @@ export class Transcript {
       formatPayload: (payload) => this.#host.formatToolPayload(payload),
     });
     this.#toolCards.set(call.id, card);
-    this.ensureGroup().appendChild(card.element);
+    if (this.#host.element.hasAttribute("data-tool-group")) {
+      this.#stepGroup().add(card.element);
+    } else {
+      this.ensureGroup().appendChild(card.element);
+    }
     this.updateEmptyState();
     this.follow();
     return card;
+  }
+
+  /**
+   * PROTOTYPE: the step group a new card joins. Consecutive cards share one;
+   * anything else in between (text, a chart, a confirmation) starts the next.
+   * The pending dots are skipped over, since they sit at the foot of the turn
+   * and move with it.
+   */
+  #stepGroup(): ToolStepGroup {
+    const answer = this.ensureGroup();
+    let last = answer.lastElementChild;
+    if (last !== null && last === this.#pending) {
+      last = last.previousElementSibling;
+    }
+    const existing = last === null ? undefined : this.#stepGroups.get(last);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const group = new ToolStepGroup();
+    this.#stepGroups.set(group.element, group);
+    answer.insertBefore(
+      group.element,
+      this.#pending?.parentElement === answer ? this.#pending : null,
+    );
+    return group;
   }
 }

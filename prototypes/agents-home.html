@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agents home, Quiet direction</title>
+    <style>
+      /* A static prototype of an "Agents home" landing view inside the panel,
+         drawn in the Quiet direction. It uses the same recipe as the shadow
+         stylesheet: three seeds, everything else mixed in oklch. ?scheme=dark
+         flips it. Nothing here is wired to the element. */
+      :root {
+        color-scheme: light;
+        --bg: light-dark(#ffffff, #161618);
+        --fg: light-dark(#1b1b1d, #ececee);
+        --accent: light-dark(#232326, #f0f0f2);
+        --on-accent: light-dark(#ffffff, #111111);
+        --attention: light-dark(#9a5b00, #f2b45a);
+        --danger: light-dark(#b91c1c, #f87171);
+        --ink-2: color-mix(in oklch, var(--fg) 78%, var(--bg));
+        --ink-3: color-mix(in oklch, var(--fg) 64%, var(--bg));
+        --line: color-mix(in oklch, var(--fg) 11%, var(--bg));
+        --line-strong: color-mix(in oklch, var(--fg) 20%, var(--bg));
+        --wash: color-mix(in oklch, var(--fg) 4.5%, var(--bg));
+        --hover: color-mix(in oklch, var(--fg) 6%, var(--bg));
+        --attention-wash: color-mix(in oklch, var(--attention) 8%, var(--bg));
+        --attention-line: color-mix(in oklch, var(--attention) 30%, var(--bg));
+      }
+      :root[data-scheme="dark"] { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: light-dark(#f6f6f4, #0e0e0f);
+        font: 14px/1.5 Inter, ui-sans-serif, system-ui, sans-serif;
+        color: var(--fg);
+        font-feature-settings: "cv11", "ss01";
+      }
+      button, input { font: inherit; color: inherit; }
+      .panel {
+        width: 400px;
+        height: 940px;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 12px 32px -16px rgb(0 0 0 / 0.22);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 10px 8px 10px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      header h1 { margin: 0; flex: 1; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+      .icon-btn {
+        width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent;
+        color: var(--ink-3); display: grid; place-items: center; cursor: pointer;
+      }
+      .icon-btn:hover { background: var(--hover); color: var(--fg); }
+      .scroll { flex: 1; overflow: auto; padding: 16px 18px 8px; display: flex; flex-direction: column; gap: 20px; }
+      .summary { margin: 0; font-size: 12.5px; color: var(--ink-3); }
+      .summary b { color: var(--attention); font-weight: 600; }
+      section { display: flex; flex-direction: column; gap: 6px; }
+      h2 {
+        margin: 0 0 2px; font-size: 11.5px; font-weight: 600; color: var(--ink-3);
+        display: flex; justify-content: space-between;
+      }
+      h2 a { color: var(--ink-3); text-decoration: none; font-weight: 500; }
+      .ask {
+        border: 1px solid var(--attention-line);
+        background: var(--attention-wash);
+        border-radius: 10px;
+        padding: 12px;
+        display: flex; flex-direction: column; gap: 8px;
+      }
+      .meta { font-size: 12px; color: var(--ink-3); }
+      .ask .q { font-weight: 600; }
+      .row-actions { display: flex; gap: 6px; }
+      .btn {
+        height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line-strong);
+        background: var(--bg); font-size: 12.5px; font-weight: 500; cursor: pointer;
+      }
+      .btn--primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+      .item {
+        display: flex; align-items: center; gap: 10px; padding: 7px 8px; margin: 0 -8px;
+        border-radius: 8px; text-decoration: none; color: inherit;
+      }
+      .item:hover { background: var(--hover); }
+      .item .text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .item .title { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .chev { color: var(--ink-3); flex: none; }
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg); flex: none; }
+      .dot--danger { background: var(--danger); }
+      .spin {
+        width: 14px; height: 14px; border-radius: 50%; flex: none;
+        border: 2px solid var(--line-strong); border-top-color: var(--fg);
+      }
+      .agent { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); }
+      .agent:first-of-type { border-top: 0; padding-top: 2px; }
+      .agent-head { display: flex; align-items: baseline; gap: 8px; }
+      .agent-head b { font-weight: 600; font-size: 13.5px; }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+      .chip {
+        height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line);
+        background: transparent; color: var(--ink-2); font-size: 12.5px; cursor: pointer;
+      }
+      .chip:hover { background: var(--hover); color: var(--fg); }
+      .time { font-size: 12px; color: var(--ink-3); flex: none; }
+      form {
+        margin: 4px 14px 14px; border: 1px solid var(--line-strong); border-radius: 12px;
+        padding: 6px 6px 6px 12px; display: flex; align-items: center; gap: 8px;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+      }
+      form input { flex: 1; border: 0; outline: none; background: transparent; padding: 8px 0; }
+      form input::placeholder { color: var(--ink-3); }
+      .to {
+        border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; font-size: 12px; color: var(--ink-2);
+        background: var(--wash); white-space: nowrap;
+      }
+      .send {
+        width: 30px; height: 30px; border-radius: 9px; border: 0; background: var(--accent);
+        color: var(--on-accent); display: grid; place-items: center;
+      }
+      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    </style>
+  </head>
+  <body>
+    <div class="panel" role="region" aria-label="Agents">
+      <header>
+        <h1>Agents</h1>
+        <button class="icon-btn" type="button" aria-label="All conversations">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+        </button>
+        <button class="icon-btn" type="button" aria-label="New conversation">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
+        </button>
+        <button class="icon-btn" type="button" aria-label="Minimise">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
+        </button>
+      </header>
+
+      <div class="scroll">
+        <p class="summary"><b>2 need you</b> · 1 working · 3 new since you looked</p>
+
+        <section aria-labelledby="h-needs">
+          <h2 id="h-needs">Needs you</h2>
+          <article class="ask">
+            <div class="meta">Board agent · Tidy this week's board</div>
+            <div class="q">Archive 6 done cards in Sprint 12?</div>
+            <div class="row-actions">
+              <button class="btn btn--primary" type="button">Approve</button>
+              <button class="btn" type="button">Deny</button>
+              <button class="btn" type="button">Open</button>
+            </div>
+          </article>
+          <a class="item" href="#">
+            <span class="dot" style="background: var(--attention)" aria-hidden="true"></span>
+            <span class="text"><span class="title">Which customer record should stay?</span><span class="meta">Admin agent · Duplicate customers</span></span>
+            <svg class="chev" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </a>
+        </section>
+
+        <section aria-labelledby="h-working">
+          <h2 id="h-working">Working now</h2>
+          <a class="item" href="#">
+            <span class="spin" aria-hidden="true"></span>
+            <span class="text"><span class="title">Plan Thursday</span><span class="meta">Board agent · step 3 of about 5</span></span>
+            <button class="btn" type="button">Stop</button>
+          </a>
+        </section>
+
+        <section aria-labelledby="h-new">
+          <h2 id="h-new">New since you looked</h2>
+          <a class="item" href="#">
+            <span class="dot" aria-hidden="true"></span>
+            <span class="text"><span class="title">What's on this week</span><span class="meta">9 cards due, 2 overdue</span></span>
+            <span class="time">8:02</span>
+          </a>
+          <a class="item" href="#">
+            <span class="dot dot--danger" aria-hidden="true"></span>
+            <span class="text"><span class="title">Import supplier prices</span><span class="meta" style="color: var(--danger)">Stopped: 14 rows failed</span></span>
+            <span class="time">7:40</span>
+          </a>
+        </section>
+
+        <section aria-labelledby="h-agents">
+          <h2 id="h-agents">Start with <a href="#">All skills</a></h2>
+          <div class="agent">
+            <div class="agent-head"><b>Board agent</b><span class="meta">plans and tidies the board</span></div>
+            <div class="chips">
+              <button class="chip" type="button">Plan my day</button>
+              <button class="chip" type="button">Tidy this week</button>
+              <button class="chip" type="button">What's on</button>
+            </div>
+          </div>
+          <div class="agent">
+            <div class="agent-head"><b>Admin agent</b><span class="meta">records and imports</span></div>
+            <div class="chips">
+              <button class="chip" type="button">Find duplicates</button>
+              <button class="chip" type="button">Import a sheet</button>
+            </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="h-recent">
+          <h2 id="h-recent">Recent <a href="#">See all</a></h2>
+          <a class="item" href="#"><span class="text"><span class="title">Fill in the article form and publish it</span></span><span class="time">22m</span></a>
+          <a class="item" href="#"><span class="text"><span class="title">Move standup to Friday at 11:00</span></span><span class="time">Yesterday</span></a>
+        </section>
+      </div>
+
+      <form onsubmit="return false">
+        <label class="sr" for="ask">Ask an agent</label>
+        <span class="to">Board agent</span>
+        <input id="ask" placeholder="Ask, or type / for a skill" />
+        <button class="send" type="submit" aria-label="Send">
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+      </form>
+    </div>
+    <script>
+      if (new URLSearchParams(location.search).get("scheme") === "dark") {
+        document.documentElement.dataset.scheme = "dark";
+      }
+    </script>
+  </body>
+</html>

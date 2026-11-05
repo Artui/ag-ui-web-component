@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ag-ui-chat design prototypes</title>
+    <style>
+      /* A neutral stand-in host page, so the widget is judged against an
+         ordinary admin screen rather than against the playground's bar. */
+      :root {
+        color-scheme: light;
+        --page-bg: #f6f6f4;
+        --page-card: #ffffff;
+        --page-fg: #1c1c1a;
+        --page-muted: #6b6b66;
+        --page-line: #e4e4df;
+      }
+      :root[data-scheme="dark"] {
+        color-scheme: dark;
+        --page-bg: #111112;
+        --page-card: #1a1a1c;
+        --page-fg: #ececea;
+        --page-muted: #9a9a95;
+        --page-line: #2b2b2e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: var(--page-bg);
+        color: var(--page-fg);
+      }
+      .topnav {
+        height: 52px;
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 0 28px;
+        border-bottom: 1px solid var(--page-line);
+        background: var(--page-card);
+        font-size: 14px;
+      }
+      .topnav b { font-weight: 650; }
+      .topnav span { color: var(--page-muted); }
+      main { max-width: 720px; margin: 40px 0 0 80px; padding: 0 24px; }
+      .card {
+        background: var(--page-card);
+        border: 1px solid var(--page-line);
+        border-radius: 10px;
+        padding: 24px 28px;
+      }
+      h1 { margin: 0 0 4px; font-size: 20px; }
+      .sub { margin: 0 0 20px; color: var(--page-muted); font-size: 14px; }
+      .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+      .field.row { flex-direction: row; align-items: center; gap: 8px; }
+      label { font-size: 13px; font-weight: 600; }
+      input[type="text"], select {
+        font: inherit;
+        padding: 8px 10px;
+        border: 1px solid var(--page-line);
+        border-radius: 7px;
+        background: var(--page-card);
+        color: inherit;
+      }
+      button.save {
+        border: 1px solid var(--page-line);
+        border-radius: 7px;
+        padding: 8px 16px;
+        font: inherit;
+        background: var(--page-bg);
+        color: inherit;
+      }
+      body[data-placement="page"] main,
+      body[data-placement="page"] .topnav { display: none; }
+      ag-ui-chat { --ag-ui-z-index: 5; }
+      body[data-placement="floating"] ag-ui-chat { --ag-ui-height: 860px; }
+    </style>
+  </head>
+  <body>
+    <nav class="topnav"><b>Northwind CMS</b><span>Articles</span><span>Media</span><span>Settings</span></nav>
+    <main>
+      <div class="card">
+        <h1>New article</h1>
+        <p class="sub">Draft, then publish when it is ready.</p>
+        <form>
+          <div class="field"><label for="title">Title</label><input type="text" id="title" /></div>
+          <div class="field"><label for="slug">Slug</label><input type="text" id="slug" /></div>
+          <div class="field">
+            <label for="status">Status</label>
+            <select id="status"><option value="draft">Draft</option><option value="published">Published</option></select>
+          </div>
+          <div class="field row"><input type="checkbox" id="featured" /><label for="featured">Featured</label></div>
+          <button type="button" class="save" id="save">Save</button>
+        </form>
+      </div>
+    </main>
+    <ag-ui-chat
+      id="chat"
+      endpoint="/agent/"
+      title-text="Copilot"
+      user-name="Ada"
+      data-start-open
+      data-text-animation="none"
+      data-slash-commands="true"
+      data-prompt-chips="true"
+    ></ag-ui-chat>
+    <script type="module" src="/prototypes/harness.js"></script>
+  </body>
+</html>

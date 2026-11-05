@@ -41,6 +41,9 @@ const PAGE_ASSETS = new Map([
   ["/page/", { path: "page/index.html", contentType: HTML }],
   ["/page/index.html", { path: "page/index.html", contentType: HTML }],
   ["/page/page.js", { path: "page/page.js", contentType: "text/javascript" }],
+  // The design-prototype harness, which the screenshot script drives.
+  ["/prototypes/", { path: "../prototypes/harness.html", contentType: HTML }],
+  ["/prototypes/harness.js", { path: "../prototypes/harness.js", contentType: "text/javascript" }],
   // Both pages load it; it does nothing unless the URL carries `?readout`.
   ["/viewport-readout.js", { path: "viewport-readout.js", contentType: "text/javascript" }],
 ]);
@@ -327,6 +330,55 @@ async function handleAgent(res, body) {
       "The handbook mentions settlement three times; ",
       "the ledger check did not run.",
     ]);
+  } else if (/\blaunch\b/i.test(prompt)) {
+    // The design-prototype script (prototypes/harness.html): one user turn
+    // that touches every surface a screenshot has to judge -- reasoning, a
+    // chart drawn by a tool, a run of form-filling steps with one failure in
+    // it, and a destructive save left waiting on the confirmation card. The
+    // stage is how many tool rounds have come back since the user spoke.
+    const sinceUser = messages.slice(messages.findLastIndex((m) => m.role === "user") + 1);
+    const stage = sinceUser.filter((m) => m.role === "assistant" && (m.toolCalls?.length ?? 0) > 0).length;
+    const parent = id("msg");
+    if (stage === 0) {
+      await streamReasoning(res, id("reasoning"), [
+        "Check last week's signups first, ",
+        "then draft and save the article.",
+      ]);
+      await streamText(res, parent, ["Signups first, so the article can cite them:"]);
+      emitToolCall(
+        res,
+        id("call"),
+        "render_chart",
+        {
+          kind: "bar",
+          title: "Weekly signups",
+          labels: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+          series: [
+            { label: "new", points: [12, 19, 9, 24, 17] },
+            { label: "returning", points: [5, 7, 11, 6, 14] },
+          ],
+        },
+        parent,
+      );
+    } else if (stage === 1) {
+      await streamText(res, parent, [
+        "Thursday peaked at **24** new signups. ",
+        "Filling in the article now.",
+      ]);
+      emitToolCall(res, id("call"), "fill_field", { field: "title", value: "Launch week, in numbers" }, parent);
+      emitToolCall(res, id("call"), "fill_field", { field: "slug", value: "launch-week" }, parent);
+      emitToolCall(res, id("call"), "select_option", { field: "status", value: "published" }, parent);
+      emitToolCall(res, id("call"), "toggle_checkbox", { field: "featured", value: true }, parent);
+      emitToolCall(res, id("call"), "check_links", {}, parent);
+    } else if (stage === 2) {
+      await streamText(res, parent, [
+        "The link check timed out, so I left the links as they are. ",
+        "Ready to save.",
+      ]);
+      emitToolCall(res, id("call"), "click_save", {}, parent);
+    } else {
+      await streamText(res, parent, ["Saved. The article is live."]);
+    }
   } else if (/\bchart\b/i.test(prompt) && !isFollowUp) {
     // Both routes and every kind, driven from one prompt so they can be
     // compared on the page rather than in the abstract.

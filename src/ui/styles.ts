@@ -32,6 +32,11 @@ import { SMALL_VIEWPORT_STYLES } from "./placement/small_viewport_styles.js";
 import { RUN_NOTICE_STYLES } from "./progress/run_notice_styles.js";
 import { THOUGHTS_STYLES } from "./progress/thoughts_styles.js";
 import { TOOL_STEP_STYLES } from "./progress/tool_step_styles.js";
+import { LEDGER_STYLES } from "./revamp/ledger_styles.js";
+import { QUIET_STYLES } from "./revamp/quiet_styles.js";
+import { REVAMP_BASE_STYLES } from "./revamp/revamp_base_styles.js";
+import { REVAMP_EDGE_STYLES } from "./revamp/revamp_edge_styles.js";
+import { SOFT_STYLES } from "./revamp/soft_styles.js";
 import { FRAME_STYLES } from "./shell/frame_styles.js";
 import { THEME_STYLES } from "./shell/theme_styles.js";
 import { TOKEN_STYLES } from "./shell/token_styles.js";
@@ -69,4 +74,11 @@ export const STYLES: string = [
   QUESTION_STYLES,
   SKILL_STYLES,
   HISTORY_STYLES,
+  // PROTOTYPE (design revamp): appended last so the baseline stays intact and
+  // only an element wearing a proto- theme or data-tool-group sees them.
+  REVAMP_BASE_STYLES,
+  QUIET_STYLES,
+  SOFT_STYLES,
+  LEDGER_STYLES,
+  REVAMP_EDGE_STYLES,
 ].join("");
