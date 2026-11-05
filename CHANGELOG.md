@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.0] — 2026-11-05
+
 ### Added
 
 - **A theme set.** `theme` is now up to two words in any order, a theme name
@@ -4701,7 +4703,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.44.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.41.3...v0.42.0
