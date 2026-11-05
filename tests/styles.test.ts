@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { seriesColor } from "../src/ui/charts/chart_block.js";
 import { STYLES } from "../src/ui/styles.js";
 
 /**
@@ -98,10 +99,12 @@ describe("STYLES", () => {
   });
 
   it("ships dark / auto / code themes that re-set the colour variables", () => {
-    expect(STYLES).toContain(':host([theme="dark"])');
-    expect(STYLES).toContain("@media (prefers-color-scheme: dark)");
-    expect(STYLES).toContain(':host([theme="auto"])');
-    expect(STYLES).toContain(':host([theme="code"])');
+    // Themes and schemes are words of the theme attribute, matched with ~=,
+    // and auto follows the system through color-scheme itself.
+    expect(STYLES).toContain(':host([theme~="dark"])');
+    expect(STYLES).toContain(':host([theme~="auto"])');
+    expect(STYLES).toContain("color-scheme: light dark;");
+    expect(STYLES).toContain(':host([theme~="code"])');
     // The code theme switches to the monospace font stack.
     expect(STYLES).toContain(aliasDeclaration("--ag-ui-code-font"));
     expect(STYLES).toContain("--_font: var(--ag-ui-font, var(--_code-font));");
@@ -351,6 +354,11 @@ describe("STYLES token indirection", () => {
     // on :host would pick up a same-named property from the host page's own
     // CSS; declaring it here shields the shadow tree from that.
     const used = new Set([...code.matchAll(/var\(\s*(--_[a-z0-9-]+)/g)].map((m) => m[1]));
+    // The chart series are read by the SVG the chart renderer writes, not by
+    // the stylesheet, so their aliases are used from there.
+    for (let index = 0; index < 6; index += 1) {
+      used.add(/--_[a-z0-9-]+/.exec(seriesColor(index))?.[0]);
+    }
     const declared = new Set([...defaults.matchAll(/^\s*(--_[a-z0-9-]+):/gm)].map((m) => m[1]));
     expect([...used].filter((name) => !declared.has(name))).toEqual([]);
     expect([...declared].filter((name) => !used.has(name))).toEqual([]);

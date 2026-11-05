@@ -7,29 +7,34 @@ const params = new URLSearchParams(window.location.search);
 const $ = (id) => document.getElementById(id);
 const chat = $("chat");
 
-const theme = params.get("theme") ?? "light";
+const theme = params.get("theme") ?? "";
 const scheme = params.get("scheme") ?? "light";
 const placement = params.get("placement") ?? "floating";
 document.documentElement.dataset.scheme = scheme;
 document.body.dataset.placement = placement;
 
-// The baseline keeps its own two theme names; a prototype direction takes the
-// scheme as a second word, which its stylesheet matches with ~=.
-if (theme === "light" || theme === "dark") {
-  chat.setAttribute("theme", scheme);
-} else {
-  chat.setAttribute("theme", `${theme} ${scheme}`);
+// theme="<name> <scheme>". No name is the default theme (Quiet); light is the
+// default scheme, so the plain default carries no attribute at all.
+const words = [theme, scheme === "light" ? "" : scheme].filter((word) => word !== "");
+if (words.length > 0) {
+  chat.setAttribute("theme", words.join(" "));
 }
 chat.setAttribute("placement", placement);
 chat.setAttribute("data-tool-display", params.get("display") ?? "compact");
-if (params.get("steps") === "group") {
-  chat.setAttribute("data-tool-group", "");
+const steps = params.get("steps");
+if (steps !== null) {
+  chat.setAttribute("data-tool-group", steps === "cards" ? "off" : "");
 }
 if (params.get("collapsed") === "1") {
   chat.removeAttribute("data-start-open");
   chat.setAttribute("collapsed", "");
 }
-
+// Override layers, for the review page: each one a host stylesheet rule, a
+// part rule, a custom theme word, or an extraStyles sheet.
+const override = params.get("override");
+if (override !== null) {
+  document.body.dataset.override = override;
+}
 // Every run starts from nothing, so the matrix is the same conversation each time.
 try {
   sessionStorage.clear();
@@ -39,6 +44,20 @@ try {
 }
 
 defineAgUiChat();
+// After the definition: set on the plain element before it upgrades, these
+// would shadow the element's own setters and do nothing.
+chat.askUser = true;
+chat.approveWithEdits = true;
+if (override === "extra") {
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(`
+    .header { border-top: 3px solid #0f766e; }
+    .header-title { font-size: 15px; letter-spacing: 0.01em; }
+    .message--assistant { padding: 10px 12px; border-radius: 10px; background: color-mix(in oklch, #0f766e 6%, transparent); }
+    .tool-group-head { font-variant: small-caps; }
+  `);
+  chat.extraStyles = [sheet];
+}
 chat.enableCharts(["tool"]);
 
 chat.registerTool({
@@ -110,6 +129,15 @@ chat.setSkills([
   { name: "triage", title: "Triage this article", description: "Server-resolved.", chip: true },
 ]);
 
-if (params.get("run") === "1") {
+// run=1 is the scripted turn; run=<word> sends that prompt to the mock
+// instead (import: three approvals, ask: a question, delegate: sub-agents).
+const run = params.get("run");
+if (run === "1") {
   void chat.sendMessage("Prepare the launch article from last week's signups and publish it.");
+} else if (run === "import") {
+  void chat.sendMessage("Import three rows onto the board.");
+} else if (run === "ask") {
+  void chat.sendMessage("Ask me something before you publish.");
+} else if (run === "delegate") {
+  void chat.sendMessage("Delegate this to the sub-agents.");
 }

@@ -3,10 +3,11 @@
 //   pnpm build && HOST=127.0.0.1 node demo/mock-server.mjs &
 //   node prototypes/screenshot-matrix.cjs [outDir]
 //
-// Every cell loads prototypes/harness.html with its look in the URL and runs
+// Every cell loads prototypes/harness.html with its look in the URL. Most run
 // the same scripted conversation (reasoning, a chart, five form steps with one
-// failure, and a destructive save left on the confirmation card), then waits
-// for that card before capturing. Shots are 2x.
+// failure, and a destructive save left on the confirmation card); the surface
+// cells run the mock's approval, question and sub-agent branches, or open the
+// slash palette or the history drawer. Shots are 2x.
 const { mkdirSync } = require("node:fs");
 const { join } = require("node:path");
 const { chromium } = require("playwright");
@@ -16,11 +17,12 @@ const OUT = process.argv[2] ?? join(__dirname, "shots");
 const DESKTOP = { width: 1440, height: 1000 };
 const PHONE = { width: 390, height: 844 };
 
+// Built-in themes. Quiet is the default, so it carries no theme word.
 const DIRECTIONS = [
-  { key: "baseline", theme: "light", steps: "cards" },
-  { key: "quiet", theme: "proto-quiet", steps: "group" },
-  { key: "soft", theme: "proto-soft", steps: "group" },
-  { key: "ledger", theme: "proto-ledger", steps: "group" },
+  { key: "quiet", theme: "" },
+  { key: "soft", theme: "soft" },
+  { key: "ledger", theme: "ledger" },
+  { key: "classic", theme: "classic" },
 ];
 const PLACEMENTS = ["floating", "sidebar", "page"];
 const SCHEMES = ["light", "dark"];
@@ -30,7 +32,6 @@ function url(direction, scheme, placement, extra = {}) {
     theme: direction.theme,
     scheme,
     placement,
-    steps: direction.steps,
     ...extra,
   });
   return `${BASE}?${query}`;
@@ -57,10 +58,18 @@ async function clipFor(page, placement, viewport) {
   };
 }
 
-async function conversation(page) {
+/** What each scripted run leaves on screen once it has settled. */
+const SETTLED = {
+  1: ".confirm:not([data-resolved])",
+  import: ".tool-call-approval .confirm, .approval",
+  ask: ".question",
+  delegate: '.tool-call[data-tool-name="delegate_task"] ~ .tool-call[data-tool-name="delegate_task"][data-status="done"]',
+};
+
+async function conversation(page, run = "1") {
   await page.waitForFunction(
-    () => document.querySelector("ag-ui-chat").shadowRoot.querySelector(".confirm:not([data-resolved])"),
-    null,
+    (selector) => document.querySelector("ag-ui-chat").shadowRoot.querySelector(selector),
+    SETTLED[run],
     { timeout: 45_000 },
   );
   // The form fills and the transcript settles at its foot.
@@ -77,7 +86,7 @@ function jobs() {
           url: url(direction, scheme, placement, { run: "1" }),
           viewport: DESKTOP,
           placement,
-          run: true,
+          run: "1",
         });
       }
       list.push({
@@ -85,36 +94,88 @@ function jobs() {
         url: url(direction, scheme, "floating", { run: "1" }),
         viewport: PHONE,
         placement: "floating",
-        run: true,
+        run: "1",
       });
       list.push({
         name: `${direction.key}-launcher-${scheme}`,
         url: url(direction, scheme, "floating", { collapsed: "1" }),
         viewport: DESKTOP,
         placement: "launcher",
-        run: false,
       });
-    }
-    // Tool steps up close: the turn as it settles, and the group opened.
-    if (direction.steps === "group") {
+      // The surfaces the first round left out, in every theme.
+      for (const run of ["import", "ask", "delegate"]) {
+        list.push({
+          name: `${direction.key}-surface-${run}-${scheme}`,
+          url: url(direction, scheme, "floating", { run }),
+          viewport: DESKTOP,
+          placement: "floating",
+          run,
+          ...(run === "delegate" ? { action: "open-group" } : {}),
+        });
+      }
       list.push({
-        name: `${direction.key}-steps-open-light`,
-        url: url(direction, "light", "floating", { run: "1" }),
+        name: `${direction.key}-surface-palette-${scheme}`,
+        url: url(direction, scheme, "floating"),
         viewport: DESKTOP,
         placement: "floating",
-        run: true,
-        openGroup: true,
+        action: "palette",
+      });
+      list.push({
+        name: `${direction.key}-surface-drawer-${scheme}`,
+        url: url(direction, scheme, "floating", { run: "1" }),
+        viewport: DESKTOP,
+        placement: "floating",
+        run: "1",
+        action: "drawer",
       });
     }
+    if (direction.key === "classic") {
+      continue;
+    }
+    list.push({
+      name: `${direction.key}-steps-open-light`,
+      url: url(direction, "light", "floating", { run: "1" }),
+      viewport: DESKTOP,
+      placement: "floating",
+      run: "1",
+      action: "open-group",
+    });
   }
-  // The baseline wearing the grouped steps, to separate the two changes.
+  // classic with the steps folded, to separate the two changes.
   list.push({
-    name: "baseline-grouped-floating-light",
-    url: url(DIRECTIONS[0], "light", "floating", { run: "1", steps: "group" }),
+    name: "classic-grouped-floating-light",
+    url: url(DIRECTIONS[3], "light", "floating", { run: "1", steps: "group" }),
     viewport: DESKTOP,
     placement: "floating",
-    run: true,
+    run: "1",
   });
+  list.push({
+    name: "code-floating-dark",
+    url: url({ theme: "code" }, "light", "floating", { run: "1" }),
+    viewport: DESKTOP,
+    placement: "floating",
+    run: "1",
+  });
+  // The override layers, each on the scripted turn.
+  const overrides = [
+    ["accent", "", "accent"],
+    ["accent-dark", "", "accent", "dark"],
+    ["pertheme", "soft", "pertheme"],
+    ["parts", "", "parts"],
+    ["acme", "acme", null],
+    ["acme-dark", "acme", null, "dark"],
+    ["soft-acme", "soft acme", null],
+    ["extra", "", "extra"],
+  ];
+  for (const [name, theme, override, scheme = "light"] of overrides) {
+    list.push({
+      name: `override-${name}`,
+      url: url({ theme }, scheme, "floating", { run: "1", ...(override ? { override } : {}) }),
+      viewport: DESKTOP,
+      placement: "floating",
+      run: "1",
+    });
+  }
   return list;
 }
 
@@ -125,15 +186,32 @@ async function capture(browser, job) {
     await page.goto(job.url);
     await page.waitForFunction(() => customElements.get("ag-ui-chat") !== undefined);
     if (job.run) {
-      await conversation(page);
+      await conversation(page, job.run);
     } else {
       await page.waitForTimeout(500);
     }
-    if (job.openGroup) {
+    if (job.action === "palette") {
+      await page.evaluate(() => {
+        const input = document.querySelector("ag-ui-chat").shadowRoot.querySelector(".input");
+        input.focus();
+      });
+      await page.keyboard.type("/");
+      await page.waitForTimeout(400);
+    }
+    if (job.action === "drawer") {
+      await page.evaluate(() => {
+        document.querySelector("ag-ui-chat").shadowRoot.querySelector(".header-btn--history").click();
+      });
+      await page.waitForTimeout(700);
+    }
+    if (job.action === "open-group") {
       await page.evaluate(() => {
         const root = document.querySelector("ag-ui-chat").shadowRoot;
-        root.querySelector('.tool-group[data-count="5"] .tool-group-head').click();
-        root.querySelector('.tool-group[data-count="5"]').scrollIntoView({ block: "center" });
+        const group = root.querySelector('.tool-group[data-count="5"]') ?? root.querySelector(".tool-group");
+        if (group !== null) {
+          group.querySelector(".tool-group-head").click();
+          group.scrollIntoView({ block: "center" });
+        }
       });
       await page.waitForTimeout(400);
     }

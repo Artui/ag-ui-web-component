@@ -1,7 +1,7 @@
 import { TOOL_CALL_STATUS } from "../../constants.js";
 
 /** What a group says about itself, read by the shadow CSS from `data-state`. */
-type GroupState = "running" | "done" | "error";
+type GroupState = "waiting" | "running" | "done" | "error";
 
 /** The statuses a step is still open in. */
 const OPEN_STATUSES: ReadonlySet<string> = new Set([
@@ -15,15 +15,15 @@ function stepName(card: Element): string {
 }
 
 /**
- * PROTOTYPE (design revamp, never merged): consecutive tool calls folded into
- * one quiet row, "Worked through 5 steps", with the per-call cards one click
- * down. Behind the element's `data-tool-group` attribute so the existing card
- * display stays the baseline.
+ * Consecutive tool calls folded into one quiet row, "Worked through 5 steps",
+ * with the per-call cards one click down. See `groupsToolSteps` for when an
+ * element folds.
  *
  * The group owns no state of its own beyond its nodes: it reads every card's
  * `data-status` each time one changes, so a card settled by any path (a client
  * handler, a streamed server result, a declined confirmation) updates the row
- * without the group being told. Strings are English only on this branch.
+ * without the group being told. Strings are English only on this prototype
+ * branch; the shipping version would take them from the string table.
  */
 export class ToolStepGroup {
   readonly element: HTMLDivElement;
@@ -31,6 +31,8 @@ export class ToolStepGroup {
   readonly #head: HTMLButtonElement;
   readonly #label: HTMLSpanElement;
   readonly #meta: HTMLSpanElement;
+  /** Whether the group has already opened itself for the current wait. */
+  #openedForWait = false;
 
   constructor() {
     this.element = document.createElement("div");
@@ -92,10 +94,23 @@ export class ToolStepGroup {
     const open = cards.filter((_, i) => OPEN_STATUSES.has(statuses[i] ?? ""));
     const failed = statuses.filter((status) => status === TOOL_CALL_STATUS.ERROR).length;
     const declined = statuses.filter((status) => status === TOOL_CALL_STATUS.DECLINED).length;
+    const waiting = statuses.filter((status) => status === TOOL_CALL_STATUS.DEFERRED).length;
     const total = cards.length;
 
+    // A step waiting on the user carries its approval card inside it, so a
+    // folded group would hide the very question it is asking. Open it, once
+    // per wait; the user can still fold it again.
+    if (waiting > 0 && !this.#openedForWait) {
+      this.#openedForWait = true;
+      this.setOpen(true);
+    } else if (waiting === 0) {
+      this.#openedForWait = false;
+    }
+
     let state: GroupState = "done";
-    if (open.length > 0) {
+    if (waiting > 0) {
+      state = "waiting";
+    } else if (open.length > 0) {
       state = "running";
     } else if (failed > 0) {
       state = "error";
@@ -106,6 +121,8 @@ export class ToolStepGroup {
     const first = cards[0];
     if (total === 1 && first !== undefined) {
       this.#label.textContent = stepName(first);
+    } else if (state === "waiting") {
+      this.#label.textContent = `${total} steps`;
     } else if (state === "running") {
       this.#label.textContent = `Working through ${total} steps`;
     } else {
@@ -114,7 +131,9 @@ export class ToolStepGroup {
 
     const notes: string[] = [];
     const current = open[0];
-    if (state === "running" && current !== undefined && total > 1) {
+    if (waiting > 0) {
+      notes.push(`${waiting} waiting for you`);
+    } else if (state === "running" && current !== undefined && total > 1) {
       notes.push(stepName(current));
     }
     if (failed > 0) {

@@ -21,27 +21,46 @@ export const TOKEN_STYLES: string = `
       property, so an undeclared one would pick up a same-named property from
       the host page; declaring it on :host shields the shadow tree from that. */
 :host {
-  /* Colors */
-  --_bg: var(--ag-ui-bg, #ffffff);
-  --_fg: var(--ag-ui-fg, #1a1a2e);
-  --_accent: var(--ag-ui-accent, #4f46e5);
-  --_user-bg: var(--ag-ui-user-bg, #4f46e5);
-  --_user-fg: var(--ag-ui-user-fg, #ffffff);
-  --_assistant-bg: var(--ag-ui-assistant-bg, #f1f1f6);
-  --_hover: var(--ag-ui-hover, #e7e7ee);
+  /* Colors. The default theme, Quiet: three seeds, and every other shade
+     mixed from them in oklch, so a host that sets only --ag-ui-accent (or
+     only the background and text) gets a whole widget rethemed. The seeds use
+     light-dark, so the scheme word on the theme attribute picks the half;
+     see scheme_styles in the themes directory. Every derived shade still
+     reads its own public token first, so each stays an override point. */
+  color-scheme: light;
+  --_bg: var(--ag-ui-bg, light-dark(#ffffff, #161618));
+  --_fg: var(--ag-ui-fg, light-dark(#1b1b1d, #ececee));
+  --_accent: var(--ag-ui-accent, light-dark(#232326, #f0f0f2));
+  --_ink-2: var(--ag-ui-ink-2, color-mix(in oklch, var(--_fg) 78%, var(--_bg)));
+  --_ink-3: var(--ag-ui-ink-3, color-mix(in oklch, var(--_fg) 64%, var(--_bg)));
+  --_line: var(--ag-ui-line, color-mix(in oklch, var(--_fg) 11%, var(--_bg)));
+  --_line-strong: var(--ag-ui-line-strong, color-mix(in oklch, var(--_fg) 20%, var(--_bg)));
+  --_wash: var(--ag-ui-wash, color-mix(in oklch, var(--_fg) 4.5%, var(--_bg)));
+  --_accent-ink: var(--ag-ui-accent-ink, color-mix(in oklch, var(--_accent) 82%, var(--_fg)));
+  --_ring: var(--ag-ui-ring, color-mix(in oklch, var(--_accent) 55%, transparent));
+  /* The user's turn is the accent at a whisper. With Quiet's graphite accent
+     that is a neutral wash; once a host sets a brand accent it becomes a tint
+     of the brand, which is the one thing Soft does that Quiet keeps. */
+  --_user-bg: var(--ag-ui-user-bg, color-mix(in oklch, var(--_accent) 12%, var(--_bg)));
+  --_user-fg: var(--ag-ui-user-fg, var(--_fg));
+  --_assistant-bg: var(--ag-ui-assistant-bg, transparent);
+  --_hover: var(--ag-ui-hover, color-mix(in oklch, var(--_fg) 6%, var(--_bg)));
   --_input-bg: var(--ag-ui-input-bg, var(--_bg));
-  --_tool-bg: var(--ag-ui-tool-bg, var(--_assistant-bg));
-  --_tool-fg: var(--ag-ui-tool-fg, var(--_accent));
-  --_header-bg: var(--ag-ui-header-bg, var(--_accent));
-  --_header-fg: var(--ag-ui-header-fg, #ffffff);
-  --_border: var(--ag-ui-border, #e2e2ec);
+  --_tool-bg: var(--ag-ui-tool-bg, transparent);
+  --_tool-fg: var(--ag-ui-tool-fg, var(--_ink-2));
+  --_header-bg: var(--ag-ui-header-bg, var(--_bg));
+  --_header-fg: var(--ag-ui-header-fg, var(--_fg));
+  --_border: var(--ag-ui-border, var(--_line));
   --_radius: var(--ag-ui-radius, 12px);
   /* The panel's own frame, which is the one corner a placement can put against
      the edge of the viewport. The placements that do (page, sidebar, side, full,
      and all but embedded on a small viewport) square this and leave --_radius alone, so
      the answer well and the controls inside the panel stay as round as the
      theme says: none of them meets that edge. */
-  --_panel-radius: var(--ag-ui-panel-radius, var(--_radius));
+  /* What a theme sets for the frame; the effective value below is what a
+     placement squares, so the two never fight over one property. */
+  --_frame-radius: var(--ag-ui-frame-radius, 14px);
+  --_panel-radius: var(--ag-ui-panel-radius, var(--_frame-radius));
 
   /* Body text and raised chrome, read only by the code-block copy button.
      The defaults restate what it inherits, so a host that sets neither sees
@@ -58,14 +77,17 @@ export const TOKEN_STYLES: string = `
   --_header-btn-size: var(--ag-ui-header-btn-size, 30px);
   --_header-gap: var(--ag-ui-header-gap, 4px);
   --_action-icon-size: var(--ag-ui-action-icon-size, 15px);
-  --_tooltip-bg: var(--ag-ui-tooltip-bg, #1f2430);
-  --_tooltip-fg: var(--ag-ui-tooltip-fg, #f5f6fa);
+  --_tooltip-bg: var(--ag-ui-tooltip-bg, var(--_fg));
+  --_tooltip-fg: var(--ag-ui-tooltip-fg, var(--_bg));
 
   /* Text and marks drawn on top of the accent and danger fills. Separate
      tokens because they are not free: a host that themes the accent to a pale
      colour has white-on-pale with no way to correct it, which is the one
      theming change that makes a control unreadable rather than merely off. */
-  --_on-accent: var(--ag-ui-on-accent, #ffffff);
+  /* Picked from the accent's own lightness where relative colour syntax is
+     supported (the block after this rule); this scheme-based value is the
+     fallback for engines without it. */
+  --_on-accent: var(--ag-ui-on-accent, light-dark(#ffffff, #111111));
   --_on-danger: var(--ag-ui-on-danger, #ffffff);
 
   /* Resize grips: the corner squares and the edge strips between them. Wide
@@ -79,9 +101,9 @@ export const TOKEN_STYLES: string = `
   --_grip-mark-thickness: var(--ag-ui-grip-mark-thickness, 3px);
 
   /* Status accents for tool-call cards. */
-  --_success: var(--ag-ui-success, #15803d);
-  --_danger: var(--ag-ui-danger, #b91c1c);
-  --_muted: var(--ag-ui-muted, #6b7280);
+  --_success: var(--ag-ui-success, light-dark(#15803d, #4ade80));
+  --_danger: var(--ag-ui-danger, light-dark(#b91c1c, #f87171));
+  --_muted: var(--ag-ui-muted, var(--_ink-3));
 
   /* Tool-call status icon glyphs (override to re-theme) + spinner speed.
      The pending state is the animated ring; the settled states use these. */
@@ -103,9 +125,17 @@ export const TOKEN_STYLES: string = `
   --_well-radius: var(--ag-ui-well-radius, var(--_radius));
 
   /* Surface — set --ag-ui-shadow: none for a flush, embedded panel. */
-  --_shadow: var(--ag-ui-shadow, 0 12px 32px rgba(20, 20, 50, 0.18));
-  --_font: var(--ag-ui-font, inherit);
-  --_font-size: var(--ag-ui-font-size, 14px);
+  --_frame-shadow: var(--ag-ui-frame-shadow, 0 1px 2px light-dark(rgb(0 0 0 / 0.05), rgb(255 255 255 / 0.04)), 0 12px 32px -16px light-dark(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.7)));
+  --_shadow: var(--ag-ui-shadow, var(--_frame-shadow));
+  --_font: var(--ag-ui-font, Inter, ui-sans-serif, system-ui, sans-serif);
+  --_serif: var(--ag-ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif);
+  --_font-size: var(--ag-ui-font-size, var(--_text-md));
+  /* The type scale. */
+  --_text-xs: var(--ag-ui-text-xs, 11.5px);
+  --_text-sm: var(--ag-ui-text-sm, 12.5px);
+  --_text-md: var(--ag-ui-text-md, 14px);
+  --_text-lg: var(--ag-ui-text-lg, 16px);
+  --_leading: var(--ag-ui-leading, 1.55);
   --_code-font: var(--ag-ui-code-font, ui-monospace, "SF Mono", Menlo, monospace);
 
   /* Header / launcher icon box. */
@@ -113,7 +143,7 @@ export const TOKEN_STYLES: string = `
   --_icon-radius: var(--ag-ui-icon-radius, 4px);
 
   /* Composer — one bordered surface holding the field and its tool row. */
-  --_composer-radius: var(--ag-ui-composer-radius, 14px);
+  --_composer-radius: var(--ag-ui-composer-radius, 12px);
   --_composer-max-height: var(--ag-ui-composer-max-height, 40vh);
   --_tool-btn-size: var(--ag-ui-tool-btn-size, 30px);
   --_send-size: var(--ag-ui-send-size, 30px);
@@ -124,6 +154,13 @@ export const TOKEN_STYLES: string = `
      the chart fills its column, and above it a wider panel is just a wider
      panel. */
   --_chart-max-width: var(--ag-ui-chart-max-width, 480px);
+  /* Chart series. Quiet draws in ink and keeps hues for the series past two. */
+  --_chart-1: var(--ag-ui-chart-1, var(--_fg));
+  --_chart-2: var(--ag-ui-chart-2, color-mix(in oklch, var(--_fg) 32%, var(--_bg)));
+  --_chart-3: var(--ag-ui-chart-3, #e0803c);
+  --_chart-4: var(--ag-ui-chart-4, #b563d8);
+  --_chart-5: var(--ag-ui-chart-5, #d84f6e);
+  --_chart-6: var(--ag-ui-chart-6, #3ba7c4);
 
   /* Unread badge on the launcher. */
   --_badge-bg: var(--ag-ui-badge-bg, var(--_danger));
@@ -132,11 +169,11 @@ export const TOKEN_STYLES: string = `
   --_badge-font-size: var(--ag-ui-badge-font-size, 11px);
 
   /* The floating launcher a collapsed widget shrinks to. */
-  --_launcher-size: var(--ag-ui-launcher-size, 56px);
-  --_launcher-bg: var(--ag-ui-launcher-bg, var(--_header-bg));
-  --_launcher-fg: var(--ag-ui-launcher-fg, var(--_header-fg));
-  --_launcher-radius: var(--ag-ui-launcher-radius, 50%);
-  --_launcher-icon-size: var(--ag-ui-launcher-icon-size, 26px);
+  --_launcher-size: var(--ag-ui-launcher-size, 48px);
+  --_launcher-bg: var(--ag-ui-launcher-bg, var(--_bg));
+  --_launcher-fg: var(--ag-ui-launcher-fg, var(--_fg));
+  --_launcher-radius: var(--ag-ui-launcher-radius, 14px);
+  --_launcher-icon-size: var(--ag-ui-launcher-icon-size, 22px);
   --_launcher-inset: var(--ag-ui-launcher-inset, auto 0 0 auto);
 
   /* Motion. One duration and two curves drive every collapse, expand and
@@ -151,7 +188,7 @@ export const TOKEN_STYLES: string = `
   --_space: var(--ag-ui-space, 10px);
   --_pad: var(--ag-ui-pad, 16px);
   --_msg-pad: var(--ag-ui-msg-pad, 8px 12px);
-  --_msg-radius: var(--ag-ui-msg-radius, 14px);
+  --_msg-radius: var(--ag-ui-msg-radius, 12px);
 
   /* Edges of the viewport the host has already spent, and that a fixed
      placement must therefore stay out of: a sticky nav bar, a docked toolbar,
@@ -319,5 +356,28 @@ export const TOKEN_STYLES: string = `
   font-family: var(--_font);
   font-size: var(--_font-size);
   color: var(--_fg);
+
+  /* Surfaces a theme can tint; Quiet leaves them neutral. */
+  --_tint: var(--ag-ui-tint, var(--_wash));
+  --_tint-2: var(--ag-ui-tint-2, var(--_user-bg));
+
+  /* Status marks drawn as masks, so they take the colour of their state. */
+  --_ico-check: var(--ag-ui-ico-check, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E"));
+  --_ico-error: var(--ag-ui-ico-error, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6.2'/%3E%3Cpath d='M8 4.9v3.7M8 11.1v.1'/%3E%3C/svg%3E"));
+  --_ico-declined: var(--ag-ui-ico-declined, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6.2'/%3E%3Cpath d='M3.8 12.2l8.4-8.4'/%3E%3C/svg%3E"));
+  --_ico-chevron: var(--ag-ui-ico-chevron, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3.5l4.5 4.5L6 12.5'/%3E%3C/svg%3E"));
+}
+
+/* The colour drawn on the accent, from the accent's own lightness: white on
+   an accent darker than oklch L 0.62, near-black on a lighter one. A host
+   that sets a mid-tone brand accent in the dark scheme would otherwise get
+   the dark scheme's near-black on it. Relative colour syntax is Chrome 119,
+   Firefox 128 and Safari 18; Safari 17 parses an older form of it, so the
+   test below asks for the exact expression this uses, and an engine that
+   cannot read it keeps the scheme-based fallback above. */
+@supports (color: oklch(from red clamp(0, (0.62 - l) * 1000, 1) 0 0)) {
+  :host {
+    --_on-accent: var(--ag-ui-on-accent, oklch(from var(--_accent) clamp(0, (0.62 - l) * 1000, 1) 0 0));
+  }
 }
 `;

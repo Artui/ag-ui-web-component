@@ -11,10 +11,12 @@ const { chromium } = require("playwright");
 
 const BASE = process.env.BASE_URL ?? "http://localhost:5173/prototypes/";
 const DIRECTIONS = [
-  { key: "baseline", theme: "light", steps: "cards" },
-  { key: "quiet", theme: "proto-quiet", steps: "group" },
-  { key: "soft", theme: "proto-soft", steps: "group" },
-  { key: "ledger", theme: "proto-ledger", steps: "group" },
+  { key: "quiet", theme: "" },
+  { key: "soft", theme: "soft" },
+  { key: "ledger", theme: "ledger" },
+  { key: "classic", theme: "classic" },
+  // A mid-tone brand accent on the default theme, set the way a host would.
+  { key: "quiet+brand", theme: "", override: "accent" },
 ];
 // [role, selector, minimum ratio]. 4.5 for text, 3 for an icon.
 const ROLES = [
@@ -24,7 +26,7 @@ const ROLES = [
   ["user text", ".message--user", 4.5],
   ["thoughts toggle", ".thoughts-toggle", 4.5],
   ["tool card name", ".tool-call-name", 4.5],
-  ["tool card pill", ".tool-call-status", 4.5],
+  ["tool card pill (classic only)", ".tool-call-status", 4.5],
   ["step group label", ".tool-group-label", 4.5],
   ["step group failed", '.tool-group[data-state="error"] .tool-group-meta', 4.5],
   ["step done icon", '.tool-call[data-status="done"] .tool-call-icon', 3],
@@ -81,6 +83,9 @@ async function measure(page, roles) {
     for (const [role, selector, min] of roles) {
       const el = root.querySelector(selector);
       if (!el) continue;
+      // The pill is visually hidden outside classic and code; it is there for
+      // screen readers only, so its colour is not what anyone sees.
+      if (role.startsWith("tool card pill") && el.closest(".tool-group")) continue;
       const style = getComputedStyle(el);
       const placeholder = selector === ".input";
       const fgCss = placeholder
@@ -105,7 +110,8 @@ async function measure(page, roles) {
     DIRECTIONS.flatMap((d) =>
       ["light", "dark"].map(async (scheme) => {
         const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-        const q = new URLSearchParams({ theme: d.theme, scheme, placement: "floating", steps: d.steps, run: "1" });
+        const q = new URLSearchParams({ theme: d.theme, scheme, placement: "floating", run: "1" });
+        if (d.override) q.set("override", d.override);
         await page.goto(`${BASE}?${q}`);
         await page.waitForFunction(
           () => document.querySelector("ag-ui-chat").shadowRoot.querySelector(".confirm:not([data-resolved])"),

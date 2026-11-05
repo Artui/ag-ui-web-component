@@ -1,4 +1,188 @@
 {
+  "ledger-dark": [
+    {
+      "role": "header title",
+      "ratio": 14.64,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "header button",
+      "ratio": 5.9,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "assistant text",
+      "ratio": 14.64,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "user text",
+      "ratio": 14.64,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "thoughts toggle",
+      "ratio": 5.9,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "tool card name",
+      "ratio": 8.59,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step group label",
+      "ratio": 8.59,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step group failed",
+      "ratio": 6.61,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step done icon",
+      "ratio": 10.49,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "chart legend",
+      "ratio": 14.64,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm prompt",
+      "ratio": 14.64,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm primary",
+      "ratio": 8.44,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm secondary",
+      "ratio": 14.64,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "composer placeholder",
+      "ratio": 5.9,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "message action",
+      "ratio": 5.9,
+      "min": 3,
+      "pass": true
+    }
+  ],
+  "quiet+brand-light": [
+    {
+      "role": "header title",
+      "ratio": 17.2,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "header button",
+      "ratio": 5.96,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "assistant text",
+      "ratio": 17.2,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "user text",
+      "ratio": 14.54,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "thoughts toggle",
+      "ratio": 5.96,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "tool card name",
+      "ratio": 9.51,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step group label",
+      "ratio": 9.51,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step group failed",
+      "ratio": 6.47,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step done icon",
+      "ratio": 5.02,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "chart legend",
+      "ratio": 17.2,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm prompt",
+      "ratio": 17.2,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm primary",
+      "ratio": 5.47,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm secondary",
+      "ratio": 17.2,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "composer placeholder",
+      "ratio": 5.96,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "message action",
+      "ratio": 5.96,
+      "min": 3,
+      "pass": true
+    }
+  ],
   "soft-light": [
     {
       "role": "header title",
@@ -35,12 +219,6 @@
       "ratio": 8.88,
       "min": 4.5,
       "pass": true
-    },
-    {
-      "role": "tool card pill",
-      "ratio": 4.09,
-      "min": 4.5,
-      "pass": false
     },
     {
       "role": "step group label",
@@ -97,468 +275,94 @@
       "pass": true
     }
   ],
-  "quiet-dark": [
+  "quiet-light": [
     {
       "role": "header title",
-      "ratio": 15.32,
+      "ratio": 17.2,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "header button",
-      "ratio": 6.16,
+      "ratio": 5.96,
       "min": 3,
       "pass": true
     },
     {
       "role": "assistant text",
-      "ratio": 15.32,
+      "ratio": 17.2,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "user text",
-      "ratio": 14.17,
+      "ratio": 13.18,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "thoughts toggle",
-      "ratio": 6.16,
+      "ratio": 5.96,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "tool card name",
-      "ratio": 9.05,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "tool card pill",
-      "ratio": 5.13,
+      "ratio": 9.51,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "step group label",
-      "ratio": 9.05,
+      "ratio": 9.51,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "step group failed",
-      "ratio": 6.53,
+      "ratio": 6.47,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "step done icon",
-      "ratio": 6.16,
+      "ratio": 5.02,
       "min": 3,
       "pass": true
     },
     {
       "role": "chart legend",
-      "ratio": 15.32,
+      "ratio": 17.2,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "confirm prompt",
-      "ratio": 15.32,
+      "ratio": 17.2,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "confirm primary",
-      "ratio": 16.59,
+      "ratio": 15.67,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "confirm secondary",
-      "ratio": 15.32,
+      "ratio": 17.2,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "composer placeholder",
-      "ratio": 6.16,
+      "ratio": 5.96,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "message action",
-      "ratio": 6.16,
-      "min": 3,
-      "pass": true
-    }
-  ],
-  "soft-dark": [
-    {
-      "role": "header title",
-      "ratio": 14.15,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "header button",
-      "ratio": 5.73,
-      "min": 3,
-      "pass": true
-    },
-    {
-      "role": "assistant text",
-      "ratio": 14.98,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "user text",
-      "ratio": 12.61,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "thoughts toggle",
-      "ratio": 6.06,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "tool card name",
-      "ratio": 8.87,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "tool card pill",
-      "ratio": 8.57,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "step group label",
-      "ratio": 8.38,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "step group failed",
-      "ratio": 6.14,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "step done icon",
-      "ratio": 10.31,
-      "min": 3,
-      "pass": true
-    },
-    {
-      "role": "chart legend",
-      "ratio": 14.98,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm prompt",
-      "ratio": 14.15,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm primary",
-      "ratio": 7.39,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm secondary",
-      "ratio": 14.98,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "composer placeholder",
-      "ratio": 6.06,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "message action",
-      "ratio": 6.06,
-      "min": 3,
-      "pass": true
-    }
-  ],
-  "ledger-dark": [
-    {
-      "role": "header title",
-      "ratio": 14.64,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "header button",
-      "ratio": 5.9,
-      "min": 3,
-      "pass": true
-    },
-    {
-      "role": "assistant text",
-      "ratio": 14.64,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "user text",
-      "ratio": 14.64,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "thoughts toggle",
-      "ratio": 5.9,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "tool card name",
-      "ratio": 8.59,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "tool card pill",
-      "ratio": 8.75,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "step group label",
-      "ratio": 8.59,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "step group failed",
-      "ratio": 6.61,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "step done icon",
-      "ratio": 10.49,
-      "min": 3,
-      "pass": true
-    },
-    {
-      "role": "chart legend",
-      "ratio": 14.64,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm prompt",
-      "ratio": 14.64,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm primary",
-      "ratio": 7.35,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm secondary",
-      "ratio": 14.64,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "composer placeholder",
-      "ratio": 5.9,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "message action",
-      "ratio": 5.9,
-      "min": 3,
-      "pass": true
-    }
-  ],
-  "baseline-dark": [
-    {
-      "role": "header title",
-      "ratio": 13.31,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "header button",
-      "ratio": 13.31,
-      "min": 3,
-      "pass": true
-    },
-    {
-      "role": "assistant text",
-      "ratio": 12.29,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "user text",
-      "ratio": 6.29,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "thoughts toggle",
-      "ratio": 6.96,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "tool card name",
-      "ratio": 2.38,
-      "min": 4.5,
-      "pass": false
-    },
-    {
-      "role": "tool card pill",
-      "ratio": 2.46,
-      "min": 4.5,
-      "pass": false
-    },
-    {
-      "role": "step done icon",
-      "ratio": 2.38,
-      "min": 3,
-      "pass": false
-    },
-    {
-      "role": "chart legend",
-      "ratio": 14.89,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm prompt",
-      "ratio": 14.89,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm primary",
-      "ratio": 6.29,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm secondary",
-      "ratio": 14.89,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "composer placeholder",
-      "ratio": 3.93,
-      "min": 4.5,
-      "pass": false
-    },
-    {
-      "role": "message action",
-      "ratio": 6.96,
-      "min": 3,
-      "pass": true
-    }
-  ],
-  "baseline-light": [
-    {
-      "role": "header title",
-      "ratio": 6.29,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "header button",
-      "ratio": 6.29,
-      "min": 3,
-      "pass": true
-    },
-    {
-      "role": "assistant text",
-      "ratio": 15.15,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "user text",
-      "ratio": 6.29,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "thoughts toggle",
-      "ratio": 4.83,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "tool card name",
-      "ratio": 5.58,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "tool card pill",
-      "ratio": 3.75,
-      "min": 4.5,
-      "pass": false
-    },
-    {
-      "role": "step done icon",
-      "ratio": 5.58,
-      "min": 3,
-      "pass": true
-    },
-    {
-      "role": "chart legend",
-      "ratio": 17.06,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm prompt",
-      "ratio": 17.06,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm primary",
-      "ratio": 6.29,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "confirm secondary",
-      "ratio": 17.06,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "composer placeholder",
-      "ratio": 4.61,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "message action",
-      "ratio": 4.83,
+      "ratio": 5.96,
       "min": 3,
       "pass": true
     }
@@ -599,12 +403,6 @@
       "ratio": 9.04,
       "min": 4.5,
       "pass": true
-    },
-    {
-      "role": "tool card pill",
-      "ratio": 4.01,
-      "min": 4.5,
-      "pass": false
     },
     {
       "role": "step group label",
@@ -661,100 +459,450 @@
       "pass": true
     }
   ],
-  "quiet-light": [
+  "classic-light": [
     {
       "role": "header title",
-      "ratio": 17.2,
+      "ratio": 6.29,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "header button",
-      "ratio": 5.96,
+      "ratio": 6.29,
       "min": 3,
       "pass": true
     },
     {
       "role": "assistant text",
-      "ratio": 17.2,
+      "ratio": 15.15,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "user text",
-      "ratio": 15.5,
+      "ratio": 6.29,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "thoughts toggle",
-      "ratio": 5.96,
+      "ratio": 4.83,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "tool card name",
-      "ratio": 9.51,
+      "ratio": 5.58,
       "min": 4.5,
       "pass": true
     },
     {
-      "role": "tool card pill",
-      "ratio": 4.95,
+      "role": "tool card pill (classic only)",
+      "ratio": 3.75,
       "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "step group label",
-      "ratio": 9.51,
-      "min": 4.5,
-      "pass": true
-    },
-    {
-      "role": "step group failed",
-      "ratio": 6.47,
-      "min": 4.5,
-      "pass": true
+      "pass": false
     },
     {
       "role": "step done icon",
-      "ratio": 5.96,
+      "ratio": 5.58,
       "min": 3,
       "pass": true
     },
     {
       "role": "chart legend",
-      "ratio": 17.2,
+      "ratio": 17.06,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "confirm prompt",
-      "ratio": 17.2,
+      "ratio": 17.06,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "confirm primary",
-      "ratio": 15.67,
+      "ratio": 6.29,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "confirm secondary",
-      "ratio": 17.2,
+      "ratio": 17.06,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "composer placeholder",
-      "ratio": 5.96,
+      "ratio": 4.61,
       "min": 4.5,
       "pass": true
     },
     {
       "role": "message action",
-      "ratio": 5.96,
+      "ratio": 4.83,
+      "min": 3,
+      "pass": true
+    }
+  ],
+  "soft-dark": [
+    {
+      "role": "header title",
+      "ratio": 14.15,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "header button",
+      "ratio": 5.73,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "assistant text",
+      "ratio": 14.98,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "user text",
+      "ratio": 12.61,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "thoughts toggle",
+      "ratio": 6.06,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "tool card name",
+      "ratio": 8.87,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step group label",
+      "ratio": 8.38,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step group failed",
+      "ratio": 6.14,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step done icon",
+      "ratio": 10.31,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "chart legend",
+      "ratio": 14.98,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm prompt",
+      "ratio": 14.15,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm primary",
+      "ratio": 8.22,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm secondary",
+      "ratio": 14.98,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "composer placeholder",
+      "ratio": 6.06,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "message action",
+      "ratio": 6.06,
+      "min": 3,
+      "pass": true
+    }
+  ],
+  "quiet+brand-dark": [
+    {
+      "role": "header title",
+      "ratio": 15.32,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "header button",
+      "ratio": 6.16,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "assistant text",
+      "ratio": 15.32,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "user text",
+      "ratio": 13.94,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "thoughts toggle",
+      "ratio": 6.16,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "tool card name",
+      "ratio": 9.05,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step group label",
+      "ratio": 9.05,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step group failed",
+      "ratio": 6.53,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step done icon",
+      "ratio": 10.37,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "chart legend",
+      "ratio": 15.32,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm prompt",
+      "ratio": 15.32,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm primary",
+      "ratio": 5.47,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm secondary",
+      "ratio": 15.32,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "composer placeholder",
+      "ratio": 6.16,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "message action",
+      "ratio": 6.16,
+      "min": 3,
+      "pass": true
+    }
+  ],
+  "quiet-dark": [
+    {
+      "role": "header title",
+      "ratio": 15.32,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "header button",
+      "ratio": 6.16,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "assistant text",
+      "ratio": 15.32,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "user text",
+      "ratio": 11.92,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "thoughts toggle",
+      "ratio": 6.16,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "tool card name",
+      "ratio": 9.05,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step group label",
+      "ratio": 9.05,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step group failed",
+      "ratio": 6.53,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "step done icon",
+      "ratio": 10.37,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "chart legend",
+      "ratio": 15.32,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm prompt",
+      "ratio": 15.32,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm primary",
+      "ratio": 18.45,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm secondary",
+      "ratio": 15.32,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "composer placeholder",
+      "ratio": 6.16,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "message action",
+      "ratio": 6.16,
+      "min": 3,
+      "pass": true
+    }
+  ],
+  "classic-dark": [
+    {
+      "role": "header title",
+      "ratio": 13.31,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "header button",
+      "ratio": 13.31,
+      "min": 3,
+      "pass": true
+    },
+    {
+      "role": "assistant text",
+      "ratio": 12.29,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "user text",
+      "ratio": 6.29,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "thoughts toggle",
+      "ratio": 6.96,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "tool card name",
+      "ratio": 2.38,
+      "min": 4.5,
+      "pass": false
+    },
+    {
+      "role": "tool card pill (classic only)",
+      "ratio": 2.46,
+      "min": 4.5,
+      "pass": false
+    },
+    {
+      "role": "step done icon",
+      "ratio": 2.38,
+      "min": 3,
+      "pass": false
+    },
+    {
+      "role": "chart legend",
+      "ratio": 14.89,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm prompt",
+      "ratio": 14.89,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm primary",
+      "ratio": 6.29,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "confirm secondary",
+      "ratio": 14.89,
+      "min": 4.5,
+      "pass": true
+    },
+    {
+      "role": "composer placeholder",
+      "ratio": 3.93,
+      "min": 4.5,
+      "pass": false
+    },
+    {
+      "role": "message action",
+      "ratio": 6.96,
       "min": 3,
       "pass": true
     }

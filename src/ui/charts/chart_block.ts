@@ -96,16 +96,16 @@ const WIDTH_STEP = 8;
 /** A rough advance width per character for the 10px axis font. */
 const AXIS_CHAR_WIDTH = 5.6;
 
-// Read from the host's own palette rather than a fixed ramp: the component
-// themes through custom properties everywhere else, and a chart that ignored
-// that would be the one element a host could not restyle.
+// Read from the theme's palette rather than a fixed ramp. The private alias
+// reads the host's --ag-ui-chart-N first (see token_styles), so a host's
+// colour wins over any theme's, and a theme can still supply its own.
 const SERIES_COLORS: readonly string[] = [
-  "var(--ag-ui-chart-1, #4f7cff)",
-  "var(--ag-ui-chart-2, #21b573)",
-  "var(--ag-ui-chart-3, #e0803c)",
-  "var(--ag-ui-chart-4, #b563d8)",
-  "var(--ag-ui-chart-5, #d84f6e)",
-  "var(--ag-ui-chart-6, #3ba7c4)",
+  "var(--_chart-1)",
+  "var(--_chart-2)",
+  "var(--_chart-3)",
+  "var(--_chart-4)",
+  "var(--_chart-5)",
+  "var(--_chart-6)",
 ];
 
 /** The colour for series `index`, wrapping when there are more series than colours. */

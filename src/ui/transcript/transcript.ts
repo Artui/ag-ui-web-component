@@ -11,6 +11,7 @@ import { ThoughtsBlock } from "../progress/thoughts_block.js";
 import { ToolCallCard, type ToolPayload } from "../progress/tool_call_card.js";
 import { ToolStepGroup } from "../progress/tool_step_group.js";
 import type { UiStrings } from "../ui_strings.js";
+import { groupsToolSteps } from "./groups_tool_steps.js";
 import { renderMarkdown } from "./render_markdown.js";
 import { renderOrWarn } from "./render_or_warn.js";
 import { wrapWords } from "./reveal_words.js";
@@ -75,7 +76,7 @@ export class Transcript {
   // the answer group while a reasoning model thinks and collapsed once the
   // answer's first text token arrives. `null` outside a reasoning turn.
   #thoughts: ThoughtsBlock | null = null;
-  /** PROTOTYPE: the step group behind each group element, for data-tool-group. */
+  /** The step group behind each group element, so a new card can find its run. */
   readonly #stepGroups = new WeakMap<Element, ToolStepGroup>();
 
   constructor(host: TranscriptHost) {
@@ -386,8 +387,8 @@ export class Transcript {
     // `after` rather than an insert-or-append branch: both callers set the card
     // element immediately before calling, and a parentless anchor makes `after`
     // a no-op, so the alternative would be a branch nothing can reach.
-    // PROTOTYPE: a rendered node goes after a folded step group rather than
-    // inside it, so a chart is never hidden one click down.
+    // A rendered node goes after a folded step group rather than inside it,
+    // so a chart is never hidden one click down.
     const anchor = this.#cardElements.get(call.id);
     (anchor?.closest(".tool-group") ?? anchor)?.after(node);
     this.afterGrew();
@@ -427,7 +428,7 @@ export class Transcript {
       formatPayload: (payload) => this.#host.formatToolPayload(payload),
     });
     this.#toolCards.set(call.id, card);
-    if (this.#host.element.hasAttribute("data-tool-group")) {
+    if (groupsToolSteps(this.#host.element)) {
       this.#stepGroup().add(card.element);
     } else {
       this.ensureGroup().appendChild(card.element);
@@ -438,7 +439,7 @@ export class Transcript {
   }
 
   /**
-   * PROTOTYPE: the step group a new card joins. Consecutive cards share one;
+   * The step group a new card joins. Consecutive cards share one;
    * anything else in between (text, a chart, a confirmation) starts the next.
    * The pending dots are skipped over, since they sit at the foot of the turn
    * and move with it.

@@ -1,26 +1,25 @@
 # Design revamp prototypes
 
-Throwaway branch. Never merged. Three directions for the new look of
-`<ag-ui-chat>`, built as real themes on the real component, plus the script
-that photographs them.
+Prototype branch `claude/wclook-prototypes`, never merged. Round two: the directions are
+no longer prototypes beside a baseline but the component's theme set, with Quiet as the
+default. The proposed public surface is in [THEMES.md](THEMES.md).
 
-## The directions
+## The theme set
 
-| Theme value | Name | Character |
-| --- | --- | --- |
-| `proto-quiet` | Quiet | Flat, near-monochrome. Hairlines, no bubbles for the agent, graphite accent. |
-| `proto-soft` | Soft | Rounded, surfaces tinted from the accent, pill controls, a coloured shadow. |
-| `proto-ledger` | Ledger | Dense and editorial. Serif answers, monospace machine output, square corners. |
+| Theme | Character |
+| --- | --- |
+| `quiet` (default) | Flat, nearly black and white. Hairlines, no bubble behind the agent's text, graphite accent until a host sets one. |
+| `soft` | Rounded, with surfaces lightly tinted from the accent, pill-shaped controls and a shadow coloured by the accent. |
+| `ledger` | Dense and editorial. Serif answers, monospace machine output, square corners. |
+| `classic` | The look before the revamp, so existing hosts can pin it. |
+| `code` | Kept for compatibility: classic's structure in a dark terminal palette. |
 
-Add a second word for the scheme: `theme="proto-quiet dark"` or `theme="proto-quiet auto"`.
-Each direction declares three seeds (background, text, accent) with `light-dark()`;
-every other shade is mixed from them with `color-mix(in oklch, ...)` in
-`src/ui/revamp/revamp_base_styles.ts`, and every existing `--ag-ui-*` token is still
-read first.
+Where things live:
 
-Grouped tool steps are a real JS change behind `data-tool-group`
-(`src/ui/progress/tool_step_group.ts`, wired in `Transcript.cardFor`). Without the
-attribute the per-call cards render exactly as before.
+- `src/ui/themes/`: each theme's tokens and its structure.
+- `src/ui/shell/token_styles.ts`: Quiet's tokens, as the token defaults.
+- `src/ui/progress/tool_step_group.ts` and `src/ui/progress/tool_group_styles.ts`: grouped tool steps.
+- `extraStyles` on the element in `src/core/ag_ui_chat.ts`, adopted by `src/ui/shell/adopt_styles.ts`.
 
 ## Running it
 
@@ -31,18 +30,37 @@ node prototypes/screenshot-matrix.cjs        # writes prototypes/shots/
 node prototypes/contrast-check.cjs > prototypes/contrast.json
 ```
 
-Open `http://localhost:5173/prototypes/?theme=proto-soft&scheme=dark&placement=sidebar&steps=group&run=1`
-to look at one cell live. `run=1` sends the scripted turn (the mock's `launch` branch):
-reasoning, a chart from a tool, five form steps with one failure, and a destructive save
-waiting on the confirmation card.
+To look at one cell live, open
+`http://localhost:5173/prototypes/?theme=soft&scheme=dark&placement=sidebar&run=1`. The query
+parameters:
 
-`agents-home.html` is a static concept of an Agents home view in the Quiet direction;
-open it as a file, with `?scheme=dark` for dark.
+- `theme`: one of the theme words, or a host word such as `acme` or `soft acme`. Empty means the default.
+- `scheme`: `light`, `dark` or `auto`.
+- `run`: `1` sends the scripted turn. `import`, `ask` and `delegate` drive the mock's approval, question and sub-agent branches.
+- `override`: `accent`, `pertheme`, `parts` or `extra` shows one override layer.
+- `steps`: `cards` keeps the per-call cards, `group` folds them.
 
-## Known departures from the house rules
+`agents-home.html` is a static concept of an Agents home view in Quiet. Open it as a file,
+with `?scheme=dark` for dark.
 
-On purpose, and only on this branch: the derived aliases are declared in the revamp
-module rather than the token block, the chart series set the public `--ag-ui-chart-*`
-names directly, and the group's strings are English only. Five guard tests in the
-existing suite fail on exactly these (`styles.test.ts` token indirection, and the README
-attribute and parts tables).
+## Tests this branch breaks on purpose
+
+In the happy-dom project:
+
+- `readme_api_surface.test.ts`: the README does not list `extraStyles` or the
+  `data-tool-group` attribute yet. That is two tests.
+- `readme_parts.test.ts`: the README does not list the three `tool-group` parts.
+
+In the Chromium project, seventeen tests in nine files pin the old defaults or the per-call
+card layout that grouping replaces:
+
+- `collapse_motion`: the launcher size.
+- `declaration_only_text`, `reload_mid_approval`, `styles_tool_card_head` and
+  `subagent_progress`: cards now sit inside a step group. `subagent_progress` accounts for four tests.
+- `greeting_motion`: two tests about the docked composer; not investigated one by one, most likely the new composer row padding.
+- `styles_attachment_chips`: the user bubble colour.
+- `styles_host_theming`: the new default colours, fonts and themes. That is four tests.
+- `styles_inner_corners`: the frame radius is now its own token. That is two tests.
+
+The Chromium project needs `executablePath: "/opt/pw-browsers/chromium"` in this
+environment. That change was made locally to run it and is not committed.

@@ -73,6 +73,43 @@
       body[data-placement="page"] main,
       body[data-placement="page"] .topnav { display: none; }
       ag-ui-chat { --ag-ui-z-index: 5; }
+
+      /* Override layer (a), tokens: an accent-only brand, set on an ancestor. */
+      body[data-override="accent"] { --ag-ui-accent: #0f766e; }
+
+      /* Layer (a) again, per theme: only when the element wears soft. */
+      body[data-override="pertheme"] ag-ui-chat[theme~="soft"] {
+        --ag-ui-accent: #c2410c;
+        --ag-ui-frame-radius: 12px;
+        --ag-ui-msg-radius: 10px;
+      }
+
+      /* Layer (b), parts: reach into the shadow tree by the documented names. */
+      body[data-override="parts"] ag-ui-chat::part(header) {
+        background: #0f766e;
+        color: #ffffff;
+      }
+      body[data-override="parts"] ag-ui-chat::part(header-button) {
+        color: #ffffff;
+      }
+      body[data-override="parts"] ag-ui-chat::part(send),
+      body[data-override="parts"] ag-ui-chat::part(confirm) {
+        border-radius: 4px;
+      }
+
+      /* Layer (c), a host's own named theme. acme is not a built-in word, so
+         nothing in the component matches it and the element starts from the
+         default theme; these rules are the whole of acme. */
+      ag-ui-chat[theme~="acme"] {
+        --ag-ui-bg: light-dark(#fbfaf7, #10161c);
+        --ag-ui-fg: light-dark(#14212b, #e4ebf0);
+        --ag-ui-accent: light-dark(#0b5cad, #6cb2ff);
+        --ag-ui-font: "JetBrains Mono", ui-monospace, monospace;
+        --ag-ui-text-md: 13px;
+        --ag-ui-frame-radius: 4px;
+        --ag-ui-msg-radius: 4px;
+        --ag-ui-composer-radius: 4px;
+      }
       body[data-placement="floating"] ag-ui-chat { --ag-ui-height: 860px; }
     </style>
   </head>

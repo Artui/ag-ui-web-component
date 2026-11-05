@@ -238,7 +238,8 @@ describe("the agent-called route", () => {
     await send(el, "chart it");
     const block = shadow(el).querySelector(".chart-block");
     expect(block).not.toBeNull();
-    expect(block?.previousElementSibling?.classList.contains("tool-call")).toBe(true);
+    // Under its card, or under the step group that card folded into.
+    expect(block?.previousElementSibling?.matches(".tool-call, .tool-group")).toBe(true);
   });
 
   it("does not claim a chart rendered when nothing was drawn", async () => {
