@@ -114,8 +114,8 @@ const INTERNAL_ATTRIBUTES = new Set([
  * How many attribute reads take their name from a variable rather than stating
  * it, anywhere in the package. Two — the `flag` helper and `readJsonAttribute`
  * — and both are reached only through call sites that state the name, which
- * `attributesRead` matches by helper name (as a private member or through a
- * host object) so the scan still sees every attribute. A third would hide a
+ * `attributesRead` matches by helper name (as a bare callback, or with any
+ * receiver as the first argument) so the scan still sees every attribute. A third would hide a
  * name from this file, which is why the count is asserted rather than assumed;
  * adding one means teaching that matcher about it, not raising this number
  * alone.
@@ -204,9 +204,12 @@ function publicMethods(): string[] {
 /**
  * Every attribute name the element reads, from a literal.
  *
- * The two reader helpers are matched in both spellings: a controller's host
- * callback (`flag("x")`) and the element calling the free function
- * (`readJsonAttribute(this, "x")`).
+ * The reader helpers are matched by name, in two spellings each: a controller's
+ * host callback with the name alone (`flag("x")`), and the free function with a
+ * receiver first -- `this`, a dotted path or a private field, as in
+ * `readFlag(this, "x")`, `readJsonAttribute(this, "x")` or
+ * `readFlag(this.#host.element, "x")`. The receiver is any run of word
+ * characters, dots and `#`; a call expression there would not match.
  *
  * Read across all of `src/` rather than the element's own file. The element
  * delegates to controllers that hold its private state, and a read that moves
@@ -217,7 +220,7 @@ function publicMethods(): string[] {
 function attributesRead(): string[] {
   const names = new Set<string>();
   for (const match of SOURCE.matchAll(
-    /(?:getAttribute|hasAttribute|\bflag|\breadJsonAttribute)\((?:this, )?"([a-z][a-z0-9-]*)"\)/g,
+    /(?:getAttribute|hasAttribute|\bflag|\breadFlag|\breadJsonAttribute)\((?:[\w.#]+, )?"([a-z][a-z0-9-]*)"\)/g,
   )) {
     names.add(match[1] ?? "");
   }

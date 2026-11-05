@@ -1,4 +1,6 @@
 // The action row under a message: copy, retry, feedback and the rest.
+// Guest: the whole coarse-pointer block near the end (the resize handle hidden,
+// the 44px touch-target tokens on :host, the 16px composer font floor).
 export const MESSAGE_ACTION_STYLES: string = `
    The wrap is insurance rather than a fix: these buttons are glyph-only, so at
    every width tested they fit on one line and removing the wrap changes
@@ -104,10 +106,10 @@ export const MESSAGE_ACTION_STYLES: string = `
   }
 }
 
-/* Touch. Separate from the width breakpoint above on purpose: width decides
-   the layout, the pointer decides which controls make sense, and a touch
-   laptop is coarse-pointered and wide while a narrow desktop window is
-   fine-pointered and small. */
+/* Touch. Separate from the width breakpoint in the small-viewport placement
+   rules on purpose: width decides the layout, the pointer decides which
+   controls make sense, and a touch laptop is coarse-pointered and wide while a
+   narrow desktop window is fine-pointered and small. */
 @media (pointer: coarse) {
   /* A 6px edge strip is not a control, it is a trap that eats a scroll. The
      corners are 14px, still under the 24px floor a target is meant to clear,

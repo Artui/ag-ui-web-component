@@ -7,8 +7,9 @@
 // modules restate a state another module set at rest. A module moves in this
 // list only with a browser test that pins what the move changes. The split
 // that produced these modules moved no rule, so the composed sheet is the
-// single stylesheet it replaced, byte for byte, which is also why a few small
-// rules still sit in a neighbouring concern's module.
+// single stylesheet it replaced: the rules and their order are unchanged and
+// only comments differ, which is also why a few small rules still sit in a
+// neighbouring concern's module.
 //
 // Every module is a template literal: a backtick or a dollar-brace inside a
 // CSS comment ends it, and tsc reports the error far from the edit.

@@ -1,5 +1,5 @@
 // Every public --ag-ui-* token read into its private --_* alias on :host.
-// The one place a public token name may appear; see the block comment below.
+// This is where the token defaults are declared; see the block comment below.
 export const TOKEN_STYLES: string = `
 /* ── Token defaults ─────────────────────────────────────────────────────────
    Every public --ag-ui-* token is read here into a private --_* alias, and
