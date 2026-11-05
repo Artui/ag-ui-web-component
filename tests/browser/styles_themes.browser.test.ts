@@ -355,6 +355,52 @@ describe("text on the accent (real browser)", () => {
   });
 });
 
+describe("which structure each theme wears (real browser)", () => {
+  // Two rules stand for the two host selectors every theme module hangs off.
+  // Quiet alone sets font features on the panel; every theme but classic and
+  // code hides the status pill behind its icon. Each theme gets its own case,
+  // so dropping any one word from either selector fails the case named for it.
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  function wears(theme: string): { quietType: boolean; iconStatus: boolean } {
+    const el = mount(theme === "" ? {} : { theme });
+    const status = doneCard(el).querySelector(".tool-call-status");
+    if (status === null) {
+      throw new Error("expected the status pill");
+    }
+    return {
+      quietType: getComputedStyle(part(el, ".chat")).fontFeatureSettings !== "normal",
+      iconStatus: getComputedStyle(status).position === "absolute",
+    };
+  }
+
+  it("gives quiet its own structure and the shared one", () => {
+    expect(wears("")).toEqual({ quietType: true, iconStatus: true });
+  });
+
+  it("gives soft the shared structure and none of quiet's", () => {
+    expect(wears("soft")).toEqual({ quietType: false, iconStatus: true });
+  });
+
+  it("gives ledger the shared structure and none of quiet's", () => {
+    expect(wears("ledger")).toEqual({ quietType: false, iconStatus: true });
+  });
+
+  it("gives classic neither", () => {
+    expect(wears("classic")).toEqual({ quietType: false, iconStatus: false });
+  });
+
+  it("gives code neither", () => {
+    expect(wears("code")).toEqual({ quietType: false, iconStatus: false });
+  });
+});
+
 describe("the theme toggle (real browser)", () => {
   beforeAll(() => {
     defineAgUiChat();
