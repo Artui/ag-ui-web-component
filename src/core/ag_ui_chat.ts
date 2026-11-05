@@ -449,6 +449,10 @@ export class AgUiChat extends HTMLElement {
   });
 
   readonly #root: ShadowRoot;
+  /** The built-in stylesheet once rendered, kept so `extraStyles` can re-adopt beside it. */
+  #builtInSheet: CSSStyleSheet | null = null;
+  /** The host's own sheets, adopted after the built-in one. */
+  #extraStyles: readonly CSSStyleSheet[] = [];
   /** The screen-reader-only status region the run and its tool calls report into. */
   readonly #announcer = new RunAnnouncer();
   /** Return-to-foot affordance, shown only once something has been missed. */
@@ -1370,6 +1374,27 @@ export class AgUiChat extends HTMLElement {
     this.setAttribute("data-tool-display", value);
   }
 
+  /**
+   * The host's own constructed stylesheets, adopted after the built-in one.
+   *
+   * The escape hatch for structure that neither the tokens nor the parts
+   * reach. Per element, like the built-in sheet: two elements on one page can
+   * carry different sheets. Constructed sheets are not subject to a
+   * `style-src` policy, so this works under the same strict CSP the
+   * built-in sheet does. Setting it re-adopts at once; the array is copied, so
+   * mutating the one passed in changes nothing until it is set again.
+   */
+  get extraStyles(): readonly CSSStyleSheet[] {
+    return this.#extraStyles;
+  }
+
+  set extraStyles(sheets: readonly CSSStyleSheet[]) {
+    this.#extraStyles = [...sheets];
+    if (this.#builtInSheet !== null) {
+      this.#root.adoptedStyleSheets = [this.#builtInSheet, ...this.#extraStyles];
+    }
+  }
+
   connectedCallback(): void {
     // A fresh signal per connection: disconnecting aborted the last one, and
     // with it every listener the last connection added.
@@ -1794,13 +1819,19 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Flip the `theme` attribute between `light` and `dark` and persist the choice
-   * per tab. Bound to the optional built-in header theme toggle
-   * (`data-theme-toggle`); any non-dark theme (incl. `auto` / `code`) flips to
-   * `dark` first.
+   * Flip the scheme word of the `theme` attribute between `light` and `dark`
+   * and persist the choice per tab. Bound to the optional built-in header theme
+   * toggle (`data-theme-toggle`). The theme name and any host words are kept:
+   * `soft` becomes `soft dark`, and `soft dark` becomes `soft light`. Any
+   * scheme but `dark` (including `auto`) flips to `dark` first.
    */
   toggleTheme(): void {
-    const next = this.getAttribute("theme") === "dark" ? "light" : "dark";
+    // Only the scheme word flips, so a named theme survives the toggle:
+    // "soft" becomes "soft dark", and "soft dark" becomes "soft light".
+    const words = (this.getAttribute("theme") ?? "").split(/\s+/).filter((word) => word !== "");
+    const dark = words.includes("dark");
+    const rest = words.filter((word) => word !== "dark" && word !== "light" && word !== "auto");
+    const next = [...rest, dark ? "light" : "dark"].join(" ");
     this.setAttribute("theme", next);
     this.#storage.writePreference(THEME_KEY, next);
     this.#syncThemeGlyph();
@@ -1920,7 +1951,7 @@ export class AgUiChat extends HTMLElement {
 
   /** Reflect the current theme on the toggle: show the destination's glyph. */
   #syncThemeGlyph(): void {
-    const dark = this.getAttribute("theme") === "dark";
+    const dark = (this.getAttribute("theme") ?? "").split(/\s+/).includes("dark");
     // Replaced wholesale rather than toggling a class: the two marks are
     // different paths, not one path in two states, and the slot has to keep
     // working so a host can still supply its own.
@@ -2334,7 +2365,7 @@ export class AgUiChat extends HTMLElement {
     this.#placement.enableLauncherDrag(signal);
 
     this.#placement.mountResizeGrips(this.#chat);
-    adoptStyles(this.#root);
+    this.#builtInSheet = adoptStyles(this.#root, this.#extraStyles);
     const probe = this.#placement.probe;
     probe.className = "viewport-probe";
     probe.setAttribute("aria-hidden", "true");

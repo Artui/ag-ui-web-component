@@ -36,6 +36,16 @@ import { TOOL_STEP_STYLES } from "./progress/tool_step_styles.js";
 import { FRAME_STYLES } from "./shell/frame_styles.js";
 import { THEME_STYLES } from "./shell/theme_styles.js";
 import { TOKEN_STYLES } from "./shell/token_styles.js";
+import { CLASSIC_STYLES } from "./themes/classic_styles.js";
+import { CLASSIC_TOKENS } from "./themes/classic_tokens.js";
+import { CODE_TOKENS } from "./themes/code_tokens.js";
+import { LEDGER_STYLES } from "./themes/ledger_styles.js";
+import { LEDGER_TOKENS } from "./themes/ledger_tokens.js";
+import { MODERN_STYLES } from "./themes/modern_styles.js";
+import { QUIET_STYLES } from "./themes/quiet_styles.js";
+import { SCHEME_STYLES } from "./themes/scheme_styles.js";
+import { SOFT_STYLES } from "./themes/soft_styles.js";
+import { SOFT_TOKENS } from "./themes/soft_tokens.js";
 import { ATTACHMENT_CHIP_STYLES } from "./transcript/attachment_chip_styles.js";
 import { GREETING_STYLES } from "./transcript/greeting_styles.js";
 import { MESSAGE_ACTION_STYLES } from "./transcript/message_action_styles.js";
@@ -43,7 +53,14 @@ import { MESSAGE_STYLES } from "./transcript/message_styles.js";
 import { TRANSCRIPT_STYLES } from "./transcript/transcript_styles.js";
 
 export const STYLES: string = [
+  // Quiet's tokens are the defaults; each theme's tokens follow, then the
+  // scheme, then density, so density="compact" outranks a theme's own scale.
   TOKEN_STYLES,
+  CLASSIC_TOKENS,
+  CODE_TOKENS,
+  SOFT_TOKENS,
+  LEDGER_TOKENS,
+  SCHEME_STYLES,
   THEME_STYLES,
   PRESET_STYLES,
   PAGE_STYLES,
@@ -70,4 +87,13 @@ export const STYLES: string = [
   QUESTION_STYLES,
   SKILL_STYLES,
   HISTORY_STYLES,
+  // Each theme's structure comes last: it restates rules the modules above
+  // set at rest, at equal weight. Classic and code have no structural
+  // module; they are the base stylesheet, and classic adds only its
+  // contrast fixes.
+  CLASSIC_STYLES,
+  MODERN_STYLES,
+  QUIET_STYLES,
+  SOFT_STYLES,
+  LEDGER_STYLES,
 ].join("");

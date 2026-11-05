@@ -30,7 +30,11 @@ const ANCESTOR_GREEN = "rgb(31, 71, 57)";
 const PAGE_RULE_CREAM = "rgb(255, 253, 240)";
 const ELEMENT_PLUM = "rgb(90, 20, 70)";
 const DEFAULT_INDIGO = "rgb(79, 70, 229)";
-const DARK_PANEL = "rgb(21, 21, 31)";
+const WHITE = "rgb(255, 255, 255)";
+/** The default theme's dark background. */
+const DARK_PANEL = "rgb(22, 22, 24)";
+/** Classic's dark background, the one theme="dark" painted before the default theme changed. */
+const CLASSIC_DARK_PANEL = "rgb(21, 21, 31)";
 
 /** Mount the element inside a wrapper, the way a host page would nest it. */
 function mountInWrapper(
@@ -83,9 +87,14 @@ describe("theming from the host page (real browser)", () => {
   });
 
   it("keeps the built-in defaults when the page sets nothing", () => {
+    // The default theme draws its header on the panel itself.
     const { el } = mountInWrapper();
-    expect(bg(el, ".header")).toBe(DEFAULT_INDIGO);
-    expect(bg(el, ".chat")).toBe("rgb(255, 255, 255)");
+    expect(bg(el, ".header")).toBe(WHITE);
+    expect(bg(el, ".chat")).toBe(WHITE);
+    // Classic keeps the indigo header it always had.
+    const classic = mountInWrapper({}, { theme: "classic" });
+    expect(bg(classic.el, ".header")).toBe(DEFAULT_INDIGO);
+    expect(bg(classic.el, ".chat")).toBe(WHITE);
   });
 
   // The original defect in one assertion: this is the pattern the README
@@ -96,11 +105,15 @@ describe("theming from the host page (real browser)", () => {
   });
 
   it("follows an ancestor token through a derived token", () => {
-    // --ag-ui-header-bg is unset, so the header falls through to the accent;
-    // the accent has to be read from the ancestor for that chain to work.
-    const { el } = mountInWrapper({ "--ag-ui-accent": ANCESTOR_GREEN });
+    // --ag-ui-header-bg is unset, so classic's header falls through to the
+    // accent; the accent has to be read from the ancestor for that chain to
+    // work. The default theme's header is the panel, so the chain is pinned
+    // there on the send button, which every theme fills with the accent.
+    const { el } = mountInWrapper({ "--ag-ui-accent": ANCESTOR_GREEN }, { theme: "classic" });
     expect(bg(el, ".header")).toBe(ANCESTOR_GREEN);
     expect(bg(el, ".send")).toBe(ANCESTOR_GREEN);
+    const quiet = mountInWrapper({ "--ag-ui-accent": ANCESTOR_GREEN });
+    expect(bg(quiet.el, ".send")).toBe(ANCESTOR_GREEN);
   });
 
   it("lets a rule aimed at the element beat one inherited from an ancestor", () => {
@@ -119,6 +132,8 @@ describe("theming from the host page (real browser)", () => {
   it("applies a built-in theme preset when the page overrides nothing", () => {
     const { el } = mountInWrapper({}, { theme: "dark" });
     expect(bg(el, ".chat")).toBe(DARK_PANEL);
+    const classic = mountInWrapper({}, { theme: "classic dark" });
+    expect(bg(classic.el, ".chat")).toBe(CLASSIC_DARK_PANEL);
   });
 
   it("lets an explicit page rule beat a built-in theme preset", () => {
@@ -178,13 +193,19 @@ describe("theming from the host page (real browser)", () => {
     expect(getComputedStyle(el).width).toBe("640px");
   });
 
-  it("keeps typography inheriting from the page by default", () => {
-    // --ag-ui-font's default is the CSS-wide keyword `inherit`; it survives
+  it("keeps typography inheriting from the page under classic", () => {
+    // Classic's --ag-ui-font is the CSS-wide keyword inherit; it survives
     // being moved into a var() fallback only because a substituted CSS-wide
     // keyword is still honoured.
-    const { el, wrapper } = mountInWrapper();
+    const { el, wrapper } = mountInWrapper({}, { theme: "classic" });
     wrapper.style.fontFamily = "Georgia";
     expect(getComputedStyle(el).fontFamily).toBe("Georgia");
+  });
+
+  it("sets its own font stack under the default theme", () => {
+    const { el, wrapper } = mountInWrapper();
+    wrapper.style.fontFamily = "Georgia";
+    expect(getComputedStyle(el).fontFamily).toMatch(/^Inter, /);
   });
 
   it("lets an ancestor override the font stack outright", () => {

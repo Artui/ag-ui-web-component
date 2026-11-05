@@ -16,13 +16,18 @@ import { STYLES } from "../styles.js";
  * Per instance is no worse than the `<style>` element it replaces, which also
  * parsed once per mount.
  *
+ * `extra` is the element's `extraStyles`, adopted after the built-in sheet so
+ * a host's rules win at equal specificity. They are constructed sheets too, so
+ * they inherit the same CSP immunity.
+ *
  * No fallback: constructible `CSSStyleSheet` is Chrome 73, Firefox 101 and
  * Safari 16.4, all below this package's declared Safari 17 runtime target. A
  * guard here would be code no supported browser can reach, and the only way
  * to keep it would be to exempt it from the coverage gate.
  */
-export function adoptStyles(root: ShadowRoot): void {
+export function adoptStyles(root: ShadowRoot, extra: readonly CSSStyleSheet[] = []): CSSStyleSheet {
   const sheet = new CSSStyleSheet();
   sheet.replaceSync(STYLES);
-  root.adoptedStyleSheets = [sheet];
+  root.adoptedStyleSheets = [sheet, ...extra];
+  return sheet;
 }

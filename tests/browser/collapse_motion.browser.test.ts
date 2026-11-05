@@ -124,8 +124,9 @@ describe("collapse and slide-over motion (real browser)", () => {
 
     const host = el.getBoundingClientRect();
     const box = launcher.getBoundingClientRect();
-    expect(box.width).toBe(56);
-    expect(box.height).toBe(56);
+    // The default theme's 48px launcher.
+    expect(box.width).toBe(48);
+    expect(box.height).toBe(48);
     expect(box.right).toBeCloseTo(host.right, 0);
     expect(box.bottom).toBeCloseTo(host.bottom, 0);
   });

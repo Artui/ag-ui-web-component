@@ -91,9 +91,12 @@ describe("attachment chips (real browser)", () => {
     document.body.innerHTML = "";
   });
 
-  // The defect in one assertion: white on near-white, on stock defaults.
+  // The defect in one assertion: white on near-white. Pinned on classic, the
+  // one theme whose user bubble is still white text on the accent; the
+  // default theme draws the user's turn in the body colour, so there the two
+  // colours this tells apart are the same one.
   it("paints a chip on a user bubble with the body text colour, not the user one", () => {
-    const el = mount();
+    const el = mount({ theme: "classic" });
     const bubble = bubbleWithChips(el, [REF]);
     expect(getComputedStyle(bubble).color).toBe(USER_FOREGROUND);
     expect(getComputedStyle(part(bubble, ".attachment-chip")).color).toBe(BODY_TEXT);

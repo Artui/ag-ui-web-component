@@ -488,6 +488,18 @@ describe("AgUiChat — UX & customization", () => {
       expect(el.getAttribute("theme")).toBe("light");
     });
 
+    it("flips only the scheme word of a named theme", () => {
+      const el = mount({ "data-theme-toggle": "", theme: "ledger  acme" });
+      el.toggleTheme();
+      expect(el.getAttribute("theme")).toBe("ledger acme dark");
+      expect(sessionStorage.getItem("ag-ui-chat:theme")).toBe("ledger acme dark");
+      el.toggleTheme();
+      expect(el.getAttribute("theme")).toBe("ledger acme light");
+      el.setAttribute("theme", "auto soft");
+      el.toggleTheme();
+      expect(el.getAttribute("theme")).toBe("soft dark");
+    });
+
     it("restores a persisted theme on connect (opt-in only)", () => {
       sessionStorage.setItem("ag-ui-chat:theme", "dark");
       // Without the opt-in the persisted value is ignored…
