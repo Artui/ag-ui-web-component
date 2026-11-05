@@ -283,31 +283,44 @@ describe("text on the accent (real browser)", () => {
 
   /**
    * The built-in sheet as an engine without relative colour syntax applies
-   * it (Firefox 120 to 127, and Safari 17.5): the block that asks for it
+   * it (Firefox 120 to 127, Safari 17.5 and 17.6): the block that asks for it
    * deleted, and the block that asks for its absence unwrapped in place.
    * Edited in a parsed sheet rather than in the source text, and counted, so
    * a change to either condition cannot leave this testing the full sheet
    * under another name.
    */
+  function relativeColourBlocks(styles: CSSStyleSheet): CSSSupportsRule[] {
+    return [...styles.cssRules].filter(
+      (rule): rule is CSSSupportsRule =>
+        rule instanceof CSSSupportsRule && rule.conditionText.includes("color(from"),
+    );
+  }
+
   function withoutRelativeColour(): CSSStyleSheet {
     const edited = sheet(STYLES);
-    const blocks = [...edited.cssRules].flatMap((rule, index) =>
-      rule instanceof CSSSupportsRule && rule.conditionText.includes("color(from")
-        ? [{ rule, index }]
-        : [],
-    );
-    const [present, absent] = blocks;
-    expect(blocks).toHaveLength(2);
-    // The second block is the first's exact negation.
-    expect(absent?.rule.conditionText).toBe(`not ${present?.rule.conditionText}`);
-    const inner = [...(absent?.rule.cssRules ?? [])].map((rule) => rule.cssText);
-    edited.deleteRule(absent?.index as number);
-    for (const [offset, text] of inner.entries()) {
-      edited.insertRule(text, (absent?.index as number) + offset);
+    const blocks = relativeColourBlocks(edited);
+    const present = blocks.filter((block) => !block.conditionText.startsWith("not "));
+    expect(present).toHaveLength(1);
+    // Last first, so each index still names the block it was read from.
+    for (const block of blocks.reverse()) {
+      const index = [...edited.cssRules].indexOf(block);
+      const inner = [...block.cssRules].map((rule) => rule.cssText);
+      edited.deleteRule(index);
+      if (block.conditionText.startsWith("not ")) {
+        for (const [offset, text] of inner.entries()) {
+          edited.insertRule(text, index + offset);
+        }
+      }
     }
-    edited.deleteRule(present?.index as number);
     return edited;
   }
+
+  it("negates the computing block exactly where a theme falls back", () => {
+    // Two conditions spelled twice: if they drifted apart, an engine could
+    // apply both blocks or neither.
+    const [present, ...absent] = relativeColourBlocks(sheet(STYLES));
+    expect(absent.map((block) => block.conditionText)).toEqual([`not ${present?.conditionText}`]);
+  });
 
   /** The colour the element resolves for text on its accent, read from a probe. */
   function onAccent(el: AgUiChat): Rgba {
@@ -341,8 +354,8 @@ describe("text on the accent (real browser)", () => {
   });
 
   // Where it can compute, the pick matches the fallback's side on every
-  // built-in accent but code's green, where white measures 2.4:1 and black
-  // 8.7:1.
+  // built-in accent but code's green, where white measures 2.5:1 and black
+  // 8.3:1.
   it.each([
     ["", WHITE],
     ["dark", BLACK],
@@ -355,6 +368,15 @@ describe("text on the accent (real browser)", () => {
     ["code", BLACK],
   ])("computes the pick for theme %j from its accent", (theme, expected) => {
     expect(onAccent(mount(theme === "" ? {} : { theme }))).toEqual(expected);
+  });
+
+  it("draws code's send icon in black on its green", () => {
+    const send = part(mount({ theme: "code" }), ".send");
+    const fill = rgba(getComputedStyle(send).backgroundColor);
+    expect(fill).toEqual([63, 185, 80, 1]);
+    expect(ink(send)).toEqual(BLACK);
+    expect(contrast(BLACK, fill)).toBeCloseTo(8.3, 1);
+    expect(contrast(WHITE, fill)).toBeCloseTo(2.5, 1);
   });
 
   it("keeps the computed pick over classic's fallback on a pale host accent", () => {

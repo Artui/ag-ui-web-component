@@ -2975,8 +2975,8 @@ channel arithmetic, behind `@supports` for that exact expression: Chrome 119, Fi
 18.
 
 **The fallback.** Two browsers at or above the floor cannot compute it: Firefox 120 to 127, which
-lack relative colour syntax, and Safari 17.5, which shipped an earlier draft that rejects this
-expression. They keep a fixed colour per theme instead:
+lack relative colour syntax, and Safari 17.5 and 17.6, which shipped an earlier draft that rejects
+this expression. They keep a fixed colour per theme instead:
 
 | Theme | Without relative colour syntax |
 | --- | --- |
@@ -2984,10 +2984,10 @@ expression. They keep a fixed colour per theme instead:
 | `classic`, `code` | white in both schemes, the colour they always drew |
 
 On every built-in accent but code's the fixed colour is on the same side as the computed one, so
-those browsers see the same contrast. On code's green the computed pick is black (8.7:1) and the
-fallback white (2.4:1), as it always was. What they miss is the correction for a host's accent: a mid-tone
-brand accent can fall under 4.5:1 there, under any theme. If you support those browsers and set a
-mid-tone accent, set `--ag-ui-on-accent` yourself. There is no script path.
+those browsers see the same contrast. On code's green the computed pick is black (8.3:1) and the
+fallback white (2.5:1), as it always was. What they miss is the correction for a host's accent: a
+mid-tone brand accent can fall under 4.5:1 there, under any theme. If you support those browsers
+and set a mid-tone accent, set `--ag-ui-on-accent` yourself. There is no script path.
 
 #### Overriding a theme, lightest layer first
 

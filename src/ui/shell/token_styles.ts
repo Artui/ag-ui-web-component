@@ -381,8 +381,8 @@ export const TOKEN_STYLES: string = `
    would otherwise get the scheme's near-black on it. Relative colour syntax
    with channel arithmetic is Chrome 119, Firefox 128 and Safari 18. Of the
    browsers at or above this package's floor (Chrome 123, Firefox 120, Safari
-   17.5), Firefox 120 to 127 lack it, and Safari 17.5 parses an older draft
-   that rejects this expression, so the test below asks for the exact
+   17.5), Firefox 120 to 127 lack it, and Safari 17.5 and 17.6 parse an older
+   draft that rejects this expression, so the test below asks for the exact
    expression and those engines keep the fallback above. light-dark needs no
    such test: the floor is set where every engine has it. */
 @supports (color: color(from red srgb-linear clamp(0, (0.179 - (0.2126 * r + 0.7152 * g + 0.0722 * b)) * 100000, 1) 0 0)) {

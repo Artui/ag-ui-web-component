@@ -33,10 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Text on the accent follows the accent.** Unless `--ag-ui-on-accent` is
   set, it is white or black by the accent's luminance, whichever contrasts
   more, where relative colour syntax is supported (Chrome 119, Firefox 128,
-  Safari 18). Firefox 120 to 127 and Safari 17.5 cannot compute it and keep
-  a fixed colour: white under `classic` and `code`, as before, and the
-  scheme's colour (white light, `#111111` dark) under `quiet`, `soft` and
-  `ledger`. Every built-in accent but `code`'s gets the same side either
+  Safari 18). Firefox 120 to 127 and Safari 17.5 and 17.6 cannot compute it
+  and keep a fixed colour: white under `classic` and `code`, as before, and
+  the scheme's colour (white light, `#111111` dark) under `quiet`, `soft`
+  and `ledger`. Every built-in accent but `code`'s gets the same side either
   way; a host's mid-tone accent there needs `--ag-ui-on-accent` set by hand.
 
 ### Changed
@@ -49,12 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `theme="classic"`** (or `theme="classic dark"`); explicitly set tokens
   keep working under every theme. Set `--ag-ui-font: inherit` to keep the
   page's font under any theme.
-- **A host that sets only `--ag-ui-accent` loses the accent header and
-  launcher.** Quiet draws both in the panel's own colours, and its user
-  bubble is the accent at 12% rather than the fixed indigo it was. To get
-  them back, opt in with `theme="classic"`, or keep Quiet and set
-  `--ag-ui-header-bg`, `--ag-ui-header-fg`, `--ag-ui-launcher-bg` and
-  `--ag-ui-launcher-fg` to the accent and the colour on it.
+- **A host that sets only `--ag-ui-accent` loses the accent header,
+  launcher and tool names.** Quiet draws them in the panel's own colours,
+  and its user bubble is the accent at 12% rather than the fixed indigo it
+  was. To get them back, opt in with `theme="classic"`, or keep Quiet and
+  set `--ag-ui-header-bg`, `--ag-ui-launcher-bg` and `--ag-ui-tool-fg` to
+  the accent and `--ag-ui-header-fg` and `--ag-ui-launcher-fg` to the
+  colour on it.
 - **Under `classic`, the user bubble follows `--ag-ui-accent`.** It was
   indigo whatever the accent; set `--ag-ui-user-bg: #4f46e5` to keep that.
 - **One chip row and one action row per answer**, under every theme but
@@ -66,8 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer documented; Ledger is the monospace look now. `code` changes in
   two ways: it sets `color-scheme: dark`, so native controls, scrollbars
   and the placeholder draw dark, and text on its green accent (the send
-  icon) is black where relative colour syntax is supported, 8.7:1 where
-  white was 2.4:1.
+  icon) is black where relative colour syntax is supported, 8.3:1 where
+  white was 2.5:1.
 - **The browser floor rises to Chrome 123, Firefox 120 and Safari 17.5**,
   from Chrome 120 and Safari 17. Every theme declares its colours with
   `light-dark()`, which those versions are the first to support, and it is
