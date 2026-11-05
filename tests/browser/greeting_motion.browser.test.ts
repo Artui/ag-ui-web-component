@@ -250,7 +250,7 @@ describe("the ways back to the centre, and out of it, that snap", () => {
     pressEnter(type(el, "hello there"));
     await wait(450);
     expect(belowComposer(el)).toBeLessThanOrEqual(1);
-    const docked = part(el, ".input-row").getBoundingClientRect().top;
+    const docked = rowTop(el);
 
     const sampling = sampleTops(el, 300);
     el.newChat();

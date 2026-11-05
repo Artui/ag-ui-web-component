@@ -33,6 +33,7 @@ function mountWithAgent(
 ): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
+  el.setAttribute("data-tool-display", "full");
   const handle = makeFakeAgent({ script, dropStream });
   el.agentFactory = () => handle.agent;
   document.body.appendChild(el);
@@ -331,6 +332,7 @@ describe("AgUiChat — UX & customization", () => {
         },
       });
       el.agentFactory = () => handle.agent;
+      el.setAttribute("data-tool-display", "full");
       document.body.appendChild(el);
 
       const input = shadow(el).querySelector<HTMLTextAreaElement>(".input");
@@ -531,6 +533,94 @@ describe("AgUiChat — UX & customization", () => {
         "ledger",
       );
       expect(mount({ "data-theme-toggle": "" }).getAttribute("theme")).toBeNull();
+    });
+
+    // The mark offers the destination: a sun in the dark scheme, a moon
+    // otherwise. The moon is one path and the sun adds a circle, so a circle
+    // tells them apart where "there is an svg" does not.
+    function offers(el: AgUiChat): "light" | "dark" {
+      const toggle = shadow(el).querySelector<HTMLButtonElement>(".header-btn--theme");
+      return toggle?.querySelector("svg circle") === null ? "dark" : "light";
+    }
+
+    it.each([
+      ["", "dark"],
+      ["dark", "light"],
+      ["light", "dark"],
+      ["auto", "dark"],
+      // The scheme word is one of several, not the whole value.
+      ["soft dark", "light"],
+      ["dark soft", "light"],
+      ["soft acme dark", "light"],
+      ["soft acme", "dark"],
+      // A word that merely contains the scheme's is not it.
+      ["darkroom", "dark"],
+    ])("offers the opposite scheme to theme %j: %s", (theme, expected) => {
+      const markup = theme === "" ? {} : { theme };
+      expect(offers(mount({ "data-theme-toggle": "", ...markup }))).toBe(expected);
+    });
+
+    it("turns the mark over with each flip, on a named theme", () => {
+      const el = mount({ "data-theme-toggle": "", theme: "soft acme" });
+      expect(offers(el)).toBe("dark");
+      el.toggleTheme();
+      expect(el.getAttribute("theme")).toBe("soft acme dark");
+      expect(offers(el)).toBe("light");
+      el.toggleTheme();
+      expect(offers(el)).toBe("dark");
+    });
+
+    it("draws the mark for the restored scheme on connect", () => {
+      sessionStorage.setItem("ag-ui-chat:theme", "dark");
+      const el = mount({ "data-theme-toggle": "", theme: "ledger" });
+      expect(el.getAttribute("theme")).toBe("ledger dark");
+      expect(offers(el)).toBe("light");
+    });
+
+    // Words are what is split, so the spaces around them are not words.
+    it.each([
+      ["  soft  ", "soft dark"],
+      ["soft ", "soft dark"],
+      [" acme soft dark ", "acme soft light"],
+      ["   ", "dark"],
+      // A host's own word that contains the scheme's is a name, not a scheme.
+      ["darkroom", "darkroom dark"],
+      // CSS ~= splits on any whitespace, so the toggle has to as well.
+      ["soft\tdark", "soft light"],
+      ["soft\ndark acme", "soft acme light"],
+    ])("flips theme %j to %j", (theme, flipped) => {
+      const el = mount({ "data-theme-toggle": "", theme });
+      el.toggleTheme();
+      expect(el.getAttribute("theme")).toBe(flipped);
+    });
+
+    it("treats light, dark and auto each as the scheme word, never as a name", () => {
+      for (const scheme of ["light", "dark", "auto"]) {
+        const el = mount({ "data-theme-toggle": "", theme: `soft ${scheme} acme` });
+        el.toggleTheme();
+        const words = (el.getAttribute("theme") ?? "").split(" ");
+        expect(words.filter((word) => ["light", "dark", "auto"].includes(word))).toHaveLength(1);
+        expect(words.filter((word) => word === "soft" || word === "acme")).toHaveLength(2);
+      }
+    });
+
+    it("takes the last scheme word of a saved value, and ignores the names in it", () => {
+      sessionStorage.setItem("ag-ui-chat:theme", "light dark");
+      expect(mount({ "data-theme-toggle": "", theme: "soft" }).getAttribute("theme")).toBe(
+        "soft dark",
+      );
+      sessionStorage.setItem("ag-ui-chat:theme", "dark light");
+      expect(mount({ "data-theme-toggle": "", theme: "soft" }).getAttribute("theme")).toBe(
+        "soft light",
+      );
+      sessionStorage.setItem("ag-ui-chat:theme", "light\tdark");
+      expect(mount({ "data-theme-toggle": "", theme: "soft" }).getAttribute("theme")).toBe(
+        "soft dark",
+      );
+      sessionStorage.setItem("ag-ui-chat:theme", " ledger   auto ");
+      expect(mount({ "data-theme-toggle": "", theme: "soft" }).getAttribute("theme")).toBe(
+        "soft auto",
+      );
     });
 
     it("saves only the scheme word, never the theme name", () => {

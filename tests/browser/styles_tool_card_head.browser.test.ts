@@ -41,6 +41,8 @@ function mount(theme: string | null = null): AgUiChat {
     el.setAttribute("theme", theme);
   }
   el.setAttribute("placement", "embedded");
+  // Set rather than left to the default, so the card shows what these tests measure.
+  el.setAttribute("data-tool-display", "full");
   el.style.width = PANEL;
   document.body.appendChild(el);
   return el;
@@ -116,8 +118,10 @@ describe("tool card head (real browser)", () => {
     );
   });
 
+  // Classic again: under the other themes the pill is a one-pixel clipped box,
+  // so "the name is wider than the pill" would hold with nothing to protect.
   it("gives the name more room than the badges it shares the row with", () => {
-    const el = mount();
+    const el = mount("classic");
     const head = part(approvedCard(el), ".tool-call-head");
     const name = part(head, ".tool-call-name").getBoundingClientRect().width;
     const status = part(head, ".tool-call-status").getBoundingClientRect().width;

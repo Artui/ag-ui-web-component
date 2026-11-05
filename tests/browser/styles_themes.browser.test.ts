@@ -36,6 +36,8 @@ function mount(
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
   el.setAttribute("placement", "embedded");
+  // Set rather than left to the default, so a tool card shows what these tests read.
+  el.setAttribute("data-tool-display", "full");
   for (const [name, value] of Object.entries(attrs)) {
     el.setAttribute(name, value);
   }
@@ -99,6 +101,40 @@ function doneCard(el: AgUiChat): HTMLElement {
   card.settle("done", "ok");
   part(el, ".messages").appendChild(card.element);
   return card.element;
+}
+
+/** The colour an element resolves for `var(<token>)`, read from a probe appended into its shadow root. */
+function tokenColour(el: AgUiChat, token: string): Rgba {
+  const probe = document.createElement("span");
+  // A sentinel fallback: an undefined token would otherwise inherit the host's
+  // text colour, which is what several tokens read here are expected to equal.
+  probe.style.color = `var(${token}, rgb(1, 2, 3))`;
+  el.shadowRoot?.appendChild(probe);
+  return ink(probe);
+}
+
+/** One sent message, answered by nothing: the user's own turn in the real transcript. */
+async function sendOne(el: AgUiChat, text = "hello"): Promise<HTMLElement> {
+  const input = part(el, ".input") as HTMLTextAreaElement;
+  input.value = text;
+  part(el, ".send").click();
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return part(el, ".message--user");
+}
+
+/** A mounted element whose agent answers a send with a bare run. */
+function mountWithAgent(attrs: Record<string, string> = {}): AgUiChat {
+  return mount(attrs, (e) => {
+    const handle = makeFakeAgent({
+      script: (emit) => {
+        emit.runStart();
+        emit.runEnd();
+      },
+    });
+    e.agentFactory = () => handle.agent;
+  });
 }
 
 function addPageRule(css: string): void {
@@ -222,6 +258,132 @@ describe("theme resolution (real browser)", () => {
   });
 });
 
+const QUIET = {
+  light: { bg: "#ffffff", fg: "#1b1b1d", accent: "#232326" },
+  dark: { bg: "#161618", fg: "#ececee", accent: "#f0f0f2" },
+} as const;
+
+describe("quiet's three seeds, per scheme (real browser)", () => {
+  // Quiet is three light-dark() seeds and a set of mixes. The user's turn is the
+  // accent at 12% over the panel, so a mix taken from the text colour instead
+  // lands a byte away from it, and halves of the accent that trade places draw
+  // a pale send button on the light panel: both read as "a grey wash" at a glance.
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it.each(["light", "dark"] as const)(
+    "draws the accent as the %s half in that scheme",
+    (scheme) => {
+      const el = mount({ theme: scheme });
+      expect(getComputedStyle(el).colorScheme).toBe(scheme);
+      expect(background(el, ".send")).toEqual(rgba(QUIET[scheme].accent));
+      expect(tokenColour(el, "--_accent")).toEqual(rgba(QUIET[scheme].accent));
+    },
+  );
+
+  it.each(["light", "dark"] as const)(
+    "mixes the user's turn from the accent over the panel in the %s scheme",
+    async (scheme) => {
+      const { accent, bg } = QUIET[scheme];
+      const el = mountWithAgent({ theme: scheme });
+      const bubble = await sendOne(el);
+      expect(background(el, ".message--user")).toEqual(
+        rgba(`color-mix(in oklch, ${accent} 12%, ${bg})`),
+      );
+      expect(bubble.textContent).toContain("hello");
+    },
+  );
+
+  // The two seeds are a few bytes apart, so the default colours alone could not
+  // tell the accent from the text colour. A brand accent can.
+  it.each(["light", "dark"] as const)(
+    "tints the user's turn with a host's brand accent in the %s scheme",
+    async (scheme) => {
+      const el = mountWithAgent({ theme: scheme, style: `--ag-ui-accent: ${BRAND_ORANGE}` });
+      await sendOne(el);
+      expect(background(el, ".message--user")).toEqual(
+        rgba(`color-mix(in oklch, ${BRAND_ORANGE} 12%, ${QUIET[scheme].bg})`),
+      );
+    },
+  );
+});
+
+describe("the chart series colours, per theme and scheme (real browser)", () => {
+  // Read through a probe: a custom property read back is its token stream, and
+  // the light-dark() inside it is only resolved where it is used as a colour.
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  // Which token each theme's first series follows. The fg and the accent are a
+  // few bytes apart under Quiet and Ledger, so the pair is asserted unequal
+  // wherever a mutant could swap them and not be seen.
+  it.each([
+    ["", "--_fg"],
+    ["dark", "--_fg"],
+    ["ledger", "--_fg"],
+    ["ledger dark", "--_fg"],
+    ["soft", "--_accent"],
+    ["soft dark", "--_accent"],
+  ])("draws the first series of theme %j in the colour of %s", (theme, token) => {
+    const el = mount(theme === "" ? {} : { theme });
+    expect(tokenColour(el, "--_chart-1")).toEqual(tokenColour(el, token));
+    // And it is not the other seed, which a swap would leave it on.
+    const other = token === "--_fg" ? "--_accent" : "--_fg";
+    expect(tokenColour(el, "--_chart-1")).not.toEqual(tokenColour(el, other));
+  });
+
+  it.each([
+    ["", QUIET.light.fg],
+    ["dark", QUIET.dark.fg],
+  ])("draws Quiet's first series, theme %j, as its text seed %s", (theme, seed) => {
+    expect(tokenColour(mount(theme === "" ? {} : { theme }), "--_chart-1")).toEqual(rgba(seed));
+  });
+
+  it.each(["classic", "classic dark", "code"])(
+    "draws the first series of theme %j as classic's blue",
+    (theme) => {
+      expect(tokenColour(mount({ theme }), "--_chart-1")).toEqual(rgba("#4f7cff"));
+    },
+  );
+
+  it("keeps Quiet's first series on the text colour when the accent changes", () => {
+    const el = mount({ theme: "dark", style: `--ag-ui-accent: ${BRAND_ORANGE}` });
+    expect(tokenColour(el, "--_chart-1")).toEqual(rgba(QUIET.dark.fg));
+    expect(tokenColour(el, "--_chart-1")).not.toEqual(BRAND_ORANGE_RGB);
+  });
+});
+
+describe("the code theme's scheme (real browser)", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("draws the code theme in the dark scheme, as classic's structure assumes", () => {
+    // Code is dark only and its colours are fixed, so what shows the scheme is
+    // a light-dark() it did not override.
+    const el = mount({ theme: "code" });
+    expect(getComputedStyle(el).colorScheme).toBe("dark");
+    const probe = document.createElement("span");
+    probe.style.color = "light-dark(rgb(1, 2, 3), rgb(4, 5, 6))";
+    el.shadowRoot?.appendChild(probe);
+    expect(ink(probe)).toEqual([4, 5, 6, 1]);
+  });
+});
+
 describe("classic's contrast fixes (real browser)", () => {
   beforeAll(() => {
     defineAgUiChat();
@@ -231,18 +393,63 @@ describe("classic's contrast fixes (real browser)", () => {
     document.body.innerHTML = "";
   });
 
+  // Every state the pill can show, not the one the card settles into most
+  // often: the generic rule is what lifts pending, declined and interrupted
+  // (the muted ink alone measured 3.61:1), and each of the rest has a rule of
+  // its own that could go the same way.
+  const PILL_STATUSES = [
+    "pending",
+    "deferred",
+    "done",
+    "error",
+    "declined",
+    "interrupted",
+  ] as const;
+
+  /** A card in the real transcript, in the given state. */
+  function cardIn(el: AgUiChat, status: (typeof PILL_STATUSES)[number]): HTMLElement {
+    const card = new ToolCallCard("create_event", { title: "Design sync" }, "Create event");
+    if (status === "deferred") {
+      card.mark("deferred");
+    } else if (status !== "pending") {
+      card.settle(status, "result");
+    }
+    part(el, ".messages").appendChild(card.element);
+    expect(card.element.getAttribute("data-status")).toBe(status);
+    return card.element;
+  }
+
   for (const scheme of ["light", "dark"]) {
-    it(`draws the status pill at 4.5:1 in the ${scheme} scheme`, () => {
+    for (const status of PILL_STATUSES) {
+      it(`draws the ${status} status pill at 4.5:1 in the ${scheme} scheme`, () => {
+        const el = mount({ theme: `classic ${scheme}` });
+        const card = cardIn(el, status);
+        const pill = card.querySelector(".tool-call-status");
+        if (pill === null) {
+          throw new Error("expected the status pill");
+        }
+        // The pill is a translucent wash over the card, which is opaque.
+        const cardFill = rgba(getComputedStyle(card).backgroundColor);
+        const pillFill = over(rgba(getComputedStyle(pill).backgroundColor), cardFill);
+        expect(contrast(ink(pill), pillFill)).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+
+  // The lift above is a mix toward the text colour, not a grey: three states
+  // keep a rule of their own so each stays recognisably itself, and nothing
+  // else above would notice one of them going.
+  for (const scheme of ["light", "dark"]) {
+    it(`keeps the deferred, done and error pills each their own colour in the ${scheme} scheme`, () => {
       const el = mount({ theme: `classic ${scheme}` });
-      const card = doneCard(el);
-      const status = card.querySelector(".tool-call-status");
-      if (status === null) {
-        throw new Error("expected the status pill");
-      }
-      // The pill is a translucent wash over the card, which is opaque.
-      const cardFill = rgba(getComputedStyle(card).backgroundColor);
-      const pillFill = over(rgba(getComputedStyle(status).backgroundColor), cardFill);
-      expect(contrast(ink(status), pillFill)).toBeGreaterThanOrEqual(4.5);
+      const inks = (["pending", "deferred", "done", "error"] as const).map((status) => {
+        const pill = cardIn(el, status).querySelector(".tool-call-status");
+        if (pill === null) {
+          throw new Error("expected the status pill");
+        }
+        return ink(pill).join(",");
+      });
+      expect(new Set(inks).size).toBe(4);
     });
   }
 
