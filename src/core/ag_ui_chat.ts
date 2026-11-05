@@ -144,8 +144,33 @@ function isCredentialsMode(value: string): value is RequestCredentials {
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
 
-/** Per-tab persistence key for the built-in theme toggle. */
+/**
+ * Persistence key for the built-in theme toggle. It holds the user's scheme
+ * word only: the theme name belongs to the host's markup, and one saved value
+ * is restored on every page that shares the key.
+ */
 const THEME_KEY = "ag-ui-chat:theme";
+
+/** The scheme words of the `theme` attribute; every other word names a theme. */
+const SCHEME_WORDS: readonly string[] = ["light", "dark", "auto"];
+
+/**
+ * The last scheme word in a saved value, or `undefined` when it names none. A
+ * value saved before only the scheme was kept (`"soft dark"`) still gives up
+ * just its scheme.
+ */
+function savedScheme(saved: string): string | undefined {
+  return saved
+    .split(/\s+/)
+    .filter((word) => SCHEME_WORDS.includes(word))
+    .at(-1);
+}
+
+/** `theme`'s words with its scheme word, if any, replaced by `scheme`. */
+function withScheme(theme: string, scheme: string): string {
+  const names = theme.split(/\s+/).filter((word) => word !== "" && !SCHEME_WORDS.includes(word));
+  return [...names, scheme].join(" ");
+}
 
 /**
  * `<ag-ui-chat>` — a framework-free chat sidebar Web Component over AG-UI.
@@ -1429,12 +1454,14 @@ export class AgUiChat extends HTMLElement {
     // Resolve the string table before rendering any chrome (defaults are the
     // floor; `data-strings` then the `strings` property layer over them).
     this.#strings = mergeUiStrings({ ...this.#readStringOverrides(), ...this.strings });
-    // Restore a theme the built-in toggle persisted last visit (opt-in only, so
-    // it never overrides a host that drives `theme` itself).
+    // Restore the scheme the built-in toggle persisted last visit onto the
+    // markup's theme name (opt-in only, so it never overrides a host that
+    // drives `theme` itself).
     if (this.getAttribute("data-theme-toggle") !== null) {
       const saved = this.#storage.readPreference(THEME_KEY);
-      if (saved !== null) {
-        this.setAttribute("theme", saved);
+      const scheme = saved === null ? undefined : savedScheme(saved);
+      if (scheme !== undefined) {
+        this.setAttribute("theme", withScheme(this.getAttribute("theme") ?? "", scheme));
       }
     }
     this.#render();
@@ -1827,13 +1854,13 @@ export class AgUiChat extends HTMLElement {
    */
   toggleTheme(): void {
     // Only the scheme word flips, so a named theme survives the toggle:
-    // "soft" becomes "soft dark", and "soft dark" becomes "soft light".
-    const words = (this.getAttribute("theme") ?? "").split(/\s+/).filter((word) => word !== "");
-    const dark = words.includes("dark");
-    const rest = words.filter((word) => word !== "dark" && word !== "light" && word !== "auto");
-    const next = [...rest, dark ? "light" : "dark"].join(" ");
-    this.setAttribute("theme", next);
-    this.#storage.writePreference(THEME_KEY, next);
+    // "soft" becomes "soft dark", and "soft dark" becomes "soft light". And
+    // only the scheme word is saved: the name is the host's, and a name saved
+    // on one page would replace another page's theme on restore.
+    const theme = this.getAttribute("theme") ?? "";
+    const scheme = theme.split(/\s+/).includes("dark") ? "light" : "dark";
+    this.setAttribute("theme", withScheme(theme, scheme));
+    this.#storage.writePreference(THEME_KEY, scheme);
     this.#syncThemeGlyph();
   }
 
