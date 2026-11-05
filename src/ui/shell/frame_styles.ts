@@ -1,0 +1,119 @@
+// The panel itself and its header: title, icon holder and header controls.
+export const FRAME_STYLES: string = `
+.chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--_bg);
+  border: 1px solid var(--_border);
+  border-radius: var(--_panel-radius);
+  box-shadow: var(--_shadow);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--_border);
+  background: var(--_header-bg);
+  color: var(--_header-fg);
+}
+
+/* The header is the panel's title bar: on the placements that let the widget
+   be moved it drags the whole thing, matching the launcher's own drag. The
+   selector lists those placements rather than asking JS to stamp an attribute,
+   because a cursor that appears one frame late reads as a control that only
+   sometimes exists. touch-action keeps a finger drag here moving the panel
+   instead of scrolling the page behind it. */
+:host(:not([placement])) .header,
+:host([placement=""]) .header,
+:host([placement="floating"]) .header,
+:host([placement="bottom-left"]) .header {
+  cursor: move;
+  touch-action: none;
+}
+
+/* A host that turned the drag off keeps a header that says so. */
+:host([data-launcher-drag="false"]) .header {
+  cursor: auto;
+  touch-action: auto;
+}
+
+/* :host is carried for the specificity, not the scope: the placement rules
+   above are a host selector plus a class plus an attribute, and a bare
+   .header[data-dragging] loses to them -- silently, because the drag still
+   works and only the cursor is wrong. */
+:host .header[data-dragging] {
+  cursor: grabbing;
+}
+
+/* The cursor inherits, so a control a host slots into the header would show
+   the drag cursor over something the drag deliberately ignores. Named to
+   match the controls panel_drag steps aside for. */
+.header ::slotted(:is(button, a, input, select, textarea)) {
+  cursor: pointer;
+}
+
+.header-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Header / launcher icon holder: a slot, with a data-icon-url <img>
+   fallback, sized via --ag-ui-icon-size. */
+.icon-holder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--_icon-size);
+  height: var(--_icon-size);
+  line-height: 1;
+}
+
+.icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: var(--_icon-radius);
+}
+
+.header-controls {
+  display: flex;
+  gap: var(--_header-gap);
+  flex: none;
+}
+
+.header-btn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--_header-btn-size);
+  height: var(--_header-btn-size);
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.header-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.18);
+}
+`;

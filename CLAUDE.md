@@ -99,7 +99,7 @@ inferred, so the published layout stays `dist/index.d.ts` rather than
    - **Three modules on one concern earn a directory.** Below three they stay at the group
      root; at three they move, and moving them is a chore rather than a refactor.
    - **A group root holds only what everything under it uses.** `ui/ui_strings.ts` and
-     `ui/styles.ts` are there because all eight concern directories read them, the way
+     `ui/styles.ts` are there because they span all eight concern directories, the way
      `constants.ts` sits at the `src/` root. It is not the drawer for whatever has not
      found a home yet.
    - **Two levels is the limit.** Wanting a third means the second was named for a kind.
@@ -122,13 +122,26 @@ inferred, so the published layout stays `dist/index.d.ts` rather than
     inline confirmation card reads it; the registry forwards it verbatim to `RunAgentInput.tools`.
     Don't invent a parallel metadata channel.
 
-## `styles.ts` is a template literal, not a stylesheet
+## The stylesheet is template literals, not CSS files
 
-The shadow styles are a single tagged JS template string, so **backticks and
-`${` inside CSS comments terminate it**. The failure is badly misattributed:
-`tsc` reports `TS2349: This expression is not callable` at the *top* of the
-file and a dozen unrelated test files fail, none of them near the edit. Write
-CSS comments in plain prose — no backtick-quoted identifiers.
+The shadow styles are one string constant per concern, each a plain JS template
+literal in that concern's directory (`ui/composer/composer_styles.ts`,
+`ui/placement/sidebar_styles.ts`, ...), joined by `ui/styles.ts`. So **backticks
+and `${` inside CSS comments terminate the module's string**. The failure is badly
+misattributed: `tsc` reports `TS2349: This expression is not callable` at the
+*top* of the file and a dozen unrelated test files fail, none of them near the
+edit. Write CSS comments in plain prose — no backtick-quoted identifiers.
+
+**The list in `ui/styles.ts` is in cascade order.** Two rules of equal
+specificity resolve by which comes later, and several modules restate a state
+another set at rest, so reordering that list, or moving a rule between modules,
+is a behaviour change: it needs a Chromium test pinning the computed value it
+could change. The split into modules moved no rule, which is why a few small
+rules still sit in a neighbouring concern's module; each module's header names
+its guests.
+
+The public tokens are read into private `--_*` aliases in
+`ui/shell/token_styles.ts`; its block comment holds the two invariants.
 
 ## No module-level mutable state
 

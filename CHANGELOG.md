@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The shadow stylesheet is split by concern.** `src/ui/styles.ts`, one
+  3,774-line string, is now composed from 27 modules, each in the directory of
+  the concern it styles: the token defaults and themes under `ui/shell/`, one
+  module per placement under `ui/placement/`, and the transcript, composer,
+  tool steps, interrupts, history and charts in theirs. The composed sheet is
+  the old one with every rule in the same order; only two comments changed
+  wording. Nothing a host sees changes, and **no host has to opt in**: tokens,
+  parts, attributes and the published `.d.ts` are as they were.
+
 ## [0.44.0] — 2026-10-20
 
 ### Fixed

@@ -3109,7 +3109,8 @@ fix belongs to the containing element, not to the widget:
 <ag-ui-chat endpoint="/agent/" theme="dark" density="compact" placement="sidebar"></ag-ui-chat>
 ```
 
-See [`src/ui/styles.ts`](src/ui/styles.ts) for the full variable + preset list. The
+See [`src/ui/shell/token_styles.ts`](src/ui/shell/token_styles.ts) for the full variable list and
+[`src/ui/placement/`](src/ui/placement/) for the placement presets. The
 [`demo/`](demo/) live playground (`node demo/mock-server.mjs`) flips theme, density, placement,
 text-animation, tool-display, and the answer well live from a single page, and demos the
 streamed thoughts region, the mic, and the header theme toggle.
@@ -3418,7 +3419,7 @@ This produces, into `dist/`:
 - `index.d.ts` (+ source maps) — type declarations; emitted `.js` import specifiers are preserved
   so consumers resolve types without extra flags.
 
-There is **no CSS file to load**. The styles are a template literal injected into
+There is **no CSS file to load**. The styles are string constants adopted into
 the shadow root at construction, so they ship inside the JS and cannot leak into
 the host page. Restyle through the [CSS custom properties](#theming-density-and-placement) and the
 `part` attributes, not a stylesheet override.

@@ -56,11 +56,11 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { STYLES } from "../src/ui/styles.js";
 
 const INDEX = readFileSync("src/index.ts", "utf8");
 const README = readFileSync("README.md", "utf8");
 const ELEMENT = readFileSync("src/core/ag_ui_chat.ts", "utf8");
-const STYLES = readFileSync("src/ui/styles.ts", "utf8");
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
