@@ -13,10 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gains `grouped`, and it is the new default (also for an absent or unknown
   value). A run's consecutive tool calls fold into one quiet row, "Worked
   through 5 steps", with a note such as "1 failed", and the per-call cards one
-  click down as `full` cards. Anything else in the turn ends the group. **No
+  click down as `full` cards. Anything else in the turn ends the group, except
+  a call's own rendered output. **No
   opt-in is needed, and a host that wants the old per-call cards opts out with
   `data-tool-display="full"`**; `inline`, `minimal`, `compact` and `full`
-  render exactly as in 0.45.0. Grouping is the same under every theme.
+  render exactly as in 0.45.0. Grouping is the same under every theme; Soft
+  draws the row as a tinted pill and Ledger as a monospace heading.
   - The group opens itself while a step waits on the user (a server-side
     approval, which renders inside its card), once per wait; the user can
     fold it again. A client-side confirmation or an `ask_user` question
@@ -26,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Repeated labels are told apart inside a group, "Fill field" then "Fill
     field (2)", in an element of its own; `tool-card-name` is never rewritten.
   - A tool's rendered output (a chart) is placed after the group, in call
-    order, so it is never folded away.
+    order, so it is never folded away, and a later call still joins the
+    group above it.
   - Grouping is decided as each card is built. Switching to `grouped` folds
     only calls drawn afterwards; switching to a card mode flattens existing
     groups by CSS into the cards that mode builds.

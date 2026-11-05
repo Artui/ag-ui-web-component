@@ -8,7 +8,7 @@ import type {
   ThreadMeta,
 } from "../../src/core/conversation_store.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
-import { makeFakeAgent } from "../helpers/fake_agent.js";
+import { type Emit, makeFakeAgent } from "../helpers/fake_agent.js";
 
 /**
  * A conversation restored from the store comes back folded, the way it was
@@ -61,6 +61,58 @@ function seededStore(messages: readonly Message[]): ClientConversationStore {
   };
 }
 
+/** A store that keeps what the live element saved, for a second element to restore. */
+function memoryStore(): ClientConversationStore & { saved: () => readonly Message[] } {
+  let saved: readonly Message[] = [];
+  return {
+    ...seededStore([]),
+    saved: () => saved,
+    loadMessages: (): Promise<readonly Message[] | null> =>
+      Promise.resolve(saved.length === 0 ? null : saved),
+    saveMessages: (_threadId: string, messages: readonly Message[]): void => {
+      saved = JSON.parse(JSON.stringify(messages)) as readonly Message[];
+    },
+  };
+}
+
+function mount(store: ClientConversationStore, script: (emit: Emit) => void): AgUiChat {
+  const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+  el.setAttribute("endpoint", "/agent/");
+  el.setAttribute("placement", "embedded");
+  el.conversationStore = store;
+  el.agentFactory = () => makeFakeAgent({ script }).agent;
+  // Drawn as a fragment, the shape that leaves no node of its own behind once
+  // placed, so the group's run has to be followed through its children.
+  el.registerTool({
+    name: "draw",
+    description: "draws its number",
+    parameters: { type: "object", properties: { n: { type: "number" } } },
+    handler: () => "drawn",
+    render: (args) => {
+      const fragment = document.createDocumentFragment();
+      const node = document.createElement("div");
+      node.className = "drawn";
+      node.textContent = String(args["n"]);
+      fragment.append(node);
+      return fragment;
+    },
+  });
+  document.body.appendChild(el);
+  return el;
+}
+
+/** The groups, outputs and messages of each answer, in the order the reader meets them. */
+function layout(el: AgUiChat): string[] {
+  const answers = [...(el.shadowRoot as ShadowRoot).querySelectorAll(".answer")];
+  return answers.flatMap((answer) =>
+    [...answer.querySelectorAll(":scope > :is(.tool-group, .drawn, .message)")].map((child) =>
+      child.classList.contains("tool-group")
+        ? `group of ${child.querySelectorAll(".tool-call").length}`
+        : child.className,
+    ),
+  );
+}
+
 function part(root: ParentNode, selector: string): HTMLElement {
   const found = root.querySelector(selector);
   if (!(found instanceof HTMLElement)) {
@@ -109,5 +161,31 @@ describe("a restored conversation under the default display", () => {
     expect(part(cards[1] as HTMLElement, ".tool-call-repeat").textContent).toBe("(2)");
     // The answer after the run is not folded with it.
     expect(part(root, ".message--assistant").closest(".tool-group")).toBeNull();
+  });
+
+  it("draws a run whose call rendered output the way the live stream drew it", async () => {
+    const live = memoryStore();
+    let round = 0;
+    const first = mount(live, (emit) => {
+      emit.runStart();
+      if (round === 0) {
+        emit.toolCall("d1", "draw", { n: 1 });
+        emit.toolCall("f1", "fill_field", { field: "title" });
+        emit.toolResult("f1", "ok");
+      }
+      round += 1;
+      emit.runEnd();
+    });
+    void first.sendMessage("draw and fill");
+    await settle();
+    await settle();
+    const drawnLive = layout(first);
+    expect(drawnLive).toEqual(["group of 2", "drawn"]);
+
+    const reloaded = seededStore(live.saved());
+    document.body.replaceChildren();
+    const second = mount(reloaded, () => {});
+    await settle();
+    expect(layout(second)).toEqual(drawnLive);
   });
 });

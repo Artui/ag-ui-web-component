@@ -93,6 +93,13 @@ export class Transcript {
    * fragment, which leaves nothing behind to place the next one after.
    */
   readonly #groupEnds = new WeakMap<Element, Comment>();
+  /**
+   * The step group element each placed output belongs to. A tool's own output
+   * does not end its group: the next call joins the group above it. Without
+   * that, replay -- which draws each restored call's output before the next
+   * call's card -- would split a run the live stream drew as one group.
+   */
+  readonly #outputGroups = new WeakMap<Node, Element>();
 
   constructor(host: TranscriptHost) {
     this.#host = host;
@@ -416,7 +423,11 @@ export class Transcript {
         group.after(end);
         this.#groupEnds.set(group, end);
       }
+      const placed = node instanceof DocumentFragment ? [...node.children] : [node];
       end.before(node);
+      for (const output of placed) {
+        this.#outputGroups.set(output, group);
+      }
     }
     this.afterGrew();
   }
@@ -466,16 +477,17 @@ export class Transcript {
   }
 
   /**
-   * The step group a new card joins. Consecutive cards share one; anything
-   * else in between (text, a chart, a confirmation) starts the next. The
-   * pending dots are skipped over, since they sit at the foot of the turn and
-   * move with it, and a new group goes in after the last thing that is not
-   * them.
+   * The step group a new card joins. Consecutive cards share one, and so do
+   * cards separated only by the group's own rendered output; anything else in
+   * between (text, a confirmation, a question) starts the next. The pending
+   * dots are skipped over, since they sit at the foot of the turn and move
+   * with it, and a new group goes in after the last thing that is not them.
    */
   #stepGroup(): ToolStepGroup {
     const answer = this.ensureGroup();
     const last = [...answer.children].filter((child) => child !== this.#pending).at(-1);
-    const existing = last === undefined ? undefined : this.#stepGroups.get(last);
+    const existing =
+      last === undefined ? undefined : this.#stepGroups.get(this.#outputGroups.get(last) ?? last);
     if (existing !== undefined) {
       return existing;
     }

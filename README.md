@@ -1481,8 +1481,8 @@ absent or unknown value reads as `grouped`):
 
 - `grouped` — the default. A run's consecutive tool calls fold into one quiet row, **"Worked
   through 5 steps"**, with a note such as **"1 failed"** beside it, and the calls one click down
-  as `full` cards. Anything else in the turn (text, a chart, a confirmation, a question) ends the
-  group, and the next call starts a new one. A group of one call shows that call's own label. See
+  as `full` cards. Anything else in the turn (text, a confirmation, a question) ends the group, and
+  the next call starts a new one; a call's own rendered output does not. A group of one call shows that call's own label. See
   [The step group](#the-step-group).
 - `inline` — the lightest mode: a single status row (icon + summary, no card chrome) with the
   result behind its own toggle. Reads as one line of the answer — pairs with [the answer
@@ -1530,7 +1530,8 @@ steps and `data-open` whether the cards are showing; the head is a button with `
   (2)": the ordinal is an element of its own (part `tool-card-repeat`) beside the card's name, so
   `tool-card-name` is never rewritten, and a card mode hides the ordinal.
 - **Rendered output stays in view.** A tool's `render` output is placed after the group, in call
-  order, rather than inside it, so a chart is never one click down.
+  order, rather than inside it, so a chart is never one click down. It does not end the group: a
+  later call joins the group above it, which is also how a restored conversation draws the run.
 
 Parts: `tool-group`, `tool-group-head` (the button), `tool-group-icon`, `tool-group-label`,
 `tool-group-meta` (holding one `.tool-group-note` per note), `tool-group-list` (the cards), and

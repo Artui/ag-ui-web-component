@@ -78,6 +78,21 @@ export const LEDGER_STYLES: string = `
   letter-spacing: 0.01em;
 }
 
+/* The step group's row reads as a ledger heading. Unscoped to grouped mode:
+   a card mode hides the row and drops the list's box, so neither reaches a
+   flattened card. */
+:host([theme~="ledger"]) .tool-group-head {
+  font-family: var(--_code-font);
+  font-size: var(--_text-xs);
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+:host([theme~="ledger"]) .tool-group-list {
+  border-left: 1px dashed var(--_line-strong);
+}
+
 :host([theme~="ledger"]) .chart-block {
   border-top: 1px solid var(--_line-strong);
   border-bottom: 1px solid var(--_line);

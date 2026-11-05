@@ -305,17 +305,20 @@ describe("a group whose step delegated to a sub-agent", () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const el = mount(async (emit) => {
-      emit.runStart();
-      emit.toolCall("s1", "search_docs", { q: "refunds" });
-      emit.toolResult("s1", "three pages");
-      emit.toolCall("s2", "delegate_task", { task: "summarise the refund policy" });
-      emit.subAgentStarted("sub-1", "researcher", "s2");
-      await held;
-      emit.subAgentFinished("sub-1");
-      emit.toolResult("s2", "summary");
-      emit.runEnd();
-    });
+    const el = mount(
+      async (emit) => {
+        emit.runStart();
+        emit.toolCall("s1", "search_docs", { q: "refunds" });
+        emit.toolResult("s1", "three pages");
+        emit.toolCall("s2", "delegate_task", { task: "summarise the refund policy" });
+        emit.subAgentStarted("sub-1", "researcher", "s2");
+        await held;
+        emit.subAgentFinished("sub-1");
+        emit.toolResult("s2", "summary");
+        emit.runEnd();
+      },
+      { width: NARROW },
+    );
     await send(el, "summarise refunds");
 
     const group = part(shadow(el), ".tool-group");
@@ -325,6 +328,15 @@ describe("a group whose step delegated to a sub-agent", () => {
     const icon = part(group, ".tool-group-icon");
     expect(getComputedStyle(icon).animationName).toBe("ag-ui-tool-spin");
     expect(height(icon)).toBeGreaterThan(0);
+
+    // The longest folded row there is, at the narrow end: every piece of it
+    // stays inside the transcript rather than inside a group that overflowed.
+    const list = part(shadow(el), ".messages").getBoundingClientRect();
+    for (const child of group.querySelectorAll(".tool-group-head > *")) {
+      const rect = child.getBoundingClientRect();
+      expect(rect.left).toBeGreaterThanOrEqual(list.left);
+      expect(rect.right).toBeLessThanOrEqual(list.right);
+    }
 
     release();
     await settle();
@@ -373,5 +385,23 @@ describe("a card mode set after groups were drawn", () => {
     el.removeAttribute("data-tool-display");
     expect(height(head)).toBeGreaterThan(0);
     expect(height(all(el, ".tool-call")[0] as HTMLElement)).toBe(0);
+  });
+});
+
+describe("the step group under a theme", () => {
+  it("takes the theme's own row", async () => {
+    const soft = mount(fiveSteps);
+    soft.setAttribute("theme", "soft");
+    await send(soft, "fill the form");
+    expect(getComputedStyle(part(shadow(soft), ".tool-group-head")).borderTopLeftRadius).toBe(
+      "999px",
+    );
+
+    const ledger = mount(fiveSteps);
+    ledger.setAttribute("theme", "ledger");
+    await send(ledger, "fill the form");
+    expect(getComputedStyle(part(shadow(ledger), ".tool-group-head")).textTransform).toBe(
+      "uppercase",
+    );
   });
 });
