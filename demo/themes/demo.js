@@ -191,6 +191,8 @@ bind("cfg-density", "density");
 bind("cfg-placement", "placement");
 bind("cfg-text", "data-text-animation");
 bind("cfg-tools", "data-tool-display");
+// How an opened group draws its calls; read only while Tool cards is grouped.
+bind("cfg-group-tools", "data-tool-group-display");
 
 // Absent is a value of its own here: it is what leaves the greeting to the
 // placement's default, on for page and off everywhere else.

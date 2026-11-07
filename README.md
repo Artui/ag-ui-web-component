@@ -267,7 +267,7 @@ element after the fact.
 `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
 `resolvePageTarget`, `sharedState`, `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId` and `running`, and
-the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `collapsed` /
+the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `toolGroupDisplay` / `collapsed` /
 `credentials`.
 
 `headers` and `getHeaders` authenticate **every** request the element makes, not only the agent

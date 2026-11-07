@@ -198,6 +198,23 @@ describe("AgUiChat", () => {
     expect(mount({ "data-tool-display": "bogus" }).toolDisplay).toBe("grouped");
   });
 
+  it("reads the group's inner mode from data-tool-group-display, full unless it knows the value", () => {
+    expect(mount().toolGroupDisplay).toBe("full");
+    expect(mount({ "data-tool-group-display": "inline" }).toolGroupDisplay).toBe("inline");
+    expect(mount({ "data-tool-group-display": "minimal" }).toolGroupDisplay).toBe("minimal");
+    expect(mount({ "data-tool-group-display": "compact" }).toolGroupDisplay).toBe("compact");
+    expect(mount({ "data-tool-group-display": "full" }).toolGroupDisplay).toBe("full");
+    expect(mount({ "data-tool-group-display": "grouped" }).toolGroupDisplay).toBe("full");
+    expect(mount({ "data-tool-group-display": "bogus" }).toolGroupDisplay).toBe("full");
+  });
+
+  it("reflects toolGroupDisplay to its attribute", () => {
+    const el = mount();
+    el.toolGroupDisplay = "compact";
+    expect(el.getAttribute("data-tool-group-display")).toBe("compact");
+    expect(el.toolGroupDisplay).toBe("compact");
+  });
+
   it("renders assistant content as markdown but keeps user content literal", () => {
     const el = mount();
     const assistant = el.appendMessage(MESSAGE_ROLE.ASSISTANT, "**bold**");

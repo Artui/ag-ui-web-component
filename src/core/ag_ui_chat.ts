@@ -13,6 +13,8 @@ import {
   THREAD_EVENT,
   TOGGLE_EVENT,
   TOOL_DISPLAY,
+  TOOL_GROUP_DISPLAY,
+  type ToolGroupDisplayMode,
   UNREAD_EVENT,
 } from "../constants.js";
 import type { Skill } from "../skills/skill.js";
@@ -113,7 +115,7 @@ import { warnOnCrossOriginCredentials, withCredentials } from "./utils.js";
  * Excludes the attributes that are re-read per use, where a late change works
  * and a warning would be wrong: `data-runs-url`, `data-page-actions`,
  * `data-text-animation`, `data-tool-display`, `endpoint`, and the CSS-reactive
- * `theme` / `collapsed`.
+ * `theme` / `collapsed` / `data-tool-group-display`.
  */
 const CONNECT_TIME_ATTRIBUTES = [
   "data-attachments-url",
@@ -1418,6 +1420,32 @@ export class AgUiChat extends HTMLElement {
 
   set toolDisplay(value: ToolDisplayMode) {
     this.setAttribute("data-tool-display", value);
+  }
+
+  /**
+   * How an opened step group draws its calls, from the
+   * `data-tool-group-display` attribute (`full` / `compact` / `minimal` /
+   * `inline`). Defaults to `full`, for an absent attribute and for a value the
+   * element does not know, which is what a group drew before the attribute.
+   *
+   * Read only while `toolDisplay` is `grouped`: under a card mode the groups
+   * are flattened into that mode's cards. Applied by the shadow CSS from the
+   * attribute itself, so changing it restyles groups already on screen.
+   */
+  get toolGroupDisplay(): ToolGroupDisplayMode {
+    const attr = this.getAttribute("data-tool-group-display");
+    if (
+      attr === TOOL_GROUP_DISPLAY.INLINE ||
+      attr === TOOL_GROUP_DISPLAY.MINIMAL ||
+      attr === TOOL_GROUP_DISPLAY.COMPACT
+    ) {
+      return attr;
+    }
+    return TOOL_GROUP_DISPLAY.FULL;
+  }
+
+  set toolGroupDisplay(value: ToolGroupDisplayMode) {
+    this.setAttribute("data-tool-group-display", value);
   }
 
   /**
