@@ -239,6 +239,34 @@ describe("the accent recipe's header buttons (real browser)", () => {
     expect(contrast(hovered.glyph, hovered.ground)).toBeGreaterThanOrEqual(pair);
   });
 
+  // A pair per scheme, as a page that follows its own dark mode writes it:
+  // the light-dark() halves resolve against the element's scheme, and the
+  // hover square is mixed from whichever half is in force.
+  it.each([
+    ["", "#3d5afe", "#ffffff"],
+    ["dark", "#8a9dff", "#14161b"],
+    ["auto", "#8a9dff", "#14161b"],
+  ])('reads 4.5:1 with a light-dark() pair under theme "%s"', async (theme, bg, fg) => {
+    if (theme === "auto") {
+      await emulateDark();
+    }
+    followRecipe({ bg: "light-dark(#3d5afe, #8a9dff)", fg: "light-dark(#ffffff, #14161b)" });
+    const el = mountPanel(theme);
+    expect(rgba(getComputedStyle(part(el, ".header")).backgroundColor)).toEqual(rgba(bg));
+    const button = part(el, ".header-btn--history");
+    const rest = painted(el, button);
+    expect(rest.ink).toEqual(rgba(fg));
+    expect(contrast(rest.glyph, rest.ground)).toBeGreaterThanOrEqual(4.5);
+    await hover(button);
+    const hovered = painted(el, button);
+    expect(hovered.ink).toEqual(rgba(fg));
+    expect(rgba(getComputedStyle(button).backgroundColor)).not.toEqual(
+      resolved(el, "var(--_hover)"),
+    );
+    expect(hovered.ground).not.toEqual(rest.ground);
+    expect(contrast(hovered.glyph, hovered.ground)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it("reaches the header buttons from a token set on an ancestor", async () => {
     addPageRule(`.brand { --ag-ui-header-bg: ${INDIGO.bg}; --ag-ui-header-fg: ${INDIGO.fg}; }`);
     const wrapper = document.createElement("div");

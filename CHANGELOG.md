@@ -17,9 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opacity, and the hover square is the opposite of that text at 18% (darker
   under white text, lighter under dark), so a hovered button reads at least
   what the host's header pair reads: white on `#3d5afe` is 5.1:1 at rest and
-  about 7:1 hovered. This applies under Quiet and any theme of the host's own
-  named after it, in every scheme; Soft, Ledger, Classic and code are
-  unchanged. Unset, nothing changes. **No opt-in is needed.** A host that
+  about 7:1 hovered. Browsers without relative colour syntax (Firefox 120
+  to 127, Safari 17.5 and 17.6) mix the square from the text itself instead.
+  This applies under Quiet and under a host's own theme word, which starts
+  from Quiet, in every scheme; Soft, Ledger, Classic and code are unchanged.
+  Unset, nothing changes. **No opt-in is needed.** A host that
   wrote `ag-ui-chat::part(header-button) { color: var(--ag-ui-header-fg) }`
   and the `:hover` background beside it may delete both: kept, the colour
   rule is harmless, but the page's 18% tint of the text still beats the new

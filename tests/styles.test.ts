@@ -401,13 +401,16 @@ describe("STYLES token indirection", () => {
         }
         // A switch reads its own token with no fallback, which is the point:
         // unset, it is unset too. The header buttons' hover square is the one
-        // alias derived from a switch, and is unset with it; named exactly.
+        // alias derived from a switch, and is unset with it: named exactly,
+        // in both its forms (the second behind relative colour syntax).
         if (name?.endsWith("-set") && value === `var(--ag-ui-${name.slice(3, -4)})`) {
           return false;
         }
         if (
-          declaration ===
-          "--_header-btn-hover: color-mix(in srgb, rgb(from var(--_header-fg-set) calc(255 - r) calc(255 - g) calc(255 - b)) 18%, transparent)"
+          [
+            "--_header-btn-hover: color-mix(in srgb, var(--_header-fg-set) 18%, transparent)",
+            "--_header-btn-hover: color-mix(in srgb, rgb(from var(--_header-fg-set) calc(255 - r) calc(255 - g) calc(255 - b)) 18%, transparent)",
+          ].includes(declaration)
         ) {
           return false;
         }
