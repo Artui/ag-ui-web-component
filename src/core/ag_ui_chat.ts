@@ -627,6 +627,8 @@ export class AgUiChat extends HTMLElement {
   readonly #voice: ComposerVoice;
   /** Whether the element is currently in the DOM; gates the connect-time warning. */
   #connected = false;
+  /** A {@link newChat} asked for before the element connected, to start at connect. */
+  #newChatOnConnect = false;
   /**
    * Aborted when the element leaves the document, and replaced when it comes
    * back.
@@ -1556,6 +1558,12 @@ export class AgUiChat extends HTMLElement {
     // Last: everything above reads (and some of it sets) attributes, and none
     // of that should trip the connect-time warning.
     this.#connected = true;
+    if (this.#newChatOnConnect) {
+      this.#newChatOnConnect = false;
+      // After the restore above has started: starting the chat stops it, so
+      // the one event is the new chat's and the conversation left stays kept.
+      this.newChat();
+    }
   }
 
   /**
@@ -2082,16 +2090,19 @@ export class AgUiChat extends HTMLElement {
    * for a host that lists conversations in its own chrome.
    *
    * Resolves once the thread has been replayed, when {@link THREAD_EVENT} has
-   * fired. **A run in flight is cancelled**, as the list and {@link newChat} do;
+   * fired; a second call for the thread already loading settles with that load.
+   * If the store rejects the load, the element stays on the thread it was on,
+   * fires nothing, and the promise rejects with the store's error.
+   * **A run in flight is cancelled**, as the list and {@link newChat} do;
    * a host that would rather wait reads {@link running} first. The thread
    * already on screen is left alone, and so is everything before the element
    * connects, since until then it has no store to read the thread from.
    */
-  async switchThread(threadId: string): Promise<void> {
+  switchThread(threadId: string): Promise<void> {
     if (!this.#connected) {
-      return;
+      return Promise.resolve();
     }
-    await this.#history.switchThread(threadId);
+    return this.#history.switchThread(threadId);
   }
 
   /**
@@ -2134,6 +2145,13 @@ export class AgUiChat extends HTMLElement {
    * one. The page is not scrolled to bring the composer into view.
    */
   newChat(): void {
+    // Before the element connects it has no store scoped to its namespace and
+    // no thread to leave, and minting one would write to the unscoped store and
+    // fire an event for a thread it does not yet show. Connecting starts it.
+    if (!this.#connected) {
+      this.#newChatOnConnect = true;
+      return;
+    }
     // Stop any in-flight run first — discarding the client mid-run would
     // leave the old agent streaming into a cleared transcript.
     this.#cancelRun();

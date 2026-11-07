@@ -28,6 +28,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that slot to stay visible while collapsed should use the footer slot, which
   collapse leaves alone.
 
+- **`switchThread()` keeps the old thread when the store's load rejects.** The element
+  used to point at the new thread id, show an empty transcript and fire no
+  `ag-ui-thread`, so it named a thread it was not showing. It now stays on the thread
+  it was on, draws it again without an event, and the returned promise rejects with
+  the store's error. A second `switchThread()` for the thread still loading now
+  settles with that load, after the replay, instead of resolving at once. No host
+  opt-in.
+- **`newChat()` before the element connects waits for the connect.** It used to mint a
+  thread in the unscoped store and fire `ag-ui-thread` for a chat that was not yet
+  shown, leaving `threadId` non-null against the README. Now `threadId` is `null` and
+  nothing fires until the element connects, which starts the new chat and fires one
+  `ag-ui-thread` with reason `new`. A host that called `newChat()` early and relied on
+  the immediate event or thread id reads them after connect instead.
+
 ## [0.47.0] — 2026-11-07
 
 ### Added

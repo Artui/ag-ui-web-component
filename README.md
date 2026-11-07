@@ -1161,7 +1161,9 @@ matching JS API:
   widget is collapsed, and the page is not scrolled to it. A restore still loading or replaying
   the conversation being left stops there, so nothing of it is drawn into the new chat, and a
   run it was about to resume after a reload is not resumed: coming back to that conversation
-  later answers the interrupted call as not finished.
+  later answers the interrupted call as not finished. Called before the element connects (or while
+  it is out of the document), it waits: `threadId` stays `null` and nothing fires until the
+  element connects, which then starts the new chat, so the one `ag-ui-thread` event is a `new`.
 - `describeSurface()` — where the panel is and what can be done to it: placement, collapsed,
   whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
   the two reasons a move can fail into the one answer a caller needs.
@@ -1195,7 +1197,9 @@ one on screen with the drawer's own paths:
   the drawer does. Returns a `Promise<void>` that resolves once the thread is drawn. **A run in
   flight is cancelled**, as the drawer and `newChat()` cancel it; read `running` first if you
   would rather wait. Switching to the thread already on screen does nothing, and so does a call
-  before the element connects.
+  before the element connects; a second call for the thread that is still loading settles with
+  that load, after the replay. If the store rejects the load, the element stays on the thread it
+  was on, redraws it, fires no `ag-ui-thread`, and the promise rejects with the store's error.
 - `deleteThread(threadId)` — delete a stored thread, as the drawer row's delete does. Deleting
   the thread on screen cancels its run and puts a fresh thread in its place; deleting another
   leaves the screen alone. Prefer it to `conversationStore.clear()`, which deletes the record and
