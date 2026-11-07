@@ -65,8 +65,9 @@ describe("the host's own bar (real browser)", () => {
     defineAgUiChat();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     document.body.innerHTML = "";
+    await page.viewport(1280, 800);
   });
 
   it.each<[string, { placement?: string }]>([
@@ -161,7 +162,6 @@ describe("the host's own bar (real browser)", () => {
   });
 
   it("keeps the edges the anchor holds through a resize", async () => {
-    await page.viewport(1280, 800);
     const button = hostBar();
     const el = mount({ anchor: "#host-agent", "data-start-open": "" });
     await settle();
