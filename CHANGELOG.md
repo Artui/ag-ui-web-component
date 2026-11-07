@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Tested against `@ag-ui/client` and `@ag-ui/core` 1.0.4.** The lockfile moves
+  from 1.0.3, and the declared range (`>=1.0.0 <2`) is unchanged, so a fresh
+  install of 0.47.0 already resolved 1.0.4. The element passes `threadId` to
+  the agent rather than reading the one 1.0.4 now creates on first read, and it
+  never edits a message the agent emits, which 1.0.4 now documents as
+  read-only. `zod` stays an undeclared peer of `@ag-ui/core`, as it was in
+  1.0.3. **No opt-in** and no behavioural change.
+
 - **The demo shows the 0.47.0 additions.** The playground gains a card under
   the form with a control and a readout for each: the `above-composer` slot
   (also a checkbox on the full-page route, where it travels with the centred
