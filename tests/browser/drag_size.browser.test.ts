@@ -41,6 +41,9 @@ beforeAll(() => {
 
 afterEach(async () => {
   document.body.innerHTML = "";
+  document.head.querySelectorAll("style[data-drag-size]").forEach((style) => {
+    style.remove();
+  });
   localStorage.removeItem(SIZE_KEY);
   sessionStorage.removeItem(SIZE_KEY);
   await page.viewport(DESKTOP.width, DESKTOP.height);
@@ -78,7 +81,7 @@ describe("a dragged size and the phone shape (real browser)", () => {
     const el = mount({}, "--ag-ui-width: 700px; --ag-ui-height: 650px");
     await settle();
 
-    // The user's drag beats the host's tokens, with no !important needed.
+    // The user's drag beats the host's tokens.
     const box = el.getBoundingClientRect();
     expect(box.width).toBeCloseTo(300, 0);
     expect(box.height).toBeCloseTo(400, 0);
@@ -104,5 +107,28 @@ describe("a dragged size and the phone shape (real browser)", () => {
     const box = el.getBoundingClientRect();
     expect(box.width).toBeCloseTo(700, 0);
     expect(box.height).toBeCloseTo(650, 0);
+  });
+});
+
+describe("a dragged size and a host's !important token (real browser)", () => {
+  it("beats the token until resetSize hands control back", async () => {
+    localStorage.setItem(SIZE_KEY, JSON.stringify({ width: 300, height: 400 }));
+    // A sized state written for a release where the drag was inline on the
+    // public token, and so needed !important to be outranked.
+    const style = document.createElement("style");
+    style.dataset["dragSize"] = "";
+    style.textContent = "ag-ui-chat.expanded { --ag-ui-width: 900px !important; }";
+    document.head.appendChild(style);
+    const el = mount();
+    await settle();
+
+    el.classList.add("expanded");
+    await settle();
+    // offsetWidth, not the rect: the host is scaled in some states.
+    expect(el.offsetWidth).toBeCloseTo(300, 0);
+
+    el.resetSize();
+    await settle();
+    expect(el.offsetWidth).toBeCloseTo(900, 0);
   });
 });
