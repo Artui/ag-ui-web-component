@@ -72,11 +72,20 @@ export const DOCK_STYLES: string = `
   --_max-height: var(--ag-ui-max-height, calc(var(--_viewport-height) - var(--_dock-bottom, 0px)));
 }
 
-/* The host's own bar: the panel stands 8px above the anchor and lines up with
-   its right edge. Only once the element found the anchor; until then, and
-   when it never does, the placement's own corner stands. */
+/* The host's own bar: the panel stands the anchor gap (8px unless the host
+   says otherwise) above the anchor and lines up with its right edge. Only
+   once the element found the anchor; until then, and when it never does, the
+   placement's own corner stands.
+
+   The cap spends the larger of the gap and the gutter. The gutter alone is
+   what this always spent, so the default is unchanged; but a host that opens
+   the gap past the gutter to clear a tall toolbar would otherwise push a
+   panel grown to the cap off the top of the window by the difference. */
 :host([data-collapsed-to="none"][data-dock-anchored]) {
-  --_inset: var(--ag-ui-inset, auto var(--_dock-right, 0px) calc(var(--_dock-bottom, 0px) + 8px) auto);
-  --_max-height: var(--ag-ui-max-height, calc(var(--_viewport-height) - var(--_dock-bottom, 0px) - var(--_edge-gutter)));
+  --_inset: var(--ag-ui-inset, auto var(--_dock-right, 0px) calc(var(--_dock-bottom, 0px) + var(--_anchor-gap)) auto);
+  --_max-height: var(
+    --ag-ui-max-height,
+    calc(var(--_viewport-height) - var(--_dock-bottom, 0px) - max(var(--_edge-gutter), var(--_anchor-gap)))
+  );
 }
 `;

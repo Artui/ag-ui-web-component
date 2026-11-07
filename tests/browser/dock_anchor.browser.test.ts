@@ -107,6 +107,34 @@ describe("the host's own bar (real browser)", () => {
     expect(panel.height).toBeCloseTo(screenHeight() - (screenHeight() - anchor.top) - GUTTER, 0);
   });
 
+  it("stands the anchor gap above the anchor, so a host clears its own toolbar", async () => {
+    const button = hostBar();
+    const el = mount({ anchor: "#host-agent", "data-start-open": "" });
+    // The button sits 4px inside a 36px toolbar; 12px of gap leaves the
+    // panel's foot 8px clear of the toolbar's top edge.
+    el.style.setProperty("--ag-ui-anchor-gap", "12px");
+    await settle();
+    const anchor = button.getBoundingClientRect();
+    const toolbar = (button.parentElement as HTMLElement).getBoundingClientRect();
+    const panel = el.getBoundingClientRect();
+    expect(panel.bottom).toBeCloseTo(anchor.top - 12, 0);
+    expect(panel.bottom).toBeCloseTo(toolbar.top - 8, 0);
+    expect(panel.right).toBeCloseTo(anchor.right, 0);
+  });
+
+  it("keeps a panel grown to the cap on screen when the gap is wider than the gutter", async () => {
+    const button = hostBar();
+    const el = mount({ anchor: "#host-agent", "data-start-open": "" });
+    el.style.setProperty("--ag-ui-height", "3000px");
+    el.style.setProperty("--ag-ui-anchor-gap", `${GUTTER + 16}px`);
+    await settle();
+    const anchor = button.getBoundingClientRect();
+    const panel = el.getBoundingClientRect();
+    expect(panel.bottom).toBeCloseTo(anchor.top - GUTTER - 16, 0);
+    // The cap spends the gap, so the header stops at the top of the window.
+    expect(panel.top).toBeCloseTo(0, 0);
+  });
+
   it("opens from the placement's own corner when the anchor is not there", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const el = mount({ anchor: "#missing" });

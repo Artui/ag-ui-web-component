@@ -322,6 +322,11 @@ export const TOKEN_STYLES: string = `
      fallback; declared initial so it never inherits either. */
   --_dock-bottom: initial;
   --_dock-right: initial;
+  /* The gap between a panel and the host's own button it rises from under
+     collapse-to="none". The button usually sits inside a taller toolbar, so a
+     host sets this to the button's distance from the toolbar's top plus the
+     clearance it wants, and the panel stands clear of the toolbar. */
+  --_anchor-gap: var(--ag-ui-anchor-gap, 8px);
   --_width: var(--_drag-width, var(--ag-ui-width, 380px));
   --_height: var(--_drag-height, var(--ag-ui-height, 560px));
   /* The gutter a resting floating panel keeps between itself and the edge of

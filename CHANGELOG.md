@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only while collapsed. New parts `bar` and `bar-history`, and
   `describeSurface()` reports `collapseTo`. **Opt-in**: absent,
   `collapse-to` reads as `auto`, which leaves every placement as it was.
+- **Clear a host toolbar under `collapse-to="none"`.** The new
+  `--ag-ui-anchor-gap` token sets the gap between the panel and the anchor it
+  rises from, for a host whose button sits inside a taller toolbar; a gap
+  wider than the gutter also comes off the panel's max height, so a tall panel
+  stays on screen. **Opt-in**: absent, the gap stays 8px.
 
 ### Changed
 
