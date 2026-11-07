@@ -25,7 +25,7 @@
 
 import type { Message } from "@ag-ui/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ELEMENT_TAG, TOOL_OUTCOME } from "../src/constants.js";
+import { ELEMENT_TAG, THREAD_EVENT, TOOL_OUTCOME } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import type {
   ClientConversationStore,
@@ -34,6 +34,7 @@ import type {
 } from "../src/core/conversation_store.js";
 import type { HttpAgentOptions } from "../src/core/create_http_agent.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
+import type { ThreadDetail } from "../src/core/events/thread_detail.js";
 import type { RunRow } from "../src/core/run_index.js";
 import { DEFAULT_UI_STRINGS } from "../src/ui/ui_strings.js";
 import { type Emit, type FakeAgentHandle, makeFakeAgent } from "./helpers/fake_agent.js";
@@ -1017,6 +1018,36 @@ describe("a reload that resumes, while the store is still answering", () => {
     expect(transcript(el)).toEqual([]);
     expect(shadow(el).querySelector(".tool-call")).toBeNull();
     // Stopped from inside the replay, which is a Stop for the run all the same.
+    expect((el.conversationStore as MemoryStore).snapshot().checkpoint).toBeNull();
+  });
+
+  it("resumes nothing once a thread listener starts a new chat", async () => {
+    // The thread event fires once the restored conversation is drawn and before
+    // its run resumes, and its listener is host code that can stop the restore
+    // as a renderer can. Going on asked the host where the page had landed for
+    // a run nothing would resume, and cleared the checkpoint under the new
+    // chat's thread rather than the one it was stored under.
+    const snapshot = await atNavigation();
+    const sent = stubEndpoint();
+    const { el, answer } = await reloadAnsweringLater(snapshot);
+    const landed = vi.fn(() => ({ navigated: true }));
+    el.navigationResult = landed;
+    const reasons: string[] = [];
+    el.addEventListener(THREAD_EVENT, (event) => {
+      const { reason } = (event as CustomEvent<ThreadDetail>).detail;
+      reasons.push(reason);
+      if (reason === "restore") {
+        el.newChat();
+      }
+    });
+
+    answer();
+    await settle();
+
+    expect(reasons).toEqual(["restore", "new"]);
+    expect(landed).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+    expect(transcript(el)).toEqual([]);
     expect((el.conversationStore as MemoryStore).snapshot().checkpoint).toBeNull();
   });
 
