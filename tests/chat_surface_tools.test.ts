@@ -198,17 +198,29 @@ describe("chat surface tools", () => {
     expect(String(second["reason"])).toContain("sidebar");
   });
 
-  it("names the dock when that is what holds the panel, not the page or the placement", async () => {
-    // A docked panel reports draggable false, because the drag is off; the
-    // "turned off" sentence would then blame the host for a rule of the dock.
+  it("gives a docked panel no refusal of its own, only the page's or the placement's", async () => {
+    // A docked corner panel moves now, so the dock is never the reason. What
+    // can still refuse it is the host's opt-out or a placement that owns its
+    // position, and each keeps its own sentence.
     for (const collapseTo of ["bar", "none"] as const) {
-      const docked = makeSurface({ movable: false, draggable: false, collapseTo });
-      const result = (await tool(docked.tools, "move_chat").handler({
+      const off = makeSurface({ movable: false, draggable: false, collapseTo });
+      const owned = makeSurface({
+        movable: false,
+        draggable: true,
+        collapseTo,
+        placement: "sidebar",
+      });
+      const first = (await tool(off.tools, "move_chat").handler({
         corner: "top-left",
       })) as Record<string, unknown>;
-      expect(String(result["reason"])).toContain("docked");
-      expect(String(result["reason"])).not.toContain("turned off");
-      expect(result["suggestion"]).toBe("minimise_chat");
+      const second = (await tool(owned.tools, "move_chat").handler({
+        corner: "top-left",
+      })) as Record<string, unknown>;
+      expect(String(first["reason"])).toContain("turned off");
+      expect(String(second["reason"])).toContain("sidebar");
+      for (const reason of [first["reason"], second["reason"]]) {
+        expect(String(reason)).not.toContain("docked");
+      }
     }
   });
 
@@ -326,13 +338,38 @@ describe("describeSurface().collapseTo, per placement and collapse-to", () => {
     expect(el.hasAttribute("data-collapsed-to")).toBe(false);
   });
 
-  it("refuses to move a docked panel, from the agent's tool and from the host's call", () => {
-    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
-    el.setAttribute("collapse-to", "bar");
-    el.setAttribute("data-start-open", "");
-    document.body.appendChild(el);
-    const report = el.describeSurface();
-    expect(report.movable).toBe(false);
-    expect(el.moveTo("top-left")).toBe(false);
-  });
+  it.each<[Record<string, string>, boolean, boolean, string | null]>([
+    [{ "collapse-to": "auto" }, true, true, null],
+    [{ "collapse-to": "bar" }, true, true, null],
+    [{ "collapse-to": "none" }, true, true, null],
+    [{ "collapse-to": "bar", placement: "bottom-left" }, true, true, null],
+    [{ "collapse-to": "bar", placement: "side" }, false, true, "side"],
+    [{ "collapse-to": "none", placement: "sidebar" }, false, true, "sidebar"],
+    [{ "collapse-to": "none", placement: "embedded" }, false, true, "embedded"],
+    [{ "collapse-to": "bar", "data-launcher-drag": "false" }, false, false, "turned off"],
+  ])(
+    "under %o reports movable %s and draggable %s, and refuses naming %s",
+    async (attrs, movable, draggable, reason) => {
+      // A docked corner panel moves like the corner panel it is; a placement
+      // that owns its position keeps owning it, and the refusal then names the
+      // placement rather than blaming the page or the dock.
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("data-start-open", "");
+      for (const [key, value] of Object.entries(attrs)) {
+        el.setAttribute(key, value);
+      }
+      document.body.appendChild(el);
+      const report = el.describeSurface();
+      expect(report.movable).toBe(movable);
+      expect(report.draggable).toBe(draggable);
+      const result = (await tool(createChatSurfaceTools(el), "move_chat").handler({
+        corner: "top-left",
+      })) as Record<string, unknown>;
+      expect(result["moved"]).toBe(movable);
+      if (reason !== null) {
+        expect(String(result["reason"])).toContain(reason);
+        expect(String(result["reason"])).not.toContain("docked");
+      }
+    },
+  );
 });

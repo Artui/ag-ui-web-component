@@ -173,7 +173,8 @@ ${GROUPED} .tool-group[data-open="false"] .tool-group-list {
 
 /* A card inside the group is one line of the list: icon, name, and its
    Details control at the end, with the arguments and result opening under
-   the whole row. */
+   the whole row. Its ink is the second ink in every theme, unless the host
+   set the tool token, which then reaches the grouped calls too. */
 ${GROUPED} .tool-group .tool-call {
   max-width: 100%;
   align-self: stretch;
@@ -184,7 +185,7 @@ ${GROUPED} .tool-group .tool-call {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--_ink-2);
+  color: var(--_tool-fg-set, var(--_ink-2));
   font-family: inherit;
   font-size: var(--_text-sm);
 }

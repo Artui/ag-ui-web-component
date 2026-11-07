@@ -1128,7 +1128,8 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     // collapse-to changes the surface the way placement does -- a docked panel
-    // cannot be moved, so the same handover applies -- and is live the same way.
+    // has no launcher to drag, and keeps its own dragged spot apart from the
+    // corner's, so the same handover applies -- and is live the same way.
     if (name === "placement" || name === "collapse-to") {
       // A placement owns the axes it fixes, so hand those back before anything
       // else: a size dragged under the previous placement would otherwise sit
@@ -2076,7 +2077,9 @@ export class AgUiChat extends HTMLElement {
    * `movable` folds two separate reasons into the one answer a caller needs:
    * a placement that places itself owns its position, and a panel that fills
    * the screen has nowhere to go. Reporting them apart would make every caller
-   * re-derive the same conjunction.
+   * re-derive the same conjunction. A corner panel docked under
+   * `collapse-to="bar"` or `"none"` is movable on a wide viewport, like the
+   * corner panel it is.
    */
   describeSurface(): ChatSurfaceReport {
     return this.#placement.describeSurface();
@@ -2091,7 +2094,8 @@ export class AgUiChat extends HTMLElement {
    * the corner it opens from is re-picked, and switching placement hands
    * everything back. What it must not do is claim a move it did not make --
    * hence the boolean, and hence {@link describeSurface} existing so a caller
-   * can ask first.
+   * can ask first. A docked panel moves too, within the room above its bar or
+   * anchor, and remembers the spot as a header drag would.
    */
   moveTo(corner: ChatCorner, options: { readonly announce?: boolean } = {}): boolean {
     return this.#placement.moveTo(corner, options);
@@ -2100,6 +2104,9 @@ export class AgUiChat extends HTMLElement {
   /**
    * Drop a size the user dragged, and its stored copy, so the placement's
    * default and the host's `--ag-ui-width` / `--ag-ui-height` apply again.
+   * Under `collapse-to="bar"` or `"none"` it also returns a panel the user
+   * dragged off its dock to the dock, and forgets the stored spot; a corner
+   * panel keeps a dragged position.
    */
   resetSize(): void {
     this.#placement.resetSize();

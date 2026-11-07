@@ -28,6 +28,9 @@ describe("surfaceFor", () => {
     expect(surfaceFor(placement)).toEqual({
       collapseTo,
       launcherDraggable: draggable,
+      // Every placement on its own answers the two alike; only collapse-to
+      // parts them, below.
+      panelMovable: draggable,
       resizeAxis: axis,
       startsCollapsed: starts,
     });
@@ -39,9 +42,30 @@ describe("surfaceFor", () => {
     expect(surfaceFor("bottom-right")).toEqual({
       collapseTo: "launcher",
       launcherDraggable: false,
+      panelMovable: false,
       resizeAxis: "both",
       startsCollapsed: false,
     });
+  });
+
+  it.each<[string | null, string, boolean]>([
+    [null, "bar", true],
+    ["floating", "bar", true],
+    ["bottom-left", "bar", true],
+    ["side", "bar", false],
+    ["full", "bar", false],
+    [null, "none", true],
+    ["bottom-left", "none", true],
+    ["side", "none", false],
+    ["sidebar", "none", false],
+    ["embedded", "none", false],
+  ])("under placement=%j collapse-to=%s keeps the panel movable: %s", (placement, to, movable) => {
+    // No launcher is left to drag under either, but a corner panel still moves
+    // like one, and a placement that owns its position keeps owning it.
+    const surface = surfaceFor(placement, to);
+    expect(surface.collapseTo).toBe(to);
+    expect(surface.launcherDraggable).toBe(false);
+    expect(surface.panelMovable).toBe(movable);
   });
 
   it("only page has no collapsed state", () => {

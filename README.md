@@ -208,7 +208,7 @@ another origin, add `credentials="include"` too; see
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
-| `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
+| `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Under either, a corner panel still moves by its header and `moveTo` on a wide viewport, and remembers where it was dragged. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
 | `anchor` | `anchor` | Under `collapse-to="none"`, a selector for the host's element the panel rises from, right-aligned to it. The `anchor` property takes an element instead and wins over the attribute. Live. |
 | `data-dragging` | — | **Written by the element, not by you.** Stamped on whichever handle a gesture is currently using, so the styles can react and so the element knows not to re-place the widget under a drag in progress. Cleared on `pointerup` and on `pointercancel`. |
 | `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
@@ -1183,10 +1183,13 @@ matching JS API:
 - `moveTo(corner)` — send the panel to `top-left` / `top-right` / `bottom-left` / `bottom-right`,
   returning whether it went. It takes the axes the same way a user drag does, so the launcher
   travels with it and switching placement hands them back. Returns `false` rather than pretending
-  when the placement owns its position or the panel fills the screen.
+  when the placement owns its position or the panel fills the screen. Under `collapse-to="bar"`
+  or `"none"` it moves the panel within the room above the bar or the anchor.
 - `resetSize()` — drop a size the user dragged, and its stored copy, so the placement's own
   size and your `--ag-ui-width` / `--ag-ui-height` apply again. For a host that enters a sized
   state of its own (an expanded mode): a user's drag outranks host tokens, so call this first.
+  Under `collapse-to="bar"` or `"none"` it also returns a panel the user dragged off its dock to
+  the dock and forgets the stored spot; a corner panel under `auto` keeps its dragged position.
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
   reflected as the boolean `collapsed` attribute/property and persisted per-tab in
   `sessionStorage`, so it survives a reload.
@@ -1485,14 +1488,35 @@ body {
 your toolbar: its max height is the viewport less the bar's height (or, under `none`, the
 distance to the anchor's top) and one gutter, and its bottom sits on the bar or the anchor.
 
-**Docked means not moved.** A docked panel cannot be dragged by its header or launcher, and
-`moveTo` refuses, because a position the user chose would take it away from the bar or the
-anchor. Resizing still works on wide viewports: the edges standing on the bar or the anchor
-stay put and the free ones follow the grip, and `resetSize()` still drops the dragged size.
+**Docked, and still movable.** On a wide viewport a docked corner panel (the corner placements
+under `bar`, or under `none` with or without an anchor) moves by its header, and `moveTo` moves
+it, as it would the corner panel it is; `describeSurface()` reports `movable: true`. There is no
+launcher to drag: the bar and your own control stay where they are.
+
+- **Above the dock.** A dragged panel stays inside the viewport and above the bar's top edge, so it
+  never covers the bar it minimises to. Under `none` with an anchor it stays above the anchor's
+  top edge the same way, because the anchor is your own way back and has to stay in view;
+  `--ag-ui-anchor-gap` no longer applies once the panel is dragged, and the screen-edge margin
+  (8px) does. Under `none` with no anchor only the viewport holds it, as for a corner panel.
+- **Remembered like a corner panel.** Minimising and reopening brings it back where it was
+  dragged, and so does a reload. The spot is kept apart from the one a corner panel stores under
+  `auto`, so switching `collapse-to` never puts one surface's spot on the other. A spot that no
+  longer fits, because the window shrank or the bar grew, is held inside the room that is left
+  and comes back whole when there is room again.
+- **Resizing.** A panel standing on its dock keeps the edges on the bar or the anchor still and the
+  free ones follow the grip. Once dragged off, every edge follows its grip, as on a corner panel.
+- **Back to the dock.** `resetSize()` drops the dragged size and returns the panel to its dock,
+  forgetting the stored spot, so a reload opens it there too.
+- **Keeping it fixed.** `data-launcher-drag="false"` turns the header drag and `moveTo` off here as
+  everywhere else, and the panel stays on its dock.
+
+Placements that own their position (`side` and `full` under `bar`, `sidebar` and `embedded`
+under `none`) do not move, as without `collapse-to`.
 
 **Phones.** At 600px or less the open panel stays full-bleed, over the bar, and the header's
 minimise control is the way back; the bar shows only while collapsed, so no second strip sits
-at the bottom edge while the keyboard is up.
+at the bottom edge while the keyboard is up. The panel does not move there, and a spot dragged on
+a wide viewport does not apply: it comes back when the window is wide again.
 
 The bar is styled through the parts `bar` (the strip's wrapper, holding the launcher and the
 history button) and `bar-history`, and the launcher's own parts (`launcher`, `rail-label`,
@@ -3301,6 +3325,45 @@ those browsers see the same contrast. On code's green the computed pick is black
 fallback white (2.5:1), as it always was. What they miss is the correction for a host's accent: a
 mid-tone brand accent can fall under 4.5:1 there, under any theme. If you support those browsers
 and set a mid-tone accent, set `--ag-ui-on-accent` yourself. There is no script path.
+
+#### Keeping a brand accent on the header
+
+Quiet draws the header, the launcher and the tool names in the panel's own colours, so a host that
+sets only `--ag-ui-accent` gets a neutral header. To put the accent back without leaving Quiet, set
+the surfaces to the accent and the text on them to a colour that reads on it:
+
+```css
+ag-ui-chat {
+  --ag-ui-header-bg: #3d5afe;
+  --ag-ui-header-fg: #ffffff;
+  --ag-ui-launcher-bg: #3d5afe;
+  --ag-ui-launcher-fg: #ffffff;
+  --ag-ui-tool-fg: #3d5afe;
+}
+```
+
+- **The header buttons follow `--ag-ui-header-fg`.** Unset, Quiet draws them in its third ink at
+  0.85 opacity, on a hover square of the panel's hover shade. Once you set the header text they
+  draw in it at full opacity, and the hover square is the opposite of that text at about a fifth
+  (a darker square under white text, a lighter one under dark text), so a hovered button reads at
+  least what your header pair reads. The same holds under a theme word of your own, which starts
+  from Quiet. No `::part(header-button)` rule is needed. The opposite is computed with relative
+  colour syntax; the browsers without it (see the fallback above) mix the square from the text
+  itself, which on a mid-tone header can take the hovered glyph under your pair (white on
+  `#3d5afe`: 3.75:1).
+- **`--ag-ui-header-btn-hover` sets the hover square outright** under Quiet and a theme word of your
+  own, whether or not the header text is set, and is drawn exactly as given. Classic, Soft and
+  Ledger draw their own squares and do not read it. For a square that lightens under white text
+  instead, at the cost of contrast on a mid-tone header:
+
+  ```css
+  ag-ui-chat { --ag-ui-header-btn-hover: color-mix(in srgb, #ffffff 18%, transparent); }
+  ```
+- **`--ag-ui-tool-fg` colours every tool call**, in a step group as well as in the card displays.
+  Unset, a grouped call is drawn in the second ink (`--ag-ui-ink-2`) under every theme.
+- Pick the pair yourself: `--ag-ui-header-fg` is not derived from the header colour the way
+  `--ag-ui-on-accent` is from the accent. Under Soft and Ledger the header buttons keep their own
+  third ink whatever you set.
 
 #### Overriding a theme, lightest layer first
 

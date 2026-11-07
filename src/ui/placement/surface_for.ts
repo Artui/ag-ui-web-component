@@ -39,10 +39,18 @@ export interface Surface {
   readonly collapseTo: CollapseTarget;
   /**
    * Whether a gesture may move the launcher. The rest have nowhere to put it:
-   * the rail is a docked edge, `header` and `null` have no launcher, and a
-   * full-bleed panel covers the screen it would be opening into.
+   * the rail is a docked edge, `header` and `null` have no launcher, a
+   * full-bleed panel covers the screen it would be opening into, and the bar
+   * and the host's own control are not a launcher at all.
    */
   readonly launcherDraggable: boolean;
+  /**
+   * Whether the header drag and `moveTo` may move the open panel. The same
+   * answer as {@link launcherDraggable} for every placement on its own; the two
+   * part under `collapse-to="bar"` and `"none"`, where a corner panel still
+   * moves like one but has no launcher left to drag.
+   */
+  readonly panelMovable: boolean;
   /**
    * Which axes the resize grips may change. A full-bleed layout is the whole
    * viewport by definition and cannot be resized; a docked panel owns its
@@ -67,6 +75,7 @@ export interface Surface {
 const CORNER: Surface = {
   collapseTo: "launcher",
   launcherDraggable: true,
+  panelMovable: true,
   resizeAxis: "both",
   startsCollapsed: true,
 };
@@ -74,6 +83,7 @@ const CORNER: Surface = {
 const DOCKED: Surface = {
   collapseTo: "launcher",
   launcherDraggable: false,
+  panelMovable: false,
   resizeAxis: "width",
   startsCollapsed: false,
 };
@@ -94,17 +104,30 @@ const SURFACES: ReadonlyMap<string | null, Surface> = new Map<string | null, Sur
     {
       collapseTo: "launcher",
       launcherDraggable: false,
+      panelMovable: false,
       resizeAxis: "none",
       startsCollapsed: false,
     },
   ],
   [
     "page",
-    { collapseTo: null, launcherDraggable: false, resizeAxis: "none", startsCollapsed: false },
+    {
+      collapseTo: null,
+      launcherDraggable: false,
+      panelMovable: false,
+      resizeAxis: "none",
+      startsCollapsed: false,
+    },
   ],
   [
     "embedded",
-    { collapseTo: "header", launcherDraggable: false, resizeAxis: "both", startsCollapsed: false },
+    {
+      collapseTo: "header",
+      launcherDraggable: false,
+      panelMovable: false,
+      resizeAxis: "both",
+      startsCollapsed: false,
+    },
   ],
 ]);
 
@@ -117,6 +140,7 @@ const SURFACES: ReadonlyMap<string | null, Surface> = new Map<string | null, Sur
 const UNKNOWN: Surface = {
   collapseTo: "launcher",
   launcherDraggable: false,
+  panelMovable: false,
   resizeAxis: "both",
   startsCollapsed: false,
 };
@@ -129,10 +153,11 @@ const UNKNOWN: Surface = {
  * state, never a placement's own shape: `bar` applies where the placement
  * collapses to `launcher`, so the sidebar keeps its rail and an embedded chat
  * its header bar, and `none` applies to every collapsible placement. Absent,
- * `auto` and any other value leave the placement as it was. A docked surface
- * cannot be moved -- the panel rises from the bar or the host's anchor, and a
- * position the user dragged would take it away from either -- so both turn
- * the launcher drag off, and with it the header drag and `moveTo`.
+ * `auto` and any other value leave the placement as it was. Both turn the
+ * launcher drag off, because there is no launcher left to drag, and keep the
+ * placement's own answer for moving the panel: a corner panel rises from the
+ * bar or the anchor until the user drags it somewhere else, and a placement
+ * that owns its position keeps owning it.
  */
 export function surfaceFor(placement: string | null, collapseTo: string | null = null): Surface {
   const surface = SURFACES.get(placement) ?? UNKNOWN;

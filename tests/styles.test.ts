@@ -350,7 +350,11 @@ describe("STYLES token indirection", () => {
       // may precede the public token in an alias.
       .filter(
         (line) => !/^\s*--_([a-z0-9-]+): (?:var\(--_drag-\1, )?var\(--ag-ui-\1[,)]/.test(line),
-      );
+      )
+      // A switch reads its token bare, with no fallback, so it is unset with
+      // the token; it carries the token's name and -set, so it cannot read
+      // another token.
+      .filter((line) => !/^\s*--_([a-z0-9-]+)-set: var\(--ag-ui-\1\);$/.test(line));
     expect(stray).toEqual([]);
   });
 
@@ -391,6 +395,21 @@ describe("STYLES token indirection", () => {
             "--_drag-height: initial",
             "--_dock-bottom: initial",
             "--_dock-right: initial",
+          ].includes(declaration)
+        ) {
+          return false;
+        }
+        // A switch reads its own token with no fallback, which is the point:
+        // unset, it is unset too. The header buttons' default hover square is the
+        // one alias derived from a switch, and is unset with it: named exactly,
+        // in both its forms (the second behind relative colour syntax).
+        if (name?.endsWith("-set") && value === `var(--ag-ui-${name.slice(3, -4)})`) {
+          return false;
+        }
+        if (
+          [
+            "--_header-btn-hover-auto: color-mix(in srgb, var(--_header-fg-set) 18%, transparent)",
+            "--_header-btn-hover-auto: color-mix(in srgb, rgb(from var(--_header-fg-set) calc(255 - r) calc(255 - g) calc(255 - b)) 18%, transparent)",
           ].includes(declaration)
         ) {
           return false;
