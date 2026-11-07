@@ -161,11 +161,9 @@ export function createChatSurfaceTools(surface: ChatSurface): ClientTool[] {
             moved: false,
             reason: report.fullBleed
               ? "the panel fills the screen, so there is nowhere to move it to"
-              : report.collapseTo === "bar" || report.collapseTo === "none"
-                ? "the panel is docked: it rises from the page's bottom bar and stays there"
-                : report.draggable === false
-                  ? "this page has turned off moving the panel"
-                  : `the "${report.placement ?? ""}" placement owns the panel's position`,
+              : report.draggable === false
+                ? "this page has turned off moving the panel"
+                : `the "${report.placement ?? ""}" placement owns the panel's position`,
             suggestion: report.collapsible ? "minimise_chat" : null,
           };
         }

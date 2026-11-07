@@ -16,6 +16,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prefers the lightening square of its old `::part(header-button):hover`
   rule sets this token to that colour instead of keeping the rule.
 
+### Changed
+
+- **A docked panel moves and remembers where it was put.** Under
+  `collapse-to="bar"`, and under `collapse-to="none"` with or without an
+  `anchor`, a corner panel on a wide viewport now moves by its header and by
+  `moveTo`, like the default corner panel. Minimising and reopening, and a
+  reload, bring it back where it was dragged, and a panel never dragged still
+  opens at the dock. A dragged panel stays inside the viewport and above the
+  bar, or above the anchor's top under `none` (the anchor gap no longer
+  applies once dragged), and a stored spot is held there if the window or the
+  bar changed since. Once dragged off, every resize edge follows its grip.
+  `resetSize()` returns a dragged docked panel to the dock and forgets the
+  stored spot; under `auto` it still drops only the size. The spot is stored
+  apart from the corner panel's, so a spot dragged under `auto` never lands on
+  a docked panel. On a phone the panel stays full-bleed and does not move.
+  `describeSurface()` and `read_chat_surface` report `movable: true` and
+  `draggable: true` for it on a wide viewport, and `move_chat` no longer
+  refuses with "the panel is docked". `side` and `full` under `bar`, and
+  `sidebar` and `embedded` under `none`, still own their position; they now
+  report `draggable: true` where they reported `false`, so a refused move
+  there names the placement rather than the dock or the page. **A host has
+  nothing to do**: every host using `bar` or `none` gets the movable panel on
+  upgrade. A host that wants the 0.48.0 fixed dock sets
+  `data-launcher-drag="false"`, which turns the header drag and `moveTo` off
+  here as it does on a corner panel.
+
 ### Fixed
 
 - **Quiet's header buttons follow `--ag-ui-header-fg`.** The accent recipe

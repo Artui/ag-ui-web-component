@@ -364,12 +364,15 @@ const labelHostAgent = () => {
 };
 $("cfg-collapse-to").addEventListener("change", (event) => {
   const value = event.target.value;
-  if (value === "") {
+  // "none-corner" is none with no anchor: the panel stands in its own corner,
+  // and the host bar's button is still the way back.
+  const target = value === "none-corner" ? "none" : value;
+  if (target === "") {
     chat.removeAttribute("collapse-to");
   } else {
-    chat.setAttribute("collapse-to", value);
+    chat.setAttribute("collapse-to", target);
   }
-  hostBar.hidden = value !== "none";
+  hostBar.hidden = target !== "none";
   if (value === "none") {
     chat.setAttribute("anchor", "#host-agent");
   } else {
@@ -397,6 +400,15 @@ chat.addEventListener("ag-ui-bar-height", publishChatBar);
 // removing those inline would do nothing.
 $("cfg-reset-size").addEventListener("click", () => {
   chat.resetSize();
+});
+
+// The host's own move, beside what the report says about it. Under bar or
+// none a corner panel moves on a wide viewport, and Reset size above sends it
+// back to the dock; on a phone-width window it reports movable: false.
+$("cfg-move").addEventListener("click", () => {
+  const moved = chat.moveTo("top-left");
+  const { movable, draggable } = chat.describeSurface();
+  $("cfg-move-out").textContent = `moved: ${moved}, movable: ${movable}, draggable: ${draggable}`;
 });
 
 // Extend the transcript's select-then-quote gesture to the whole page, so the

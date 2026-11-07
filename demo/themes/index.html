@@ -424,13 +424,15 @@
         </select>
       </label>
       <!-- auto removes the attribute; none also shows the host bar below and
-           anchors the panel to its Agent button. -->
+           anchors the panel to its Agent button; none (corner) shows the bar
+           without anchoring, so the panel rises from its own corner. -->
       <label
         >Collapse to
         <select id="cfg-collapse-to">
           <option value="" selected>auto</option>
           <option value="bar">bar</option>
           <option value="none">none (host bar)</option>
+          <option value="none-corner">none (corner)</option>
         </select>
       </label>
       <!-- The greeting layout is on by default for page and opt-in for embedded;
@@ -509,6 +511,10 @@
       <output id="cfg-ratings-out"></output>
       <button type="button" id="cfg-ping">Collapse + ping</button>
       <button type="button" id="cfg-reset-size">Reset size</button>
+      <button type="button" id="cfg-move" title="moveTo('top-left'), and what describeSurface() says"
+        >Move top-left</button
+      >
+      <output id="cfg-move-out"></output>
       <button type="button" id="cfg-spotlight">Spotlight form</button>
     </header>
 

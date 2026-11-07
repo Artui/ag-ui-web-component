@@ -41,6 +41,16 @@ function centre(rect: DOMRect): [number, number] {
   return [rect.left + rect.width / 2, rect.top + rect.height / 2];
 }
 
+/** A header drag, as a pointer would make it: press, travel, release. */
+async function dragHeader(el: AgUiChat, dx: number, dy: number): Promise<void> {
+  const header = el.shadowRoot?.querySelector(".header") as HTMLElement;
+  const [x, y] = centre(header.getBoundingClientRect());
+  header.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }));
+  window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
+  window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + dx, clientY: y + dy }));
+  await settle();
+}
+
 /** Pull one resize grip by a delta, as a pointer would. */
 async function pull(el: AgUiChat, name: string, dx: number, dy: number): Promise<void> {
   const grip = el.shadowRoot?.querySelector(`.resize-handle--${name}`) as HTMLElement;
@@ -182,6 +192,93 @@ describe("the host's own bar (real browser)", () => {
     expect(held.bottom).toBeCloseTo(before.bottom, 0);
     expect(held.right).toBeCloseTo(before.right, 0);
     expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+  });
+
+  it("moves by its header, never below the anchor's top, and comes back where it was dragged", async () => {
+    const button = hostBar();
+    const first = mount({ id: "anchored", anchor: "#host-agent", "data-start-open": "" });
+    await settle();
+    const dock = first.getBoundingClientRect();
+    await dragHeader(first, -400, -100);
+    const moved = first.getBoundingClientRect();
+    expect(moved.left).toBeCloseTo(dock.left - 400, 0);
+    expect(moved.top).toBeCloseTo(dock.top - 100, 0);
+    // The gap no longer applies once dragged, but the anchor's top still
+    // bounds it: the host's own control is the way back, and stays in view.
+    await dragHeader(first, 0, 2000);
+    const low = first.getBoundingClientRect();
+    const anchor = button.getBoundingClientRect();
+    expect(low.bottom).toBeCloseTo(anchor.top - 8, 0);
+    first.setCollapsed(true);
+    await settle();
+    first.setCollapsed(false);
+    await settle();
+    expect(first.getBoundingClientRect().left).toBeCloseTo(low.left, 0);
+    expect(first.getBoundingClientRect().top).toBeCloseTo(low.top, 0);
+    first.remove();
+    const second = mount({ id: "anchored", anchor: "#host-agent" });
+    await settle();
+    expect(second.getBoundingClientRect().left).toBeCloseTo(low.left, 0);
+    expect(second.getBoundingClientRect().top).toBeCloseTo(low.top, 0);
+    second.resetSize();
+    await settle();
+    expect(second.getBoundingClientRect().right).toBeCloseTo(dock.right, 0);
+    expect(second.getBoundingClientRect().bottom).toBeCloseTo(dock.bottom, 0);
+    second.remove();
+    const third = mount({ id: "anchored", anchor: "#host-agent" });
+    await settle();
+    expect(third.getBoundingClientRect().right).toBeCloseTo(dock.right, 0);
+    expect(third.getBoundingClientRect().bottom).toBeCloseTo(dock.bottom, 0);
+  });
+
+  it("moves to a corner on moveTo, and reports itself movable", async () => {
+    const button = hostBar();
+    const el = mount({ anchor: "#host-agent", "data-start-open": "" });
+    await settle();
+    expect(el.describeSurface().movable).toBe(true);
+    expect(el.moveTo("top-left")).toBe(true);
+    await settle();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(GUTTER, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(GUTTER, 0);
+    expect(el.moveTo("bottom-right")).toBe(true);
+    await settle();
+    expect(el.getBoundingClientRect().bottom).toBeCloseTo(
+      button.getBoundingClientRect().top - GUTTER,
+      0,
+    );
+  });
+
+  it("moves from the plain corner with no anchor, held only by the viewport", async () => {
+    const el = mount({ "data-start-open": "" });
+    await settle();
+    await dragHeader(el, -300, 2000);
+    const panel = el.getBoundingClientRect();
+    expect(panel.right).toBeCloseTo(screenWidth() - GUTTER - 300, 0);
+    expect(panel.bottom).toBeCloseTo(screenHeight() - 8, 0);
+  });
+
+  it("goes full-bleed on a phone and does not move there", async () => {
+    hostBar();
+    const el = mount({ anchor: "#host-agent", "data-start-open": "" });
+    await settle();
+    const dock = el.getBoundingClientRect();
+    await dragHeader(el, -400, -100);
+    const moved = el.getBoundingClientRect();
+    expect(moved.left).toBeCloseTo(dock.left - 400, 0);
+    await page.viewport(390, 844);
+    await settle();
+    await dragHeader(el, 50, 50);
+    const panel = el.getBoundingClientRect();
+    expect([panel.left, panel.top, panel.width, panel.height]).toEqual([
+      0,
+      0,
+      screenWidth(),
+      screenHeight(),
+    ]);
+    await page.viewport(1280, 800);
+    await settle();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(moved.left, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(moved.top, 0);
   });
 
   it("opens from the placement's own corner when the anchor is not there", async () => {
