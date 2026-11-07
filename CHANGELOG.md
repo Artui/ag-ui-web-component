@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Highlight rings on an unthemed page follow the widget's theme.** Since
+  0.45.0 the default accent is Quiet's near-black, but the rings the DOM
+  driver draws in the page (`flash`, `focusWithFlash`, `highlightThenClick`,
+  `pressThenClick`, `selectOption`, `toggleControl`, `showHighlightOverlay`)
+  still fell back to the old indigo. They now take the chat's resolved accent,
+  per theme and per scheme. A page that sets `--ag-ui-accent` on `:root`, or
+  passes `color`, keeps the rings it has. **No opt-in is needed.**
+  - New token `--ag-ui-highlight-ring-color`, beside
+    `--ag-ui-highlight-ring-width`. Set on `ag-ui-chat` (or above it) it
+    colours every ring with no `color` option, ahead of a target's
+    `--ag-ui-accent`; set on the page it reaches the target and wins over the
+    chat's.
+  - The press and toggle halo is now the ring colour at 40%. A host that
+    themes `--ag-ui-accent` had a solid halo in that colour; it is now
+    translucent, as the unthemed one always was.
+  - The rings read the most recently connected `<ag-ui-chat>`. A page with two
+    passes the acting one as the new `chat` option, which every ring-drawing
+    primitive and `showHighlightOverlay` take.
+
 ## [0.46.0] — 2026-11-05
 
 ### Changed

@@ -960,8 +960,8 @@ human-readable speed (configurable; pass small/zero durations in tests):
   paints outside the border box and any `overflow: hidden` ancestor sharing the element's box (a
   card, a table cell) clips it away entirely. It holds for **1200 ms** by default and fades out
   over the last third — a 200 ms blink is not long enough to be *found* by someone who does not
-  yet know where to look. The colour comes from the target's own `--ag-ui-accent` (so a themed
-  page is flashed in its own colour), or from `color`.
+  yet know where to look. The colour is `color` when passed, else — see
+  [Ring colour](#ring-colour) — the widget's own accent.
   `flash` leaves focus alone; `focusWithFlash` moves it — see "Flash versus focus" below.
 - `prefersReducedMotion()` — honoured by every primitive that *moves* something: the hold delays
   in `pressThenClick` / `selectOption` / `toggleControl` collapse to instant, `scrollIntoCenterView`
@@ -999,11 +999,13 @@ operations a tool handler typically wants:
   **Themed from the element you point at, not from the widget.** The overlay is appended to the
   document body so it can escape the clipping it exists to avoid, which means a `var()` in its own
   style would resolve against the body — so every token is read from the *target's* computed style
-  instead, the same place the flat ring reads `--ag-ui-accent`. Set them wherever they inherit to
-  the elements the agent touches, usually `:root`:
+  instead. Set them wherever they inherit to the elements the agent touches, usually `:root`. The
+  ring colour is the one exception, read from the widget as well; see
+  [Ring colour](#ring-colour).
 
   ```css
   :root {
+    --ag-ui-highlight-ring-color: #0f766e; /* also read from ag-ui-chat; see Ring colour */
     --ag-ui-highlight-scrim: rgba(15, 15, 25, 0.45);
     --ag-ui-highlight-gradient: linear-gradient(115deg, transparent 20%, #4f46e5 50%, transparent 80%);
     --ag-ui-highlight-ring-width: 3;    /* unitless; px */
@@ -1046,6 +1048,29 @@ register the change.
 
 Each takes an element the caller has already located; host packages wrap them with
 environment-aware lookups (e.g. "find `#id_<name>`, then `fillField`").
+
+#### Ring colour
+
+Every ring the driver draws — the flash outline, the overlay ring, the press and toggle halo — is
+drawn in the host's page, outside the widget, so a token set on `ag-ui-chat` never reaches it
+through the cascade. The driver reads the widget directly instead, so on a page that themes
+nothing the rings follow the widget's theme: Quiet's near-black, Soft's violet, the dark half in a
+dark scheme. When a call passes no `color`, the first of these that is set wins:
+
+1. `--ag-ui-highlight-ring-color` on the target (so `:root` reaches every ring);
+2. `--ag-ui-highlight-ring-color` on the chat — on `ag-ui-chat` or anything above it;
+3. the target's `--ag-ui-accent`, so a page that themes its accent keeps the rings it has;
+4. the chat's resolved accent, its theme's default included;
+5. the package indigo, when no chat is on the page at all.
+
+```css
+/* Rings in the brand colour, whatever the widget's accent. */
+ag-ui-chat { --ag-ui-highlight-ring-color: #0f766e; }
+```
+
+The halo of `pressThenClick` and `toggleControl` is the chosen colour at 40%. "The chat" is the
+most recently connected `<ag-ui-chat>`; on a page with two, pass the one acting as the `chat`
+option (`RingOwnerOptions`, which every ring-drawing primitive and `showHighlightOverlay` take).
 
 ### Page-action tools
 
@@ -2875,7 +2900,7 @@ re-export point. Internal modules import from leaf paths.
 | `HighlightOverlayOptions` | type | Options for `showHighlightOverlay`. |
 | `fillField` / `clickElement` / `pressButton` / `selectControl` / `setControlValue` / `toggleCheckbox` | function | DOM-driver primitives. |
 | `setNativeValue` / `setNativeChecked` | function | Set a control via its native prototype setter (React-controlled inputs). |
-| `TypeOptions` / `HighlightClickOptions` / `PressOptions` / `SelectOptions` / `ToggleOptions` / `FlashOptions` / `ScrollOptions` / `FillFieldOptions` / `TextLikeElement` | type | Primitive option shapes. |
+| `TypeOptions` / `HighlightClickOptions` / `PressOptions` / `SelectOptions` / `ToggleOptions` / `FlashOptions` / `ScrollOptions` / `FillFieldOptions` / `TextLikeElement` / `RingOwnerOptions` | type | Primitive option shapes. `RingOwnerOptions` is the `chat` the ring-drawing ones share; see [Ring colour](#ring-colour). |
 
 ### Constants
 

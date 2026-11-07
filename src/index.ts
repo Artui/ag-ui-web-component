@@ -89,6 +89,7 @@ export {
   type PressOptions,
   prefersReducedMotion,
   pressThenClick,
+  type RingOwnerOptions,
   type ScrollOptions,
   type SelectOptions,
   scrollIntoCenterView,

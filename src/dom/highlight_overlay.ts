@@ -1,7 +1,5 @@
 import { HIGHLIGHT_OVERLAY_Z_INDEX } from "../constants.js";
-
-/** The package accent, used when the host has themed nothing. */
-const ACCENT = "#4f46e5";
+import { ringColor } from "./ring_color.js";
 
 /** How the overlay is drawn around the element being pointed at. */
 export interface HighlightOverlayOptions {
@@ -9,8 +7,14 @@ export interface HighlightOverlayOptions {
   readonly scrim?: boolean;
   /** Draw the ring as a moving gradient rather than a flat colour. Default false. */
   readonly gradient?: boolean;
-  /** Ring colour, and the flat fallback for the gradient. */
+  /**
+   * Ring colour, and the flat fallback for the gradient. Default:
+   * `--ag-ui-highlight-ring-color` on the target, then on the chat, then the
+   * target's `--ag-ui-accent`, then the chat's accent.
+   */
   readonly color?: string;
+  /** The chat whose ring colour and accent to use. Default: the latest connected. */
+  readonly chat?: HTMLElement;
   /** Gap between the target's box and the ring. Default 4. */
   readonly padding?: number;
   /** Corner radius of the cut-out and the ring. Default: the target's own. */
@@ -205,7 +209,7 @@ function safeColor(value: string | undefined): string | null {
  * the padding box, leaving the frame.
  */
 function ringPaint(target: HTMLElement, options: HighlightOverlayOptions): string {
-  const color = safeColor(options.color) ?? tokenOn(target, "--ag-ui-accent", ACCENT);
+  const color = safeColor(options.color) ?? ringColor(target, options.chat);
   if (options.gradient !== true) {
     return `border-color: ${color}`;
   }

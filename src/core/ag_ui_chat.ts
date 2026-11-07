@@ -75,6 +75,7 @@ import type { ActivityRenderer } from "./activity_renderer.js";
 import { AgUiClient } from "./agui_client.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type AttachmentRef } from "./attachment.js";
+import { ChatRegistration } from "./chat_registry.js";
 import type { ClientSeed } from "./client_seed.js";
 import {
   type ClientConversationStore,
@@ -781,6 +782,8 @@ export class AgUiChat extends HTMLElement {
     allowImages: () => this.allowImages,
     follow: () => this.#transcript.follow(),
   });
+  // This chat's place among the connected ones, which a free highlight ring reads.
+  readonly #chatRegistration = new ChatRegistration(this);
   /**
    * Which storage keys are this element's: the namespace it claims, the keys
    * its layout preferences live under, and the built-in store scoped to them.
@@ -1448,6 +1451,7 @@ export class AgUiChat extends HTMLElement {
     // this instance doesn't share collapsed/theme/thread state with another on
     // the same origin.
     this.#storage.claim();
+    this.#chatRegistration.join();
     // Restore a dragged size before the panel paints, so it does not snap from
     // the placement default to the user's width on the first frame.
     this.#placement.restoreSize();
@@ -1611,6 +1615,7 @@ export class AgUiChat extends HTMLElement {
     window.visualViewport?.removeEventListener("resize", this.#onViewportResize);
     window.visualViewport?.removeEventListener("scroll", this.#onViewportResize);
     this.#storage.release();
+    this.#chatRegistration.leave();
     this.#cancelRun();
     this.#excerpts.detachPageOffer();
     this.#attachments.tray?.dispose();

@@ -356,7 +356,7 @@ describe("pressThenClick", () => {
 
     const done = pressThenClick(button, { pressMs: 10 });
     expect(button.style.transform).toBe("scale(0.96)");
-    expect(button.style.boxShadow).toContain("rgba");
+    expect(button.style.boxShadow).toContain("color-mix(in srgb, #4f46e5 40%, transparent)");
     await vi.runAllTimersAsync();
     await done;
 
@@ -446,7 +446,7 @@ describe("toggleControl", () => {
       changes += 1;
     });
     const done = toggleControl(el, true, { flashMs: 10 });
-    expect(el.style.boxShadow).toContain("rgba");
+    expect(el.style.boxShadow).toContain("color-mix(in srgb, #4f46e5 40%, transparent)");
     await vi.runAllTimersAsync();
     await done;
     expect(el.checked).toBe(true);
