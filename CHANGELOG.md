@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The demo shows the 0.47.0 additions.** The playground gains a card under
+  the form with a control and a readout for each: the `above-composer` slot
+  (also a checkbox on the full-page route, where it travels with the centred
+  composer), the thread API (`threadId`, `newChat()`, `switchThread()` and a
+  log of `ag-ui-thread` events), the `tool-card-status-*` and `tool-group-*`
+  parts (drawn in one colour each, with a census of the parts in the
+  transcript) and the `--ag-ui-ring` token. Demo only, nothing shipped
+  changes, and **a host owes nothing**.
+
 ## [0.47.0] — 2026-11-07
 
 ### Added
