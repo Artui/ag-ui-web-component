@@ -54,7 +54,7 @@ describe("the host's own bar (real browser)", () => {
     document.body.innerHTML = "";
   });
 
-  it.each([
+  it.each<[string, { placement?: string }]>([
     ["the corner", {}],
     ["the sidebar", { placement: "sidebar" }],
     ["the embedded chat", { placement: "embedded" }],
@@ -79,6 +79,16 @@ describe("the host's own bar (real browser)", () => {
     }
     const launcher = el.shadowRoot?.querySelector(".launcher") as HTMLElement;
     expect(getComputedStyle(launcher).display).toBe("none");
+    // pointer-events: none alone already hides every box from the hit test
+    // above, so it passes a box that still takes room or paints. The in-flow
+    // placements must leave no area in the host's layout, and no placement may
+    // leave its panel visible.
+    if (attrs.placement !== undefined) {
+      const box = el.getBoundingClientRect();
+      expect(box.width * box.height).toBe(0);
+    }
+    const chat = el.shadowRoot?.querySelector(".chat") as HTMLElement;
+    expect(chat.checkVisibility({ visibilityProperty: true, opacityProperty: true })).toBe(false);
   });
 
   it("raises the panel above the anchor, right-aligned to it", async () => {
