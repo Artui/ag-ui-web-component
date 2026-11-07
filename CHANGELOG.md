@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--ag-ui-ring`, `--ag-ui-highlight-ring-color` or page `--ag-ui-accent` is
   still drawn exactly as given.
 
+- **The docs no longer advise `--ag-ui-font: inherit`.** The README and the
+  0.45.0 entry said it would keep the page's font under any theme. It does
+  nothing: a CSS-wide keyword in a custom property applies to the custom
+  property itself, so it takes the parent's `--ag-ui-font`, which nothing sets,
+  and the theme's stack wins. Set `--ag-ui-font` to the page's family or to a
+  page token instead, for example `--ag-ui-font: var(--body-font)`. A host that
+  followed the old advice has to change it to get the page's font.
+
 ## [0.47.0] — 2026-11-07
 
 ### Added

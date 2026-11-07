@@ -3138,8 +3138,16 @@ first, so each stays an override point. The tokens the themes add:
   to three parts ink (`--ag-ui-fg`), which holds 3:1 against the panel for any accent.
 
 The font is part of the theme: Quiet, Soft and Ledger set their own stack (Inter, then the system
-UI font), and Classic inherits the page's font as the component always did. Set
-`--ag-ui-font: inherit` to take the page's font under any theme.
+UI font), and Classic inherits the page's font as the component always did. To take the page's font
+under any theme, set `--ag-ui-font` to the page's family, or to the page's own font token:
+
+```css
+ag-ui-chat { --ag-ui-font: var(--body-font); }   /* or the family itself */
+```
+
+`--ag-ui-font: inherit` does not do this. A CSS-wide keyword in a custom property applies to the
+custom property itself, so it takes the `--ag-ui-font` of the parent, which nothing sets, and the
+theme's stack wins.
 
 #### Text on the accent
 
