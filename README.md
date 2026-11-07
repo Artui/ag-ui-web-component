@@ -1194,7 +1194,9 @@ one on screen with the drawer's own paths:
   the drawer does. Returns a `Promise<void>` that resolves once the thread is drawn. **A run in
   flight is cancelled**, as the drawer and `newChat()` cancel it; read `running` first if you
   would rather wait. Switching to the thread already on screen does nothing, and so does a call
-  before the element connects.
+  before the element connects; a second call for the thread that is still loading settles with
+  that load, after the replay. If the store rejects the load, the element stays on the thread it
+  was on, redraws it, fires no `ag-ui-thread`, and the promise rejects with the store's error.
 - `deleteThread(threadId)` — delete a stored thread, as the drawer row's delete does. Deleting
   the thread on screen cancels its run and puts a fresh thread in its place; deleting another
   leaves the screen alone. Prefer it to `conversationStore.clear()`, which deletes the record and

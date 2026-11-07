@@ -2082,16 +2082,19 @@ export class AgUiChat extends HTMLElement {
    * for a host that lists conversations in its own chrome.
    *
    * Resolves once the thread has been replayed, when {@link THREAD_EVENT} has
-   * fired. **A run in flight is cancelled**, as the list and {@link newChat} do;
+   * fired; a second call for the thread already loading settles with that load.
+   * If the store rejects the load, the element stays on the thread it was on,
+   * fires nothing, and the promise rejects with the store's error.
+   * **A run in flight is cancelled**, as the list and {@link newChat} do;
    * a host that would rather wait reads {@link running} first. The thread
    * already on screen is left alone, and so is everything before the element
    * connects, since until then it has no store to read the thread from.
    */
-  async switchThread(threadId: string): Promise<void> {
+  switchThread(threadId: string): Promise<void> {
     if (!this.#connected) {
-      return;
+      return Promise.resolve();
     }
-    await this.#history.switchThread(threadId);
+    return this.#history.switchThread(threadId);
   }
 
   /**

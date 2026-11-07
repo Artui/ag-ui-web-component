@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`switchThread()` keeps the old thread when the store's load rejects.** The element
+  used to point at the new thread id, show an empty transcript and fire no
+  `ag-ui-thread`, so it named a thread it was not showing. It now stays on the thread
+  it was on, draws it again without an event, and the returned promise rejects with
+  the store's error. A second `switchThread()` for the thread still loading now
+  settles with that load, after the replay, instead of resolving at once. No host
+  opt-in.
+
 ## [0.47.0] — 2026-11-07
 
 ### Added

@@ -190,6 +190,98 @@ describe("switchThread", () => {
     ]);
     expect(userTurns(el)).toEqual(["second"]);
   });
+
+  it("keeps the thread on screen, and says nothing, when the store rejects the load", async () => {
+    const { el, seen } = mount();
+    await flush();
+    el.conversationStore.saveMessages("t0", [turn("u0", "on screen")]);
+    await el.switchThread("t0");
+    const failure = new Error("store is down");
+    const load = el.conversationStore.loadMessages.bind(el.conversationStore);
+    el.conversationStore.loadMessages = (id) => (id === "t1" ? Promise.reject(failure) : load(id));
+    seen.length = 0;
+
+    await expect(el.switchThread("t1")).rejects.toBe(failure);
+    await flush();
+
+    expect(el.threadId).toBe("t0");
+    expect(el.conversationStore.threadId()).toBe("t0");
+    expect(seen).toEqual([]);
+    // The failed switch had already cleared the transcript; the thread it
+    // stayed on is drawn again, so the screen and threadId agree.
+    expect(userTurns(el)).toEqual(["on screen"]);
+    expect(el.hasAttribute("data-restoring")).toBe(false);
+  });
+
+  it("still rejects with the store's error when the thread it stays on cannot be redrawn", async () => {
+    const { el, seen } = mount();
+    await flush();
+    const before = el.threadId;
+    const failure = new Error("store is down");
+    el.conversationStore.loadMessages = () => Promise.reject(failure);
+    seen.length = 0;
+
+    await expect(el.switchThread("t1")).rejects.toBe(failure);
+    await flush();
+
+    expect(el.threadId).toBe(before);
+    expect(seen).toEqual([]);
+  });
+
+  it("does not undo a newer switch when an older one's load rejects late", async () => {
+    const { el } = mount();
+    await flush();
+    el.conversationStore.saveMessages("t2", [turn("u2", "newer")]);
+    const load = el.conversationStore.loadMessages.bind(el.conversationStore);
+    let fail: (reason: Error) => void = () => undefined;
+    el.conversationStore.loadMessages = (id) =>
+      id === "t1"
+        ? new Promise((_resolve, reject) => {
+            fail = reject;
+          })
+        : load(id);
+
+    const first = el.switchThread("t1");
+    const settled = expect(first).rejects.toThrow("late");
+    await el.switchThread("t2");
+    fail(new Error("late"));
+    await settled;
+    await flush();
+
+    expect(el.threadId).toBe("t2");
+    expect(userTurns(el)).toEqual(["newer"]);
+  });
+
+  it("hands a second switch to the same thread the load already under way", async () => {
+    const { el } = mount();
+    await flush();
+    el.conversationStore.saveMessages("t1", [turn("u1", "replayed")]);
+    const load = el.conversationStore.loadMessages.bind(el.conversationStore);
+    let answer: () => void = () => undefined;
+    el.conversationStore.loadMessages = (id) =>
+      new Promise((resolve) => {
+        answer = () => resolve(load(id));
+      });
+
+    const first = el.switchThread("t1");
+    const second = el.switchThread("t1");
+    answer();
+    await second;
+
+    expect(userTurns(el)).toEqual(["replayed"]);
+    await first;
+  });
+
+  it("resolves a repeat at once when no switch is under way", async () => {
+    const { el } = mount();
+    await flush();
+    el.conversationStore.saveMessages("t1", [turn("u1", "replayed")]);
+    await el.switchThread("t1");
+
+    await el.switchThread("t1");
+
+    expect(userTurns(el)).toEqual(["replayed"]);
+  });
 });
 
 describe("deleteThread", () => {
