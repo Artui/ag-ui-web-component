@@ -16,7 +16,11 @@ export const DOCK_STYLES: string = `
    The cap follows the token block's rule: what the host left free less the
    one gutter the anchored edge spends, so a panel grown to the cap runs from
    just above the bar to the far edge. A host therefore needs no inset to keep
-   the panel off its bar; --ag-ui-inset still wins when set.
+   the panel off its bar; --ag-ui-inset still wins when set. A panel the user
+   dragged off its dock is written there inline, which is how the dragged spot
+   outranks every rule below, the anchor gap included; the element holds that
+   spot above the bar or the anchor itself, and drops it on a phone, where the
+   small-viewport block reads the same property first.
 
    These blocks restate tokens and nothing else, and sit ahead of the phone
    block at no more weight than it has, so on a phone the panel is the screen
