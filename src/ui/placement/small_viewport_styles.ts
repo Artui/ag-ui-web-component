@@ -17,6 +17,11 @@ export const SMALL_VIEWPORT_STYLES: string = `
    fine-pointered and small, and conflating the two gets both wrong. What the
    pointer decides is which controls make sense, further down.
 
+   The size the user dragged is deliberately not read here. The desktop
+   placements read it before the host token, and this block restates the sizes
+   without it, so a persisted or freshly dragged size cannot change the shape
+   of a phone, and a window narrowed after a drag goes full-bleed.
+
    Two placements are left alone. "page" is already this shape. "embedded" sits
    in a box the host sized and placed, and taking that over would break the app
    shell it was embedded into -- the host is the only party that knows whether

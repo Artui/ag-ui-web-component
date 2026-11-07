@@ -1855,6 +1855,14 @@ export class AgUiChat extends HTMLElement {
     return this.#placement.moveTo(corner, options);
   }
 
+  /**
+   * Drop a size the user dragged, and its stored copy, so the placement's
+   * default and the host's `--ag-ui-width` / `--ag-ui-height` apply again.
+   */
+  resetSize(): void {
+    this.#placement.resetSize();
+  }
+
   /** Flip the collapsed state. Bound to the built-in header toggle. */
   toggleCollapsed(): void {
     this.setCollapsed(!this.collapsed);

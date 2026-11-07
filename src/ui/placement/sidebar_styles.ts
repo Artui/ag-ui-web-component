@@ -7,7 +7,7 @@ export const SIDEBAR_STYLES: string = `
    host-managed push instead. */
 :host([placement="sidebar"]) {
   --_inset: var(--ag-ui-inset, calc(var(--_viewport-inset-top) + var(--_keyboard-inset-top)) var(--_viewport-inset-right) var(--_viewport-inset-bottom) auto);
-  --_width: var(--ag-ui-width, 420px);
+  --_width: var(--_drag-width, var(--ag-ui-width, 420px));
   --_height: var(--ag-ui-height, var(--_viewport-height));
   --_max-height: var(--ag-ui-max-height, var(--_viewport-height));
   --_panel-radius: var(--ag-ui-panel-radius, 0);

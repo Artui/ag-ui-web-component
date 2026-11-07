@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parts are unchanged, so an existing `::part(tool-card)` rule still matches,
   and a host that wants the modifiers just writes the selector.
 
+- **`resetSize()`.** Drops a dragged size and its stored copy, so the placement's
+  size and the host's `--ag-ui-width` / `--ag-ui-height` apply again. For a host
+  entering a sized state of its own, which a user's drag would otherwise outrank.
+
 ### Changed
 
 - **Highlight rings on an unthemed page follow the widget's theme.** Since
@@ -42,6 +46,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The rings read the most recently connected `<ag-ui-chat>`. A page with two
     passes the acting one as the new `chat` option, which every ring-drawing
     primitive and `showHighlightOverlay` take.
+
+- **A dragged panel size stays out of the host's tokens and out of the phone
+  shape.** The drag, and the size restored before first paint, no longer write
+  `--ag-ui-width` / `--ag-ui-height` on the element; they write the private
+  `--_drag-width` / `--_drag-height`, still persisted per tab under the same key.
+  Above 600px the dragged size beats the host's tokens, as it did, but a host's
+  sized state no longer needs `!important` against it. At 600px or less the
+  small-viewport block does not read the dragged size, so a persisted or freshly
+  dragged size leaves the full-bleed shape alone, including after a window
+  narrows. **No opt-in is needed**; a host that read `--ag-ui-width` back from
+  the element's inline style to learn the dragged size must measure the element
+  instead.
 
 ## [0.46.0] — 2026-11-05
 
