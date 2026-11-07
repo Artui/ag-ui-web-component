@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the store's error. A second `switchThread()` for the thread still loading now
   settles with that load, after the replay, instead of resolving at once. No host
   opt-in.
+- **`newChat()` before the element connects waits for the connect.** It used to mint a
+  thread in the unscoped store and fire `ag-ui-thread` for a chat that was not yet
+  shown, leaving `threadId` non-null against the README. Now `threadId` is `null` and
+  nothing fires until the element connects, which starts the new chat and fires one
+  `ag-ui-thread` with reason `new`. A host that called `newChat()` early and relied on
+  the immediate event or thread id reads them after connect instead.
 
 ## [0.47.0] — 2026-11-07
 

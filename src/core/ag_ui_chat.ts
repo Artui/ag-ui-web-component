@@ -627,6 +627,8 @@ export class AgUiChat extends HTMLElement {
   readonly #voice: ComposerVoice;
   /** Whether the element is currently in the DOM; gates the connect-time warning. */
   #connected = false;
+  /** A {@link newChat} asked for before the element connected, to start at connect. */
+  #newChatOnConnect = false;
   /**
    * Aborted when the element leaves the document, and replaced when it comes
    * back.
@@ -1556,6 +1558,12 @@ export class AgUiChat extends HTMLElement {
     // Last: everything above reads (and some of it sets) attributes, and none
     // of that should trip the connect-time warning.
     this.#connected = true;
+    if (this.#newChatOnConnect) {
+      this.#newChatOnConnect = false;
+      // After the restore above has started: starting the chat stops it, so
+      // the one event is the new chat's and the conversation left stays kept.
+      this.newChat();
+    }
   }
 
   /**
@@ -2137,6 +2145,13 @@ export class AgUiChat extends HTMLElement {
    * one. The page is not scrolled to bring the composer into view.
    */
   newChat(): void {
+    // Before the element connects it has no store scoped to its namespace and
+    // no thread to leave, and minting one would write to the unscoped store and
+    // fire an event for a thread it does not yet show. Connecting starts it.
+    if (!this.#connected) {
+      this.#newChatOnConnect = true;
+      return;
+    }
     // Stop any in-flight run first — discarding the client mid-run would
     // leave the old agent streaming into a cleared transcript.
     this.#cancelRun();

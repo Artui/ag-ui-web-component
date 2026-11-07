@@ -471,6 +471,45 @@ describe("before the element connects", () => {
   });
 });
 
+describe("newChat before the element connects", () => {
+  it("waits for the connect: no event and no thread until then, then one new chat", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    const seen: Seen[] = [];
+    listen(el, seen);
+
+    el.newChat();
+    el.newChat();
+
+    expect(el.threadId).toBeNull();
+    expect(seen).toEqual([]);
+
+    document.body.appendChild(el);
+    await flush();
+
+    expect(el.threadId).toEqual(expect.any(String));
+    expect(seen.map((entry) => entry.detail.reason)).toEqual(["new"]);
+    expect(seen[0]?.detail.threadId).toBe(el.threadId);
+  });
+
+  it("starts the new chat once, not again on the next connect", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    const seen: Seen[] = [];
+    listen(el, seen);
+    el.newChat();
+    document.body.appendChild(el);
+    await flush();
+    seen.length = 0;
+
+    el.remove();
+    document.body.appendChild(el);
+    await flush();
+
+    expect(seen.map((entry) => entry.detail.reason)).toEqual(["restore"]);
+  });
+});
+
 describe("threadId", () => {
   it("is null before the element connects", () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;

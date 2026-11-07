@@ -1160,7 +1160,9 @@ matching JS API:
   widget is collapsed, and the page is not scrolled to it. A restore still loading or replaying
   the conversation being left stops there, so nothing of it is drawn into the new chat, and a
   run it was about to resume after a reload is not resumed: coming back to that conversation
-  later answers the interrupted call as not finished.
+  later answers the interrupted call as not finished. Called before the element connects (or while
+  it is out of the document), it waits: `threadId` stays `null` and nothing fires until the
+  element connects, which then starts the new chat, so the one `ag-ui-thread` event is a `new`.
 - `describeSurface()` — where the panel is and what can be done to it: placement, collapsed,
   whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
   the two reasons a move can fail into the one answer a caller needs.
