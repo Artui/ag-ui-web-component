@@ -144,3 +144,37 @@ describe("an empty above-composer slot", () => {
     });
   }
 });
+
+describe("slotted content above the composer, while collapsed", () => {
+  /** Whether the host's row has any box at all: display none removes every one. */
+  const rendered = (el: AgUiChat): boolean =>
+    (el.querySelector(".host-row") as HTMLElement).getClientRects().length > 0;
+
+  it("is not rendered once an embedded chat collapses, and returns on expand", async () => {
+    const el = mount({ placement: "embedded" }, true);
+    el.appendMessage(MESSAGE_ROLE.USER, "a turn, so the layout is not the empty one");
+    await settle();
+    // The control: the row does lay out while the chat is expanded.
+    expect(rendered(el)).toBe(true);
+
+    el.setAttribute("collapsed", "");
+    await settle();
+    // The header bar stays and the composer is gone, so the row goes with it.
+    expect(part(el, ".input-row").getClientRects().length).toBe(0);
+    expect(rendered(el)).toBe(false);
+
+    el.removeAttribute("collapsed");
+    await settle();
+    expect(rendered(el)).toBe(true);
+  });
+
+  it("is not rendered in the collapsed greeting layout either", async () => {
+    const el = mount({ placement: "embedded", "data-greeting": "" }, true);
+    await settle();
+    expect(rendered(el)).toBe(true);
+
+    el.setAttribute("collapsed", "");
+    await settle();
+    expect(rendered(el)).toBe(false);
+  });
+});
