@@ -3323,10 +3323,17 @@ ag-ui-chat {
   draw in it at full opacity, and the hover square is the opposite of that text at about a fifth
   (a darker square under white text, a lighter one under dark text), so a hovered button reads at
   least what your header pair reads. The same holds under a theme word of your own, which starts
-  from Quiet. There is no separate token, and no `::part(header-button)` rule is needed. The
-  opposite is computed with relative colour syntax; the browsers without it (see the fallback
-  above) mix the square from the text itself, which on a mid-tone header can take the hovered
-  glyph under your pair (white on `#3d5afe`: 3.75:1).
+  from Quiet. No `::part(header-button)` rule is needed. The opposite is computed with relative
+  colour syntax; the browsers without it (see the fallback above) mix the square from the text
+  itself, which on a mid-tone header can take the hovered glyph under your pair (white on
+  `#3d5afe`: 3.75:1).
+- **`--ag-ui-header-btn-hover` sets the hover square outright**, whether or not the header text is
+  set, and is drawn exactly as given. For a square that lightens under white text instead, at the
+  cost of contrast on a mid-tone header:
+
+  ```css
+  ag-ui-chat { --ag-ui-header-btn-hover: color-mix(in srgb, #ffffff 18%, transparent); }
+  ```
 - **`--ag-ui-tool-fg` colours every tool call**, in a step group as well as in the card displays.
   Unset, a grouped call is drawn in the second ink (`--ag-ui-ink-2`) under every theme.
 - Pick the pair yourself: `--ag-ui-header-fg` is not derived from the header colour the way

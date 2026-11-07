@@ -38,15 +38,16 @@ ${THEME_HOST.quiet} .header-btn {
   border-radius: 8px;
 }
 
-/* The hover square is mixed from the header text when the host set it, so
-   it reads on any header the host painted; otherwise it is the panel shade.
+/* The hover square is the host's own when it set one; otherwise it is mixed
+   from the header text when the host set that, so it reads on any header the
+   host painted; otherwise it is the panel shade.
    The glyph takes the header text, which is the full ink when that is unset.
    The opacity restates the frame's hover value, which the rest rule above
    outweighs. */
 ${THEME_HOST.quiet} .header-btn:hover {
   color: var(--_header-fg);
   opacity: 1;
-  background: var(--_header-btn-hover, var(--_hover));
+  background: var(--_header-btn-hover);
 }
 
 ${THEME_HOST.quiet} .message--user {
