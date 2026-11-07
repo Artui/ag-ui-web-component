@@ -1,4 +1,5 @@
 import { X_SUMMARY_KEY } from "../constants.js";
+import type { CollapseTarget } from "../ui/placement/surface_for.js";
 import type { ClientTool } from "./client_tool_registry.js";
 
 /** Every corner the panel can be sent to, in the order the schema states them. */
@@ -11,7 +12,13 @@ export type ChatCorner = (typeof CHAT_CORNERS)[number];
 export interface ChatSurfaceReport {
   /** The placement in force, or `null` when the host set none. */
   readonly placement: string | null;
-  /** Whether the panel is currently at its launcher. */
+  /**
+   * What the panel collapses to: `launcher`, `rail`, `header`, `bar` (the
+   * bottom bar it rises from), `none` (hidden, brought back by the host's own
+   * control), or `null` when it cannot collapse.
+   */
+  readonly collapseTo: CollapseTarget;
+  /** Whether the panel is currently collapsed. */
   readonly collapsed: boolean;
   /** Whether this placement has a collapsed state at all. */
   readonly collapsible: boolean;
@@ -154,9 +161,11 @@ export function createChatSurfaceTools(surface: ChatSurface): ClientTool[] {
             moved: false,
             reason: report.fullBleed
               ? "the panel fills the screen, so there is nowhere to move it to"
-              : report.draggable === false
-                ? "this page has turned off moving the panel"
-                : `the "${report.placement ?? ""}" placement owns the panel's position`,
+              : report.collapseTo === "bar" || report.collapseTo === "none"
+                ? "the panel is docked: it rises from the page's bottom bar and stays there"
+                : report.draggable === false
+                  ? "this page has turned off moving the panel"
+                  : `the "${report.placement ?? ""}" placement owns the panel's position`,
             suggestion: report.collapsible ? "minimise_chat" : null,
           };
         }
@@ -166,9 +175,10 @@ export function createChatSurfaceTools(surface: ChatSurface): ClientTool[] {
     {
       name: "minimise_chat",
       description:
-        "Collapse your own panel to its launcher, so the user can see the whole page. " +
-        "The launcher stays visible and reopens it. Answers `minimised: false` when the " +
-        "placement has no collapsed state, which is the case for a full-page chat.",
+        "Collapse your own panel, so the user can see the whole page. The user reopens " +
+        "it from where it collapsed to (a launcher, a rail, a bottom bar or the page's " +
+        "own control). Answers `minimised: false` when the placement has no collapsed " +
+        "state, which is the case for a full-page chat.",
       parameters: {
         type: "object",
         properties: {},
@@ -180,7 +190,7 @@ export function createChatSurfaceTools(surface: ChatSurface): ClientTool[] {
         if (!report.collapsible) {
           return {
             minimised: false,
-            reason: "this placement has no collapsed state, so there is no launcher to return to",
+            reason: "this placement has no collapsed state, so there is nothing to minimise to",
           };
         }
         surface.setCollapsed(true, { announce: true });

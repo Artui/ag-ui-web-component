@@ -117,6 +117,19 @@
       ag-ui-chat {
         --ag-ui-viewport-inset-top: var(--bar-h, 0px);
       }
+      /* Host markup for the above-composer slot, styled from the page like any
+         slotted node. */
+      .context-strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+        color: #374151;
+        background: #eef2ff;
+        border: 1px solid #c7d2fe;
+        border-radius: 8px;
+      }
       .greeting-mark {
         display: inline-flex;
         align-items: center;
@@ -156,9 +169,17 @@
       <label class="check"
         ><input type="checkbox" id="cfg-slot" /> Own greeting (slot)</label
       >
+      <label class="check"
+        ><input type="checkbox" id="cfg-above" /> Above composer (slot)</label
+      >
       <details>
         <summary>What to try</summary>
         <ul>
+          <li>
+            <strong>Above the composer.</strong> Tick <em>Above composer (slot)</em>: a
+            context strip sits directly above the composer, and on the empty page it
+            travels with the centred composer instead of staying at the foot.
+          </li>
           <li>
             <strong>The empty page.</strong> <em>Hello, Ada</em> with the composer
             centred under it, and the starters beneath. Type, paste a long draft or

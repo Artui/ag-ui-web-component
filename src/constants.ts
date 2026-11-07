@@ -15,10 +15,17 @@ export const ELEMENT_TAG = "ag-ui-chat";
 export const SUBMIT_EVENT = "ag-ui-submit";
 
 /**
- * Collapsed state changed, via the built-in toggle or `setCollapsed`.
+ * Collapsed state changed, via the built-in toggle or `setCollapsed`; and,
+ * under `collapse-to="none"`, once at connect with the state it mounted in.
  * `detail` is {@link ToggleDetail}.
  */
 export const TOGGLE_EVENT = "ag-ui-toggle";
+
+/**
+ * The bottom bar's height changed (`collapse-to="bar"`): the host pads its
+ * page by it. `detail` is {@link BarHeightDetail}; 0 when no bar is drawn.
+ */
+export const BAR_HEIGHT_EVENT = "ag-ui-bar-height";
 
 /**
  * The count of answers that arrived while collapsed changed. `detail` is
@@ -351,7 +358,8 @@ export const DEFAULT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
  * default is `grouped`.
  *
  * - `grouped` — a run's consecutive calls fold into one quiet row ("Worked
- *   through 5 steps"), with the calls one click down as `full` cards.
+ *   through 5 steps"), with the calls one click down as `full` cards, or as
+ *   {@link TOOL_GROUP_DISPLAY} names.
  * - `inline` — one status row (icon + summary), no card chrome, result behind
  *   its own toggle. Reads as a line of the answer rather than a boxed card.
  * - `minimal` — tool name + status pill only. No args, no result body.
@@ -365,6 +373,26 @@ export const TOOL_DISPLAY = {
   COMPACT: "compact",
   FULL: "full",
 } as const;
+
+/**
+ * How an opened step group draws its calls. Set via `data-tool-group-display`
+ * and read only while `data-tool-display` is `grouped`; an outer card mode
+ * flattens the groups into its own cards and this value is ignored there.
+ *
+ * The same four card modes as {@link TOOL_DISPLAY}, applied to the calls inside
+ * the group: `full` (the default, and what an absent or unknown value reads
+ * as), `compact`, `minimal` and `inline`. A call waiting on an approval shows
+ * its arguments in every one of them.
+ */
+export const TOOL_GROUP_DISPLAY = {
+  INLINE: "inline",
+  MINIMAL: "minimal",
+  COMPACT: "compact",
+  FULL: "full",
+} as const;
+
+/** One of the {@link TOOL_GROUP_DISPLAY} values. */
+export type ToolGroupDisplayMode = (typeof TOOL_GROUP_DISPLAY)[keyof typeof TOOL_GROUP_DISPLAY];
 
 /**
  * `activityType` of the `ACTIVITY_SNAPSHOT` event django-ag-ui emits when a

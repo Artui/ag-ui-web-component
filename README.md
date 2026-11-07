@@ -48,6 +48,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
   - [Page-action tools](#page-action-tools)
 - [New chat and collapse](#new-chat-and-collapse)
   - [Collapsing to the launcher](#collapsing-to-the-launcher)
+  - [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar)
 - [Tool-call display modes](#tool-call-display-modes)
 - [Delegated sub-agents](#delegated-sub-agents)
 - [Markdown rendering](#markdown-rendering)
@@ -178,6 +179,7 @@ another origin, add `credentials="include"` too; see
 | `credentials` | `credentials` | Cookie policy for every request the element makes: `omit` / `same-origin` / `include`. Unset means the browser default (`same-origin`), which sends no cookies cross-origin. See [Authenticating requests](#authenticating-requests). |
 | `title-text` | — | Header label; defaults to `"Assistant"`. Live: writing it after the element connects re-labels the header. See [When each attribute is read](#when-each-attribute-is-read). |
 | `data-tool-display` | `toolDisplay` | How tool calls are drawn: `grouped` (the default: a run's consecutive calls fold into one row) / `inline` / `minimal` / `compact` / `full` (per-call cards; `full` was the default before `grouped`). An unknown value reads as `grouped`. See [Tool-call display modes](#tool-call-display-modes). |
+| `data-tool-group-display` | `toolGroupDisplay` | How an opened step group draws its calls under `grouped`: `full` (the default) / `compact` / `minimal` / `inline`. Ignored under the four card modes. An absent or unknown value reads as `full`. See [Choosing how a group draws its calls](#choosing-how-a-group-draws-its-calls). |
 | `data-text-animation` | — | Incoming-text reveal: `none` (default) / `fade` / `word`. |
 | `data-prompt-chips` | — | Present (bare, or any value but `"false"`) to surface skills as chips. |
 | `data-slash-commands` | — | Present (bare, or any value but `"false"`) to enable the `/`-command palette. |
@@ -206,6 +208,8 @@ another origin, add `credentials="include"` too; see
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
+| `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
+| `anchor` | `anchor` | Under `collapse-to="none"`, a selector for the host's element the panel rises from, right-aligned to it. The `anchor` property takes an element instead and wins over the attribute. Live. |
 | `data-dragging` | — | **Written by the element, not by you.** Stamped on whichever handle a gesture is currently using, so the styles can react and so the element knows not to re-place the widget under a drag in progress. Cleared on `pointerup` and on `pointercancel`. |
 | `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
 | `data-greeting` | — | CSS-only: `off` turns the [greeting layout](#the-greeting-on-an-empty-page) off under `placement="page"`, where it is on by default. Any other value turns it on under `placement="embedded"`. No other placement has it. |
@@ -234,7 +238,7 @@ same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 
 The element observes two groups of attributes, and they behave differently once it is in the DOM.
 Nothing outside those groups is observed: a CSS-only attribute (`theme`, `density`, `data-side`,
-`data-answer-well`) is read by the stylesheet rather than by script, and `endpoint`,
+`data-answer-well`, `data-tool-group-display`) is read by the stylesheet rather than by script, and `endpoint`,
 `data-tool-display`, `data-text-animation`, `data-runs-url`, `data-page-actions`,
 `data-message-actions`, `data-max-tool-rounds`, `data-unread-badge`, `data-launcher-drag` and
 `data-quote-selection` are re-read at each use, so a late write to any of those simply takes effect. The one attribute in
@@ -242,7 +246,7 @@ neither camp is `data-launcher-icon-url`: it is read while the element connects,
 below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
-either way: `title-text`, `placement`, `credentials`, `user-key`, `user-name`.
+either way: `title-text`, `placement`, `collapse-to`, `anchor`, `credentials`, `user-key`, `user-name`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
 all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;
@@ -265,8 +269,8 @@ element after the fact.
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
 `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
-`resolvePageTarget`, `sharedState`, `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId` and `running`, and
-the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `collapsed` /
+`resolvePageTarget`, `sharedState`, `anchor` (an element, which wins over the attribute's selector), `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `running` and `barHeight`, and
+the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `toolGroupDisplay` / `collapsed` /
 `credentials`.
 
 `headers` and `getHeaders` authenticate **every** request the element makes, not only the agent
@@ -1065,8 +1069,18 @@ dark scheme. When a call passes no `color`, the first of these that is set wins:
 1. `--ag-ui-highlight-ring-color` on the target (so `:root` reaches every ring);
 2. `--ag-ui-highlight-ring-color` on the chat — on `ag-ui-chat` or anything above it;
 3. the target's `--ag-ui-accent`, so a page that themes its accent keeps the rings it has;
-4. the chat's resolved accent, its theme's default included;
+4. the chat's resolved accent, its theme's default included, held to 3:1 against the page (below);
 5. the package indigo, when no chat is on the page at all.
+
+The chat's own accent follows the widget's scheme, not the page's, so a dark widget's near-white
+accent would all but vanish on a light page. When the ring falls to step 4 it is measured against
+**the surface behind the target**: the background of the target's parent, and of each element
+above it until one is opaque, composited over the page canvas (which follows the root's
+`color-scheme`). The target's own fill is not that surface, because the ring is drawn outside its
+box: a white field on a dark page is ringed on the dark page. Background images are not read. The
+ring takes the first of these that holds 3:1 there (WCAG 2.4.13): the accent as the chat resolves
+it, the other half of the chat's `light-dark()` pair, or the accent stepped toward black or white.
+Steps 1 to 3 are a host's own choice and are drawn as given, contrast or not.
 
 ```css
 /* Rings in the brand colour, whatever the widget's accent. */
@@ -1160,9 +1174,11 @@ matching JS API:
   widget is collapsed, and the page is not scrolled to it. A restore still loading or replaying
   the conversation being left stops there, so nothing of it is drawn into the new chat, and a
   run it was about to resume after a reload is not resumed: coming back to that conversation
-  later answers the interrupted call as not finished.
+  later answers the interrupted call as not finished. Called before the element connects (or while
+  it is out of the document), it waits: `threadId` stays `null` and nothing fires until the
+  element connects, which then starts the new chat, so the one `ag-ui-thread` event is a `new`.
 - `describeSurface()` — where the panel is and what can be done to it: placement, collapsed,
-  whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
+  what it collapses to (`collapseTo`), whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
   the two reasons a move can fail into the one answer a caller needs.
 - `moveTo(corner)` — send the panel to `top-left` / `top-right` / `bottom-left` / `bottom-right`,
   returning whether it went. It takes the axes the same way a user drag does, so the launcher
@@ -1194,7 +1210,9 @@ one on screen with the drawer's own paths:
   the drawer does. Returns a `Promise<void>` that resolves once the thread is drawn. **A run in
   flight is cancelled**, as the drawer and `newChat()` cancel it; read `running` first if you
   would rather wait. Switching to the thread already on screen does nothing, and so does a call
-  before the element connects.
+  before the element connects; a second call for the thread that is still loading settles with
+  that load, after the replay. If the store rejects the load, the element stays on the thread it
+  was on, redraws it, fires no `ag-ui-thread`, and the promise rejects with the store's error.
 - `deleteThread(threadId)` — delete a stored thread, as the drawer row's delete does. Deleting
   the thread on screen cancels its run and puts a fresh thread in its place; deleting another
   leaves the screen alone. Prefer it to `conversationStore.clear()`, which deletes the record and
@@ -1382,6 +1400,104 @@ ag-ui-chat {
 }
 ```
 
+### Collapsing to a bottom bar
+
+`collapse-to` chooses what a collapsed panel becomes, for a host whose layout has a bottom
+toolbar. It is opt-in: absent, `auto`, or any other value leaves every placement as the
+sections above describe. It is live, like `placement`.
+
+- **`bar`: the component's own bar.** A strip along the whole bottom edge of the viewport, in
+  place of the round launcher: the title, the [unread badge](#the-unread-badge), and a running
+  indicator while an interaction is in flight. Pressing the strip toggles the panel, which rises
+  from the bar's right end with the bar still beneath it as the minimise target. The bar's
+  history button opens the conversation list as a popover above the bar, without expanding the
+  panel, its outer edge in line with the panel's on a wide viewport; `openThreads()` while
+  collapsed does the same. It replaces the launcher only, so it applies to the corner
+  placements, `side` and `full`: `sidebar` keeps its rail, `embedded` its header bar, and `page`
+  has no collapsed state at all.
+- **`none`: your own bar.** Collapsed is hidden: nothing of the widget is left to see or hit,
+  under every collapsible placement. Your bar's button drives the [public
+  API](#driving-the-conversation-from-your-own-chrome) (`collapsed`, `toggleCollapsed()`), and
+  `anchor` names the element the panel rises from, right-aligned to it. An anchor that resolves
+  to nothing opens the panel from the placement's own corner, with one console warning.
+
+```html
+<nav class="toolbar">
+  <!-- ... -->
+  <button id="agent-button" type="button">Agent</button>
+</nav>
+<ag-ui-chat endpoint="/agent/" collapse-to="none" anchor="#agent-button"></ag-ui-chat>
+<script type="module">
+  const chat = document.querySelector("ag-ui-chat");
+  const button = document.getElementById("agent-button");
+  button.addEventListener("click", () => chat.toggleCollapsed());
+  // Under none the element announces the state it mounted in, once, so the
+  // button can be labelled before anyone presses it.
+  chat.addEventListener("ag-ui-toggle", (e) => {
+    button.setAttribute("aria-pressed", String(!e.detail.collapsed));
+  });
+</script>
+```
+
+**Clearing your toolbar.** Under `none` the panel stands `--ag-ui-anchor-gap` (default `8px`)
+above the anchor's top edge. The anchor is the button, not the toolbar around it, so a button
+sitting inside a taller toolbar puts the panel's foot across the toolbar's top border. Set the gap
+to the button's distance from the toolbar's top plus the clearance you want:
+
+```css
+/* The button stands 7px below the toolbar's top edge; clear it by 8px. */
+ag-ui-chat {
+  --ag-ui-anchor-gap: 15px;
+}
+```
+
+A gap wider than the gutter is taken off the panel's max height as well, so a tall panel still
+stops at the top of the window.
+
+Under `none` the element dispatches `ag-ui-toggle` once as it connects, with whichever state it
+mounted in, collapsed or open. Under `auto` and `bar` it does not, as before. That event touches
+neither the stored state nor the unread count.
+
+**The page's space is yours.** The bar is fixed over the page, so a host pads its own page by
+the bar's height. The component never writes your CSS, and a custom property cannot carry the
+height up to your page (it inherits down, never up), so it hands you a number:
+`barHeight` (CSS px, read-only) and an `ag-ui-bar-height` event (the `BAR_HEIGHT_EVENT`
+constant, detail `{ height }`) on every change, including a font-size change. Both read `0`
+where no bar is drawn: under `auto` and `none`, and on a phone while the panel is open.
+
+```js
+const chat = document.querySelector("ag-ui-chat");
+const pad = () => {
+  document.documentElement.style.setProperty("--chat-bar-height", `${chat.barHeight}px`);
+};
+chat.addEventListener("ag-ui-bar-height", pad);
+pad();
+```
+
+```css
+body {
+  padding-bottom: var(--chat-bar-height, 0px);
+}
+```
+
+**No inset needed.** Under `bar` and `none` you do not set `--ag-ui-inset` to keep the panel off
+your toolbar: its max height is the viewport less the bar's height (or, under `none`, the
+distance to the anchor's top) and one gutter, and its bottom sits on the bar or the anchor.
+
+**Docked means not moved.** A docked panel cannot be dragged by its header or launcher, and
+`moveTo` refuses, because a position the user chose would take it away from the bar or the
+anchor. Resizing still works on wide viewports: the edges standing on the bar or the anchor
+stay put and the free ones follow the grip, and `resetSize()` still drops the dragged size.
+
+**Phones.** At 600px or less the open panel stays full-bleed, over the bar, and the header's
+minimise control is the way back; the bar shows only while collapsed, so no second strip sits
+at the bottom edge while the keyboard is up.
+
+The bar is styled through the parts `bar` (the strip's wrapper, holding the launcher and the
+history button) and `bar-history`, and the launcher's own parts (`launcher`, `rail-label`,
+`launcher-badge`) inside it.
+
+
 ---
 
 ## Charts
@@ -1557,7 +1673,7 @@ absent or unknown value reads as `grouped`):
 
 - `grouped` — the default. A run's consecutive tool calls fold into one quiet row, **"Worked
   through 5 steps"**, with a note such as **"1 failed"** beside it, and the calls one click down
-  as `full` cards. Anything else in the turn (text, a confirmation, a question) ends the group, and
+  as `full` cards, or in the mode `data-tool-group-display` names. Anything else in the turn (text, a confirmation, a question) ends the group, and
   the next call starts a new one; a call's own rendered output does not. A group of one call shows that call's own label. See
   [The step group](#the-step-group).
 - `inline` — the lightest mode: a single status row (icon + summary, no card chrome) with the
@@ -1590,6 +1706,25 @@ over one DOM shape, selected by the shadow CSS from the host attribute. Grouping
 each card is built: switching **to** `grouped` folds only the calls drawn afterwards, and
 switching **away** from it flattens the groups already drawn, by CSS, into exactly the cards the
 new mode builds (the group stops generating a box and its row is hidden).
+
+### Choosing how a group draws its calls
+
+Under `grouped`, an opened group draws its calls as `full` cards unless the
+`data-tool-group-display` attribute (or `toolGroupDisplay` property) names another of the card
+modes: `compact`, `minimal` or `inline`. Each draws the regions the flat card of that mode draws,
+laid out as a row of the group's list rather than as a boxed card. An absent or unknown value
+reads as `full`, so nothing changes for a host that does not set it.
+
+```html
+<ag-ui-chat endpoint="/agent/" data-tool-group-display="compact"></ag-ui-chat>
+```
+
+It is read only under `grouped`. Under one of the four card modes the groups are flattened into
+that mode's cards and the inner value is ignored; switching back to `grouped` applies it again.
+It is live like the outer attribute: changing it restyles groups already in the transcript.
+
+A call waiting on an approval shows its arguments and its Approve and Deny buttons in every inner
+mode, as it does in every card mode, and Approve takes focus when the group opens for it.
 
 ### The step group
 
@@ -2844,6 +2979,7 @@ re-export point. Internal modules import from leaf paths.
 | `SubmitDetail` | type | `detail` shape of the submit event. |
 | `ThreadDetail` | type | `detail` shape of the `ag-ui-thread` event (`{ threadId, previousThreadId, reason }`). |
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
+| `BarHeightDetail` | type | `detail` shape of the `ag-ui-bar-height` event (`{ height }`). |
 | `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
 | `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
 | `StateDetail` | type | `detail` shape of the `ag-ui-state` event (`{ state }`). |
@@ -2876,7 +3012,7 @@ re-export point. Internal modules import from leaf paths.
 | `PAGE_ACTIONS` | const | The page-action opt-in tokens (`scroll` / `drag`). |
 | `createChatSurfaceTools(surface)` | function | Build the opt-in `read_chat_surface` / `move_chat` / `minimise_chat` / `restore_chat` tools, which let the agent move the panel it is speaking from. |
 | `ChatSurface` | type | The narrow port those tools drive — `describeSurface` / `moveTo` / `setCollapsed`. The element satisfies it. |
-| `ChatSurfaceReport` | type | What `describeSurface()` answers: placement, collapsed, collapsible, movable, draggable, fullBleed, and the panel's box against the viewport it sits in. |
+| `ChatSurfaceReport` | type | What `describeSurface()` answers: placement, collapsed, collapseTo, collapsible, movable, draggable, fullBleed, and the panel's box against the viewport it sits in. |
 | `ChatCorner` | type | `"top-left"` / `"top-right"` / `"bottom-left"` / `"bottom-right"` — the argument to `moveTo`. |
 | `CHAT_CORNERS` | const | Those four, as a list. |
 | `isChatCorner(value)` | function | Whether a string names one of them. |
@@ -2951,6 +3087,7 @@ re-export point. Internal modules import from leaf paths.
 | --- | --- | --- |
 | `ToolCallCard` | class | A live tool-call card for the transcript. |
 | `ToolCallStatus` / `SettledStatus` / `ToolDisplayMode` | type | Card lifecycle states + display mode. |
+| `ToolGroupDisplayMode` | type | How an opened step group draws its calls (`TOOL_GROUP_DISPLAY`'s values). |
 | `ToolPayloadFormatter` | type | Draws one region of a card's body (`AgUiChat.formatToolPayload`); `null` falls through to the built-in pretty-print. |
 | `ToolPayload` | type | The region being drawn: `arguments` (the parsed record) or `result` (the raw string and its outcome). |
 | `ToolCallCardOptions` | type | Per-card wiring beyond name / args / label / strings — currently `formatPayload`. |
@@ -2994,6 +3131,7 @@ re-export point. Internal modules import from leaf paths.
 | `SUBMIT_EVENT` | The submit CustomEvent name. |
 | `THREAD_EVENT` | The conversation-changed CustomEvent name (`ag-ui-thread`). |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
+| `BAR_HEIGHT_EVENT` | The bottom bar's height CustomEvent name (`ag-ui-bar-height`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
 | `CUSTOM_AGENT_EVENT` | The agent-`CUSTOM` CustomEvent name (`ag-ui-custom`). |
@@ -3013,6 +3151,7 @@ re-export point. Internal modules import from leaf paths.
 | `MESSAGE_ACTIONS` | The message-action tokens `data-message-actions` selects by (`copy` / `retry` / `feedback`). |
 | `TOOL_CALL_STATUS` | Tool-call card status constants. |
 | `TOOL_DISPLAY` | Tool-call display-mode constants (`inline` / `minimal` / `compact` / `full`). |
+| `TOOL_GROUP_DISPLAY` | How an opened step group draws its calls under `grouped` (`inline` / `minimal` / `compact` / `full`). |
 | `TOOL_OUTCOME` | How a tool call ended, as a server states it on `TOOL_CALL_RESULT` (`success` / `failed` / `denied`). |
 | `X_CONFIRM_KEY` | Confirmation-prompt key: on a tool's JSON Schema for a client-side confirmation, and in an AG-UI interrupt's `metadata` for a server-side approval. |
 | `X_SUMMARY_KEY` | JSON-Schema key carrying a short tool-card label. |
@@ -3124,11 +3263,20 @@ first, so each stays an override point. The tokens the themes add:
 - **Charts:** `--ag-ui-chart-1` to `--ag-ui-chart-6`. A host's value beats the theme's.
 - **Status marks:** `--ag-ui-ico-check`, `--ag-ui-ico-error`, `--ag-ui-ico-declined`, mask images
   drawn in the state's colour, and `--ag-ui-ico-chevron`, the step group's disclosure chevron.
-- **Focus:** `--ag-ui-ring`, the step group head's focus outline (the accent at 55%).
+- **Focus:** `--ag-ui-ring`, the step group head's focus outline. Unset, it is two parts accent
+  to three parts ink (`--ag-ui-fg`), which holds 3:1 against the panel for any accent.
 
 The font is part of the theme: Quiet, Soft and Ledger set their own stack (Inter, then the system
-UI font), and Classic inherits the page's font as the component always did. Set
-`--ag-ui-font: inherit` to take the page's font under any theme.
+UI font), and Classic inherits the page's font as the component always did. To take the page's font
+under any theme, set `--ag-ui-font` to the page's family, or to the page's own font token:
+
+```css
+ag-ui-chat { --ag-ui-font: var(--body-font); }   /* or the family itself */
+```
+
+`--ag-ui-font: inherit` does not do this. A CSS-wide keyword in a custom property applies to the
+custom property itself, so it takes the `--ag-ui-font` of the parent, which nothing sets, and the
+theme's stack wins.
 
 #### Text on the accent
 
@@ -3318,6 +3466,10 @@ keeps between itself and that box. The size cap subtracts the same one, so a
 panel grown to its limit reaches the far edge of the usable box and no further —
 set it to `0` for a panel flush against the corner.
 
+`--ag-ui-anchor-gap` (default `8px`) is the gap between the panel and the button
+it rises from under `collapse-to="none"`; see [Collapsing to a bottom
+bar](#collapsing-to-a-bottom-bar).
+
 `--ag-ui-keyboard-inset` overrides the lift an on-screen keyboard earns. The
 widget measures the hidden band and publishes it as
 `--ag-ui-visual-viewport-inset-bottom`; state this one instead to outrank that
@@ -3454,7 +3606,7 @@ component sets, so a new one cannot ship undocumented.
 | --- | --- |
 | Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `greeting`, `pending`, `stopped`, `jump-latest`, and one per resize grip: `resize-handle` plus `resize-handle-top`, `resize-handle-bottom`, `resize-handle-left`, `resize-handle-right`, `resize-handle-top-left`, `resize-handle-top-right`, `resize-handle-bottom-left`, `resize-handle-bottom-right` |
 | Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `collapse-button`, `theme-toggle` |
-| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label` |
+| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label`, `bar` (the [bottom bar](#collapsing-to-a-bottom-bar)'s wrapper, around the launcher), `bar-history` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
 | Follow-up suggestions | `suggestions`, `suggestion-chip` |

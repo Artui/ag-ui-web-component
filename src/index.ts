@@ -2,6 +2,7 @@
 
 export {
   ATTACHMENT_EVENT,
+  BAR_HEIGHT_EVENT,
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
@@ -21,7 +22,9 @@ export {
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
+  TOOL_GROUP_DISPLAY,
   TOOL_OUTCOME,
+  type ToolGroupDisplayMode,
   UNREAD_EVENT,
   X_CONFIRM_KEY,
   X_DESTRUCTIVE_KEY,
@@ -58,6 +61,7 @@ export {
 } from "./core/create_http_agent.js";
 export { defineAgUiChat } from "./core/define_ag_ui_chat.js";
 export type { AttachmentsDetail } from "./core/events/attachments_detail.js";
+export type { BarHeightDetail } from "./core/events/bar_height_detail.js";
 export type { CustomAgentDetail } from "./core/events/custom_agent_detail.js";
 export type { FeedbackDetail } from "./core/events/feedback_detail.js";
 export type { InvalidateDetail } from "./core/events/invalidate_detail.js";

@@ -22,7 +22,7 @@ import {
   type ResizeGrip,
   type ResizeSize,
 } from "./resize_handle.js";
-import { surfaceFor } from "./surface_for.js";
+import { type Surface, surfaceFor } from "./surface_for.js";
 
 /** Per-tab persistence key for a dragged panel size. */
 const SIZE_KEY = "ag-ui-chat:size";
@@ -37,6 +37,15 @@ const SIZE_KEY = "ag-ui-chat:size";
  */
 const DRAG_WIDTH = "--_drag-width";
 const DRAG_HEIGHT = "--_drag-height";
+/**
+ * How far above the bottom of the layout viewport a docked panel stands, and
+ * how far in from its right edge: the bar's height, or the host anchor's top
+ * and right. Private and written inline, like the dragged size, and read only
+ * by the dock rules; never an inline --_inset, which would outrank the phone
+ * block and keep a docked panel off full-bleed on a phone.
+ */
+const DOCK_BOTTOM = "--_dock-bottom";
+const DOCK_RIGHT = "--_dock-right";
 
 /** Per-tab persistence key for a dragged launcher position. */
 const LAUNCHER_KEY = "ag-ui-chat:launcher";
@@ -309,6 +318,7 @@ export class PanelPlacement {
     const fullBleed = coversViewport(box, viewport);
     return {
       placement: this.#host.element.getAttribute("placement"),
+      collapseTo: this.#surface().collapseTo,
       collapsed: this.#host.collapsed(),
       collapsible: this.#host.collapsible(),
       movable: this.#launcherDraggable() && !fullBleed,
@@ -425,7 +435,7 @@ export class PanelPlacement {
    * per interaction, because `placement` is a live attribute.
    */
   #resizeAxis(): ResizeAxis {
-    return surfaceFor(this.#host.element.getAttribute("placement")).resizeAxis;
+    return this.#surface().resizeAxis;
   }
 
   /**
@@ -567,6 +577,49 @@ export class PanelPlacement {
     }
   }
 
+  /** The surface the live placement and collapse-to attributes describe. */
+  #surface(): Surface {
+    const element = this.#host.element;
+    return surfaceFor(element.getAttribute("placement"), element.getAttribute("collapse-to"));
+  }
+
+  /** Whether the panel rises from the bottom bar or the host's anchor. */
+  #docked(): boolean {
+    const target = this.#surface().collapseTo;
+    return target === "bar" || target === "none";
+  }
+
+  /**
+   * Write where a docked panel stands, and return the bar's height.
+   *
+   * Under the bar it is the strip's border box, which is 0 whenever the strip
+   * is not drawn (a phone with the panel open, where the panel is the screen).
+   * Under a host anchor it is the anchor's top and right, measured against the
+   * layout viewport a fixed element is placed in; an anchor of null leaves the
+   * panel in its placement's own corner. Every other surface carries neither
+   * property, so nothing stale is left behind by a live switch.
+   */
+  syncDock(bar: HTMLElement, anchor: Element | null): number {
+    const element = this.#host.element;
+    const target = this.#surface().collapseTo;
+    const height = target === "bar" ? bar.offsetHeight : 0;
+    if (target === "bar") {
+      element.style.setProperty(DOCK_BOTTOM, `${height}px`);
+    } else if (target === "none" && anchor !== null) {
+      const rect = anchor.getBoundingClientRect();
+      const screen = this.#screen();
+      element.style.setProperty(DOCK_BOTTOM, `${Math.max(0, screen.height - rect.top)}px`);
+      element.style.setProperty(DOCK_RIGHT, `${Math.max(0, screen.width - rect.right)}px`);
+    } else {
+      element.style.removeProperty(DOCK_BOTTOM);
+    }
+    if (target !== "none" || anchor === null) {
+      element.style.removeProperty(DOCK_RIGHT);
+    }
+    element.toggleAttribute("data-dock-anchored", target === "none" && anchor !== null);
+    return height;
+  }
+
   /**
    * Whether this placement lets the launcher be dragged, read per interaction
    * because `placement` is a live attribute. `data-launcher-drag="false"` opts
@@ -575,7 +628,7 @@ export class PanelPlacement {
   #launcherDraggable(): boolean {
     return (
       this.#host.element.getAttribute("data-launcher-drag") !== "false" &&
-      surfaceFor(this.#host.element.getAttribute("placement")).launcherDraggable
+      this.#surface().launcherDraggable
     );
   }
 
@@ -1057,6 +1110,21 @@ export class PanelPlacement {
    */
   #applyResize(grip: ResizeGrip, box: PanelRect): PanelRect {
     box = this.#withinViewport(box);
+    if (this.#docked()) {
+      // A docked panel keeps its resize but never its position: the edges it
+      // stands on are the bar's or the anchor's, and a grip on one of them
+      // would write the position below and take the panel off its dock. So
+      // the pinned edges stay where they are and only the free ones follow.
+      const now = this.#host.element.getBoundingClientRect();
+      box = {
+        left: grip.x === this.#anchor.x ? now.left : box.left,
+        right: grip.x === this.#anchor.x ? now.right : box.right,
+        top: grip.y === this.#anchor.y ? now.top : box.top,
+        bottom: grip.y === this.#anchor.y ? now.bottom : box.bottom,
+      };
+      this.#applySize({ width: box.right - box.left, height: box.bottom - box.top });
+      return box;
+    }
     this.#applySize({ width: box.right - box.left, height: box.bottom - box.top });
     if (grip.x !== this.#anchor.x && grip.y !== this.#anchor.y) {
       return box;

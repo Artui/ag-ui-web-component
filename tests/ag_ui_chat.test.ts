@@ -198,6 +198,23 @@ describe("AgUiChat", () => {
     expect(mount({ "data-tool-display": "bogus" }).toolDisplay).toBe("grouped");
   });
 
+  it("reads the group's inner mode from data-tool-group-display, full unless it knows the value", () => {
+    expect(mount().toolGroupDisplay).toBe("full");
+    expect(mount({ "data-tool-group-display": "inline" }).toolGroupDisplay).toBe("inline");
+    expect(mount({ "data-tool-group-display": "minimal" }).toolGroupDisplay).toBe("minimal");
+    expect(mount({ "data-tool-group-display": "compact" }).toolGroupDisplay).toBe("compact");
+    expect(mount({ "data-tool-group-display": "full" }).toolGroupDisplay).toBe("full");
+    expect(mount({ "data-tool-group-display": "grouped" }).toolGroupDisplay).toBe("full");
+    expect(mount({ "data-tool-group-display": "bogus" }).toolGroupDisplay).toBe("full");
+  });
+
+  it("reflects toolGroupDisplay to its attribute", () => {
+    const el = mount();
+    el.toolGroupDisplay = "compact";
+    expect(el.getAttribute("data-tool-group-display")).toBe("compact");
+    expect(el.toolGroupDisplay).toBe("compact");
+  });
+
   it("renders assistant content as markdown but keeps user content literal", () => {
     const el = mount();
     const assistant = el.appendMessage(MESSAGE_ROLE.ASSISTANT, "**bold**");
@@ -3246,6 +3263,289 @@ describe("AgUiChat — answer group", () => {
       // A later toggle persists under the namespaced key, not the legacy one.
       el.toggleTheme();
       expect(sessionStorage.getItem("ag-ui-chat:theme:/agent/")).toBe("light");
+    });
+  });
+});
+
+/**
+ * collapse-to: what the element does about the bar and the host's own bar
+ * that happy-dom can see. What either looks like, and anything measured, is
+ * in the Chromium files dock_bar and dock_anchor.
+ */
+describe("AgUiChat collapse-to", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  function create(attrs: Record<string, string>): AgUiChat {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    for (const [key, value] of Object.entries(attrs)) {
+      el.setAttribute(key, value);
+    }
+    return el;
+  }
+
+  function togglesAtConnect(el: AgUiChat): boolean[] {
+    const seen: boolean[] = [];
+    el.addEventListener("ag-ui-toggle", (event) => {
+      seen.push((event as CustomEvent<{ collapsed: boolean }>).detail.collapsed);
+    });
+    document.body.appendChild(el);
+    return seen;
+  }
+
+  function collapsedKeys(): Record<string, string | null> {
+    const keys: Record<string, string | null> = {};
+    for (let index = 0; index < sessionStorage.length; index += 1) {
+      const key = sessionStorage.key(index) ?? "";
+      if (key.includes("collapsed")) {
+        keys[key] = sessionStorage.getItem(key);
+      }
+    }
+    return keys;
+  }
+
+  describe("the connect-time toggle", () => {
+    it("tells a none host the state it mounted in, collapsed by the corner default", () => {
+      const unread = vi.fn();
+      const el = create({ "collapse-to": "none" });
+      el.addEventListener("ag-ui-unread", unread);
+      expect(togglesAtConnect(el)).toEqual([true]);
+      expect(el.collapsed).toBe(true);
+      // Dispatched, not set: nothing is written for a state nobody changed,
+      // and the unread count is not reset on the way.
+      expect(collapsedKeys()).toEqual({});
+      expect(unread).not.toHaveBeenCalled();
+    });
+
+    it("tells it the open state too", () => {
+      expect(togglesAtConnect(create({ "collapse-to": "none", "data-start-open": "" }))).toEqual([
+        false,
+      ]);
+    });
+
+    it("reports a stored state, and leaves the store as it was", () => {
+      for (const stored of [true, false]) {
+        document.body.innerHTML = "";
+        sessionStorage.clear();
+        const first = create({ "collapse-to": "none" });
+        document.body.appendChild(first);
+        first.setCollapsed(stored);
+        first.remove();
+        const before = collapsedKeys();
+        expect(togglesAtConnect(create({ "collapse-to": "none" }))).toEqual([stored]);
+        expect(collapsedKeys()).toEqual(before);
+      }
+    });
+
+    it("stays silent under auto and bar, as before", () => {
+      expect(togglesAtConnect(create({}))).toEqual([]);
+      expect(togglesAtConnect(create({ "collapse-to": "bar" }))).toEqual([]);
+    });
+  });
+
+  describe("the bar", () => {
+    it("toggles from its strip, and labels the strip for what it will do", () => {
+      const el = create({ "collapse-to": "bar" });
+      document.body.appendChild(el);
+      const strip = shadow(el).querySelector<HTMLButtonElement>(".dock-bar > .launcher");
+      expect(strip?.getAttribute("aria-label")).toBe("Expand");
+      strip?.click();
+      expect(el.collapsed).toBe(false);
+      expect(strip?.getAttribute("aria-label")).toBe("Collapse");
+      strip?.click();
+      expect(el.collapsed).toBe(true);
+    });
+
+    it("only opens from the round launcher, as before", () => {
+      const el = create({});
+      document.body.appendChild(el);
+      const launcher = shadow(el).querySelector<HTMLButtonElement>(".launcher");
+      el.setCollapsed(false);
+      launcher?.click();
+      expect(el.collapsed).toBe(false);
+      expect(launcher?.getAttribute("aria-label")).toBe("Expand");
+    });
+
+    it("opens the history as a popover beside the bar while collapsed, and takes it home on expand", () => {
+      const el = create({ "collapse-to": "bar" });
+      document.body.appendChild(el);
+      const root = shadow(el);
+      const drawer = root.querySelector<HTMLElement>(".drawer");
+      root.querySelector<HTMLButtonElement>(".bar-history")?.click();
+      expect(el.collapsed).toBe(true);
+      expect(drawer?.parentElement?.className).toBe("dock-bar");
+      expect(drawer?.hidden).toBe(false);
+      // Opening the panel keeps the list open, now inside it.
+      el.setCollapsed(false);
+      expect(drawer?.parentElement?.className).toBe("chat");
+      expect(drawer?.hidden).toBe(false);
+      el.closeThreads();
+      // And an open panel's history opens in the panel, as it always has.
+      el.openThreads();
+      expect(drawer?.parentElement?.className).toBe("chat");
+    });
+
+    it("takes a popover opened earlier back into the panel when the list opens there", () => {
+      const el = create({ "collapse-to": "bar" });
+      document.body.appendChild(el);
+      el.openThreads();
+      expect(shadow(el).querySelector(".drawer")?.parentElement?.className).toBe("dock-bar");
+      el.closeThreads();
+      el.setAttribute("collapse-to", "auto");
+      el.openThreads();
+      expect(shadow(el).querySelector(".drawer")?.parentElement?.className).toBe("chat");
+    });
+
+    it("closes the popover on a press away from the bar, and not on one inside it", () => {
+      const el = create({ "collapse-to": "bar" });
+      document.body.appendChild(el);
+      const drawer = shadow(el).querySelector<HTMLElement>(".drawer");
+      // Ignored while the drawer sits in the panel.
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      el.openThreads();
+      drawer?.dispatchEvent(new Event("pointerdown", { bubbles: true, composed: true }));
+      expect(drawer?.hidden).toBe(false);
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      expect(drawer?.hidden).toBe(true);
+      // Closed, it ignores the next press too.
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      expect(drawer?.hidden).toBe(true);
+    });
+
+    it("relabels the strip when collapse-to changes on an open chat", () => {
+      const el = create({});
+      el.setAttribute("data-start-open", "");
+      document.body.appendChild(el);
+      const launcher = shadow(el).querySelector<HTMLButtonElement>(".launcher");
+      expect(launcher?.getAttribute("aria-label")).toBe("Expand");
+      el.setAttribute("collapse-to", "bar");
+      expect(launcher?.getAttribute("aria-label")).toBe("Collapse");
+      expect(launcher?.title).toBe("Collapse");
+      el.setAttribute("collapse-to", "auto");
+      expect(launcher?.getAttribute("aria-label")).toBe("Expand");
+    });
+
+    it("takes an open popover back into the panel when collapse-to leaves bar", () => {
+      const el = create({ "collapse-to": "bar" });
+      document.body.appendChild(el);
+      const drawer = shadow(el).querySelector<HTMLElement>(".drawer");
+      el.openThreads();
+      expect(drawer?.parentElement?.className).toBe("dock-bar");
+      el.setAttribute("collapse-to", "auto");
+      expect(drawer?.parentElement?.className).toBe("chat");
+    });
+
+    it("keeps the popover in the bar when collapse-to is set to bar again", () => {
+      const el = create({ "collapse-to": "bar" });
+      document.body.appendChild(el);
+      const drawer = shadow(el).querySelector<HTMLElement>(".drawer");
+      el.openThreads();
+      el.setAttribute("collapse-to", "bar");
+      expect(drawer?.parentElement?.className).toBe("dock-bar");
+    });
+
+    it("does not close an in-panel drawer on a press inside it, whatever the target", () => {
+      const el = create({});
+      el.setAttribute("data-start-open", "");
+      document.body.appendChild(el);
+      const drawer = shadow(el).querySelector<HTMLElement>(".drawer");
+      el.openThreads();
+      expect(drawer?.parentElement?.className).toBe("chat");
+      drawer?.dispatchEvent(new Event("pointerdown", { bubbles: true, composed: true }));
+      expect(drawer?.hidden).toBe(false);
+    });
+
+    it("reports no height where no bar is drawn, and writes the dock only under the bar", () => {
+      const heights: number[] = [];
+      const el = create({});
+      el.addEventListener("ag-ui-bar-height", (event) => {
+        heights.push((event as CustomEvent<{ height: number }>).detail.height);
+      });
+      document.body.appendChild(el);
+      expect(el.barHeight).toBe(0);
+      expect(el.style.getPropertyValue("--_dock-bottom")).toBe("");
+      el.setAttribute("collapse-to", "bar");
+      // happy-dom lays nothing out, so the strip measures 0; the height itself
+      // is measured in the Chromium project.
+      expect(el.style.getPropertyValue("--_dock-bottom")).toBe("0px");
+      el.setAttribute("collapse-to", "auto");
+      expect(el.style.getPropertyValue("--_dock-bottom")).toBe("");
+      expect(heights).toEqual([]);
+    });
+  });
+
+  describe("the anchor", () => {
+    it("is resolved from the selector under none, and only under none", () => {
+      const button = document.createElement("button");
+      button.id = "host-agent";
+      document.body.appendChild(button);
+      const el = create({ "collapse-to": "bar", anchor: "#host-agent" });
+      document.body.appendChild(el);
+      expect(el.hasAttribute("data-dock-anchored")).toBe(false);
+      el.setAttribute("collapse-to", "none");
+      expect(el.hasAttribute("data-dock-anchored")).toBe(true);
+      expect(el.style.getPropertyValue("--_dock-right")).not.toBe("");
+      el.removeAttribute("anchor");
+      expect(el.hasAttribute("data-dock-anchored")).toBe(false);
+      expect(el.style.getPropertyValue("--_dock-right")).toBe("");
+      expect(el.style.getPropertyValue("--_dock-bottom")).toBe("");
+    });
+
+    it("prefers the property, and finds a selector in the chat's own shadow root", () => {
+      const outer = document.createElement("div");
+      document.body.appendChild(outer);
+      const scope = outer.attachShadow({ mode: "open" });
+      const button = document.createElement("button");
+      button.className = "agent";
+      const el = create({ "collapse-to": "none", anchor: ".agent" });
+      scope.append(button, el);
+      expect(el.hasAttribute("data-dock-anchored")).toBe(true);
+      const other = document.createElement("button");
+      document.body.appendChild(other);
+      el.anchor = other;
+      expect(el.anchor).toBe(other);
+      expect(el.hasAttribute("data-dock-anchored")).toBe(true);
+    });
+
+    it("opens from the corner when the anchor is not there, and says so once per anchor", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = create({ "collapse-to": "none", anchor: "#missing" });
+      document.body.appendChild(el);
+      el.setCollapsed(false);
+      el.setCollapsed(true);
+      expect(el.hasAttribute("data-dock-anchored")).toBe(false);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain('"#missing"');
+      // A selector that does not parse is the same mistake.
+      el.setAttribute("anchor", "[[");
+      expect(warn).toHaveBeenCalledTimes(2);
+      // As is an element taken out of the page.
+      el.anchor = document.createElement("button");
+      expect(warn).toHaveBeenCalledTimes(3);
+      expect(String(warn.mock.calls[2]?.[0])).toContain("anchor element");
+      expect(el.hasAttribute("data-dock-anchored")).toBe(false);
+      // No anchor given at all is not a mistake: the corner is the answer.
+      warn.mockClear();
+      const bare = create({ "collapse-to": "none" });
+      document.body.appendChild(bare);
+      bare.setAttribute("anchor", "");
+      bare.setCollapsed(false);
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("is not looked up before the element is connected", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = create({ "collapse-to": "none", anchor: "#missing" });
+      el.anchor = null;
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
     });
   });
 });

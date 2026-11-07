@@ -277,9 +277,11 @@ export const TOOL_STEP_STYLES: string = `
 
 /* The arguments region only, never every section: the result region carries the
    hidden attribute until a result exists, and a display value here overrides it,
-   framing an empty RESULT heading under the question. */
-:host([data-tool-display="compact"]) .tool-call[data-status="deferred"] .tool-call-section--args,
-:host([data-tool-display="inline"]) .tool-call[data-status="deferred"] .tool-call-section--args {
+   framing an empty RESULT heading under the question. The arguments region is
+   hidden too when the call has none, and is left alone then, or it would frame
+   an empty ARGUMENTS heading. */
+:host([data-tool-display="compact"]) .tool-call[data-status="deferred"] .tool-call-section--args:not([hidden]),
+:host([data-tool-display="inline"]) .tool-call[data-status="deferred"] .tool-call-section--args:not([hidden]) {
   display: flex;
 }
 

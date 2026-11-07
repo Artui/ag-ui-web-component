@@ -216,6 +216,8 @@ export class ConversationHistory {
    * Also what tells a pick refused for a load from one refused for a run.
    */
   #loading: (() => void) | null = null;
+  /** The thread switch under way and the promise that settles it, or `null`. */
+  #switching: { readonly threadId: string; readonly done: Promise<void> } | null = null;
 
   constructor(host: ConversationHistoryHost) {
     this.#host = host;
@@ -331,17 +333,56 @@ export class ConversationHistory {
     this.#host.checkpoints.open();
   }
 
-  /** Switch the active conversation to an existing thread and replay it. */
-  async switchThread(threadId: string): Promise<void> {
+  /**
+   * Switch the active conversation to an existing thread and replay it.
+   *
+   * A call for the thread a switch is already loading is handed that switch's
+   * own promise, so it settles when the thread is drawn rather than at once,
+   * before the replay.
+   *
+   * A store that rejects the load leaves the element on the thread it was on:
+   * the switch has already cleared the transcript, so it points back at the
+   * old thread and draws it again, saying nothing, and then rejects with the
+   * store's error. Left as it was, the element named a thread it was not
+   * showing and never reported it.
+   */
+  switchThread(threadId: string): Promise<void> {
     if (threadId === this.#threadId) {
-      return;
+      return this.#switching?.threadId === threadId ? this.#switching.done : Promise.resolve();
     }
+    const previous = this.#threadId;
+    const done = this.#switchTo(threadId, previous).finally(() => {
+      if (this.#switching === entry) {
+        this.#switching = null;
+      }
+    });
+    const entry = { threadId, done };
+    this.#switching = entry;
+    return done;
+  }
+
+  async #switchTo(threadId: string, previous: string): Promise<void> {
     this.#host.cancelRun();
     this.#host.resetState();
     this.#host.conversationStore().setActiveThread(threadId);
     this.#threadId = threadId;
     this.#host.setRunning(false);
-    await this.rehydrate("switch");
+    try {
+      await this.rehydrate("switch");
+    } catch (error) {
+      // Only while this switch is still the one on screen: a newer switch, a
+      // new chat or a delete has moved the thread on, and undoing that would
+      // put the old one back over it.
+      if (this.#threadId === threadId) {
+        this.#threadId = previous;
+        this.#host.conversationStore().setActiveThread(previous);
+        // Drawn again without a word: the thread on screen is the one the last
+        // event reported, so there is nothing to tell a host. A store that
+        // cannot answer for it either leaves the screen as it is.
+        await this.rehydrate(null).catch(() => undefined);
+      }
+      throw error;
+    }
   }
 
   /** Rename a thread, then reload the list that shows its title. */
@@ -638,9 +679,10 @@ export class ConversationHistory {
    * instead; see `#forgetStopped`.
    *
    * `reason` is what the thread event this restore ends with reports as why
-   * the conversation changed. A restore that is stopped reports nothing.
+   * the conversation changed. A restore that is stopped reports nothing, and
+   * neither does one given `null`, which draws the thread already reported.
    */
-  async rehydrate(reason: ThreadDetail["reason"]): Promise<void> {
+  async rehydrate(reason: ThreadDetail["reason"] | null): Promise<void> {
     // Claimed before awaiting, and checked by `#restoring` wherever the restore
     // has waited or run host code. With a slow remote store, picking thread B
     // then C interleaved both replays into one transcript, and New chat drew
@@ -745,7 +787,9 @@ export class ConversationHistory {
       // still current: one that was stopped returned above, so two quick
       // switches report the second alone. Before a resume, because the resume
       // is a run, and waiting for it reported the change a whole answer late.
-      this.#host.threadChanged(threadId, reason);
+      if (reason !== null) {
+        this.#host.threadChanged(threadId, reason);
+      }
       if (checkpoint !== null) {
         // A listener is host code, and can stop the restore as a replayed
         // renderer can. Resuming then answered the call into the conversation
