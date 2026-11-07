@@ -2015,11 +2015,11 @@ export class AgUiChat extends HTMLElement {
     if (this.#surface().collapseTo !== "none") {
       return null;
     }
-    const selector = this.getAttribute("anchor");
-    if (this.#anchor === null && (selector === null || selector === "")) {
+    const selector = this.getAttribute("anchor") ?? "";
+    if (this.#anchor === null && selector === "") {
       return null;
     }
-    const found = this.#anchor ?? findAnchor(this.getRootNode(), selector ?? "");
+    const found = this.#anchor ?? findAnchor(this.getRootNode(), selector);
     if (found?.isConnected === true) {
       return found;
     }

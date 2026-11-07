@@ -3395,6 +3395,7 @@ describe("AgUiChat collapse-to", () => {
       const el = create({ "collapse-to": "bar" });
       document.body.appendChild(el);
       el.openThreads();
+      expect(shadow(el).querySelector(".drawer")?.parentElement?.className).toBe("dock-bar");
       el.closeThreads();
       el.setAttribute("collapse-to", "auto");
       el.openThreads();

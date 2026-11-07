@@ -18,6 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TOOL_GROUP_DISPLAY` with the `ToolGroupDisplayMode` type. **Opt-in**: an
   absent or unknown value reads as `full`, which is what a group drew before,
   so a host sees no change until it sets the attribute.
+- **Collapse into a bottom bar.** A new live `collapse-to` attribute chooses
+  what a collapsed panel becomes. `bar` draws a strip along the bottom edge in
+  place of the round launcher, with the title, the unread badge, a running
+  mark and a history button that opens the conversation list as a popover;
+  the panel rises from the bar's right end. `none` hides the collapsed widget
+  so the host's own toolbar drives it, and the `anchor` attribute or property
+  names the host element the panel rises from. Under both, the panel's height
+  stops at the bar or the anchor, so `--ag-ui-inset` is not needed, and a
+  docked panel can be resized but not moved. The read-only `barHeight`
+  property and the `ag-ui-bar-height` event (`BAR_HEIGHT_EVENT`, detail
+  `BarHeightDetail`) give the host the height to pad its page by. Under
+  `none` the element dispatches `ag-ui-toggle` once at connect with the state
+  it mounted in. On a phone the open panel stays full-bleed and the bar shows
+  only while collapsed. New parts `bar` and `bar-history`, and
+  `describeSurface()` reports `collapseTo`. **Opt-in**: absent,
+  `collapse-to` reads as `auto`, which leaves every placement as it was.
 
 ### Changed
 

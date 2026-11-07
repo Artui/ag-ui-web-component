@@ -48,6 +48,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
   - [Page-action tools](#page-action-tools)
 - [New chat and collapse](#new-chat-and-collapse)
   - [Collapsing to the launcher](#collapsing-to-the-launcher)
+  - [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar)
 - [Tool-call display modes](#tool-call-display-modes)
 - [Delegated sub-agents](#delegated-sub-agents)
 - [Markdown rendering](#markdown-rendering)
@@ -207,6 +208,8 @@ another origin, add `credentials="include"` too; see
 | `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
+| `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
+| `anchor` | `anchor` | Under `collapse-to="none"`, a selector for the host's element the panel rises from, right-aligned to it. The `anchor` property takes an element instead and wins over the attribute. Live. |
 | `data-dragging` | — | **Written by the element, not by you.** Stamped on whichever handle a gesture is currently using, so the styles can react and so the element knows not to re-place the widget under a drag in progress. Cleared on `pointerup` and on `pointercancel`. |
 | `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
 | `data-greeting` | — | CSS-only: `off` turns the [greeting layout](#the-greeting-on-an-empty-page) off under `placement="page"`, where it is on by default. Any other value turns it on under `placement="embedded"`. No other placement has it. |
@@ -243,7 +246,7 @@ neither camp is `data-launcher-icon-url`: it is read while the element connects,
 below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
-either way: `title-text`, `placement`, `credentials`, `user-key`, `user-name`.
+either way: `title-text`, `placement`, `collapse-to`, `anchor`, `credentials`, `user-key`, `user-name`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
 all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;
@@ -266,9 +269,9 @@ element after the fact.
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
 `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
-`resolvePageTarget`, `sharedState`, `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId` and `running`, and
+`resolvePageTarget`, `sharedState`, `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `running` and `barHeight`, and
 the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `toolGroupDisplay` / `collapsed` /
-`credentials`.
+`credentials` / `anchor`.
 
 `headers` and `getHeaders` authenticate **every** request the element makes, not only the agent
 run; `getHeaders` is the one to use for a credential that rotates. See
@@ -1175,7 +1178,7 @@ matching JS API:
   it is out of the document), it waits: `threadId` stays `null` and nothing fires until the
   element connects, which then starts the new chat, so the one `ag-ui-thread` event is a `new`.
 - `describeSurface()` — where the panel is and what can be done to it: placement, collapsed,
-  whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
+  what it collapses to (`collapseTo`), whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
   the two reasons a move can fail into the one answer a caller needs.
 - `moveTo(corner)` — send the panel to `top-left` / `top-right` / `bottom-left` / `bottom-right`,
   returning whether it went. It takes the axes the same way a user drag does, so the launcher
@@ -1396,6 +1399,88 @@ ag-ui-chat {
   --ag-ui-badge-font-size: 11px;
 }
 ```
+
+### Collapsing to a bottom bar
+
+`collapse-to` chooses what a collapsed panel becomes, for a host whose layout has a bottom
+toolbar. It is opt-in: absent, `auto`, or any other value leaves every placement as the
+sections above describe. It is live, like `placement`.
+
+- **`bar`: the component's own bar.** A strip along the whole bottom edge of the viewport, in
+  place of the round launcher: the title, the [unread badge](#the-unread-badge), and a running
+  indicator while an interaction is in flight. Pressing the strip toggles the panel, which rises
+  from the bar's right end with the bar still beneath it as the minimise target. The bar's
+  history button opens the conversation list as a popover above the bar, without expanding the
+  panel; `openThreads()` while collapsed does the same. It replaces the launcher only, so it
+  applies to the corner placements, `side` and `full`: `sidebar` keeps its rail, `embedded` its
+  header bar, and `page` has no collapsed state at all.
+- **`none`: your own bar.** Collapsed is hidden: nothing of the widget is left to see or hit,
+  under every collapsible placement. Your bar's button drives the [public
+  API](#driving-the-conversation-from-your-own-chrome) (`collapsed`, `toggleCollapsed()`), and
+  `anchor` names the element the panel rises from, right-aligned to it. An anchor that resolves
+  to nothing opens the panel from the placement's own corner, with one console warning.
+
+```html
+<nav class="toolbar">
+  <!-- ... -->
+  <button id="agent-button" type="button">Agent</button>
+</nav>
+<ag-ui-chat endpoint="/agent/" collapse-to="none" anchor="#agent-button"></ag-ui-chat>
+<script type="module">
+  const chat = document.querySelector("ag-ui-chat");
+  const button = document.getElementById("agent-button");
+  button.addEventListener("click", () => chat.toggleCollapsed());
+  // Under none the element announces the state it mounted in, once, so the
+  // button can be labelled before anyone presses it.
+  chat.addEventListener("ag-ui-toggle", (e) => {
+    button.setAttribute("aria-pressed", String(!e.detail.collapsed));
+  });
+</script>
+```
+
+Under `none` the element dispatches `ag-ui-toggle` once as it connects, with whichever state it
+mounted in, collapsed or open. Under `auto` and `bar` it does not, as before. That event touches
+neither the stored state nor the unread count.
+
+**The page's space is yours.** The bar is fixed over the page, so a host pads its own page by
+the bar's height. The component never writes your CSS, and a custom property cannot carry the
+height up to your page (it inherits down, never up), so it hands you a number:
+`barHeight` (CSS px, read-only) and an `ag-ui-bar-height` event (the `BAR_HEIGHT_EVENT`
+constant, detail `{ height }`) on every change, including a font-size change. Both read `0`
+where no bar is drawn: under `auto` and `none`, and on a phone while the panel is open.
+
+```js
+const chat = document.querySelector("ag-ui-chat");
+const pad = () => {
+  document.documentElement.style.setProperty("--chat-bar-height", `${chat.barHeight}px`);
+};
+chat.addEventListener("ag-ui-bar-height", pad);
+pad();
+```
+
+```css
+body {
+  padding-bottom: var(--chat-bar-height, 0px);
+}
+```
+
+**No inset needed.** Under `bar` and `none` you do not set `--ag-ui-inset` to keep the panel off
+your toolbar: its max height is the viewport less the bar's height (or, under `none`, the
+distance to the anchor's top) and one gutter, and its bottom sits on the bar or the anchor.
+
+**Docked means not moved.** A docked panel cannot be dragged by its header or launcher, and
+`moveTo` refuses, because a position the user chose would take it away from the bar or the
+anchor. Resizing still works on wide viewports: the edges standing on the bar or the anchor
+stay put and the free ones follow the grip, and `resetSize()` still drops the dragged size.
+
+**Phones.** At 600px or less the open panel stays full-bleed, over the bar, and the header's
+minimise control is the way back; the bar shows only while collapsed, so no second strip sits
+at the bottom edge while the keyboard is up.
+
+The bar is styled through the parts `bar` (the strip's wrapper, holding the launcher and the
+history button) and `bar-history`, and the launcher's own parts (`launcher`, `rail-label`,
+`launcher-badge`) inside it.
+
 
 ---
 
@@ -2878,6 +2963,7 @@ re-export point. Internal modules import from leaf paths.
 | `SubmitDetail` | type | `detail` shape of the submit event. |
 | `ThreadDetail` | type | `detail` shape of the `ag-ui-thread` event (`{ threadId, previousThreadId, reason }`). |
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
+| `BarHeightDetail` | type | `detail` shape of the `ag-ui-bar-height` event (`{ height }`). |
 | `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
 | `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
 | `StateDetail` | type | `detail` shape of the `ag-ui-state` event (`{ state }`). |
@@ -2910,7 +2996,7 @@ re-export point. Internal modules import from leaf paths.
 | `PAGE_ACTIONS` | const | The page-action opt-in tokens (`scroll` / `drag`). |
 | `createChatSurfaceTools(surface)` | function | Build the opt-in `read_chat_surface` / `move_chat` / `minimise_chat` / `restore_chat` tools, which let the agent move the panel it is speaking from. |
 | `ChatSurface` | type | The narrow port those tools drive — `describeSurface` / `moveTo` / `setCollapsed`. The element satisfies it. |
-| `ChatSurfaceReport` | type | What `describeSurface()` answers: placement, collapsed, collapsible, movable, draggable, fullBleed, and the panel's box against the viewport it sits in. |
+| `ChatSurfaceReport` | type | What `describeSurface()` answers: placement, collapsed, collapseTo, collapsible, movable, draggable, fullBleed, and the panel's box against the viewport it sits in. |
 | `ChatCorner` | type | `"top-left"` / `"top-right"` / `"bottom-left"` / `"bottom-right"` — the argument to `moveTo`. |
 | `CHAT_CORNERS` | const | Those four, as a list. |
 | `isChatCorner(value)` | function | Whether a string names one of them. |
@@ -3029,6 +3115,7 @@ re-export point. Internal modules import from leaf paths.
 | `SUBMIT_EVENT` | The submit CustomEvent name. |
 | `THREAD_EVENT` | The conversation-changed CustomEvent name (`ag-ui-thread`). |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
+| `BAR_HEIGHT_EVENT` | The bottom bar's height CustomEvent name (`ag-ui-bar-height`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
 | `CUSTOM_AGENT_EVENT` | The agent-`CUSTOM` CustomEvent name (`ag-ui-custom`). |
@@ -3499,7 +3586,7 @@ component sets, so a new one cannot ship undocumented.
 | --- | --- |
 | Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `greeting`, `pending`, `stopped`, `jump-latest`, and one per resize grip: `resize-handle` plus `resize-handle-top`, `resize-handle-bottom`, `resize-handle-left`, `resize-handle-right`, `resize-handle-top-left`, `resize-handle-top-right`, `resize-handle-bottom-left`, `resize-handle-bottom-right` |
 | Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `collapse-button`, `theme-toggle` |
-| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label` |
+| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label`, `bar` (the [bottom bar](#collapsing-to-a-bottom-bar)'s wrapper, around the launcher), `bar-history` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
 | Follow-up suggestions | `suggestions`, `suggestion-chip` |

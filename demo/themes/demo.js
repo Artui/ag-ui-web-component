@@ -333,6 +333,45 @@ $("cfg-restore-send").addEventListener("click", () => {
   });
 });
 
+// What a collapsed panel becomes. auto is the attribute's absence. Under none
+// the widget is hidden while collapsed, so the page shows a toolbar of its own
+// whose button drives the public API, and anchors the panel to that button.
+// The connect-time ag-ui-toggle is what a real host labels its button from;
+// switching here on a live element sends none, so the label is set directly.
+const hostBar = $("host-bar");
+const hostAgent = $("host-agent");
+const labelHostAgent = () => {
+  hostAgent.setAttribute("aria-pressed", String(!chat.collapsed));
+};
+$("cfg-collapse-to").addEventListener("change", (event) => {
+  const value = event.target.value;
+  if (value === "") {
+    chat.removeAttribute("collapse-to");
+  } else {
+    chat.setAttribute("collapse-to", value);
+  }
+  hostBar.hidden = value !== "none";
+  if (value === "none") {
+    chat.setAttribute("anchor", "#host-agent");
+  } else {
+    chat.removeAttribute("anchor");
+  }
+  publishChatBar();
+  labelHostAgent();
+});
+hostAgent.addEventListener("click", () => {
+  chat.toggleCollapsed();
+});
+chat.addEventListener("ag-ui-toggle", labelHostAgent);
+
+// The page's share of the bottom edge: the widget's bar height under bar, and
+// the host toolbar's own under none. The widget never pads the page itself.
+const publishChatBar = () => {
+  const height = hostBar.hidden ? chat.barHeight : hostBar.getBoundingClientRect().height;
+  document.documentElement.style.setProperty("--chat-bar-height", `${Math.ceil(height)}px`);
+};
+chat.addEventListener("ag-ui-bar-height", publishChatBar);
+
 // A dragged size outlives the tab now, which is confusing when you are
 // flipping placements to compare handles. resetSize() drops it and its stored
 // copy from both stores; the drag no longer writes the public size tokens, so
