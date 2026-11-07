@@ -197,9 +197,7 @@ export class ToolCallCard {
 
     this.element = document.createElement("div");
     this.element.className = "tool-call";
-    this.element.setAttribute("part", "tool-card");
     this.element.setAttribute("data-tool-name", name);
-    this.element.setAttribute("data-status", TOOL_CALL_STATUS.PENDING);
     this.element.setAttribute("data-expanded", "false");
 
     const head = document.createElement("div");
@@ -221,8 +219,7 @@ export class ToolCallCard {
 
     this.#status = document.createElement("span");
     this.#status.className = "tool-call-status";
-    this.#status.setAttribute("part", "tool-card-status");
-    this.#status.textContent = statusLabels(strings)[TOOL_CALL_STATUS.PENDING];
+    this.#setStatus(TOOL_CALL_STATUS.PENDING);
 
     this.#decision = document.createElement("span");
     this.#decision.className = "tool-call-decision";
@@ -283,8 +280,7 @@ export class ToolCallCard {
     if (this.#settled) {
       return;
     }
-    this.element.setAttribute("data-status", status);
-    this.#status.textContent = statusLabels(this.#strings)[status];
+    this.#setStatus(status);
   }
 
   /**
@@ -326,8 +322,7 @@ export class ToolCallCard {
       return;
     }
     this.#settled = true;
-    this.element.setAttribute("data-status", status);
-    this.#status.textContent = statusLabels(this.#strings)[status];
+    this.#setStatus(status);
     this.#resultLabel.textContent = resultLabels(this.#strings)[status];
     this.#renderPayload(
       this.#resultBody,
@@ -335,6 +330,21 @@ export class ToolCallCard {
       formatPayload(text),
     );
     this.#resultSection.hidden = false;
+  }
+
+  /**
+   * Write the status everywhere it is read from, in one place so they cannot
+   * disagree: `data-status` for the shadow CSS, the pill's text, and the part
+   * lists. `::part()` takes no attribute selector, so the card and its pill also
+   * name the status as a part (`tool-card-error`, `tool-card-status-error`), the
+   * modifier convention a run notice uses, and a host styles failures alone.
+   * Setting the whole list replaces the previous modifier.
+   */
+  #setStatus(status: ToolCallStatus): void {
+    this.element.setAttribute("data-status", status);
+    this.element.setAttribute("part", `tool-card tool-card-${status}`);
+    this.#status.setAttribute("part", `tool-card-status tool-card-status-${status}`);
+    this.#status.textContent = statusLabels(this.#strings)[status];
   }
 
   /**

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tool cards name their status as a part.** The `tool-card` part gains a
+  status modifier beside it, `tool-card-pending`, `tool-card-deferred`,
+  `tool-card-done`, `tool-card-error`, `tool-card-declined` or
+  `tool-card-interrupted`, and the status pill's `tool-card-status` gains the
+  matching `tool-card-status-<status>`. `::part()` takes no attribute selector,
+  so a host could not style failures only; now
+  `ag-ui-chat::part(tool-card-status-error)` does. The modifier is replaced as
+  the status changes. The folded step group does the same with its state:
+  `tool-group-waiting`, `tool-group-running`, `tool-group-done` or
+  `tool-group-error` beside `tool-group`. **No opt-in is needed**: the base
+  parts are unchanged, so an existing `::part(tool-card)` rule still matches,
+  and a host that wants the modifiers just writes the selector.
+
 ### Changed
 
 - **Highlight rings on an unthemed page follow the widget's theme.** Since

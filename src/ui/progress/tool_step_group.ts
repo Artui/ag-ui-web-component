@@ -225,6 +225,9 @@ export class ToolStepGroup {
       state = "error";
     }
     this.element.setAttribute("data-state", state);
+    // The state is also a part, because `::part()` takes no attribute selector;
+    // the whole list is rewritten so the old modifier goes.
+    this.element.setAttribute("part", `tool-group tool-group-${state}`);
     this.element.setAttribute("data-count", String(total));
 
     const only = total === 1 ? steps[0] : undefined;

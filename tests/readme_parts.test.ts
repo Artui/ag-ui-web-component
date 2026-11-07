@@ -61,6 +61,14 @@ const DYNAMIC: Record<string, readonly string[]> = {
     "message-action-icon-up",
     "message-action-icon-down",
   ],
+  // tool_step_group #refresh -- the group's state, beside its base part.
+  tool_step_group: [
+    "tool-group",
+    "tool-group-waiting",
+    "tool-group-running",
+    "tool-group-done",
+    "tool-group-error",
+  ],
   checkpoint_menu: ["checkpoint-action", "checkpoint-resume", "checkpoint-fork"],
   // resize_handle createResizeHandle(grip, …) — one per edge and corner.
   resize_handle: [
@@ -76,6 +84,20 @@ const DYNAMIC: Record<string, readonly string[]> = {
   ],
   // tool_call_card #section(kind, …) — the arguments and result regions.
   tool_call_card: [
+    "tool-card",
+    "tool-card-pending",
+    "tool-card-deferred",
+    "tool-card-done",
+    "tool-card-error",
+    "tool-card-declined",
+    "tool-card-interrupted",
+    "tool-card-status",
+    "tool-card-status-pending",
+    "tool-card-status-deferred",
+    "tool-card-status-done",
+    "tool-card-status-error",
+    "tool-card-status-declined",
+    "tool-card-status-interrupted",
     "tool-card-args",
     "tool-card-result",
     "tool-card-section",
@@ -92,7 +114,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
  * it. Every one is accounted for in {@link DYNAMIC}; a new one moves this number,
  * which is the point.
  */
-const RUNTIME_ASSEMBLED = { template: 12, variable: 1 };
+const RUNTIME_ASSEMBLED = { template: 15, variable: 1 };
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
