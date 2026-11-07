@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`--ag-ui-header-btn-hover`, the header buttons' hover square.** Drawn
+  exactly as given under Quiet and a host's own theme word, whether or not
+  `--ag-ui-header-fg` is set. Unset, the square follows the header text as
+  below, or is the panel's hover shade when that is unset too. A host that
+  prefers the lightening square of its old `::part(header-button):hover`
+  rule sets this token to that colour instead of keeping the rule.
+
 ### Fixed
 
 - **Quiet's header buttons follow `--ag-ui-header-fg`.** The accent recipe
@@ -26,9 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `:hover` background beside it may delete both: kept, the colour
   rule is harmless, but the page's 18% tint of the text still beats the new
   square, and on a mid-tone accent it takes the hovered glyph under 4.5:1
-  (3.75:1 on `#3d5afe`). Delete the hover background at least. With the
-  header text set, the header buttons no longer read `--ag-ui-hover`; the
-  rest of the panel still does. A host that sets neither `--ag-ui-header-fg`
+  (3.75:1 on `#3d5afe`). Delete the hover background at least; to keep a
+  lightening square, set `--ag-ui-header-btn-hover` to it. With the header
+  text set, the header buttons no longer read `--ag-ui-hover`; the rest of
+  the panel still does. A host that sets neither `--ag-ui-header-fg`
   nor `--ag-ui-tool-fg`, the Django admin among them, sees no change.
 - **`--ag-ui-tool-fg` reaches the calls in a step group.** Under the grouped
   default (0.46.0) every call in a group was drawn in the second ink whatever

@@ -226,18 +226,24 @@ describe("the accent recipe's header buttons (real browser)", () => {
     },
   );
 
-  it("never draws the hovered glyph below what the host's own pair reads", async () => {
-    // A mid-tone accent whose white text sits just over 4.5:1, which a square
-    // mixed from the text itself took under it.
-    const red = { bg: "#dc2626", fg: "#ffffff" };
-    followRecipe(red);
-    const el = mountPanel("");
-    const pair = contrast(rgba(red.fg), rgba(red.bg));
-    const button = part(el, ".header-btn--new");
-    await hover(button);
-    const hovered = painted(el, button);
-    expect(contrast(hovered.glyph, hovered.ground)).toBeGreaterThanOrEqual(pair);
-  });
+  // Mid-tone accents whose white text sits a little over 4.5:1, which a
+  // square mixed from the text itself took under it.
+  it.each([
+    { bg: "#dc2626", fg: "#ffffff" },
+    { bg: "#7c3aed", fg: "#ffffff" },
+  ])(
+    "never draws the hovered glyph below what the host's own pair reads, on $bg",
+    async (accent) => {
+      followRecipe(accent);
+      const el = mountPanel("");
+      const pair = contrast(rgba(accent.fg), rgba(accent.bg));
+      const button = part(el, ".header-btn--new");
+      await hover(button);
+      const hovered = painted(el, button);
+      expect(contrast(hovered.glyph, hovered.ground)).toBeGreaterThanOrEqual(pair);
+      expect(contrast(hovered.glyph, hovered.ground)).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 
   // A pair per scheme, as a page that follows its own dark mode writes it:
   // the light-dark() halves resolve against the element's scheme, and the
@@ -387,5 +393,48 @@ describe("the tool token in a step group (real browser)", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     const card = part(el, ".tool-call");
     expect(rgba(getComputedStyle(card).color)).toEqual(rgba(INDIGO.bg));
+  });
+});
+
+describe("the header buttons' hover token (real browser)", () => {
+  it.each(QUIET_REACH)(
+    'draws a set square exactly as given, with the header text set, under theme "%s"',
+    async (theme) => {
+      if (theme === "auto") {
+        await emulateDark();
+      }
+      followRecipe(INDIGO);
+      // The lightening square a host may prefer, at the cost of contrast.
+      const square = "color-mix(in srgb, #ffffff 18%, transparent)";
+      addPageRule(`${ELEMENT_TAG} { --ag-ui-header-btn-hover: ${square}; }`);
+      const el = mountPanel(theme);
+      const button = part(el, ".header-btn--history");
+      await hover(button);
+      expect(rgba(getComputedStyle(button).backgroundColor)).toEqual(resolved(el, square));
+    },
+  );
+
+  it("draws a set square exactly as given with no header text set", async () => {
+    addPageRule(`${ELEMENT_TAG} { --ag-ui-header-btn-hover: #fde68a; }`);
+    const el = mountPanel("");
+    const button = part(el, ".header-btn--history");
+    await hover(button);
+    expect(rgba(getComputedStyle(button).backgroundColor)).toEqual(rgba("#fde68a"));
+    // The glyph still follows the header text, which is unset, so the full ink.
+    expect(rgba(getComputedStyle(button).color)).toEqual(resolved(el, "var(--_fg)"));
+  });
+
+  it("reaches the square from a token set on an ancestor", async () => {
+    addPageRule(".brand { --ag-ui-header-btn-hover: #fde68a; }");
+    const wrapper = document.createElement("div");
+    wrapper.className = "brand";
+    document.body.appendChild(wrapper);
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("placement", "floating");
+    el.setAttribute("data-start-open", "");
+    wrapper.appendChild(el);
+    const button = part(el, ".header-btn--history");
+    await hover(button);
+    expect(rgba(getComputedStyle(button).backgroundColor)).toEqual(rgba("#fde68a"));
   });
 });

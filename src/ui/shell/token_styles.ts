@@ -68,11 +68,13 @@ export const TOKEN_STYLES: string = `
      drew). */
   --_header-fg-set: var(--ag-ui-header-fg);
   --_tool-fg-set: var(--ag-ui-tool-fg);
-  /* The header buttons' hover square once the header text is set. Here it
-     is the text at about a fifth, which every browser can mix; where
-     relative colour syntax is supported (see the block at the end) it is
-     the text's opposite instead. It reads the switch, so it is unset with it. */
-  --_header-btn-hover: color-mix(in srgb, var(--_header-fg-set) 18%, transparent);
+  /* The header buttons' hover square, by default, once the header text is
+     set. Here it is the text at about a fifth, which every browser can mix;
+     where relative colour syntax is supported (see the block at the end) it
+     is the text's opposite instead. It reads the switch, so it is unset with
+     it, and the square below falls to the panel's hover shade. */
+  --_header-btn-hover-auto: color-mix(in srgb, var(--_header-fg-set) 18%, transparent);
+  --_header-btn-hover: var(--ag-ui-header-btn-hover, var(--_header-btn-hover-auto, var(--_hover)));
   --_border: var(--ag-ui-border, var(--_line));
   --_radius: var(--ag-ui-radius, 12px);
   /* The panel's own frame, which is the one corner a placement can put against
@@ -446,16 +448,16 @@ export const TOKEN_STYLES: string = `
   }
 }
 
-/* The header buttons' hover square as the header text's opposite, so white
-   text gets a darker square and dark text a lighter one. A square mixed
-   from the text itself moves the ground toward the glyph: white on a
+/* The header buttons' default hover square as the header text's opposite,
+   so white text gets a darker square and dark text a lighter one. A square
+   mixed from the text itself moves the ground toward the glyph: white on a
    mid-blue header fell from 5.1:1 to 3.75:1 under the pointer. Moving away
    from it can only raise what the host's own pair reads. Gated on this
    exact expression, so a browser that cannot compute it keeps the square
    mixed from the text rather than losing the square altogether. */
 @supports (color: rgb(from red calc(255 - r) calc(255 - g) calc(255 - b))) {
   :host {
-    --_header-btn-hover: color-mix(in srgb, rgb(from var(--_header-fg-set) calc(255 - r) calc(255 - g) calc(255 - b)) 18%, transparent);
+    --_header-btn-hover-auto: color-mix(in srgb, rgb(from var(--_header-fg-set) calc(255 - r) calc(255 - g) calc(255 - b)) 18%, transparent);
   }
 }
 `;
