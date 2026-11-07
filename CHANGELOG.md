@@ -25,11 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `describeSurface()` and `read_chat_surface` report `movable: true` and
   `draggable: true` for it on a wide viewport, and `move_chat` no longer
   refuses with "the panel is docked". `side` and `full` under `bar`, and
-  `sidebar` and `embedded` under `none`, still own their position; a refused
-  move there now names the placement. **A host has nothing to do**: every host
-  using `bar` or `none` gets the movable panel on upgrade. A host that wants
-  the 0.48.0 fixed dock sets `data-launcher-drag="false"`, which turns the
-  header drag and `moveTo` off here as it does on a corner panel.
+  `sidebar` and `embedded` under `none`, still own their position; they now
+  report `draggable: true` where they reported `false`, so a refused move
+  there names the placement rather than the dock or the page. **A host has
+  nothing to do**: every host using `bar` or `none` gets the movable panel on
+  upgrade. A host that wants the 0.48.0 fixed dock sets
+  `data-launcher-drag="false"`, which turns the header drag and `moveTo` off
+  here as it does on a corner panel.
 
 ## [0.48.0] — 2026-11-07
 

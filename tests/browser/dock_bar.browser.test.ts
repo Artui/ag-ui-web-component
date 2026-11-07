@@ -321,6 +321,9 @@ describe("the bottom bar (real browser)", () => {
     expect(grown.top).toBeCloseTo(off.top, 0);
     expect(grown.right).toBeGreaterThan(off.right + 30);
     expect(grown.bottom).toBeGreaterThan(off.bottom + 20);
+    // And no grip pulls it over the bar.
+    await pull(el, "bottom-right", 0, 2000);
+    expect(el.getBoundingClientRect().bottom).toBeCloseTo(bar.top - 8, 0);
   });
 
   it("keeps resize from the dock while it stands on it", async () => {
@@ -355,8 +358,10 @@ describe("the bottom bar (real browser)", () => {
   it("hands a dragged spot back when collapse-to leaves the dock, and takes it up on return", async () => {
     const el = mount({ id: "switching", "data-start-open": "" });
     await settle();
+    const dock = el.getBoundingClientRect();
     await dragHeader(el, -500, -120);
     const moved = el.getBoundingClientRect();
+    expect(moved.left).toBeCloseTo(dock.left - 500, 0);
     // From one dock to the other the spot stays: it is still a docked panel.
     el.setAttribute("collapse-to", "none");
     await settle();
@@ -370,6 +375,47 @@ describe("the bottom bar (real browser)", () => {
     expect(el.getBoundingClientRect().bottom).toBeCloseTo(screenHeight() - GUTTER, 0);
     // Back on the bar, the spot stored there comes back.
     el.setAttribute("collapse-to", "bar");
+    await settle();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(moved.left, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(moved.top, 0);
+  });
+
+  it.each<[string, Record<string, string>]>([
+    ["data-launcher-drag=false", { "data-launcher-drag": "false" }],
+    ["a placement that owns its position", { placement: "side" }],
+  ])("leaves a stored spot unused under %s", async (_name, attrs) => {
+    // A host that turns the drag off after its users dragged, or docks a
+    // column, gets the dock and not the spot they left.
+    const first = mount({ id: "stored", "data-start-open": "" });
+    await settle();
+    const dock = first.getBoundingClientRect();
+    await dragHeader(first, -500, -120);
+    expect(first.getBoundingClientRect().left).toBeCloseTo(dock.left - 500, 0);
+    first.remove();
+    const second = mount({ id: "stored", ...attrs });
+    await settle();
+    expect(second.style.getPropertyValue("--ag-ui-inset")).toBe("");
+    const panel = second.getBoundingClientRect();
+    const bar = part(second, ".dock-bar").getBoundingClientRect();
+    const gutter = attrs["placement"] === "side" ? 0 : GUTTER;
+    expect(panel.right).toBeCloseTo(screenWidth() - gutter, 0);
+    expect(panel.bottom).toBeCloseTo(bar.top - gutter, 0);
+  });
+
+  it("drops a dragged spot for a column, so a resize there cannot store one", async () => {
+    const el = mount({ id: "column", "data-start-open": "" });
+    await settle();
+    const dock = el.getBoundingClientRect();
+    await dragHeader(el, -500, -120);
+    const moved = el.getBoundingClientRect();
+    expect(moved.left).toBeCloseTo(dock.left - 500, 0);
+    el.setAttribute("placement", "side");
+    await settle();
+    // The column's free edge, which a docked column resizes by.
+    await pull(el, "left", -40, 0);
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+    // Back in the corner, the spot the user dragged to is the one that returns.
+    el.removeAttribute("placement");
     await settle();
     expect(el.getBoundingClientRect().left).toBeCloseTo(moved.left, 0);
     expect(el.getBoundingClientRect().top).toBeCloseTo(moved.top, 0);

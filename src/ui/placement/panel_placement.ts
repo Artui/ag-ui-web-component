@@ -320,9 +320,10 @@ export class PanelPlacement {
    * rather than collapsed to nothing.
    */
   #withinViewport(box: PanelRect): PanelRect {
-    // A docked panel's room stops at its dock, so no grip pulls it over the
-    // bar it minimises to.
-    const viewport = this.#docked() ? this.#dockRoom() : this.#viewport();
+    // A docked panel that moves has its room stop at the dock, so no grip
+    // pulls it over the bar it minimises to. A placement that owns its
+    // position keeps the bound it always had.
+    const viewport = this.#docked() && this.#panelMovable() ? this.#dockRoom() : this.#viewport();
     // The same bound a drag stops at, so a grip pulled to the edge and a panel
     // dragged to it come to rest on the same line. The inner Math.max/min pair
     // keeps an already-inverted box from turning inside out.
