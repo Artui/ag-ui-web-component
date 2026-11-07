@@ -309,6 +309,44 @@ describe("switchThread", () => {
     await first;
   });
 
+  it("keeps handing out the newer switch's load after an older one settles first", async () => {
+    const { el } = mount();
+    await flush();
+    el.conversationStore.saveMessages("t1", [turn("u1", "older")]);
+    el.conversationStore.saveMessages("t2", [turn("u2", "newer")]);
+    const load = el.conversationStore.loadMessages.bind(el.conversationStore);
+    // One gate per thread, each answering with what the real store holds, so
+    // the two loads settle in the order the test chooses.
+    const answers = new Map<string, () => void>();
+    el.conversationStore.loadMessages = (id) =>
+      new Promise((resolve) => {
+        answers.set(id, () => resolve(load(id)));
+      });
+
+    const first = el.switchThread("t1");
+    const second = el.switchThread("t2");
+    // The older switch finishes while the newer one is still loading: its
+    // cleanup must not clear the entry that now belongs to the newer switch.
+    answers.get("t1")?.();
+    await first;
+    await flush();
+
+    let repeatSettled = false;
+    const repeat = el.switchThread("t2");
+    void repeat.then(() => {
+      repeatSettled = true;
+    });
+    await flush();
+
+    // Still waiting on the thread's own load, not resolved at once as though no
+    // switch were under way.
+    expect(repeat).toBe(second);
+    expect(repeatSettled).toBe(false);
+    answers.get("t2")?.();
+    await repeat;
+    expect(userTurns(el)).toEqual(["newer"]);
+  });
+
   it("resolves a repeat at once when no switch is under way", async () => {
     const { el } = mount();
     await flush();
