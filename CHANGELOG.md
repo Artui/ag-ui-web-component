@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The chat surface tools describe every collapsed shape.** With
+  `data-page-actions` including `chat`, the `minimise_chat` tool no longer
+  promises a launcher: its description names the launcher, the rail, the
+  bottom bar or the page's own control, and its refusal on a placement with no
+  collapsed state no longer mentions a launcher. The report `describeSurface()`
+  returns, and so `read_chat_surface`, gains `collapseTo`, and a move
+  refused on a docked panel says it is docked. This reaches every host that
+  enables the chat tools, whatever `collapse-to` is: an agent prompt that
+  quoted the old wording sees new text. No host action is needed.
 - **Tested against `@ag-ui/client` and `@ag-ui/core` 1.0.4.** The lockfile moves
   from 1.0.3, and the declared range (`>=1.0.0 <2`) is unchanged, so a fresh
   install of 0.47.0 already resolved 1.0.4. The element passes `threadId` to
