@@ -999,7 +999,9 @@ export class AgUiChat extends HTMLElement {
     });
     this.#drawer = new ThreadDrawer({
       onSelect: (threadId) => {
-        void this.#history.switchThread(threadId);
+        // switchThread rejects when the store cannot load the thread, and keeps
+        // the old one on screen; a pick has nobody to tell, so it ends here.
+        this.#history.switchThread(threadId).catch(() => undefined);
       },
       onNew: () => {
         this.newChat();

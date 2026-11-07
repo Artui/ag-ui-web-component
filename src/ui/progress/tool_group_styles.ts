@@ -242,13 +242,15 @@ ${inner("minimal")} .tool-call-body {
    tell three gated calls of one tool apart. These come after the hides above,
    which they tie with on weight. The arguments region only, never every
    section, since the result region carries the hidden attribute until a
-   result exists and a display value here would override it. */
+   result exists and a display value here would override it. The arguments
+   region carries it too when the call has none, so it is excluded while
+   hidden rather than framed empty. */
 ${inner("minimal")}[data-status="deferred"] .tool-call-body {
   display: flex;
 }
 
-${inner("compact")}[data-status="deferred"] .tool-call-section--args,
-${inner("inline")}[data-status="deferred"] .tool-call-section--args {
+${inner("compact")}[data-status="deferred"] .tool-call-section--args:not([hidden]),
+${inner("inline")}[data-status="deferred"] .tool-call-section--args:not([hidden]) {
   display: flex;
 }
 

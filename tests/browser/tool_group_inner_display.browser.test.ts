@@ -222,3 +222,52 @@ describe("an approval inside a group under an inner mode", () => {
     });
   }
 });
+
+describe("a deferred call that takes no arguments", () => {
+  function approvalFor(toolCallId: string): Interrupt {
+    return {
+      id: `int-${toolCallId}`,
+      reason: "tool_call",
+      toolCallId,
+      message: "Clear the board?",
+    } as never;
+  }
+
+  /** Two calls, the first gated and without arguments, so the run groups them. */
+  async function gatedWithoutArguments(
+    attributes: Readonly<Record<string, string>>,
+  ): Promise<HTMLElement> {
+    const el = mount((emit, params) => {
+      emit.runStart();
+      if (params.resume === undefined) {
+        emit.toolCall("e1", "clear_board", {});
+        emit.toolCall("e2", "clear_board", {});
+        emit.toolResult("e2", "ok");
+        emit.interrupt([approvalFor("e1")]);
+        return;
+      }
+      emit.runEnd();
+    }, attributes);
+    await send(el, "clear");
+    const card = cards(el)[0] as HTMLElement;
+    expect(card.getAttribute("data-status")).toBe("deferred");
+    expect(shown(part(card, ".approval-btn--approve"))).toBe(true);
+    return card;
+  }
+
+  // An empty ARGUMENTS heading under the question is a box: the section's own
+  // hidden attribute has to survive the rule that shows the arguments of a
+  // gated call, which is what a node with nothing in it measures as zero.
+  for (const mode of ["compact", "inline", "minimal"]) {
+    it(`draws no arguments box in a group under ${mode}`, async () => {
+      const card = await gatedWithoutArguments({ "data-tool-group-display": mode });
+      expect(card.closest(".tool-group-list")).not.toBeNull();
+      expect(shown(part(card, ".tool-call-section--args"))).toBe(false);
+    });
+
+    it(`draws no arguments box in a flat card under ${mode}`, async () => {
+      const card = await gatedWithoutArguments({ "data-tool-display": mode });
+      expect(shown(part(card, ".tool-call-section--args"))).toBe(false);
+    });
+  }
+});

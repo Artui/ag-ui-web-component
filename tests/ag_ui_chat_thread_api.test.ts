@@ -151,6 +151,43 @@ describe("switchThread", () => {
     expect(seen[0]?.onScreen).toEqual(["picked"]);
   });
 
+  it("leaves no unhandled rejection when a drawer pick meets a store that rejects the load", async () => {
+    const { el, seen } = mount();
+    await flush();
+    el.conversationStore.saveMessages("t0", [turn("u0", "on screen")]);
+    await el.switchThread("t0");
+    el.conversationStore.saveMessages("t1", [turn("u1", "unreachable")]);
+    const load = el.conversationStore.loadMessages.bind(el.conversationStore);
+    el.conversationStore.loadMessages = (id) =>
+      id === "t1" ? Promise.reject(new Error("store is down")) : load(id);
+    shadow(el).querySelector<HTMLButtonElement>(".header-btn--history")?.click();
+    await flush();
+    seen.length = 0;
+
+    // Vitest reports an unhandled rejection as a run-level error and passes
+    // the test, so the assertion has to catch it itself.
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", record);
+    try {
+      const rows = [...shadow(el).querySelectorAll<HTMLButtonElement>(".drawer-row-select")];
+      const row = rows.find((candidate) => candidate.textContent?.includes("unreachable"));
+      expect(row).toBeDefined();
+      row?.click();
+      // An unhandled rejection is raised after the microtask queue drains.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+
+    expect(unhandled).toEqual([]);
+    expect(el.threadId).toBe("t0");
+    expect(userTurns(el)).toEqual(["on screen"]);
+    expect(seen).toEqual([]);
+  });
+
   it("cancels a run in flight, as the drawer does", async () => {
     const { el, agents, release } = mount({}, true);
     await flush();
