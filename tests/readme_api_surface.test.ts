@@ -590,7 +590,10 @@ describe("the README's element reference", () => {
     // `data-answer-well` -- are host-set and consumed by the stylesheet alone,
     // through `:host([...])`, and the element never calls `getAttribute` for any
     // of them. They are a supported part of the surface, so the stylesheet is
-    // the second place to look before calling a row stale.
+    // the second place to look before calling a row stale. A third is the
+    // attributes the element writes itself with toggleAttribute, such as
+    // `data-running`: documented as an output for a host's CSS, so nothing in
+    // the package reads or styles them.
     const rows = tableRows(section("### Attributes and properties"));
     const documented = rows
       .map((cells) => /^`([a-z][a-z0-9-]*)`$/.exec(cells[0] ?? "")?.[1])
@@ -598,8 +601,13 @@ describe("the README's element reference", () => {
     const styled = new Set(
       [...STYLES.matchAll(/\[([a-z][a-z0-9-]*)[~^$*|]?=?/g)].map((match) => match[1] ?? ""),
     );
+    const written = new Set(
+      [...SOURCE.matchAll(/toggleAttribute\("([a-z][a-z0-9-]*)"/g)].map((match) => match[1] ?? ""),
+    );
     const read = new Set(attributesRead());
-    const orphaned = documented.filter((name) => !read.has(name) && !styled.has(name)).sort();
+    const orphaned = documented
+      .filter((name) => !read.has(name) && !styled.has(name) && !written.has(name))
+      .sort();
 
     expect(orphaned).toEqual([]);
   });

@@ -699,7 +699,7 @@ describe("panel resize", () => {
       ({ left: 500 - width, top: 100, right: 500, bottom: 500 }) as DOMRect;
     const original = el.style.setProperty.bind(el.style);
     el.style.setProperty = (name: string, value: string) => {
-      if (name === "--ag-ui-width") {
+      if (name === "--_drag-width") {
         width = Number.parseFloat(value);
       }
       original(name, value);
@@ -715,7 +715,7 @@ describe("panel resize", () => {
 
     // The left grip holds the right edge: 500 - 150 = 350, whatever the host's
     // own layout pins.
-    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("350px");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("350px");
   });
 
   it("allows the axes the placement allows, and no others", () => {
@@ -742,10 +742,10 @@ describe("panel resize", () => {
       const up = new Event("pointerup", { bubbles: true });
       Object.assign(up, { clientX: 400, clientY: 0 });
       window.dispatchEvent(up);
-      const changed = el.style.getPropertyValue("--ag-ui-width") !== "";
+      const changed = el.style.getPropertyValue("--_drag-width") !== "";
       expect(changed, placement).toBe(resizable);
       // Height only where both axes are allowed.
-      const heightChanged = el.style.getPropertyValue("--ag-ui-height") !== "";
+      const heightChanged = el.style.getPropertyValue("--_drag-height") !== "";
       expect(heightChanged, `${placement} height`).toBe(
         resizable && placement !== "side" && placement !== "sidebar",
       );
@@ -759,12 +759,12 @@ describe("panel resize", () => {
     sessionStorage.setItem(SIZE_KEY, JSON.stringify({ width: 640, height: 700 }));
 
     const docked = mount({ placement: "side" });
-    expect(docked.style.getPropertyValue("--ag-ui-width")).toBe("640px");
-    expect(docked.style.getPropertyValue("--ag-ui-height")).toBe("");
+    expect(docked.style.getPropertyValue("--_drag-width")).toBe("640px");
+    expect(docked.style.getPropertyValue("--_drag-height")).toBe("");
 
     const bleed = mount({ placement: "full" });
-    expect(bleed.style.getPropertyValue("--ag-ui-width")).toBe("");
-    expect(bleed.style.getPropertyValue("--ag-ui-height")).toBe("");
+    expect(bleed.style.getPropertyValue("--_drag-width")).toBe("");
+    expect(bleed.style.getPropertyValue("--_drag-height")).toBe("");
   });
 
   it("hands the owned axes back when the placement changes", () => {
@@ -772,15 +772,15 @@ describe("panel resize", () => {
     // silently overrides the new one.
     sessionStorage.removeItem(SIZE_KEY);
     const el = mount();
-    el.style.setProperty("--ag-ui-width", "640px");
-    el.style.setProperty("--ag-ui-height", "700px");
+    el.style.setProperty("--_drag-width", "640px");
+    el.style.setProperty("--_drag-height", "700px");
 
     el.setAttribute("placement", "side");
-    expect(el.style.getPropertyValue("--ag-ui-height")).toBe("");
-    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("640px");
+    expect(el.style.getPropertyValue("--_drag-height")).toBe("");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("640px");
 
     el.setAttribute("placement", "full");
-    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
   });
 
   it("does nothing at all where the placement is full-bleed", () => {
@@ -792,7 +792,7 @@ describe("panel resize", () => {
     const move = new Event("pointermove", { bubbles: true });
     Object.assign(move, { clientX: 50, clientY: 50 });
     window.dispatchEvent(move);
-    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
   });
 
   it("writes the custom properties, not inline width and height", () => {
@@ -807,7 +807,7 @@ describe("panel resize", () => {
     Object.assign(move, { clientX: 150, clientY: 150 });
     window.dispatchEvent(move);
 
-    expect(el.style.getPropertyValue("--ag-ui-width")).not.toBe("");
+    expect(el.style.getPropertyValue("--_drag-width")).not.toBe("");
     expect(el.style.width).toBe("");
     const up = new Event("pointerup", { bubbles: true });
     Object.assign(up, { clientX: 150, clientY: 150 });
@@ -818,19 +818,33 @@ describe("panel resize", () => {
   it("restores a persisted size on mount", () => {
     sessionStorage.setItem(SIZE_KEY, JSON.stringify({ width: 640, height: 700 }));
     const el = mount();
-    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("640px");
-    expect(el.style.getPropertyValue("--ag-ui-height")).toBe("700px");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("640px");
+    expect(el.style.getPropertyValue("--_drag-height")).toBe("700px");
+  });
+
+  it("drops the dragged size and its stored copy on resetSize, and leaves host tokens alone", () => {
+    sessionStorage.setItem(SIZE_KEY, JSON.stringify({ width: 640, height: 700 }));
+    const el = mount();
+    el.style.setProperty("--ag-ui-width", "500px");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("640px");
+
+    el.resetSize();
+
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+    expect(el.style.getPropertyValue("--_drag-height")).toBe("");
+    expect(sessionStorage.getItem(SIZE_KEY)).toBeNull();
+    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("500px");
   });
 
   it("falls back to the placement size when the stored entry is corrupt", () => {
     sessionStorage.setItem(SIZE_KEY, "{not json");
     const el = mount();
-    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
   });
 
   it("ignores a stored entry that is not an object", () => {
     sessionStorage.setItem(SIZE_KEY, "42");
     const el = mount();
-    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
   });
 });

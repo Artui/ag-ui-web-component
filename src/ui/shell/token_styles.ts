@@ -300,8 +300,8 @@ export const TOKEN_STYLES: string = `
      grid/flex layout) to embed it in the page flow instead of floating. */
   --_position: var(--ag-ui-position, fixed);
   --_z-index: var(--ag-ui-z-index, 2147483000);
-  --_width: var(--ag-ui-width, 380px);
-  --_height: var(--ag-ui-height, 560px);
+  --_width: var(--_drag-width, var(--ag-ui-width, 380px));
+  --_height: var(--_drag-height, var(--ag-ui-height, 560px));
   /* The gutter a resting floating panel keeps between itself and the edge of
      the box the host left free. One number, because the inset below spends it
      and the cap beneath has to know it was spent. */

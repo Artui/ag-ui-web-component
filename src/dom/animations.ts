@@ -8,17 +8,7 @@
 
 import { showHighlightOverlay } from "./highlight_overlay.js";
 import { setNativeChecked, setNativeValue } from "./native_setter.js";
-
-/** Ring colour when the host page has not themed `--ag-ui-accent`. */
-const ACCENT = "#4f46e5";
-
-/**
- * Fallback for the box-shadow rings, which read as a soft halo rather than a
- * line and so carry their own alpha.
- */
-const ACCENT_HALO = "rgba(79, 70, 229, 0.4)";
-
-const ACCENT_PROPERTY = "--ag-ui-accent";
+import { ringColor } from "./ring_color.js";
 
 function delay(ms: number): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -48,19 +38,23 @@ function motionDelay(ms: number): Promise<void> {
 }
 
 /**
- * Resolve the accent colour from the target's own computed style.
+ * Which `<ag-ui-chat>` a ring speaks for, so it is drawn in that chat's colour.
  *
- * `--ag-ui-accent` inherits, so reading it off the element about to be touched
- * picks up whatever the host's cascade produced there, and a themed page is
- * flashed in its own colour rather than this package's indigo.
+ * The ring is drawn in the host's page, which a token set on the chat never
+ * reaches, so the chat is read directly. Unset, it is the most recently
+ * connected chat; a page with two widgets names the one acting.
  */
-function accentColor(el: HTMLElement, fallback: string): string {
-  const themed = window.getComputedStyle(el).getPropertyValue(ACCENT_PROPERTY).trim();
-  return themed === "" ? fallback : themed;
+export interface RingOwnerOptions {
+  /** The chat whose ring colour and accent to use. Default: the latest connected. */
+  chat?: HTMLElement;
 }
 
-function ringShadow(el: HTMLElement): string {
-  return `0 0 0 3px ${accentColor(el, ACCENT_HALO)}`;
+/**
+ * The soft halo the press and toggle rings draw: the ring colour at 40%.
+ * Mixed rather than given its own alpha, so it follows whichever colour won.
+ */
+function ringShadow(el: HTMLElement, chat: HTMLElement | undefined): string {
+  return `0 0 0 3px color-mix(in srgb, ${ringColor(el, chat)} 40%, transparent)`;
 }
 
 /** An element whose `value` can be typed into. */
@@ -93,7 +87,7 @@ export async function typeInto(
   el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-export interface HighlightClickOptions {
+export interface HighlightClickOptions extends RingOwnerOptions {
   /** Milliseconds to hold the highlight before clicking. Default 280. */
   highlightMs?: number;
 }
@@ -106,7 +100,7 @@ export async function highlightThenClick(
   const highlightMs = options.highlightMs ?? 280;
   const previousOutline = el.style.outline;
   const previousOffset = el.style.outlineOffset;
-  el.style.outline = `2px solid ${accentColor(el, ACCENT)}`;
+  el.style.outline = `2px solid ${ringColor(el, options.chat)}`;
   el.style.outlineOffset = "2px";
   await delay(highlightMs);
   el.style.outline = previousOutline;
@@ -176,10 +170,14 @@ const FLASH_MS = 1200;
 /** Share of {@link FLASH_MS} spent fading out rather than holding. */
 const FLASH_FADE_RATIO = 1 / 3;
 
-export interface FlashOptions {
+export interface FlashOptions extends RingOwnerOptions {
   /** Total milliseconds the ring is on screen, hold plus fade. Default 1200. */
   flashMs?: number;
-  /** Ring colour. Defaults to the target's `--ag-ui-accent`, else the package accent. */
+  /**
+   * Ring colour. Defaults to `--ag-ui-highlight-ring-color` (on the target,
+   * then on the chat), then the target's `--ag-ui-accent`, then the chat's
+   * accent.
+   */
   color?: string;
   /**
    * Dim everything except the target.
@@ -226,6 +224,7 @@ async function flashRing(
       gradient: options.gradient === true,
       ...(options.color === undefined ? {} : { color: options.color }),
       ...(options.ringPadding === undefined ? {} : { padding: options.ringPadding }),
+      ...(options.chat === undefined ? {} : { chat: options.chat }),
     });
     await delay(flashMs);
     dismiss();
@@ -234,7 +233,7 @@ async function flashRing(
   const previousOutline = el.style.outline;
   const previousOffset = el.style.outlineOffset;
   const previousTransition = el.style.transition;
-  const color = options.color ?? accentColor(el, ACCENT);
+  const color = options.color ?? ringColor(el, options.chat);
   // outline, not box-shadow: a shadow paints outside the border box, so any
   // overflow:hidden ancestor sharing the target's box (a card, a table cell)
   // clips the whole ring away while the helper still reports success.
@@ -273,7 +272,7 @@ export function focusWithFlash(el: HTMLElement, options: FlashOptions = {}): Pro
   return flashRing(el, options, true);
 }
 
-export interface PressOptions {
+export interface PressOptions extends RingOwnerOptions {
   /** Milliseconds to hold the pressed state before clicking. Default 140. */
   pressMs?: number;
 }
@@ -290,7 +289,7 @@ export async function pressThenClick(el: HTMLElement, options: PressOptions = {}
   const previousShadow = el.style.boxShadow;
   el.style.transition = "transform 80ms ease";
   el.style.transform = "scale(0.96)";
-  el.style.boxShadow = ringShadow(el);
+  el.style.boxShadow = ringShadow(el, options.chat);
   await motionDelay(pressMs);
   el.style.transform = previousTransform;
   el.style.transition = previousTransition;
@@ -298,7 +297,7 @@ export async function pressThenClick(el: HTMLElement, options: PressOptions = {}
   el.click();
 }
 
-export interface SelectOptions {
+export interface SelectOptions extends RingOwnerOptions {
   /** Milliseconds to hold the highlight before committing. Default 220. */
   highlightMs?: number;
 }
@@ -330,7 +329,7 @@ export async function selectOption(
   const highlightMs = options.highlightMs ?? 220;
   const previousOutline = el.style.outline;
   const previousOffset = el.style.outlineOffset;
-  el.style.outline = `2px solid ${accentColor(el, ACCENT)}`;
+  el.style.outline = `2px solid ${ringColor(el, options.chat)}`;
   el.style.outlineOffset = "2px";
   await motionDelay(highlightMs);
   setNativeValue(el, option.value);
@@ -340,7 +339,7 @@ export async function selectOption(
   el.style.outlineOffset = previousOffset;
 }
 
-export interface ToggleOptions {
+export interface ToggleOptions extends RingOwnerOptions {
   /** Milliseconds to hold the flash. Default 200. */
   flashMs?: number;
 }
@@ -356,7 +355,7 @@ export async function toggleControl(
 ): Promise<void> {
   const flashMs = options.flashMs ?? 200;
   const previousShadow = el.style.boxShadow;
-  el.style.boxShadow = ringShadow(el);
+  el.style.boxShadow = ringShadow(el, options.chat);
   await motionDelay(flashMs);
   setNativeChecked(el, checked);
   el.dispatchEvent(new Event("input", { bubbles: true }));

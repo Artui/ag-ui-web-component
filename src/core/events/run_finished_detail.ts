@@ -2,6 +2,12 @@ import type { ToolRun } from "./tool_run.js";
 
 /** `detail` shape of the {@link RUN_FINISHED_EVENT} CustomEvent. */
 export interface RunFinishedDetail {
+  /**
+   * The thread the run belonged to, fixed when its client was built. Not always
+   * the thread on screen: a run stopped by a new chat or a thread switch still
+   * reports once its request closes, and by then another thread is.
+   */
+  readonly threadId: string;
   /** In settle order. Empty when the interaction called no tools. */
   readonly tools: readonly ToolRun[];
   /**

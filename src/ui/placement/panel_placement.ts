@@ -27,6 +27,17 @@ import { surfaceFor } from "./surface_for.js";
 /** Per-tab persistence key for a dragged panel size. */
 const SIZE_KEY = "ag-ui-chat:size";
 
+/**
+ * The private properties a dragged size lives in. They are not the public
+ * `--ag-ui-width` / `--ag-ui-height` tokens, which belong to the host: an
+ * inline write there outranked every host rule and was read back by the
+ * small-viewport block, so a size dragged in a wide window leaked into the
+ * phone shape. The placement rules read these before the host token; the
+ * small-viewport block does not read them at all.
+ */
+const DRAG_WIDTH = "--_drag-width";
+const DRAG_HEIGHT = "--_drag-height";
+
 /** Per-tab persistence key for a dragged launcher position. */
 const LAUNCHER_KEY = "ag-ui-chat:launcher";
 
@@ -187,6 +198,20 @@ export class PanelPlacement {
   /** Restore a dragged size before the panel paints. */
   restoreSize(): void {
     this.#applySize(this.#readSize());
+  }
+
+  /**
+   * Drop the dragged size and its stored copy, so the placement's own size and
+   * the host's tokens apply again. For a host entering a sized state of its
+   * own, which a user's drag would otherwise outrank.
+   */
+  resetSize(): void {
+    this.#host.element.style.removeProperty(DRAG_WIDTH);
+    this.#host.element.style.removeProperty(DRAG_HEIGHT);
+    this.#host.clearPreference(SIZE_KEY);
+    // The anchor was measured against the dragged box; the resting one may
+    // pin different edges.
+    this.syncResizeAnchor();
   }
 
   /**
@@ -414,8 +439,8 @@ export class PanelPlacement {
    */
   #measureAnchor(): ResizeAnchor {
     const before = this.#host.element.getBoundingClientRect();
-    const width = this.#host.element.style.getPropertyValue("--ag-ui-width");
-    const height = this.#host.element.style.getPropertyValue("--ag-ui-height");
+    const width = this.#host.element.style.getPropertyValue(DRAG_WIDTH);
+    const height = this.#host.element.style.getPropertyValue(DRAG_HEIGHT);
     // Shrink first. Growing is the obvious probe and cannot answer the question
     // at a size already resting against max-width or max-height: the box does
     // not change, no edge moves, and every clamped axis then reads as pinned on
@@ -431,8 +456,8 @@ export class PanelPlacement {
     const grown = shrunk.x === null || shrunk.y === null ? this.#probeAnchor(before, 1) : shrunk;
     // Restore exactly what was there, including "nothing" — leaving a probe
     // value behind would pin a panel that had been sizing itself.
-    this.#restoreProperty("--ag-ui-width", width);
-    this.#restoreProperty("--ag-ui-height", height);
+    this.#restoreProperty(DRAG_WIDTH, width);
+    this.#restoreProperty(DRAG_HEIGHT, height);
     return {
       // Neither direction moved it: the axis cannot be resized at all, so the
       // floating default is the best answer available and is the one the
@@ -497,7 +522,7 @@ export class PanelPlacement {
   /**
    * Write a dragged size onto the host, on the axes this placement leaves free.
    *
-   * Writing the custom property rather than inline `width` / `height` does not
+   * Writing a custom property rather than inline `width` / `height` does not
    * by itself leave placement in charge: an inline custom property still
    * outranks a `:host([placement=…])` rule setting the same property, so a
    * height dragged while floating would cap a docked sidebar asking for
@@ -518,10 +543,10 @@ export class PanelPlacement {
     // symmetry nobody has asked for. The limit that matters, staying inside
     // what the host left free, is enforced above.
     if (size.width !== undefined) {
-      this.#host.element.style.setProperty("--ag-ui-width", `${size.width}px`);
+      this.#host.element.style.setProperty(DRAG_WIDTH, `${size.width}px`);
     }
     if (size.height !== undefined && axis === "both") {
-      this.#host.element.style.setProperty("--ag-ui-height", `${size.height}px`);
+      this.#host.element.style.setProperty(DRAG_HEIGHT, `${size.height}px`);
     }
   }
 
@@ -535,10 +560,10 @@ export class PanelPlacement {
   releaseOwnedAxes(): void {
     const axis = this.#resizeAxis();
     if (axis !== "both") {
-      this.#host.element.style.removeProperty("--ag-ui-height");
+      this.#host.element.style.removeProperty(DRAG_HEIGHT);
     }
     if (axis === "none") {
-      this.#host.element.style.removeProperty("--ag-ui-width");
+      this.#host.element.style.removeProperty(DRAG_WIDTH);
     }
   }
 

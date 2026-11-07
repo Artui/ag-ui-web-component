@@ -331,18 +331,11 @@ $("cfg-restore-send").addEventListener("click", () => {
 });
 
 // A dragged size outlives the tab now, which is confusing when you are
-// flipping placements to compare handles.
-//
-// The key is namespaced by the element's id, not by its endpoint: the widget
-// claims `chat` because that is what this one is called. And it is removed
-// from both stores, because a layout preference is written to both -- clearing
-// only the durable copy leaves the per-tab mirror to win the next read.
+// flipping placements to compare handles. resetSize() drops it and its stored
+// copy from both stores; the drag no longer writes the public size tokens, so
+// removing those inline would do nothing.
 $("cfg-reset-size").addEventListener("click", () => {
-  chat.style.removeProperty("--ag-ui-width");
-  chat.style.removeProperty("--ag-ui-height");
-  const key = `ag-ui-chat:size:${chat.id}`;
-  localStorage.removeItem(key);
-  sessionStorage.removeItem(key);
+  chat.resetSize();
 });
 
 // Extend the transcript's select-then-quote gesture to the whole page, so the

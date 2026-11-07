@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] — 2026-11-07
+
+### Added
+
+- **Tool cards name their status as a part.** The `tool-card` part gains a
+  status modifier beside it, `tool-card-pending`, `tool-card-deferred`,
+  `tool-card-done`, `tool-card-error`, `tool-card-declined` or
+  `tool-card-interrupted`, and the status pill's `tool-card-status` gains the
+  matching `tool-card-status-<status>`. `::part()` takes no attribute selector,
+  so a host could not style failures only; now
+  `ag-ui-chat::part(tool-card-status-error)` does. The modifier is replaced as
+  the status changes. The folded step group does the same with its state:
+  `tool-group-waiting`, `tool-group-running`, `tool-group-done` or
+  `tool-group-error` beside `tool-group`. **No opt-in is needed**: the base
+  parts are unchanged, so an existing `::part(tool-card)` rule still matches,
+  and a host that wants the modifiers just writes the selector.
+
+- **`resetSize()`.** Drops a dragged size and its stored copy, so the placement's
+  size and the host's `--ag-ui-width` / `--ag-ui-height` apply again. For a host
+  entering a sized state of its own, which a user's drag would otherwise outrank.
+
+- **A public thread API, for a host that lists conversations in its own
+  chrome.** `switchThread(threadId)` puts a stored thread on screen and resolves
+  once it is replayed; during a run it cancels the run, as the drawer and
+  `newChat()` do. `deleteThread(threadId)` deletes one as the drawer row does,
+  replacing the thread on screen with a fresh one when it was that thread. The
+  read-only `threadId` is the thread on screen and never mints one, unlike
+  `conversationStore.threadId()`. The read-only `running` is the composer's own
+  state, across tool rounds, a Retry and a checkpoint continuation, reflected as
+  `data-running` on the element. A new `ag-ui-thread` event (`THREAD_EVENT`,
+  typed `ThreadDetail`) fires once per change of conversation, after the
+  transcript is replaced, with `{ threadId, previousThreadId, reason }` and
+  `reason` one of `new`, `switch`, `delete`, `restore` (on connect and on
+  `reload()`) or `rescope` (a `user-key` change). `ag-ui-run-finished` gains
+  `threadId`, the thread the run belonged to. **No opt-in is needed**; all of it
+  is additive. A host can now drop a patch that reached the private thread
+  switch, an attribute observer that inferred the running state, and reads of
+  `conversationStore.threadId()` made only to learn the thread on screen.
+  `ag-ui-submit` keeps its meaning: a turn was sent, not a run started.
+
+- **An `above-composer` slot.** Light-DOM content with
+  `slot="above-composer"` sits directly above the composer, after the skill
+  chips, the hint, the queued turns and the attachment tray, in every placement,
+  and moves with the composer in the greeting layout. An empty slot takes no
+  space. **Opt-in**: a host uses it by slotting content. A host that slotted
+  into `footer` and reordered the panel's flex column through `::part(composer)`
+  to lift it above the input can slot here instead and drop the reorder.
+
+### Changed
+
+- **Highlight rings on an unthemed page follow the widget's theme.** Since
+  0.45.0 the default accent is Quiet's near-black, but the rings the DOM
+  driver draws in the page (`flash`, `focusWithFlash`, `highlightThenClick`,
+  `pressThenClick`, `selectOption`, `toggleControl`, `showHighlightOverlay`)
+  still fell back to the old indigo. They now take the chat's resolved accent,
+  per theme and per scheme. A page that sets `--ag-ui-accent` on `:root`, or
+  passes `color`, keeps the rings it has. **No opt-in is needed.**
+  - New token `--ag-ui-highlight-ring-color`, beside
+    `--ag-ui-highlight-ring-width`. Set on `ag-ui-chat` (or above it) it
+    colours every ring with no `color` option, ahead of a target's
+    `--ag-ui-accent`; set on the page it reaches the target and wins over the
+    chat's.
+  - The press and toggle halo is now the ring colour at 40%. A host that
+    themes `--ag-ui-accent` had a solid halo in that colour; it is now
+    translucent, as the unthemed one always was.
+  - The rings read the most recently connected `<ag-ui-chat>`. A page with two
+    passes the acting one as the new `chat` option, which every ring-drawing
+    primitive and `showHighlightOverlay` take.
+
+- **A dragged panel size stays out of the host's tokens and out of the phone
+  shape.** The drag, and the size restored before first paint, no longer write
+  `--ag-ui-width` / `--ag-ui-height` on the element; they write the private
+  `--_drag-width` / `--_drag-height`, still persisted per tab under the same key.
+  Above 600px the dragged size beats the host's tokens, `!important` included:
+  the private properties are read before the public ones, so a host rule such as
+  `ag-ui-chat.expanded { --ag-ui-width: 900px !important }` used to beat a drag
+  and now loses to it until `resetSize()` is called. At 600px or less the
+  small-viewport block does not read the dragged size, so a persisted or freshly
+  dragged size leaves the full-bleed shape alone, including after a window
+  narrows. **Who owes what**: a host with no sized state of its own owes nothing.
+  A host that enters a sized state (an "expanded" class, a mode switch) and
+  relied on `!important` to outrank a user's drag must call `resetSize()` when it
+  enters that state. A host that read `--ag-ui-width` back from the element's
+  inline style to learn the dragged size must measure the element instead.
+
 ## [0.46.0] — 2026-11-05
 
 ### Changed
@@ -4761,7 +4846,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.46.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.47.0...HEAD
+[0.47.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.43.0...v0.44.0

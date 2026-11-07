@@ -210,6 +210,7 @@ another origin, add `credentials="include"` too; see
 | `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
 | `data-greeting` | — | CSS-only: `off` turns the [greeting layout](#the-greeting-on-an-empty-page) off under `placement="page"`, where it is on by default. Any other value turns it on under `placement="embedded"`. No other placement has it. |
 | `data-empty` | — | **Written by the element, not by you.** Present while the conversation has nothing in it, which is when the greeting shows. Public as a styling hook, so the chrome around a full-page chat can react to the same state, e.g. `ag-ui-chat[data-empty] ~ .page-footer { display: none }`. |
+| `data-running` | — | **Written by the element, not by you.** Present while an interaction is in flight, the same state that shows the Stop button (see the `running` property). Public as a styling hook, as `data-empty` is, so the chrome around the chat can react to it, e.g. `ag-ui-chat[data-running] ~ .toolbar button { pointer-events: none }`. |
 | `data-small-viewport` | — | CSS-only: `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
 | `data-paste-attach` | — | When to turn a long text paste into an attachment instead of composer text: absent for the 5000-character default, `off` to never, or a positive number of characters. Only acts where `data-attachments-url` (or a custom `uploadHandler`) gives it somewhere to go. |
 | `data-starters` | — | JSON array of prompts offered on an empty transcript, e.g. `'["Summarise this page"]'`. Fallback content for `slot="empty"`, so slotting your own replaces them. Shares the four-prompt and 120-character limits with the suggestion chips a run pushes. Read once at connect. |
@@ -264,7 +265,7 @@ element after the fact.
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
 `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
-`resolvePageTarget`, `sharedState`, `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread` and `unhandledActivityTypes`, and
+`resolvePageTarget`, `sharedState`, `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId` and `running`, and
 the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `collapsed` /
 `credentials`.
 
@@ -289,7 +290,8 @@ labels are fetched automatically — per card, `x-summary` → an explicit
 `sharedState` is AG-UI shared state, documented under
 [the run loop](#the-run-loop-and-the-ag-ui-client); `unread` and `unhandledActivityTypes` are
 read-only counters, covered under [the unread badge](#the-unread-badge) and
-[finding out what arrived](#finding-out-what-arrived).
+[finding out what arrived](#finding-out-what-arrived); `threadId` and `running` are covered under
+[driving the conversation from your own chrome](#driving-the-conversation-from-your-own-chrome).
 
 Code blocks in an agent's answer carry a **copy button**, revealed on hover or
 keyboard focus and styleable via the `code-copy` part. Override its labels with
@@ -298,14 +300,17 @@ the `copyCode` / `copied` / `copyFailed` strings.
 **Methods**: `registerTool`, `registerPageState`, `registerActivityRenderer`, `setSkills`,
 `sendMessage`, `attachFile`, `appendMessage`, `retryLastTurn`, `quote`, `offerQuoteInPage`,
 `enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `describeSurface`, `moveTo`,
-`toggleTheme`, `openThreads`, `closeThreads`,
+`resetSize`, `toggleTheme`, `openThreads`, `closeThreads`, `switchThread`, `deleteThread`,
 `openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `reload`, and the deprecated
 `registerStateHook` (renamed to `registerPageState`).
 
 ### Sending from your own UI
 
 `sendMessage(content, attachments?)` sends as if the user had typed it — user bubble,
-`ag-ui-submit` event, run started. Use it for an "Ask about this order" button, a command
+`ag-ui-submit` event, run started. `ag-ui-submit` means a turn was sent, not that a run started:
+a Retry and a run continued from the checkpoint panel start runs without one. To know whether
+anything is running, read [`running`](#driving-the-conversation-from-your-own-chrome) or style on
+`data-running`. Use it for an "Ask about this order" button, a command
 palette, a prompt fired when your page mounts the chat, or a composer of your own replacing the
 built-in one.
 
@@ -960,8 +965,8 @@ human-readable speed (configurable; pass small/zero durations in tests):
   paints outside the border box and any `overflow: hidden` ancestor sharing the element's box (a
   card, a table cell) clips it away entirely. It holds for **1200 ms** by default and fades out
   over the last third — a 200 ms blink is not long enough to be *found* by someone who does not
-  yet know where to look. The colour comes from the target's own `--ag-ui-accent` (so a themed
-  page is flashed in its own colour), or from `color`.
+  yet know where to look. The colour is `color` when passed, else — see
+  [Ring colour](#ring-colour) — the widget's own accent.
   `flash` leaves focus alone; `focusWithFlash` moves it — see "Flash versus focus" below.
 - `prefersReducedMotion()` — honoured by every primitive that *moves* something: the hold delays
   in `pressThenClick` / `selectOption` / `toggleControl` collapse to instant, `scrollIntoCenterView`
@@ -999,11 +1004,13 @@ operations a tool handler typically wants:
   **Themed from the element you point at, not from the widget.** The overlay is appended to the
   document body so it can escape the clipping it exists to avoid, which means a `var()` in its own
   style would resolve against the body — so every token is read from the *target's* computed style
-  instead, the same place the flat ring reads `--ag-ui-accent`. Set them wherever they inherit to
-  the elements the agent touches, usually `:root`:
+  instead. Set them wherever they inherit to the elements the agent touches, usually `:root`. The
+  ring colour is the one exception, read from the widget as well; see
+  [Ring colour](#ring-colour).
 
   ```css
   :root {
+    --ag-ui-highlight-ring-color: #0f766e; /* also read from ag-ui-chat; see Ring colour */
     --ag-ui-highlight-scrim: rgba(15, 15, 25, 0.45);
     --ag-ui-highlight-gradient: linear-gradient(115deg, transparent 20%, #4f46e5 50%, transparent 80%);
     --ag-ui-highlight-ring-width: 3;    /* unitless; px */
@@ -1046,6 +1053,29 @@ register the change.
 
 Each takes an element the caller has already located; host packages wrap them with
 environment-aware lookups (e.g. "find `#id_<name>`, then `fillField`").
+
+#### Ring colour
+
+Every ring the driver draws — the flash outline, the overlay ring, the press and toggle halo — is
+drawn in the host's page, outside the widget, so a token set on `ag-ui-chat` never reaches it
+through the cascade. The driver reads the widget directly instead, so on a page that themes
+nothing the rings follow the widget's theme: Quiet's near-black, Soft's violet, the dark half in a
+dark scheme. When a call passes no `color`, the first of these that is set wins:
+
+1. `--ag-ui-highlight-ring-color` on the target (so `:root` reaches every ring);
+2. `--ag-ui-highlight-ring-color` on the chat — on `ag-ui-chat` or anything above it;
+3. the target's `--ag-ui-accent`, so a page that themes its accent keeps the rings it has;
+4. the chat's resolved accent, its theme's default included;
+5. the package indigo, when no chat is on the page at all.
+
+```css
+/* Rings in the brand colour, whatever the widget's accent. */
+ag-ui-chat { --ag-ui-highlight-ring-color: #0f766e; }
+```
+
+The halo of `pressThenClick` and `toggleControl` is the chosen colour at 40%. "The chat" is the
+most recently connected `<ag-ui-chat>`; on a page with two, pass the one acting as the `chat`
+option (`RingOwnerOptions`, which every ring-drawing primitive and `showHighlightOverlay` take).
 
 ### Page-action tools
 
@@ -1138,6 +1168,9 @@ matching JS API:
   returning whether it went. It takes the axes the same way a user drag does, so the launcher
   travels with it and switching placement hands them back. Returns `false` rather than pretending
   when the placement owns its position or the panel fills the screen.
+- `resetSize()` — drop a size the user dragged, and its stored copy, so the placement's own
+  size and your `--ag-ui-width` / `--ag-ui-height` apply again. For a host that enters a sized
+  state of its own (an expanded mode): a user's drag outranks host tokens, so call this first.
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
   reflected as the boolean `collapsed` attribute/property and persisted per-tab in
   `sessionStorage`, so it survives a reload.
@@ -1150,6 +1183,49 @@ chrome — or hide the built-in toggle and drive the `collapsed` attribute itsel
 chat.newChat();
 chat.toggleCollapsed();
 chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
+```
+
+### Driving the conversation from your own chrome
+
+A host that lists conversations in its own bar, rather than in the built-in drawer, drives the
+one on screen with the drawer's own paths:
+
+- `switchThread(threadId)` — put a stored thread on screen and replay it, as picking its row in
+  the drawer does. Returns a `Promise<void>` that resolves once the thread is drawn. **A run in
+  flight is cancelled**, as the drawer and `newChat()` cancel it; read `running` first if you
+  would rather wait. Switching to the thread already on screen does nothing, and so does a call
+  before the element connects.
+- `deleteThread(threadId)` — delete a stored thread, as the drawer row's delete does. Deleting
+  the thread on screen cancels its run and puts a fresh thread in its place; deleting another
+  leaves the screen alone. Prefer it to `conversationStore.clear()`, which deletes the record and
+  nothing else: the run, the transcript and the drawer are left pointing at it.
+- `threadId` *(read-only)* — the thread on screen, `null` before the element first connects.
+  It only reads. `conversationStore.threadId()` mints and stores a thread when the store points
+  at none, so asking it which conversation is showing can start one.
+- `running` *(read-only)* — whether an interaction is in flight: the composer's own state, the
+  one it shows Stop for, across every tool round, a Retry and a checkpoint continuation as well
+  as a send. Reflected on the element as the `data-running` attribute, written by the element
+  rather than by you, as `data-empty` is, so the chrome around the chat can style on it.
+
+Every change of conversation fires one **`ag-ui-thread`** event (the `THREAD_EVENT` constant),
+after the transcript has been replaced, so a listener reads the conversation it is told about.
+`detail` is `{ threadId, previousThreadId, reason }` (typed `ThreadDetail`). `previousThreadId`
+is the thread the previous event reported, `null` before the first, and `reason` is one of:
+
+| `reason` | When |
+| --- | --- |
+| `new` | `newChat()` or the built-in New chat button. |
+| `switch` | `switchThread()` or a row picked in the drawer. Two switches made before the first had replayed report only the second. |
+| `delete` | The thread on screen was deleted, and a fresh one took its place. |
+| `restore` | The stored thread was replayed: when the element connects (`previousThreadId` is `null` the first time), or by `reload()`. |
+| `rescope` | A `user-key` change handed the element to another principal, live or while it was out of the document. |
+
+A page reload keeps restoring the thread, as [MPA durability](#mpa-durability-surviving-full-page-reloads) describes, and
+reports it as `restore`. Ignore a `reason` you do not know: more may be added.
+
+```js
+chat.addEventListener("ag-ui-thread", (e) => myBar.markActive(e.detail.threadId));
+myBar.onPick = (threadId) => chat.switchThread(threadId);
 ```
 
 ### The composer's own keys
@@ -1498,6 +1574,16 @@ never run together into one block, so where the call ends and the answer begins 
 visible. Style them via the `tool-card-args` / `tool-card-result` parts, their headings via
 `tool-card-section-label`, and the whole body via `tool-card-body`.
 
+**A card names its status as a part.** `::part()` takes no attribute selector, so a rule on
+`tool-card-status` reaches every outcome alike. The card and its status pill each carry a modifier
+beside the base part, one of `pending`, `deferred`, `done`, `error`, `declined` or `interrupted`,
+and it is replaced whenever the status changes:
+
+```css
+ag-ui-chat::part(tool-card-error)        { border-color: crimson; }
+ag-ui-chat::part(tool-card-status-error) { font-weight: 700; }
+```
+
 **The attribute is live.** Changing `data-tool-display` between the four card modes restyles every
 card already in the transcript, the way `data-answer-well` does — the modes are pure visibility
 over one DOM shape, selected by the shadow CSS from the host attribute. Grouping is decided as
@@ -1536,7 +1622,8 @@ steps and `data-open` whether the cards are showing; the head is a button with `
   order, rather than inside it, so a chart is never one click down. It does not end the group: a
   later call joins the group above it, which is also how a restored conversation draws the run.
 
-Parts: `tool-group`, `tool-group-head` (the button), `tool-group-icon`, `tool-group-label`,
+Parts: `tool-group` (with the state beside it as `tool-group-waiting`, `tool-group-running`,
+`tool-group-done` or `tool-group-error`), `tool-group-head` (the button), `tool-group-icon`, `tool-group-label`,
 `tool-group-meta` (holding one `.tool-group-note` per note), `tool-group-list` (the cards), and
 `tool-card-repeat` on a repeated step. The focus ring is `--ag-ui-ring` and the disclosure chevron
 `--ag-ui-ico-chevron`. Strings (`strings` / `data-strings`): `toolGroupSteps`,
@@ -1722,11 +1809,30 @@ and which grip carries the keyboard.
 
 ### Sizes, keyboard, and parts
 
-A drag writes `--ag-ui-width` / `--ag-ui-height` on the host as custom
-properties.
+A drag writes the private `--_drag-width` / `--_drag-height` on the host, not
+your `--ag-ui-width` / `--ag-ui-height` tokens, which stay yours. The precedence
+is:
 
-**That alone does not leave placement in charge** — an inline custom property
-still outranks a `:host([placement=…])` rule setting the same property. So the
+- **Above 600px**, the dragged size beats a host's `--ag-ui-width` /
+  `--ag-ui-height`, `!important` included, so a user who resized the panel keeps
+  their size. A host that enters a sized state of its own (an "expanded" class,
+  a mode switch) calls `resetSize()` when it does, which drops the dragged size
+  and its stored copy and hands control back to the host tokens. A host with no
+  such state needs nothing.
+- **At 600px or less**, the small-viewport shape ignores the dragged size
+  entirely, for the placements that block covers (`floating`, `bottom-left`,
+  `sidebar`, `side` and the default): the panel is full-bleed whatever was
+  dragged or stored, and a window narrowed after a wide-window drag goes
+  full-bleed too. `page` is already that shape, and `embedded` is left to the
+  host's own box, so neither is touched by the block. `data-small-viewport="off"`
+  keeps a dragged size at every width on the covered placements.
+
+A dragged size is a private property, so a host should not read it back from
+the element's inline style; use `getBoundingClientRect()`, or `resetSize()` to
+clear it.
+
+**A custom property alone does not leave placement in charge** — an inline custom
+property still outranks a `:host([placement=…])` rule setting the same property. So the
 component enforces the split directly: **a placement owns the axes it fixes**,
 and a dragged or persisted size is only ever applied to the ones it leaves free.
 Switching placement hands the owned axes back. Without that, a height dragged
@@ -2450,8 +2556,10 @@ chat.navigate = (path) => router.push(path); // SPA: in-page, no reload
 Route map + `navigate()` and the reload model are the same feature seen from two ends.
 
 **`ag-ui-run-finished`** *(event)* — an interaction has ended, and here is what ran in it.
-`detail: { tools: readonly ToolRun[] }` (typed `RunFinishedDetail`), where each `ToolRun` is
-`{ name, side: "server" | "client" }` in settle order.
+`detail: { threadId, tools: readonly ToolRun[], invalidated }` (typed `RunFinishedDetail`), where
+each `ToolRun` is `{ name, side: "server" | "client" }` in settle order. `threadId` is the thread
+the run belonged to, which is not always the one on screen: a run that a new chat or a thread
+switch stopped still reports once its request closes.
 
 **This is the seam for a host that renders data the agent can change.** A server-side tool writes
 without your page's knowledge: nothing else the element dispatches implies "something may have moved
@@ -2734,6 +2842,7 @@ re-export point. Internal modules import from leaf paths.
 | `defineAgUiChat()` | function | Idempotently register the element. |
 | `MessageRole` | type | Role of a rendered chat message. |
 | `SubmitDetail` | type | `detail` shape of the submit event. |
+| `ThreadDetail` | type | `detail` shape of the `ag-ui-thread` event (`{ threadId, previousThreadId, reason }`). |
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
 | `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
 | `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
@@ -2875,7 +2984,7 @@ re-export point. Internal modules import from leaf paths.
 | `HighlightOverlayOptions` | type | Options for `showHighlightOverlay`. |
 | `fillField` / `clickElement` / `pressButton` / `selectControl` / `setControlValue` / `toggleCheckbox` | function | DOM-driver primitives. |
 | `setNativeValue` / `setNativeChecked` | function | Set a control via its native prototype setter (React-controlled inputs). |
-| `TypeOptions` / `HighlightClickOptions` / `PressOptions` / `SelectOptions` / `ToggleOptions` / `FlashOptions` / `ScrollOptions` / `FillFieldOptions` / `TextLikeElement` | type | Primitive option shapes. |
+| `TypeOptions` / `HighlightClickOptions` / `PressOptions` / `SelectOptions` / `ToggleOptions` / `FlashOptions` / `ScrollOptions` / `FillFieldOptions` / `TextLikeElement` / `RingOwnerOptions` | type | Primitive option shapes. `RingOwnerOptions` is the `chat` the ring-drawing ones share; see [Ring colour](#ring-colour). |
 
 ### Constants
 
@@ -2883,6 +2992,7 @@ re-export point. Internal modules import from leaf paths.
 | --- | --- |
 | `ELEMENT_TAG` | The registered tag name (`ag-ui-chat`). |
 | `SUBMIT_EVENT` | The submit CustomEvent name. |
+| `THREAD_EVENT` | The conversation-changed CustomEvent name (`ag-ui-thread`). |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
@@ -3351,8 +3461,8 @@ component sets, so a new one cannot ship undocumented.
 | Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`), and the icon holder inside each: `message-action-icon` (plus `message-action-icon-retry`, `message-action-icon-copy`, `message-action-icon-up`, `message-action-icon-down`) |
 | Queued messages | `queued`, `queued-chip` |
 | Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`, `run-notice-surface`, `run-notice-not-connected`), `run-notice-icon`, `run-notice-text`, `run-notice-undo` |
-| Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent`, `tool-card-repeat` |
-| Tool-step group | `tool-group`, `tool-group-head`, `tool-group-icon`, `tool-group-label`, `tool-group-meta`, `tool-group-list` |
+| Tool cards | `tool-card` (plus one status modifier: `tool-card-pending`, `tool-card-deferred`, `tool-card-done`, `tool-card-error`, `tool-card-declined`, `tool-card-interrupted`), `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status` (plus `tool-card-status-pending`, `tool-card-status-deferred`, `tool-card-status-done`, `tool-card-status-error`, `tool-card-status-declined`, `tool-card-status-interrupted`), `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent`, `tool-card-repeat` |
+| Tool-step group | `tool-group` (plus one state modifier: `tool-group-waiting`, `tool-group-running`, `tool-group-done`, `tool-group-error`), `tool-group-head`, `tool-group-icon`, `tool-group-label`, `tool-group-meta`, `tool-group-list` |
 | Delegated sub-agents | `subagent`, `subagent-row`, `subagent-icon`, `subagent-status`, `subagent-steps`, `subagent-step`, `subagent-step-icon`, `subagent-step-name` |
 | Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`, `confirm-always`) |
 | Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`), `approval-edit`, `approval-args`, `approval-error` |
@@ -3393,6 +3503,7 @@ with a matching `slot=`):
 | `header-actions` | Extra controls between the title and the built-in buttons. |
 | `greeting` | The greeting's text, above the empty state, where the [greeting layout](#the-greeting-on-an-empty-page) is on. Replaces the text only; `empty` and the starters still render beneath it. |
 | `empty` | The empty-state shown before any message. |
+| `above-composer` | Directly above the composer, below the skill chips, hint, queued turns and attachment tray. Takes no space when empty, and moves with the composer in the [greeting layout](#the-greeting-on-an-empty-page). |
 | `footer` | Below the composer. |
 | `launcher` | The collapsed widget's mark — the floating launcher, or the sidebar rail. |
 | `icon-send` / `icon-stop` | The composer button's two glyphs (idle and mid-run). |

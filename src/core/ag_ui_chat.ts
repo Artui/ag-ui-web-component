@@ -10,6 +10,7 @@ import {
   STATE_EVENT,
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
+  THREAD_EVENT,
   TOGGLE_EVENT,
   TOOL_DISPLAY,
   UNREAD_EVENT,
@@ -75,6 +76,7 @@ import type { ActivityRenderer } from "./activity_renderer.js";
 import { AgUiClient } from "./agui_client.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type AttachmentRef } from "./attachment.js";
+import { ChatRegistration } from "./chat_registry.js";
 import type { ClientSeed } from "./client_seed.js";
 import {
   type ClientConversationStore,
@@ -85,6 +87,7 @@ import {
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import type { StateDetail } from "./events/state_detail.js";
 import type { SubmitDetail } from "./events/submit_detail.js";
+import type { ThreadDetail } from "./events/thread_detail.js";
 import type { ToggleDetail } from "./events/toggle_detail.js";
 import type { UnreadDetail } from "./events/unread_detail.js";
 import type { MessageRole } from "./message_role.js";
@@ -750,6 +753,11 @@ export class AgUiChat extends HTMLElement {
    * then a host's {@link sendMessage} waits for it rather than refusing.
    */
   #restoreHold: { readonly hold: object; readonly restored: Promise<void> } | null = null;
+  /**
+   * The thread the latest {@link THREAD_EVENT} reported, which the next one
+   * names as the thread it replaced; `null` before the first.
+   */
+  #shownThread: string | null = null;
   /** The decision a run is suspended on, which a Stop abandons. */
   readonly #decision = new PendingDecision();
   /**
@@ -781,6 +789,8 @@ export class AgUiChat extends HTMLElement {
     allowImages: () => this.allowImages,
     follow: () => this.#transcript.follow(),
   });
+  // This chat's place among the connected ones, which a free highlight ring reads.
+  readonly #chatRegistration = new ChatRegistration(this);
   /**
    * Which storage keys are this element's: the namespace it claims, the keys
    * its layout preferences live under, and the built-in store scoped to them.
@@ -1043,6 +1053,7 @@ export class AgUiChat extends HTMLElement {
       cancelRun: () => this.#cancelRun(),
       resetState: () => this.#resetState(),
       setRunning: (running) => this.#setRunning(running),
+      threadChanged: (threadId, reason) => this.#dispatchThread(threadId, reason),
     });
   }
 
@@ -1448,6 +1459,7 @@ export class AgUiChat extends HTMLElement {
     // this instance doesn't share collapsed/theme/thread state with another on
     // the same origin.
     this.#storage.claim();
+    this.#chatRegistration.join();
     // Restore a dragged size before the panel paints, so it does not snap from
     // the placement default to the user's width on the first frame.
     this.#placement.restoreSize();
@@ -1530,7 +1542,10 @@ export class AgUiChat extends HTMLElement {
     // The catalog requests go out a microtask later, so a host configuring
     // through a framework ref still has a chance to be heard — see #startup.
     queueMicrotask(() => this.#startup());
-    void this.#history.rehydrate();
+    // A key changed while the element was away handed it over all the same,
+    // and the restore is the arriving principal's: reported as the live change
+    // is. An adoption is not a handover, and restores the same conversation.
+    void this.#history.rehydrate(changed && held !== "" ? "rescope" : "restore");
     if (changed) {
       // The last of what a live change does: a drawer left open across the
       // move still lists the threads of the principal who left, titles and
@@ -1594,7 +1609,7 @@ export class AgUiChat extends HTMLElement {
     await Promise.all([
       this.#tools.fetchCatalog(),
       this.#skills.fetch(),
-      this.#history.rehydrate(),
+      this.#history.rehydrate("restore"),
     ]);
   }
 
@@ -1611,6 +1626,7 @@ export class AgUiChat extends HTMLElement {
     window.visualViewport?.removeEventListener("resize", this.#onViewportResize);
     window.visualViewport?.removeEventListener("scroll", this.#onViewportResize);
     this.#storage.release();
+    this.#chatRegistration.leave();
     this.#cancelRun();
     this.#excerpts.detachPageOffer();
     this.#attachments.tray?.dispose();
@@ -1795,6 +1811,28 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * The thread on screen; `null` before the element first connects.
+   *
+   * Only reads. `conversationStore.threadId()` mints and stores a thread when
+   * the store points at none, so a host asking which conversation is showing
+   * could start one; this never does. {@link THREAD_EVENT} says when it changes.
+   */
+  get threadId(): string | null {
+    const threadId = this.#history.threadId;
+    return threadId === "" ? null : threadId;
+  }
+
+  /**
+   * Whether an interaction is in flight: the composer's own state, the one that
+   * shows Stop. It spans every tool round, a retry and a checkpoint
+   * continuation as well as a send, which {@link SUBMIT_EVENT} alone does not.
+   * Reflected as `data-running` on the element, for a host's CSS.
+   */
+  get running(): boolean {
+    return this.#running;
+  }
+
+  /**
    * Whether to mount collapsed.
    *
    * A stored choice always wins -- in either direction, so a user who opened
@@ -1848,6 +1886,14 @@ export class AgUiChat extends HTMLElement {
    */
   moveTo(corner: ChatCorner, options: { readonly announce?: boolean } = {}): boolean {
     return this.#placement.moveTo(corner, options);
+  }
+
+  /**
+   * Drop a size the user dragged, and its stored copy, so the placement's
+   * default and the host's `--ag-ui-width` / `--ag-ui-height` apply again.
+   */
+  resetSize(): void {
+    this.#placement.resetSize();
   }
 
   /** Flip the collapsed state. Bound to the built-in header toggle. */
@@ -1960,7 +2006,7 @@ export class AgUiChat extends HTMLElement {
     this.#voice.dispose();
     this.#voice.wire();
     this.#history.adoptActiveThread();
-    void this.#history.rehydrate();
+    void this.#history.rehydrate("rescope");
     void this.#history.refreshDrawer();
   }
 
@@ -2032,6 +2078,36 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * Put a stored thread on screen, as picking it in the conversation list does,
+   * for a host that lists conversations in its own chrome.
+   *
+   * Resolves once the thread has been replayed, when {@link THREAD_EVENT} has
+   * fired. **A run in flight is cancelled**, as the list and {@link newChat} do;
+   * a host that would rather wait reads {@link running} first. The thread
+   * already on screen is left alone, and so is everything before the element
+   * connects, since until then it has no store to read the thread from.
+   */
+  async switchThread(threadId: string): Promise<void> {
+    if (!this.#connected) {
+      return;
+    }
+    await this.#history.switchThread(threadId);
+  }
+
+  /**
+   * Delete a stored thread, as the conversation list's delete does. Deleting the
+   * thread on screen cancels its run and puts a fresh thread in its place, and
+   * {@link THREAD_EVENT} reports it; deleting another leaves the screen alone.
+   * Does nothing before the element connects.
+   */
+  deleteThread(threadId: string): void {
+    if (!this.#connected) {
+      return;
+    }
+    this.#history.deleteThread(threadId);
+  }
+
+  /**
    * Open the checkpoints panel, or close it if it is already open — what the
    * built-in ⭯ button does, because a control that opens a panel is read as the
    * control that also dismisses it. {@link openCheckpoints} stays open-only for a
@@ -2066,6 +2142,7 @@ export class AgUiChat extends HTMLElement {
     this.#history.startThread();
     this.#setRunning(false);
     this.#setUnread(0);
+    this.#dispatchThread(this.#history.threadId, "new");
     // Whichever control started it: the header's, the history list's (which
     // hands focus back to its opener as it closes, before this runs), or a
     // host's own. A keyboard user otherwise had to find their way back to the
@@ -2340,6 +2417,12 @@ export class AgUiChat extends HTMLElement {
       onFilesPicked: () => this.#attachments.onFilesPicked(),
     });
 
+    // Host content against the input, after everything of the turn being
+    // written. A bare slot, whose own box is none, so an empty one takes no
+    // space and the greeting layout carries a filled one with the composer.
+    const aboveComposer = document.createElement("slot");
+    aboveComposer.name = "above-composer";
+
     // A coarse footer slot below the composer.
     const footer = document.createElement("slot");
     footer.name = "footer";
@@ -2351,7 +2434,8 @@ export class AgUiChat extends HTMLElement {
 
     // Composer surfaces sit just above the input: the skills palette (opens on
     // `/`), the chips, the hint saying what the composer still needs, the
-    // queued messages and the pending-attachments tray.
+    // queued messages and the pending-attachments tray, then the host's own
+    // content directly over the input.
     this.#chat.replaceChildren(
       header,
       this.#messagesWrap,
@@ -2360,6 +2444,7 @@ export class AgUiChat extends HTMLElement {
       this.#composerHint,
       this.#queuedRow,
       this.#attachSlot,
+      aboveComposer,
       inputRow,
       footer,
       this.#drawer.element,
@@ -2595,6 +2680,22 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * Say the conversation on screen changed: {@link THREAD_EVENT}.
+   *
+   * The thread it replaced is the one last reported, rather than the one the
+   * element last pointed at: a switch superseded before it replayed never drew
+   * its thread, so naming it as the previous one left a host's own list
+   * marking a thread that was never shown and still marking the one that was.
+   */
+  #dispatchThread(threadId: string, reason: ThreadDetail["reason"]): void {
+    const detail: ThreadDetail = { threadId, previousThreadId: this.#shownThread, reason };
+    this.#shownThread = threadId;
+    this.dispatchEvent(
+      new CustomEvent<ThreadDetail>(THREAD_EVENT, { detail, bubbles: true, composed: true }),
+    );
+  }
+
+  /**
    * Swap the composer button between Send (idle) and Stop (running).
    *
    * The glyph is swapped by CSS from `data-state` — both are mounted — so this
@@ -2615,6 +2716,8 @@ export class AgUiChat extends HTMLElement {
     this.#send.title = label;
     this.#send.setAttribute("aria-label", label);
     this.#send.dataset["state"] = running ? "running" : "idle";
+    // For a host's CSS, as `data-empty` is: the same state, on the element.
+    this.toggleAttribute("data-running", running);
     if (settled) {
       this.#flushQueued();
     }
@@ -3006,7 +3109,7 @@ export class AgUiChat extends HTMLElement {
     });
     return new AgUiClient({
       agent,
-      handlers: this.#runHandlers.forClient(),
+      handlers: this.#runHandlers.forClient(threadId),
       getTools: () => this.#tools.advertise(),
       getContext: () => this.#dispatch.buildContext(),
       executeTool: (call) => this.#dispatch.execute(call),

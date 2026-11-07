@@ -179,6 +179,20 @@ querying the document for other `<ag-ui-chat>` elements cannot see one rendered 
 another shadow root, which is where a framework usually puts it -- so it would miss exactly
 the collision the registry exists to catch.
 
+### The second: the connected chats
+
+`CONNECTED_CHATS` in `core/chat_registry.ts` is the list of `<ag-ui-chat>` elements in the
+document, in connection order. The highlight rings are drawn in the host's page, outside every
+chat, and a free `flash()` has to know which widget's colour to draw in (the owner decided it:
+the most recently connected chat, unless the caller names one). That is again a
+question about the other live instances. It meets the first two conditions as they stand: its
+subject is which chats are live, and each element adds itself on connect and removes itself on
+disconnect, nothing else. It meets the third only in part: one path writes it and one path
+releases it, both in the element's `ChatRegistration`, but it is *read* from outside the element,
+by the ring colour in `dom/ring_color.ts` through `ChatRegistration.latest()`. That read is the
+point of it, and it is the only one; a second reader, or another writer, needs its own
+decision rather than this precedent.
+
 ## Tests
 
 - `make test` runs Vitest with 100% line + branch + function + statement coverage (thresholds
