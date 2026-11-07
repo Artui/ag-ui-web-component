@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Rings hold 3:1 against what they are drawn on.** The step group head's
+  focus ring was the accent at 55% over transparent, so a light host accent
+  fell to 1.6:1 on the default light panel (Django admin's `#79aec8`). Unset,
+  `--ag-ui-ring` is now two parts accent to three parts ink, which holds 3:1
+  against the panel for any accent in every theme and scheme; Quiet's ring
+  turns from a translucent grey to near-ink. The field highlight ring, when it
+  falls back to the chat's own accent, is now held to 3:1 against the surface
+  behind the target: a dark widget on a light page drew its near-white accent
+  at 1.1:1, and now draws the light half of its accent pair, or the accent
+  stepped toward black or white. **No opt-in is needed**, and a host's
+  `--ag-ui-ring`, `--ag-ui-highlight-ring-color` or page `--ag-ui-accent` is
+  still drawn exactly as given.
+
 ## [0.47.0] — 2026-11-07
 
 ### Added

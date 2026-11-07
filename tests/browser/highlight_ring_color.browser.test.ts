@@ -114,18 +114,35 @@ describe("highlight ring colour (real browser)", () => {
 
   it.each([
     ["quiet light", "", [35, 35, 38, 1]],
-    ["quiet dark", "dark", [240, 240, 242, 1]],
     ["soft light", "soft", [106, 79, 216, 1]],
-    ["soft dark", "soft dark", [165, 147, 255, 1]],
     ["ledger light", "ledger", [184, 65, 14, 1]],
-    ["ledger dark", "ledger dark", [240, 138, 75, 1]],
-    ["code", "code", [63, 185, 80, 1]],
   ] as const)(
     "follows the %s chat's resolved accent, ring and halo",
     async (_name, theme, accent) => {
-      // The page stays light throughout, so a dark chat's ring is only right if
-      // its light-dark() pair was resolved by the chat's scheme, not the page's.
+      // The page stays light throughout, and each of these accents holds 3:1
+      // on it, so the ring is the accent the chat resolved by its own scheme.
       mount(theme === "" ? {} : { theme });
+      const target = makeTarget();
+
+      expect(await flashColor(target)).toEqual(accent);
+      expect(overlayColor(target)).toEqual(accent);
+      expect(await pressHalo(target)).toEqual(halo(accent));
+    },
+  );
+
+  it.each([
+    ["quiet dark", "dark", [35, 35, 38, 1]],
+    ["soft dark", "soft dark", [106, 79, 216, 1]],
+    ["ledger dark", "ledger dark", [184, 65, 14, 1]],
+    // Code's accent is one colour in both schemes, so there is no other half:
+    // it is stepped toward black until it holds.
+    ["code", "code", [57, 167, 72, 1]],
+  ] as const)(
+    "draws the %s chat's ring in a variant that holds on the light page, ring and halo",
+    async (_name, theme, accent) => {
+      // A dark chat's own accent is near white, which all but disappears on a
+      // white page, so the ring takes the other half of its light-dark() pair.
+      mount({ theme });
       const target = makeTarget();
 
       expect(await flashColor(target)).toEqual(accent);

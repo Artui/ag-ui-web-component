@@ -37,7 +37,15 @@ export const TOKEN_STYLES: string = `
   --_line-strong: var(--ag-ui-line-strong, color-mix(in oklch, var(--_fg) 20%, var(--_bg)));
   --_wash: var(--ag-ui-wash, color-mix(in oklch, var(--_fg) 4.5%, var(--_bg)));
   --_accent-ink: var(--ag-ui-accent-ink, color-mix(in oklch, var(--_accent) 82%, var(--_fg)));
-  --_ring: var(--ag-ui-ring, color-mix(in oklch, var(--_accent) 55%, transparent));
+  /* The focus ring is drawn on the panel, so it has to hold 3:1 against
+     --_bg whatever accent a host brings (WCAG 2.4.13). Two parts accent to
+     three parts ink does that at the worst case, an accent at the far end
+     from the ink (white on a light panel, black on a dark one): the ink
+     alone sits far above 3:1, and three fifths of it keeps the mix there
+     while the hue still reads as the accent. Half and half fell to 2.3:1
+     for black on the code theme. The accent over transparent, as before,
+     measured only the accent, and a light host accent fell to 1.6:1. */
+  --_ring: var(--ag-ui-ring, color-mix(in oklch, var(--_accent) 40%, var(--_fg)));
   /* The user's turn is the accent at a whisper. With Quiet's graphite accent
      that is a neutral wash; once a host sets a brand accent it becomes a tint
      of the brand, which is the one thing Soft does that Quiet keeps. */
