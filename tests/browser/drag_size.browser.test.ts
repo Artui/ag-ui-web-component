@@ -132,3 +132,67 @@ describe("a dragged size and a host's !important token (real browser)", () => {
     expect(el.offsetWidth).toBeCloseTo(900, 0);
   });
 });
+
+describe("resetSize and the resize anchor (real browser)", () => {
+  function grip(el: AgUiChat, name: string): HTMLElement {
+    const found = el.shadowRoot?.querySelector<HTMLElement>(`.resize-handle--${name}`);
+    if (found === null || found === undefined) {
+      throw new Error(`expected a .resize-handle--${name} in the shadow root`);
+    }
+    return found;
+  }
+
+  function tabStop(el: AgUiChat): string | undefined {
+    const stops = [
+      ...(el.shadowRoot?.querySelectorAll<HTMLElement>(".resize-handle") ?? []),
+    ].filter((handle) => handle.tabIndex === 0);
+    expect(stops).toHaveLength(1);
+    return stops[0]?.className.match(/resize-handle--([a-z-]+)/)?.[1];
+  }
+
+  it("re-reads the pinned edges against the restored box, not the dragged one", async () => {
+    // A host that, in a sized state of its own, pins the panel to the opposite
+    // corner. That is the case the resync exists for: the anchor stamped at the
+    // end of the drag describes the box the user left, and resetSize hands the
+    // box back to the host.
+    const style = document.createElement("style");
+    style.dataset["dragSize"] = "";
+    style.textContent = "ag-ui-chat.relocated { inset: 24px auto auto 24px; }";
+    document.head.appendChild(style);
+    const el = mount();
+    await settle();
+    expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+
+    // Drag the top-left grip, the free edge of a panel pinned bottom-right, so
+    // the drag writes a size and leaves the position to the layout.
+    const handle = grip(el, "top-left");
+    const grab = handle.getBoundingClientRect();
+    const x = grab.left + grab.width / 2;
+    const y = grab.top + grab.height / 2;
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x - 80, clientY: y - 60 }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x - 80, clientY: y - 60 }));
+    await settle();
+    expect(el.style.getPropertyValue("--_drag-width")).not.toBe("");
+    expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+
+    // The layout changes underneath the stamp; nothing re-reads it by itself.
+    el.classList.add("relocated");
+    await settle();
+    expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+    expect(tabStop(el)).toBe("top-left");
+
+    el.resetSize();
+    await settle();
+
+    expect(el.getAttribute("data-resize-anchor")).toBe("top-left");
+    // The tab stop sits on the corner opposite the pinned one, and the grip
+    // there is the one that grows the panel without moving it.
+    expect(tabStop(el)).toBe("bottom-right");
+    const edge = el.getBoundingClientRect();
+    expect(edge.left).toBeCloseTo(24, 0);
+    expect(edge.top).toBeCloseTo(24, 0);
+  });
+});
