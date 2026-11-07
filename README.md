@@ -210,6 +210,7 @@ another origin, add `credentials="include"` too; see
 | `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
 | `data-greeting` | — | CSS-only: `off` turns the [greeting layout](#the-greeting-on-an-empty-page) off under `placement="page"`, where it is on by default. Any other value turns it on under `placement="embedded"`. No other placement has it. |
 | `data-empty` | — | **Written by the element, not by you.** Present while the conversation has nothing in it, which is when the greeting shows. Public as a styling hook, so the chrome around a full-page chat can react to the same state, e.g. `ag-ui-chat[data-empty] ~ .page-footer { display: none }`. |
+| `data-running` | — | **Written by the element, not by you.** Present while an interaction is in flight, the same state that shows the Stop button (see the `running` property). Public as a styling hook, as `data-empty` is, so the chrome around the chat can react to it, e.g. `ag-ui-chat[data-running] ~ .toolbar button { pointer-events: none }`. |
 | `data-small-viewport` | — | CSS-only: `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
 | `data-paste-attach` | — | When to turn a long text paste into an attachment instead of composer text: absent for the 5000-character default, `off` to never, or a positive number of characters. Only acts where `data-attachments-url` (or a custom `uploadHandler`) gives it somewhere to go. |
 | `data-starters` | — | JSON array of prompts offered on an empty transcript, e.g. `'["Summarise this page"]'`. Fallback content for `slot="empty"`, so slotting your own replaces them. Shares the four-prompt and 120-character limits with the suggestion chips a run pushes. Read once at connect. |
@@ -1813,14 +1814,18 @@ your `--ag-ui-width` / `--ag-ui-height` tokens, which stay yours. The precedence
 is:
 
 - **Above 600px**, the dragged size beats a host's `--ag-ui-width` /
-  `--ag-ui-height`, so a user who resized the panel keeps their size without the
-  host's sized state needing `!important`. A host that enters a sized state of
-  its own calls `resetSize()` first, which drops the dragged size and its stored
-  copy and lets the host tokens apply again.
+  `--ag-ui-height`, `!important` included, so a user who resized the panel keeps
+  their size. A host that enters a sized state of its own (an "expanded" class,
+  a mode switch) calls `resetSize()` when it does, which drops the dragged size
+  and its stored copy and hands control back to the host tokens. A host with no
+  such state needs nothing.
 - **At 600px or less**, the small-viewport shape ignores the dragged size
-  entirely: the panel is full-bleed whatever was dragged or stored, and a window
-  narrowed after a wide-window drag goes full-bleed too. Only
-  `data-small-viewport="off"` keeps a dragged size at every width.
+  entirely, for the placements that block covers (`floating`, `bottom-left`,
+  `sidebar`, `side` and the default): the panel is full-bleed whatever was
+  dragged or stored, and a window narrowed after a wide-window drag goes
+  full-bleed too. `page` is already that shape, and `embedded` is left to the
+  host's own box, so neither is touched by the block. `data-small-viewport="off"`
+  keeps a dragged size at every width on the covered placements.
 
 A dragged size is a private property, so a host should not read it back from
 the element's inline style; use `getBoundingClientRect()`, or `resetSize()` to

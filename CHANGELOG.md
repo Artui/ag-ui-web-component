@@ -78,13 +78,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shape.** The drag, and the size restored before first paint, no longer write
   `--ag-ui-width` / `--ag-ui-height` on the element; they write the private
   `--_drag-width` / `--_drag-height`, still persisted per tab under the same key.
-  Above 600px the dragged size beats the host's tokens, as it did, but a host's
-  sized state no longer needs `!important` against it. At 600px or less the
+  Above 600px the dragged size beats the host's tokens, `!important` included:
+  the private properties are read before the public ones, so a host rule such as
+  `ag-ui-chat.expanded { --ag-ui-width: 900px !important }` used to beat a drag
+  and now loses to it until `resetSize()` is called. At 600px or less the
   small-viewport block does not read the dragged size, so a persisted or freshly
   dragged size leaves the full-bleed shape alone, including after a window
-  narrows. **No opt-in is needed**; a host that read `--ag-ui-width` back from
-  the element's inline style to learn the dragged size must measure the element
-  instead.
+  narrows. **Who owes what**: a host with no sized state of its own owes nothing.
+  A host that enters a sized state (an "expanded" class, a mode switch) and
+  relied on `!important` to outrank a user's drag must call `resetSize()` when it
+  enters that state. A host that read `--ag-ui-width` back from the element's
+  inline style to learn the dragged size must measure the element instead.
 
 ## [0.46.0] — 2026-11-05
 
