@@ -308,6 +308,14 @@ export const TOKEN_STYLES: string = `
      grid/flex layout) to embed it in the page flow instead of floating. */
   --_position: var(--ag-ui-position, fixed);
   --_z-index: var(--ag-ui-z-index, 2147483000);
+  /* A size the user dragged, written inline on the host by the placement
+     code, and read ahead of the host's tokens so the drag wins. There is no
+     public token behind it; it is declared initial here only so a chat that
+     was never dragged does not inherit one, from a dragged chat it is
+     slotted into or from any page rule naming it. The inline value still
+     beats this default. */
+  --_drag-width: initial;
+  --_drag-height: initial;
   --_width: var(--_drag-width, var(--ag-ui-width, 380px));
   --_height: var(--_drag-height, var(--ag-ui-height, 560px));
   /* The gutter a resting floating panel keeps between itself and the edge of

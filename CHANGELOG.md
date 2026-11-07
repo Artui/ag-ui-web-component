@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page token instead, for example `--ag-ui-font: var(--body-font)`. A host that
   followed the old advice has to change it to get the page's font.
 
+- **A chat never dragged no longer inherits a dragged size.** The size a drag
+  writes inline on the host was left undeclared on every other chat, so a chat
+  slotted into a dragged one, or under any page rule naming the private
+  property, came out at that size. It is now declared on `:host` like every
+  other private property. **No opt-in is needed.**
+
 ## [0.47.0] — 2026-11-07
 
 ### Added
