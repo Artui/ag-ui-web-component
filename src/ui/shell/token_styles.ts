@@ -37,7 +37,15 @@ export const TOKEN_STYLES: string = `
   --_line-strong: var(--ag-ui-line-strong, color-mix(in oklch, var(--_fg) 20%, var(--_bg)));
   --_wash: var(--ag-ui-wash, color-mix(in oklch, var(--_fg) 4.5%, var(--_bg)));
   --_accent-ink: var(--ag-ui-accent-ink, color-mix(in oklch, var(--_accent) 82%, var(--_fg)));
-  --_ring: var(--ag-ui-ring, color-mix(in oklch, var(--_accent) 55%, transparent));
+  /* The focus ring is drawn on the panel, so it has to hold 3:1 against
+     --_bg whatever accent a host brings (WCAG 2.4.13). Two parts accent to
+     three parts ink does that at the worst case, an accent at the far end
+     from the ink (white on a light panel, black on a dark one): the ink
+     alone sits far above 3:1, and three fifths of it keeps the mix there
+     while the hue still reads as the accent. Half and half fell to 2.3:1
+     for black on the code theme. The accent over transparent, as before,
+     measured only the accent, and a light host accent fell to 1.6:1. */
+  --_ring: var(--ag-ui-ring, color-mix(in oklch, var(--_accent) 40%, var(--_fg)));
   /* The user's turn is the accent at a whisper. With Quiet's graphite accent
      that is a neutral wash; once a host sets a brand accent it becomes a tint
      of the brand, which is the one thing Soft does that Quiet keeps. */
@@ -300,6 +308,25 @@ export const TOKEN_STYLES: string = `
      grid/flex layout) to embed it in the page flow instead of floating. */
   --_position: var(--ag-ui-position, fixed);
   --_z-index: var(--ag-ui-z-index, 2147483000);
+  /* A size the user dragged, written inline on the host by the placement
+     code, and read ahead of the host's tokens so the drag wins. There is no
+     public token behind it; it is declared initial here only so a chat that
+     was never dragged does not inherit one, from a dragged chat it is
+     slotted into or from any page rule naming it. The inline value still
+     beats this default. */
+  --_drag-width: initial;
+  --_drag-height: initial;
+  /* Where a docked panel stands, written inline the same way by the placement
+     code: the bottom bar's height, or the host anchor's distance from the
+     bottom and right edges. Read only by the dock rules, each with a 0px
+     fallback; declared initial so it never inherits either. */
+  --_dock-bottom: initial;
+  --_dock-right: initial;
+  /* The gap between a panel and the host's own button it rises from under
+     collapse-to="none". The button usually sits inside a taller toolbar, so a
+     host sets this to the button's distance from the toolbar's top plus the
+     clearance it wants, and the panel stands clear of the toolbar. */
+  --_anchor-gap: var(--ag-ui-anchor-gap, 8px);
   --_width: var(--_drag-width, var(--ag-ui-width, 380px));
   --_height: var(--_drag-height, var(--ag-ui-height, 560px));
   /* The gutter a resting floating panel keeps between itself and the edge of

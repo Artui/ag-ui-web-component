@@ -57,5 +57,14 @@ export const SMALL_VIEWPORT_STYLES: string = `
   :host([placement=""]:not([data-small-viewport="off"])) .resize-handle {
     display: none;
   }
+
+  /* The bottom bar shows only while collapsed. With the panel open the panel
+     is the screen, its header's minimise control is the way back, and a
+     second strip fixed to the bottom edge would sit under the keyboard while
+     the composer has focus. Hidden by display, so the bar measures 0 and the
+     host's padding goes with it. */
+  :host([data-collapsed-to="bar"]:not([collapsed]):not([data-small-viewport="off"])) .dock-bar {
+    display: none;
+  }
 }
 `;

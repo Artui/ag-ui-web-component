@@ -7,21 +7,32 @@ export interface LauncherOptions {
   readonly launcher: HTMLButtonElement;
   readonly badge: HTMLElement;
   readonly railLabel: HTMLElement;
+  /** The bottom bar's wrapper, which holds the launcher and the history button. */
+  readonly bar: HTMLElement;
+  /** The bottom bar's history button, a sibling of the launcher in the bar. */
+  readonly barHistory: HTMLButtonElement;
   readonly titleText: string;
   readonly iconUrl: string | null;
   readonly strings: UiStrings;
   readonly signal: AbortSignal;
   readonly onOpen: () => void;
+  readonly onHistory: () => void;
 }
 
 /**
- * Build what a collapsed widget shrinks to: a round floating button, or the
- * slim edge rail under `placement="sidebar"` -- one element, shaped by the
- * stylesheet. The element mounts it as a sibling of the panel, so it survives
- * the panel being hidden.
+ * Build what a collapsed widget shrinks to: a round floating button, the slim
+ * edge rail under `placement="sidebar"`, or the strip along the bottom edge
+ * under `collapse-to="bar"` -- one element, shaped by the stylesheet. The
+ * element mounts the bar wrapper as a sibling of the panel, so it survives the
+ * panel being hidden.
+ *
+ * The wrapper is there for the bar's history button: a button cannot nest in
+ * a button, so the strip is the launcher and the history button side by side.
+ * Outside the bar the wrapper draws no box and the history button is not
+ * drawn, so the launcher lays out against the host exactly as it did alone.
  */
 export function buildLauncher(options: LauncherOptions): void {
-  const { launcher, badge, railLabel } = options;
+  const { launcher, badge, railLabel, bar, barHistory } = options;
   launcher.className = "launcher";
   launcher.type = "button";
   launcher.setAttribute("part", "launcher");
@@ -47,4 +58,20 @@ export function buildLauncher(options: LauncherOptions): void {
     badge,
   );
   launcher.addEventListener("click", options.onOpen, { signal: options.signal });
+  bar.className = "dock-bar";
+  bar.setAttribute("part", "bar");
+  barHistory.className = "bar-history";
+  barHistory.type = "button";
+  barHistory.setAttribute("part", "bar-history");
+  barHistory.title = options.strings.chatHistory;
+  barHistory.setAttribute("aria-label", options.strings.chatHistory);
+  // A glyph rather than the header's icon slot: a slot name may appear once
+  // per shadow root, and the header's history button already holds it.
+  const glyph = document.createElement("span");
+  glyph.className = "bar-history-glyph";
+  glyph.setAttribute("aria-hidden", "true");
+  glyph.textContent = "\u2630";
+  barHistory.replaceChildren(glyph);
+  barHistory.addEventListener("click", options.onHistory, { signal: options.signal });
+  bar.replaceChildren(launcher, barHistory);
 }

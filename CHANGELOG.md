@@ -7,6 +7,139 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.0] — 2026-11-07
+
+### Added
+
+- **Choose how a step group draws its calls.** A new `data-tool-group-display`
+  attribute and `toolGroupDisplay` property, one of `full`, `compact`,
+  `minimal` or `inline`, set how an opened group draws its calls under
+  `grouped`. Each draws the regions the flat card of that mode draws, as a row
+  of the group. It is read only under `grouped`, is live, and leaves an
+  approval's arguments and buttons on screen in every mode. Exported as
+  `TOOL_GROUP_DISPLAY` with the `ToolGroupDisplayMode` type. **Opt-in**: an
+  absent or unknown value reads as `full`, which is what a group drew before,
+  so a host sees no change until it sets the attribute.
+- **Collapse into a bottom bar.** A new live `collapse-to` attribute chooses
+  what a collapsed panel becomes. `bar` draws a strip along the bottom edge in
+  place of the round launcher, with the title, the unread badge, a running
+  mark and a history button that opens and closes the conversation list as a
+  popover;
+  the panel rises from the bar's right end. `none` hides the collapsed widget
+  so the host's own toolbar drives it, and the `anchor` attribute or property
+  names the host element the panel rises from. Under both, the panel's height
+  stops at the bar or the anchor, so `--ag-ui-inset` is not needed, and a
+  docked panel can be resized but not moved. The read-only `barHeight`
+  property and the `ag-ui-bar-height` event (`BAR_HEIGHT_EVENT`, detail
+  `BarHeightDetail`) give the host the height to pad its page by. Under
+  `none` the element dispatches `ag-ui-toggle` once at connect with the state
+  it mounted in. On a phone the open panel stays full-bleed and the bar shows
+  only while collapsed. New parts `bar` and `bar-history`, and
+  `describeSurface()` reports `collapseTo`. **Opt-in**: absent,
+  `collapse-to` reads as `auto`, which leaves every placement as it was.
+- **Clear a host toolbar under `collapse-to="none"`.** The new
+  `--ag-ui-anchor-gap` token sets the gap between the panel and the anchor it
+  rises from, for a host whose button sits inside a taller toolbar; a gap
+  wider than the gutter also comes off the panel's max height, so a tall panel
+  stays on screen. **Opt-in**: absent, the gap stays 8px.
+
+### Changed
+
+- **The chat surface tools describe every collapsed shape.** With
+  `data-page-actions` including `chat`, the `minimise_chat` tool no longer
+  promises a launcher: its description names the launcher, the rail, the
+  bottom bar or the page's own control, and its refusal on a placement with no
+  collapsed state no longer mentions a launcher. The report `describeSurface()`
+  returns, and so `read_chat_surface`, gains `collapseTo`, and a move
+  refused on a docked panel says it is docked. This reaches every host that
+  enables the chat tools, whatever `collapse-to` is: an agent prompt that
+  quoted the old wording sees new text. No host action is needed.
+- **Tested against `@ag-ui/client` and `@ag-ui/core` 1.0.4.** The lockfile moves
+  from 1.0.3, and the declared range (`>=1.0.0 <2`) is unchanged, so a fresh
+  install of 0.47.0 already resolved 1.0.4. The element passes `threadId` to
+  the agent rather than reading the one 1.0.4 now creates on first read, and it
+  never edits a message the agent emits, which 1.0.4 now documents as
+  read-only. `zod` stays an undeclared peer of `@ag-ui/core`, as it was in
+  1.0.3. **No opt-in** and no behavioural change.
+
+- **The demo shows the 0.47.0 additions.** The playground gains a card under
+  the form with a control and a readout for each: the `above-composer` slot
+  (also a checkbox on the full-page route, where it travels with the centred
+  composer), the thread API (`threadId`, `newChat()`, `switchThread()` and a
+  log of `ag-ui-thread` events), the `tool-card-status-*` and `tool-group-*`
+  parts (drawn in one colour each, with a census of the parts in the
+  transcript) and the `--ag-ui-ring` token. Demo only, nothing shipped
+  changes, and **a host owes nothing**.
+
+### Fixed
+
+- **A collapsed embedded chat no longer shows the above-composer slot.** The
+  collapse hid the composer and its stack but not the `above-composer` slot, so
+  a host's row stayed on screen under the header bar. The slot is hidden with
+  the composer and returns on expand. No opt-in: a host that kept content in
+  that slot to stay visible while collapsed should use the footer slot, which
+  collapse leaves alone.
+
+- **`switchThread()` keeps the old thread when the store's load rejects.** The element
+  used to point at the new thread id, show an empty transcript and fire no
+  `ag-ui-thread`, so it named a thread it was not showing. It now stays on the thread
+  it was on, draws it again without an event, and the returned promise rejects with
+  the store's error. A second `switchThread()` for the thread still loading now
+  settles with that load, after the replay, instead of resolving at once. No host
+  opt-in.
+- **`newChat()` before the element connects waits for the connect.** It used to mint a
+  thread in the unscoped store and fire `ag-ui-thread` for a chat that was not yet
+  shown, leaving `threadId` non-null against the README. Now `threadId` is `null` and
+  nothing fires until the element connects, which starts the new chat and fires one
+  `ag-ui-thread` with reason `new`. A host that called `newChat()` early and relied on
+  the immediate event or thread id reads them after connect instead.
+
+- **Rings hold 3:1 against what they are drawn on.** The step group head's
+  focus ring was the accent at 55% over transparent, so a light host accent
+  fell to 1.6:1 on the default light panel (Django admin's `#79aec8`). Unset,
+  `--ag-ui-ring` is now two parts accent to three parts ink, which holds 3:1
+  against the panel for any accent in every theme and scheme; Quiet's ring
+  turns from a translucent grey to near-ink. The field highlight ring, when it
+  falls back to the chat's own accent, is now held to 3:1 against the surface
+  behind the target: a dark widget on a light page drew its near-white accent
+  at 1.1:1, and now draws the light half of its accent pair, or the accent
+  stepped toward black or white. **No opt-in is needed**, and a host's
+  `--ag-ui-ring`, `--ag-ui-highlight-ring-color` or page `--ag-ui-accent` is
+  still drawn exactly as given.
+
+- **The docs no longer advise `--ag-ui-font: inherit`.** The README and the
+  0.45.0 entry said it would keep the page's font under any theme. It does
+  nothing: a CSS-wide keyword in a custom property applies to the custom
+  property itself, so it takes the parent's `--ag-ui-font`, which nothing sets,
+  and the theme's stack wins. Set `--ag-ui-font` to the page's family or to a
+  page token instead, for example `--ag-ui-font: var(--body-font)`. A host that
+  followed the old advice has to change it to get the page's font.
+
+- **A chat never dragged no longer inherits a dragged size.** The size a drag
+  writes inline on the host was left undeclared on every other chat, so a chat
+  slotted into a dragged one, or under any page rule naming the private
+  property, came out at that size. It is now declared on `:host` like every
+  other private property. **No opt-in is needed.**
+
+- **Picking a thread from the history drawer no longer leaves an unhandled
+  rejection when the store cannot load it.** The drawer's pick dropped the promise
+  `switchThread()` returns, so a store whose load rejected surfaced as an unhandled
+  rejection on the page. The pick now ends that rejection itself, and the thread on
+  screen stays as it was. No host opt-in.
+
+- **A gated call with no arguments no longer draws an empty arguments box.** Under
+  `data-tool-display="compact"` and `"inline"`, the rule that shows a deferred call's
+  arguments outranked the `hidden` attribute the card sets when there are none, so an
+  empty box sat above the Approve button. The rule now skips a hidden section. No host
+  opt-in.
+
+- **The theme toggle flips the scheme the panel is drawn in.** With no `light` or
+  `dark` word in `theme`, as under `auto` on a dark system or when a host rule sets
+  the element's `color-scheme`, the first press wrote `dark` over a panel that was
+  already dark, and the glyph offered dark. The toggle and its glyph now read the
+  drawn scheme. A `light` or `dark` word also now holds against a host rule that
+  sets `color-scheme` on the element, which used to win over it. No host opt-in.
+
 ## [0.47.0] — 2026-11-07
 
 ### Added
@@ -4846,7 +4979,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.47.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.48.0...HEAD
+[0.48.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.44.0...v0.45.0

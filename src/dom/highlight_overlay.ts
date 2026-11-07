@@ -10,7 +10,8 @@ export interface HighlightOverlayOptions {
   /**
    * Ring colour, and the flat fallback for the gradient. Default:
    * `--ag-ui-highlight-ring-color` on the target, then on the chat, then the
-   * target's `--ag-ui-accent`, then the chat's accent.
+   * target's `--ag-ui-accent`, then the chat's accent, held to 3:1 against the
+   * surface behind the target.
    */
   readonly color?: string;
   /** The chat whose ring colour and accent to use. Default: the latest connected. */

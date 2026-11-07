@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { cdp } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
@@ -722,6 +722,117 @@ describe("the theme toggle (real browser)", () => {
     const el = mount({ theme: "ledger auto", "data-theme-toggle": "" });
     part(el, ".header-btn--theme").click();
     expect(el.getAttribute("theme")).toBe("ledger dark");
+  });
+
+  describe("with no scheme word, from the scheme the panel is drawn in", () => {
+    const HOST_DARK = "ag-ui-chat { color-scheme: dark; }";
+
+    function pageRule(css: string): void {
+      const style = document.createElement("style");
+      style.setAttribute("data-test-page-rule", "");
+      style.textContent = css;
+      document.head.append(style);
+    }
+
+    const darkSystem = (): Promise<unknown> =>
+      cdp().send("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-color-scheme", value: "dark" }],
+      });
+
+    /** The scheme the glyph offers: the sun is the only mark with a circle. */
+    const offers = (el: AgUiChat): string =>
+      part(el, ".header-btn--theme").querySelector("circle") === null ? "dark" : "light";
+
+    /** The saved scheme, under whatever namespace the element's endpoint gives it. */
+    const saved = (): string | null => {
+      const key = Object.keys(localStorage).find((name) => name.startsWith("ag-ui-chat:theme"));
+      return key === undefined ? null : localStorage.getItem(key);
+    };
+
+    /** The panel's text, which a scheme inherited from the host would get wrong. */
+    const ink = (el: AgUiChat): number =>
+      luminance(rgba(getComputedStyle(part(el, ".chat")).color));
+
+    beforeEach(() => {
+      sessionStorage.clear();
+      localStorage.clear();
+    });
+
+    afterEach(async () => {
+      sessionStorage.clear();
+      localStorage.clear();
+      for (const style of document.head.querySelectorAll("style[data-test-page-rule]")) {
+        style.remove();
+      }
+      await cdp().send("Emulation.setEmulatedMedia", { features: [] });
+    });
+
+    it.each([
+      ["auto on a dark system", { theme: "auto" }, darkSystem],
+      ["a host rule on the element", {}, async () => pageRule(HOST_DARK)],
+      ["a host rule beside a theme name", { theme: "soft" }, async () => pageRule(HOST_DARK)],
+    ] as ReadonlyArray<
+      readonly [string, Readonly<Record<string, string>>, () => Promise<unknown>]
+    >)("turns a dark panel light on the first press, under %s", async (_case, attrs, setUp) => {
+      await setUp();
+      const el = mount({ ...attrs, "data-theme-toggle": "" });
+      const dark = attrs["theme"] === "soft" ? SOFT_DARK_BG : QUIET_DARK_BG;
+      const light = attrs["theme"] === "soft" ? SOFT_LIGHT_BG : QUIET_LIGHT_BG;
+      expect(background(el, ".chat")).toEqual(dark);
+      expect(offers(el)).toBe("light");
+
+      part(el, ".header-btn--theme").click();
+      expect(el.getAttribute("theme")).toBe(attrs["theme"] === "soft" ? "soft light" : "light");
+      expect(saved()).toBe("light");
+      expect(background(el, ".chat")).toEqual(light);
+      expect(ink(el)).toBeLessThan(0.1);
+      expect(offers(el)).toBe("dark");
+
+      part(el, ".header-btn--theme").click();
+      expect(saved()).toBe("dark");
+      expect(background(el, ".chat")).toEqual(dark);
+      expect(ink(el)).toBeGreaterThan(0.7);
+      expect(offers(el)).toBe("light");
+    });
+
+    it("restores a saved light over a host rule that draws the element dark", () => {
+      pageRule(HOST_DARK);
+      sessionStorage.setItem("ag-ui-chat:theme", "light");
+      const el = mount({ "data-theme-toggle": "" });
+      expect(el.getAttribute("theme")).toBe("light");
+      expect(background(el, ".chat")).toEqual(QUIET_LIGHT_BG);
+      expect(offers(el)).toBe("dark");
+    });
+
+    it("turns a panel a host rule draws light dark on the first press, on a dark system", async () => {
+      await darkSystem();
+      pageRule("ag-ui-chat { color-scheme: light; }");
+      const el = mount({ "data-theme-toggle": "" });
+      expect(background(el, ".chat")).toEqual(QUIET_LIGHT_BG);
+      expect(offers(el)).toBe("dark");
+      part(el, ".header-btn--theme").click();
+      expect(el.getAttribute("theme")).toBe("dark");
+      expect(saved()).toBe("dark");
+      expect(background(el, ".chat")).toEqual(QUIET_DARK_BG);
+      expect(ink(el)).toBeGreaterThan(0.7);
+      expect(offers(el)).toBe("light");
+    });
+
+    it("offers dark on a light panel: the default, and auto on a light system", () => {
+      expect(offers(mount({ "data-theme-toggle": "" }))).toBe("dark");
+      expect(offers(mount({ theme: "auto", "data-theme-toggle": "" }))).toBe("dark");
+    });
+
+    it("lets the system pick when a host rule allows both schemes", async () => {
+      await darkSystem();
+      pageRule("ag-ui-chat { color-scheme: light dark; }");
+      const el = mount({ "data-theme-toggle": "" });
+      expect(background(el, ".chat")).toEqual(QUIET_DARK_BG);
+      expect(offers(el)).toBe("light");
+      part(el, ".header-btn--theme").click();
+      expect(el.getAttribute("theme")).toBe("light");
+      expect(background(el, ".chat")).toEqual(QUIET_LIGHT_BG);
+    });
   });
 });
 
