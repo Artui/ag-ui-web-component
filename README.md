@@ -298,7 +298,7 @@ the `copyCode` / `copied` / `copyFailed` strings.
 **Methods**: `registerTool`, `registerPageState`, `registerActivityRenderer`, `setSkills`,
 `sendMessage`, `attachFile`, `appendMessage`, `retryLastTurn`, `quote`, `offerQuoteInPage`,
 `enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `describeSurface`, `moveTo`,
-`toggleTheme`, `openThreads`, `closeThreads`,
+`resetSize`, `toggleTheme`, `openThreads`, `closeThreads`,
 `openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `reload`, and the deprecated
 `registerStateHook` (renamed to `registerPageState`).
 
@@ -1138,6 +1138,9 @@ matching JS API:
   returning whether it went. It takes the axes the same way a user drag does, so the launcher
   travels with it and switching placement hands them back. Returns `false` rather than pretending
   when the placement owns its position or the panel fills the screen.
+- `resetSize()` — drop a size the user dragged, and its stored copy, so the placement's own
+  size and your `--ag-ui-width` / `--ag-ui-height` apply again. For a host that enters a sized
+  state of its own (an expanded mode): a user's drag outranks host tokens, so call this first.
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
   reflected as the boolean `collapsed` attribute/property and persisted per-tab in
   `sessionStorage`, so it survives a reload.
@@ -1722,11 +1725,26 @@ and which grip carries the keyboard.
 
 ### Sizes, keyboard, and parts
 
-A drag writes `--ag-ui-width` / `--ag-ui-height` on the host as custom
-properties.
+A drag writes the private `--_drag-width` / `--_drag-height` on the host, not
+your `--ag-ui-width` / `--ag-ui-height` tokens, which stay yours. The precedence
+is:
 
-**That alone does not leave placement in charge** — an inline custom property
-still outranks a `:host([placement=…])` rule setting the same property. So the
+- **Above 600px**, the dragged size beats a host's `--ag-ui-width` /
+  `--ag-ui-height`, so a user who resized the panel keeps their size without the
+  host's sized state needing `!important`. A host that enters a sized state of
+  its own calls `resetSize()` first, which drops the dragged size and its stored
+  copy and lets the host tokens apply again.
+- **At 600px or less**, the small-viewport shape ignores the dragged size
+  entirely: the panel is full-bleed whatever was dragged or stored, and a window
+  narrowed after a wide-window drag goes full-bleed too. Only
+  `data-small-viewport="off"` keeps a dragged size at every width.
+
+A dragged size is a private property, so a host should not read it back from
+the element's inline style; use `getBoundingClientRect()`, or `resetSize()` to
+clear it.
+
+**A custom property alone does not leave placement in charge** — an inline custom
+property still outranks a `:host([placement=…])` rule setting the same property. So the
 component enforces the split directly: **a placement owns the axes it fixes**,
 and a dragged or persisted size is only ever applied to the ones it leaves free.
 Switching placement hands the owned axes back. Without that, a height dragged

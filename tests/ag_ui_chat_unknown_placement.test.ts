@@ -147,8 +147,8 @@ describe("an unrecognised placement", () => {
     // of a panel resting on the bottom-right: 80px further out on each.
     dragGrip(el, "top-left", [604, 216], [524, 136]);
 
-    expect(el.style.getPropertyValue("--ag-ui-width")).toBe("460px");
-    expect(el.style.getPropertyValue("--ag-ui-height")).toBe("640px");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("460px");
+    expect(el.style.getPropertyValue("--_drag-height")).toBe("640px");
   });
 });
 

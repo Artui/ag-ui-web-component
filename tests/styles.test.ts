@@ -43,8 +43,8 @@ describe("STYLES", () => {
   });
 
   it("keeps the default floating bottom-right 380x560 widget", () => {
-    expect(STYLES).toContain("--_width: var(--ag-ui-width, 380px);");
-    expect(STYLES).toContain("--_height: var(--ag-ui-height, 560px);");
+    expect(STYLES).toContain("--_width: var(--_drag-width, var(--ag-ui-width, 380px));");
+    expect(STYLES).toContain("--_height: var(--_drag-height, var(--ag-ui-height, 560px));");
     // The floating margins are added to whatever edges the host reserved, so
     // the default is an expression rather than a literal. The gutter itself is
     // a token because the size cap has to subtract the same one the inset
@@ -345,7 +345,12 @@ describe("STYLES token indirection", () => {
       // style on each span; it is plumbing, not a theming token, and has no
       // alias by design.
       .filter((line) => !line.includes("var(--ag-ui-word-index"))
-      .filter((line) => !/^\s*--_([a-z0-9-]+): var\(--ag-ui-\1[,)]/.test(line));
+      // A size the user dragged is read before the host's token, so the drag
+      // wins on a desktop; the private drag properties are the one thing that
+      // may precede the public token in an alias.
+      .filter(
+        (line) => !/^\s*--_([a-z0-9-]+): (?:var\(--_drag-\1, )?var\(--ag-ui-\1[,)]/.test(line),
+      );
     expect(stray).toEqual([]);
   });
 
@@ -353,7 +358,14 @@ describe("STYLES token indirection", () => {
     // Aliases inherit like any custom property. An alias used but not declared
     // on :host would pick up a same-named property from the host page's own
     // CSS; declaring it here shields the shadow tree from that.
-    const used = new Set([...code.matchAll(/var\(\s*(--_[a-z0-9-]+)/g)].map((m) => m[1]));
+    // The dragged size is written inline by the placement code, like the word
+    // index, so it has no declaration here by design: a :host default would
+    // have nothing to say, and the inline value beats it regardless.
+    const used = new Set(
+      [...code.matchAll(/var\(\s*(--_[a-z0-9-]+)/g)]
+        .map((m) => m[1])
+        .filter((name) => !name?.startsWith("--_drag-")),
+    );
     // The chart series are read by the SVG the chart renderer writes, not by
     // the stylesheet, so their aliases are used from there.
     for (let index = 0; index < 6; index += 1) {
@@ -373,7 +385,10 @@ describe("STYLES token indirection", () => {
       .map(([, name, value]) => `${name}: ${value}`)
       .filter((declaration) => {
         const [name, value] = declaration.split(": ", 2);
-        return !value?.startsWith(`var(--ag-ui-${name?.slice(3)},`);
+        return !(
+          value?.startsWith(`var(--ag-ui-${name?.slice(3)},`) ||
+          value?.startsWith(`var(--_drag-${name?.slice(3)}, var(--ag-ui-${name?.slice(3)},`)
+        );
       });
     expect(direct).toEqual([]);
   });
