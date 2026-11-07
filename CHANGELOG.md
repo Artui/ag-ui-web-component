@@ -26,6 +26,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   size and the host's `--ag-ui-width` / `--ag-ui-height` apply again. For a host
   entering a sized state of its own, which a user's drag would otherwise outrank.
 
+- **A public thread API, for a host that lists conversations in its own
+  chrome.** `switchThread(threadId)` puts a stored thread on screen and resolves
+  once it is replayed; during a run it cancels the run, as the drawer and
+  `newChat()` do. `deleteThread(threadId)` deletes one as the drawer row does,
+  replacing the thread on screen with a fresh one when it was that thread. The
+  read-only `threadId` is the thread on screen and never mints one, unlike
+  `conversationStore.threadId()`. The read-only `running` is the composer's own
+  state, across tool rounds, a Retry and a checkpoint continuation, reflected as
+  `data-running` on the element. A new `ag-ui-thread` event (`THREAD_EVENT`,
+  typed `ThreadDetail`) fires once per change of conversation, after the
+  transcript is replaced, with `{ threadId, previousThreadId, reason }` and
+  `reason` one of `new`, `switch`, `delete`, `restore` (on connect and on
+  `reload()`) or `rescope` (a `user-key` change). `ag-ui-run-finished` gains
+  `threadId`, the thread the run belonged to. **No opt-in is needed**; all of it
+  is additive. A host can now drop a patch that reached the private thread
+  switch, an attribute observer that inferred the running state, and reads of
+  `conversationStore.threadId()` made only to learn the thread on screen.
+  `ag-ui-submit` keeps its meaning: a turn was sent, not a run started.
+
 ### Changed
 
 - **Highlight rings on an unthemed page follow the widget's theme.** Since

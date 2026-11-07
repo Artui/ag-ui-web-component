@@ -9,6 +9,7 @@ import type {
   ClientConversationStore,
   NavigationCheckpoint,
 } from "../../core/conversation_store.js";
+import type { ThreadDetail } from "../../core/events/thread_detail.js";
 import type { MessageRole } from "../../core/message_role.js";
 import { RunIndex } from "../../core/run_index.js";
 import { toolStatusFromOutcome } from "../../core/tool_outcome.js";
@@ -119,6 +120,8 @@ export interface ConversationHistoryHost {
   readonly resetState: () => void;
   /** Swap the composer between Send and Stop, which the composer owns. */
   readonly setRunning: (running: boolean) => void;
+  /** Say the conversation on screen changed, once its transcript is replaced. */
+  readonly threadChanged: (detail: ThreadDetail) => void;
 }
 
 /**
@@ -332,10 +335,11 @@ export class ConversationHistory {
     }
     this.#host.cancelRun();
     this.#host.resetState();
+    const previousThreadId = this.#threadId;
     this.#host.conversationStore().setActiveThread(threadId);
     this.#threadId = threadId;
     this.#host.setRunning(false);
-    await this.rehydrate();
+    await this.rehydrate({ reason: "switch", previousThreadId });
   }
 
   /** Rename a thread, then reload the list that shows its title. */
@@ -355,6 +359,12 @@ export class ConversationHistory {
       this.#host.resetState();
       this.adoptActiveThread();
       this.#host.setRunning(false);
+      // No replay to wait for: the thread that took its place is a fresh one.
+      this.#host.threadChanged({
+        threadId: this.#threadId,
+        previousThreadId: threadId,
+        reason: "delete",
+      });
     }
     void this.refreshDrawer();
   }
@@ -628,8 +638,12 @@ export class ConversationHistory {
    * for the run it would have resumed -- unless what replaced it is a restore
    * of the same conversation, still current, which answers for that run
    * instead; see `#forgetStopped`.
+   *
+   * `change` is what the thread event this restore ends with reports: why the
+   * conversation changed, and which one it replaced. A restore that is stopped
+   * reports nothing.
    */
-  async rehydrate(): Promise<void> {
+  async rehydrate(change: Omit<ThreadDetail, "threadId">): Promise<void> {
     // Claimed before awaiting, and checked by `#restoring` wherever the restore
     // has waited or run host code. With a slow remote store, picking thread B
     // then C interleaved both replays into one transcript, and New chat drew
@@ -727,11 +741,24 @@ export class ConversationHistory {
           }
         }
       }
-      if (checkpoint !== null) {
-        await this.#resumeFrom(checkpoint, generation);
-        return;
+      if (checkpoint === null) {
+        this.#noticeIfRunUnfinished(messages);
       }
-      this.#noticeIfRunUnfinished(messages);
+      // Said once the transcript is the restored one, and only by a restore
+      // still current: one that was stopped returned above, so two quick
+      // switches report the second alone. Before a resume, because the resume
+      // is a run, and waiting for it reported the change a whole answer late.
+      this.#host.threadChanged({ threadId, ...change });
+      if (checkpoint !== null) {
+        // A listener is host code, and can stop the restore as a replayed
+        // renderer can. Resuming then answered the call into the conversation
+        // that replaced it, and left the checkpoint for a later visit to resume.
+        if (!this.#restoring(generation)) {
+          this.#forgetStopped(store, threadId, checkpoint);
+          return;
+        }
+        await this.#resumeFrom(checkpoint, generation);
+      }
     } finally {
       // The resumed run starting has let go of the hold already, as a send's
       // does, and a request that then fails still started one: the client

@@ -62,6 +62,17 @@ export const ATTACHMENT_EVENT = "ag-ui-attachments";
 export const RUN_FINISHED_EVENT = "ag-ui-run-finished";
 
 /**
+ * The conversation on screen changed: a new chat, a thread switched to, the
+ * active thread deleted, the stored thread restored, or a `user-key` change
+ * handing the element to another principal. `detail` is {@link ThreadDetail}.
+ *
+ * Fires once per change, after the transcript has been replaced, so a listener
+ * reads the conversation it is told about. A host listing conversations in its
+ * own chrome marks the active one from here rather than watching attributes.
+ */
+export const THREAD_EVENT = "ag-ui-thread";
+
+/**
  * The agent sent an AG-UI `CUSTOM` event. `detail` is {@link CustomAgentDetail}.
  *
  * `CUSTOM` is one of exactly two carriers whose payload name the protocol leaves

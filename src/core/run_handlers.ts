@@ -176,8 +176,13 @@ export class RunHandlers {
    * A handler table for one AG-UI client. Every table built for the current
    * conversation draws into the same transcript and shares its bookkeeping, so
    * a continuation run reports into the interaction the user is looking at.
+   *
+   * `threadId` is the thread the client was built for, named on the
+   * run-finished detail. Taken here rather than read when the run settles,
+   * because a stopped run settles after the reset that stopped it, when the
+   * thread on screen is already the next one.
    */
-  forClient(): AgUiClientHandlers {
+  forClient(threadId: string): AgUiClientHandlers {
     const ledger = this.#ledger;
     const attached = (): boolean => ledger === this.#ledger;
     const { onSettled, ...drawing } = this.#tableFor(ledger);
@@ -190,7 +195,7 @@ export class RunHandlers {
         // Last, so a listener that refetches sees a transcript that has already
         // stopped changing -- and outside the check, because what a run did is
         // true whichever conversation is on screen when it ends.
-        this.#dispatchRunFinished(ledger);
+        this.#dispatchRunFinished(ledger, threadId);
       },
     };
   }
@@ -444,7 +449,7 @@ export class RunHandlers {
    * server is a fact about the run, and a name can appear on both sides across a
    * conversation.
    */
-  #dispatchRunFinished(ledger: RunLedger): void {
+  #dispatchRunFinished(ledger: RunLedger, threadId: string): void {
     const tools: ToolRun[] = ledger.tools.map(({ id, name }) => ({
       name,
       side: ledger.serverSettled.has(id) ? "server" : "client",
@@ -455,7 +460,7 @@ export class RunHandlers {
     ledger.invalidated.clear();
     this.#host.element.dispatchEvent(
       new CustomEvent<RunFinishedDetail>(RUN_FINISHED_EVENT, {
-        detail: { tools, invalidated },
+        detail: { threadId, tools, invalidated },
         bubbles: true,
         composed: true,
       }),

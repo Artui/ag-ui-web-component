@@ -264,7 +264,7 @@ element after the fact.
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
 `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
-`resolvePageTarget`, `sharedState`, `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread` and `unhandledActivityTypes`, and
+`resolvePageTarget`, `sharedState`, `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId` and `running`, and
 the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `collapsed` /
 `credentials`.
 
@@ -289,7 +289,8 @@ labels are fetched automatically — per card, `x-summary` → an explicit
 `sharedState` is AG-UI shared state, documented under
 [the run loop](#the-run-loop-and-the-ag-ui-client); `unread` and `unhandledActivityTypes` are
 read-only counters, covered under [the unread badge](#the-unread-badge) and
-[finding out what arrived](#finding-out-what-arrived).
+[finding out what arrived](#finding-out-what-arrived); `threadId` and `running` are covered under
+[driving the conversation from your own chrome](#driving-the-conversation-from-your-own-chrome).
 
 Code blocks in an agent's answer carry a **copy button**, revealed on hover or
 keyboard focus and styleable via the `code-copy` part. Override its labels with
@@ -298,14 +299,17 @@ the `copyCode` / `copied` / `copyFailed` strings.
 **Methods**: `registerTool`, `registerPageState`, `registerActivityRenderer`, `setSkills`,
 `sendMessage`, `attachFile`, `appendMessage`, `retryLastTurn`, `quote`, `offerQuoteInPage`,
 `enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `describeSurface`, `moveTo`,
-`resetSize`, `toggleTheme`, `openThreads`, `closeThreads`,
+`resetSize`, `toggleTheme`, `openThreads`, `closeThreads`, `switchThread`, `deleteThread`,
 `openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `reload`, and the deprecated
 `registerStateHook` (renamed to `registerPageState`).
 
 ### Sending from your own UI
 
 `sendMessage(content, attachments?)` sends as if the user had typed it — user bubble,
-`ag-ui-submit` event, run started. Use it for an "Ask about this order" button, a command
+`ag-ui-submit` event, run started. `ag-ui-submit` means a turn was sent, not that a run started:
+a Retry and a run continued from the checkpoint panel start runs without one. To know whether
+anything is running, read [`running`](#driving-the-conversation-from-your-own-chrome) or style on
+`data-running`. Use it for an "Ask about this order" button, a command
 palette, a prompt fired when your page mounts the chat, or a composer of your own replacing the
 built-in one.
 
@@ -1178,6 +1182,48 @@ chrome — or hide the built-in toggle and drive the `collapsed` attribute itsel
 chat.newChat();
 chat.toggleCollapsed();
 chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
+```
+
+### Driving the conversation from your own chrome
+
+A host that lists conversations in its own bar, rather than in the built-in drawer, drives the
+one on screen with the drawer's own paths:
+
+- `switchThread(threadId)` — put a stored thread on screen and replay it, as picking its row in
+  the drawer does. Returns a `Promise<void>` that resolves once the thread is drawn. **A run in
+  flight is cancelled**, as the drawer and `newChat()` cancel it; read `running` first if you
+  would rather wait. Switching to the thread already on screen does nothing, and so does a call
+  before the element connects.
+- `deleteThread(threadId)` — delete a stored thread, as the drawer row's delete does. Deleting
+  the thread on screen cancels its run and puts a fresh thread in its place; deleting another
+  leaves the screen alone. Prefer it to `conversationStore.clear()`, which deletes the record and
+  nothing else: the run, the transcript and the drawer are left pointing at it.
+- `threadId` *(read-only)* — the thread on screen, `null` before the element first connects.
+  It only reads. `conversationStore.threadId()` mints and stores a thread when the store points
+  at none, so asking it which conversation is showing can start one.
+- `running` *(read-only)* — whether an interaction is in flight: the composer's own state, the
+  one it shows Stop for, across every tool round, a Retry and a checkpoint continuation as well
+  as a send. Reflected on the element as the `data-running` attribute, written by the element
+  rather than by you, as `data-empty` is, so the chrome around the chat can style on it.
+
+Every change of conversation fires one **`ag-ui-thread`** event (the `THREAD_EVENT` constant),
+after the transcript has been replaced, so a listener reads the conversation it is told about.
+`detail` is `{ threadId, previousThreadId, reason }` (typed `ThreadDetail`), with `reason` one of:
+
+| `reason` | When |
+| --- | --- |
+| `new` | `newChat()` or the built-in New chat button. |
+| `switch` | `switchThread()` or a row picked in the drawer. Two switches made before the first had replayed report only the second. |
+| `delete` | The thread on screen was deleted, and a fresh one took its place. |
+| `restore` | The stored thread was replayed: when the element connects (`previousThreadId` is `null` the first time), or by `reload()`. |
+| `rescope` | A `user-key` change handed the element to another principal. |
+
+A page reload keeps restoring the thread, as [MPA durability](#mpa-durability-surviving-full-page-reloads) describes, and
+reports it as `restore`. Ignore a `reason` you do not know: more may be added.
+
+```js
+chat.addEventListener("ag-ui-thread", (e) => myBar.markActive(e.detail.threadId));
+myBar.onPick = (threadId) => chat.switchThread(threadId);
 ```
 
 ### The composer's own keys
@@ -2504,8 +2550,10 @@ chat.navigate = (path) => router.push(path); // SPA: in-page, no reload
 Route map + `navigate()` and the reload model are the same feature seen from two ends.
 
 **`ag-ui-run-finished`** *(event)* — an interaction has ended, and here is what ran in it.
-`detail: { tools: readonly ToolRun[] }` (typed `RunFinishedDetail`), where each `ToolRun` is
-`{ name, side: "server" | "client" }` in settle order.
+`detail: { threadId, tools: readonly ToolRun[], invalidated }` (typed `RunFinishedDetail`), where
+each `ToolRun` is `{ name, side: "server" | "client" }` in settle order. `threadId` is the thread
+the run belonged to, which is not always the one on screen: a run that a new chat or a thread
+switch stopped still reports once its request closes.
 
 **This is the seam for a host that renders data the agent can change.** A server-side tool writes
 without your page's knowledge: nothing else the element dispatches implies "something may have moved
@@ -2788,6 +2836,7 @@ re-export point. Internal modules import from leaf paths.
 | `defineAgUiChat()` | function | Idempotently register the element. |
 | `MessageRole` | type | Role of a rendered chat message. |
 | `SubmitDetail` | type | `detail` shape of the submit event. |
+| `ThreadDetail` | type | `detail` shape of the `ag-ui-thread` event (`{ threadId, previousThreadId, reason }`). |
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
 | `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
 | `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
@@ -2937,6 +2986,7 @@ re-export point. Internal modules import from leaf paths.
 | --- | --- |
 | `ELEMENT_TAG` | The registered tag name (`ag-ui-chat`). |
 | `SUBMIT_EVENT` | The submit CustomEvent name. |
+| `THREAD_EVENT` | The conversation-changed CustomEvent name (`ag-ui-thread`). |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |

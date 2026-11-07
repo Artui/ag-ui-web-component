@@ -166,7 +166,7 @@ describe("run-finished event", () => {
 
     // Exact equality on the whole detail, deliberately: the shape is public
     // API, so a field appearing unannounced should fail here.
-    expect(seen).toEqual([{ tools: [], invalidated: [] }]);
+    expect(seen).toEqual([{ threadId: el.threadId, tools: [], invalidated: [] }]);
   });
 
   it("fires after an error, because a partial write is still a write", async () => {
@@ -279,12 +279,16 @@ describe("a run the conversation left behind", () => {
     ]);
     void el.sendMessage("book it");
     await flush();
+    const left = el.threadId;
 
     el.newChat();
     stream.open();
     await flush();
 
-    expect(seen).toEqual([{ tools: [{ name: "create_event", side: "server" }], invalidated: [] }]);
+    // Named for the conversation it ran in, which is no longer on screen.
+    expect(seen).toEqual([
+      { threadId: left, tools: [{ name: "create_event", side: "server" }], invalidated: [] },
+    ]);
   });
 
   describe("settling after the new conversation's run began", () => {
@@ -332,9 +336,18 @@ describe("a run the conversation left behind", () => {
       await flush();
 
       expect(seen).toEqual([
-        { tools: [{ name: "scroll_to", side: "client" }], invalidated: [] },
-        { tools: [{ name: "create_event", side: "server" }], invalidated: [] },
+        {
+          threadId: expect.any(String),
+          tools: [{ name: "scroll_to", side: "client" }],
+          invalidated: [],
+        },
+        {
+          threadId: expect.any(String),
+          tools: [{ name: "create_event", side: "server" }],
+          invalidated: [],
+        },
       ]);
+      expect(seen[0]?.threadId).not.toBe(seen[1]?.threadId);
     });
 
     it("leaves the new run's Stop button and transcript alone", async () => {
