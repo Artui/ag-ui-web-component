@@ -339,6 +339,7 @@ describe("describeSurface().collapseTo, per placement and collapse-to", () => {
   });
 
   it.each<[Record<string, string>, boolean, boolean, string | null]>([
+    [{ "collapse-to": "auto" }, true, true, null],
     [{ "collapse-to": "bar" }, true, true, null],
     [{ "collapse-to": "none" }, true, true, null],
     [{ "collapse-to": "bar", placement: "bottom-left" }, true, true, null],

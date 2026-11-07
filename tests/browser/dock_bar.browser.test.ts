@@ -769,3 +769,67 @@ describe("the bottom bar (real browser)", () => {
     });
   });
 });
+
+describe("resetSize on a dragged docked panel", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(async () => {
+    document.body.innerHTML = "";
+    await page.viewport(DESKTOP.width, DESKTOP.height);
+  });
+
+  it("stays at the dock through a reopen after resetSize", async () => {
+    const el = mount({ id: "reset-reopen", "data-start-open": "" });
+    await settle();
+    const dock = el.getBoundingClientRect();
+    await dragHeader(el, -500, -120);
+    expect(el.getBoundingClientRect().left).toBeCloseTo(dock.left - 500, 0);
+    el.resetSize();
+    await settle();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(dock.left, 0);
+    el.setCollapsed(true);
+    await settle();
+    el.setCollapsed(false);
+    await settle();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(dock.left, 0);
+    expect(el.getBoundingClientRect().bottom).toBeCloseTo(dock.bottom, 0);
+  });
+
+  it("pins the dock's edges again after resetSize, and stores no spot", async () => {
+    const first = mount({ id: "reset-pull", "data-start-open": "" });
+    await settle();
+    const dock = first.getBoundingClientRect();
+    await dragHeader(first, -500, -120);
+    first.resetSize();
+    await settle();
+    await pull(first, "bottom-right", 40, 30);
+    expect(first.getBoundingClientRect().right).toBeCloseTo(dock.right, 0);
+    expect(first.getBoundingClientRect().bottom).toBeCloseTo(dock.bottom, 0);
+    first.remove();
+    const second = mount({ id: "reset-pull" });
+    await settle();
+    expect(second.getBoundingClientRect().right).toBeCloseTo(dock.right, 0);
+    expect(second.getBoundingClientRect().bottom).toBeCloseTo(dock.bottom, 0);
+  });
+
+  it("remembers the corner a grip moved on a dragged panel, through a reopen and a reload", async () => {
+    const first = mount({ id: "grip-spot", "data-start-open": "" });
+    await settle();
+    await dragHeader(first, -500, -120);
+    await pull(first, "top-left", -60, -40);
+    const grown = first.getBoundingClientRect();
+    first.setCollapsed(true);
+    await settle();
+    first.setCollapsed(false);
+    await settle();
+    expect(first.getBoundingClientRect().left).toBeCloseTo(grown.left, 0);
+    expect(first.getBoundingClientRect().top).toBeCloseTo(grown.top, 0);
+    first.remove();
+    const second = mount({ id: "grip-spot" });
+    await settle();
+    expect(second.getBoundingClientRect().left).toBeCloseTo(grown.left, 0);
+    expect(second.getBoundingClientRect().top).toBeCloseTo(grown.top, 0);
+  });
+});

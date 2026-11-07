@@ -3351,8 +3351,9 @@ ag-ui-chat {
   colour syntax; the browsers without it (see the fallback above) mix the square from the text
   itself, which on a mid-tone header can take the hovered glyph under your pair (white on
   `#3d5afe`: 3.75:1).
-- **`--ag-ui-header-btn-hover` sets the hover square outright**, whether or not the header text is
-  set, and is drawn exactly as given. For a square that lightens under white text instead, at the
+- **`--ag-ui-header-btn-hover` sets the hover square outright** under Quiet and a theme word of
+  your own, whether or not the header text is set, and is drawn exactly as given. Classic, Soft
+  and Ledger draw their own squares and do not read it. For a square that lightens under white text instead, at the
   cost of contrast on a mid-tone header:
 
   ```css

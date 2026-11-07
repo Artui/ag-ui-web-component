@@ -236,6 +236,7 @@ export class PanelPlacement {
       if (this.#dockPos !== null) {
         this.#host.element.style.removeProperty("--ag-ui-inset");
       }
+      this.#dockPos = null;
       this.#storeDockPosition(null);
     }
     // The anchor was measured against the dragged box; the resting one may

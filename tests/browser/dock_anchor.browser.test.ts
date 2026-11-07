@@ -231,6 +231,18 @@ describe("the host's own bar (real browser)", () => {
     expect(third.getBoundingClientRect().bottom).toBeCloseTo(dock.bottom, 0);
   });
 
+  it("drops the anchor gap once dragged, holding only the margin above the anchor", async () => {
+    const button = hostBar();
+    const el = mount({ anchor: "#host-agent", "data-start-open": "" });
+    // Wider than the 8px margin, so the two floors cannot be told apart by luck.
+    el.style.setProperty("--ag-ui-anchor-gap", "24px");
+    await settle();
+    const anchor = button.getBoundingClientRect();
+    expect(el.getBoundingClientRect().bottom).toBeCloseTo(anchor.top - 24, 0);
+    await dragHeader(el, -400, 2000);
+    expect(el.getBoundingClientRect().bottom).toBeCloseTo(anchor.top - 8, 0);
+  });
+
   it("moves to a corner on moveTo, and reports itself movable", async () => {
     const button = hostBar();
     const el = mount({ anchor: "#host-agent", "data-start-open": "" });
