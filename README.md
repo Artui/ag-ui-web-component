@@ -1498,6 +1498,16 @@ never run together into one block, so where the call ends and the answer begins 
 visible. Style them via the `tool-card-args` / `tool-card-result` parts, their headings via
 `tool-card-section-label`, and the whole body via `tool-card-body`.
 
+**A card names its status as a part.** `::part()` takes no attribute selector, so a rule on
+`tool-card-status` reaches every outcome alike. The card and its status pill each carry a modifier
+beside the base part, one of `pending`, `deferred`, `done`, `error`, `declined` or `interrupted`,
+and it is replaced whenever the status changes:
+
+```css
+ag-ui-chat::part(tool-card-error)        { border-color: crimson; }
+ag-ui-chat::part(tool-card-status-error) { font-weight: 700; }
+```
+
 **The attribute is live.** Changing `data-tool-display` between the four card modes restyles every
 card already in the transcript, the way `data-answer-well` does — the modes are pure visibility
 over one DOM shape, selected by the shadow CSS from the host attribute. Grouping is decided as
@@ -1536,7 +1546,8 @@ steps and `data-open` whether the cards are showing; the head is a button with `
   order, rather than inside it, so a chart is never one click down. It does not end the group: a
   later call joins the group above it, which is also how a restored conversation draws the run.
 
-Parts: `tool-group`, `tool-group-head` (the button), `tool-group-icon`, `tool-group-label`,
+Parts: `tool-group` (with the state beside it as `tool-group-waiting`, `tool-group-running`,
+`tool-group-done` or `tool-group-error`), `tool-group-head` (the button), `tool-group-icon`, `tool-group-label`,
 `tool-group-meta` (holding one `.tool-group-note` per note), `tool-group-list` (the cards), and
 `tool-card-repeat` on a repeated step. The focus ring is `--ag-ui-ring` and the disclosure chevron
 `--ag-ui-ico-chevron`. Strings (`strings` / `data-strings`): `toolGroupSteps`,
@@ -3351,8 +3362,8 @@ component sets, so a new one cannot ship undocumented.
 | Message actions | `message-actions`, `message-action` (plus `message-action-retry`, `message-action-copy`, `message-action-up`, `message-action-down`), and the icon holder inside each: `message-action-icon` (plus `message-action-icon-retry`, `message-action-icon-copy`, `message-action-icon-up`, `message-action-icon-down`) |
 | Queued messages | `queued`, `queued-chip` |
 | Run notices | `run-notice` (plus `run-notice-interrupted`, `run-notice-attachment-pending`, `run-notice-compaction`, `run-notice-skill`, `run-notice-history-replaced`, `run-notice-chart-undrawable`, `run-notice-surface`, `run-notice-not-connected`), `run-notice-icon`, `run-notice-text`, `run-notice-undo` |
-| Tool cards | `tool-card`, `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status`, `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent`, `tool-card-repeat` |
-| Tool-step group | `tool-group`, `tool-group-head`, `tool-group-icon`, `tool-group-label`, `tool-group-meta`, `tool-group-list` |
+| Tool cards | `tool-card` (plus one status modifier: `tool-card-pending`, `tool-card-deferred`, `tool-card-done`, `tool-card-error`, `tool-card-declined`, `tool-card-interrupted`), `tool-card-head`, `tool-card-icon`, `tool-card-name`, `tool-card-status` (plus `tool-card-status-pending`, `tool-card-status-deferred`, `tool-card-status-done`, `tool-card-status-error`, `tool-card-status-declined`, `tool-card-status-interrupted`), `tool-card-decision`, `tool-card-toggle`, `tool-card-body`, `tool-card-section` (plus `tool-card-args-section`, `tool-card-result-section`), `tool-card-section-label` (plus `tool-card-args-label`, `tool-card-result-label`), `tool-card-args`, `tool-card-result`, `tool-card-approval`, `tool-card-subagent`, `tool-card-repeat` |
+| Tool-step group | `tool-group` (plus one state modifier: `tool-group-waiting`, `tool-group-running`, `tool-group-done`, `tool-group-error`), `tool-group-head`, `tool-group-icon`, `tool-group-label`, `tool-group-meta`, `tool-group-list` |
 | Delegated sub-agents | `subagent`, `subagent-row`, `subagent-icon`, `subagent-status`, `subagent-steps`, `subagent-step`, `subagent-step-icon`, `subagent-step-name` |
 | Client-side confirmation | `confirm`, `confirm-body`, `confirm-args`, `confirm-actions`, `confirm-button` (plus `confirm-confirm`, `confirm-cancel`, `confirm-always`) |
 | Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`), `approval-edit`, `approval-args`, `approval-error` |

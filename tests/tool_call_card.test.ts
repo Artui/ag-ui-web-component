@@ -14,7 +14,7 @@ describe("ToolCallCard", () => {
     const card = new ToolCallCard("fill_field", { name: "city", value: "Paris" });
     expect(card.element.getAttribute("data-tool-name")).toBe("fill_field");
     expect(card.element.getAttribute("data-status")).toBe("pending");
-    expect(card.element.getAttribute("part")).toBe("tool-card");
+    expect(card.element.getAttribute("part")).toBe("tool-card tool-card-pending");
     expect(card.element.querySelector(".tool-call-name")?.textContent).toBe("fill_field");
     expect(card.element.querySelector(".tool-call-status")?.textContent).toContain("running");
     expect(args(card)?.textContent).toContain('"value": "Paris"');
