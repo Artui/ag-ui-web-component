@@ -120,6 +120,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   property, came out at that size. It is now declared on `:host` like every
   other private property. **No opt-in is needed.**
 
+- **Picking a thread from the history drawer no longer leaves an unhandled
+  rejection when the store cannot load it.** The drawer's pick dropped the promise
+  `switchThread()` returns, so a store whose load rejected surfaced as an unhandled
+  rejection on the page. The pick now ends that rejection itself, and the thread on
+  screen stays as it was. No host opt-in.
+
+- **A gated call with no arguments no longer draws an empty arguments box.** Under
+  `data-tool-display="compact"` and `"inline"`, the rule that shows a deferred call's
+  arguments outranked the `hidden` attribute the card sets when there are none, so an
+  empty box sat above the Approve button. The rule now skips a hidden section. No host
+  opt-in.
+
 ## [0.47.0] — 2026-11-07
 
 ### Added
