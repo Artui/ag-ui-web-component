@@ -23,6 +23,7 @@ import { APPROVAL_STYLES } from "./interrupts/approval_styles.js";
 import { CONFIRMATION_STYLES } from "./interrupts/confirmation_styles.js";
 import { QUESTION_STYLES } from "./interrupts/question_styles.js";
 import { COLLAPSE_STYLES } from "./placement/collapse_styles.js";
+import { DOCK_STYLES } from "./placement/dock_styles.js";
 import { EMBEDDED_STYLES } from "./placement/embedded_styles.js";
 import { LAUNCHER_STYLES } from "./placement/launcher_styles.js";
 import { PAGE_STYLES } from "./placement/page_styles.js";
@@ -65,6 +66,9 @@ export const STYLES: string = [
   THEME_STYLES,
   PRESET_STYLES,
   PAGE_STYLES,
+  // Ahead of the phone block and no heavier than it: a docked panel is still
+  // full-bleed on a phone.
+  DOCK_STYLES,
   SMALL_VIEWPORT_STYLES,
   SIDEBAR_STYLES,
   LAUNCHER_STYLES,

@@ -1,6 +1,7 @@
 import type { Context, Tool } from "@ag-ui/core";
 import {
   ATTACHMENT_EVENT,
+  BAR_HEIGHT_EVENT,
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
@@ -52,7 +53,7 @@ import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
-import { surfaceFor } from "../ui/placement/surface_for.js";
+import { type Surface, surfaceFor } from "../ui/placement/surface_for.js";
 import { RunAnnouncer } from "../ui/progress/run_announcer.js";
 import { renderRunNotice } from "../ui/progress/run_notice.js";
 import { SubAgentProgress } from "../ui/progress/subagent_progress.js";
@@ -87,6 +88,7 @@ import {
   writeStoredItem,
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
+import type { BarHeightDetail } from "./events/bar_height_detail.js";
 import type { StateDetail } from "./events/state_detail.js";
 import type { SubmitDetail } from "./events/submit_detail.js";
 import type { ThreadDetail } from "./events/thread_detail.js";
@@ -188,6 +190,20 @@ function withScheme(theme: string, scheme: string): string {
  * The per-run frontend tool catalog and context come from {@link getTools} and
  * {@link getContext}.
  */
+/**
+ * The element a selector names, in the given root first and then the
+ * document; null for no match, and for a selector that does not parse, which
+ * is the same mistake from the host's side.
+ */
+function findAnchor(root: Node, selector: string): Element | null {
+  try {
+    const scope = root instanceof ShadowRoot ? root : document;
+    return scope.querySelector(selector) ?? document.querySelector(selector);
+  } catch {
+    return null;
+  }
+}
+
 export class AgUiChat extends HTMLElement {
   /** Agent factory; override to inject a custom or fake agent (tests). */
   agentFactory: AgentFactory = createHttpAgent;
@@ -541,8 +557,21 @@ export class AgUiChat extends HTMLElement {
   readonly #launcher: HTMLButtonElement;
   /** The launcher's unread badge; hidden at zero, and when the host opts out. */
   readonly #badge: HTMLSpanElement;
-  /** The rail's vertical caption. Rendered only by the sidebar's edge rail. */
+  /** The rail's vertical caption. Rendered only by the sidebar's edge rail and the bottom bar. */
   readonly #railLabel: HTMLSpanElement = document.createElement("span");
+  /**
+   * The bottom bar under collapse-to="bar": the launcher drawn as a strip, and
+   * the history button beside it. Outside the bar it draws no box of its own.
+   */
+  readonly #dockBar: HTMLDivElement = document.createElement("div");
+  /** The bottom bar's history button, which opens the drawer as a popover. */
+  readonly #barHistory: HTMLButtonElement = document.createElement("button");
+  /** The bar height last reported, so the event fires on a change only. */
+  #barHeight = 0;
+  /** The element the panel rises from under collapse-to="none", set as a property. */
+  #anchor: Element | null = null;
+  /** Whether a missing anchor has been reported; once per anchor given. */
+  #anchorWarned = false;
   // Answers that finished while the widget was collapsed. Expanding clears it.
   #unread = 0;
   /** Empty-state region at the top of the message list; hidden once anything renders. */
@@ -605,6 +634,7 @@ export class AgUiChat extends HTMLElement {
    */
   readonly #onViewportResize = (): void => {
     this.#placement.publishVisualViewport();
+    this.#syncDock();
     // Not while a gesture owns the position. Restoring re-applies the *stored*
     // position, and mid-drag that value is the one from before the drag began
     // -- so it puts the widget back where it was, the next pointer move puts it
@@ -883,7 +913,7 @@ export class AgUiChat extends HTMLElement {
       root: this.#root,
       connected: () => this.#connected,
       collapsed: () => this.collapsed,
-      collapsible: () => surfaceFor(this.getAttribute("placement")).collapseTo !== null,
+      collapsible: () => this.#surface().collapseTo !== null,
       strings: () => this.#strings,
       readPreference: (base) => this.#storage.readPreference(base),
       writePreference: (base, value) => this.#storage.writePreference(base, value),
@@ -1066,6 +1096,8 @@ export class AgUiChat extends HTMLElement {
     return [
       "title-text",
       "placement",
+      "collapse-to",
+      "anchor",
       "credentials",
       "user-key",
       "user-name",
@@ -1088,7 +1120,14 @@ export class AgUiChat extends HTMLElement {
       }
       return;
     }
-    if (name === "placement") {
+    if (name === "anchor") {
+      this.#anchorWarned = false;
+      this.#syncDock();
+      return;
+    }
+    // collapse-to changes the surface the way placement does -- a docked panel
+    // cannot be moved, so the same handover applies -- and is live the same way.
+    if (name === "placement" || name === "collapse-to") {
       // A placement owns the axes it fixes, so hand those back before anything
       // else: a size dragged under the previous placement would otherwise sit
       // inline and outrank the new one.
@@ -1100,9 +1139,11 @@ export class AgUiChat extends HTMLElement {
       // not just stop offering it: the control is gone from the header the
       // moment the attribute changes, so a panel collapsed under the previous
       // placement would have no way back.
-      if (surfaceFor(this.getAttribute("placement")).collapseTo === null && this.collapsed) {
+      if (this.#surface().collapseTo === null && this.collapsed) {
         this.setCollapsed(false);
       }
+      this.#stampCollapseTarget();
+      this.#syncDock();
       // Placement also moves the panel, so the edges its layout holds still
       // change with it. Deferred a frame so the new rules have applied.
       requestAnimationFrame(() => this.#placement.syncResizeAnchor());
@@ -1523,10 +1564,32 @@ export class AgUiChat extends HTMLElement {
     // namespaced per instance but not per placement, so a tab that collapsed a
     // floating panel and later loaded the same instance as a page would restore
     // a state that placement has no way out of.
-    if (surfaceFor(this.getAttribute("placement")).collapseTo !== null && this.#startsCollapsed()) {
+    if (this.#surface().collapseTo !== null && this.#startsCollapsed()) {
       this.setAttribute("collapsed", "");
     }
     this.#syncLauncher();
+    this.#stampCollapseTarget();
+    // The bar's height follows its content (the font, a long title), so it is
+    // measured rather than known; the observer reports a change of size, and
+    // the strip going from drawn to not drawn is one.
+    const dockObserver = new ResizeObserver(() => this.#syncDock());
+    dockObserver.observe(this.#dockBar);
+    this.#connection.signal.addEventListener("abort", () => dockObserver.disconnect());
+    this.#syncDock();
+    // Under collapse-to="none" the host draws the collapsed state itself, so
+    // it has to learn the state the element mounted in -- restored from
+    // storage or the placement's default -- without waiting for a change.
+    // Dispatched directly rather than through setCollapsed, which would write
+    // storage and clear the unread count for a state nobody changed.
+    if (this.#surface().collapseTo === "none") {
+      this.dispatchEvent(
+        new CustomEvent<ToggleDetail>(TOGGLE_EVENT, {
+          detail: { collapsed: this.collapsed },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    }
     this.#skills.init();
     // A `user-key` that changed while the element was out of the document gets
     // the handover a live change gets, here, because this is the first moment
@@ -1792,7 +1855,7 @@ export class AgUiChat extends HTMLElement {
    * its own chrome.
    */
   setCollapsed(collapsed: boolean, options: { readonly announce?: boolean } = {}): void {
-    if (collapsed && surfaceFor(this.getAttribute("placement")).collapseTo === null) {
+    if (collapsed && this.#surface().collapseTo === null) {
       return;
     }
     // Announced before the state changes, so the notice is written into a
@@ -1822,7 +1885,11 @@ export class AgUiChat extends HTMLElement {
       this.setAttribute("collapsed", "");
     } else {
       this.removeAttribute("collapsed");
+      // The history popover belongs to the bar only while the panel is away;
+      // opening the panel takes the drawer back into it, open as it was.
+      this.#homeDrawer();
     }
+    this.#syncDock();
     writeStoredItem(this.#storage.key(COLLAPSED_KEY), collapsed ? "1" : "0");
     // Expanding is what marks the waiting answers read; collapsing starts a
     // fresh count. Either way the badge is cleared and the host told.
@@ -1869,6 +1936,104 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * The height of the bottom bar in CSS px, and 0 when none is drawn: under
+   * any collapse-to but "bar", and on a phone while the panel is open, where
+   * the panel is the screen. The bar is fixed over the page, so a host pads
+   * its own page by this much; {@link BAR_HEIGHT_EVENT} says when it changes.
+   */
+  get barHeight(): number {
+    return this.#barHeight;
+  }
+
+  /**
+   * The element the panel rises from under collapse-to="none", right-aligned
+   * to it: typically the host's own button in its own bar. Takes precedence
+   * over the anchor attribute, which names one by selector. One that resolves
+   * to nothing leaves the panel in its placement's own corner, with a console
+   * warning.
+   */
+  get anchor(): Element | null {
+    return this.#anchor;
+  }
+
+  set anchor(value: Element | null) {
+    this.#anchor = value;
+    this.#anchorWarned = false;
+    this.#syncDock();
+  }
+
+  /** The surface the live placement and collapse-to attributes describe. */
+  #surface(): Surface {
+    return surfaceFor(this.getAttribute("placement"), this.getAttribute("collapse-to"));
+  }
+
+  /**
+   * Stamp what the panel collapses to as data-collapsed-to, which is what the
+   * stylesheet draws the bar and the hidden state from. Resolved here rather
+   * than in CSS, because "bar" over a sidebar is its rail and "none" over a
+   * page is no collapse at all, and the stylesheet would have to restate that
+   * table.
+   */
+  #stampCollapseTarget(): void {
+    const target = this.#surface().collapseTo;
+    if (target === null) {
+      this.removeAttribute("data-collapsed-to");
+    } else {
+      this.setAttribute("data-collapsed-to", target);
+    }
+  }
+
+  /** Re-measure the bar or the anchor, and tell the host when the bar's height changed. */
+  #syncDock(): void {
+    // isConnected rather than the connected flag, which connectedCallback
+    // sets only at its end, after the first measurement here.
+    if (!this.isConnected) {
+      return;
+    }
+    const height = this.#placement.syncDock(this.#dockBar, this.#resolveAnchor());
+    if (height === this.#barHeight) {
+      return;
+    }
+    this.#barHeight = height;
+    this.dispatchEvent(
+      new CustomEvent<BarHeightDetail>(BAR_HEIGHT_EVENT, {
+        detail: { height },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /**
+   * The anchor in force under collapse-to="none": the property, else the
+   * attribute's selector, looked up in the root this element lives in and
+   * then the document, so a chat inside a framework's shadow root can name a
+   * button beside it. Null under any other collapse-to, with nothing given,
+   * or when what was given is not in the document -- reported once per anchor.
+   */
+  #resolveAnchor(): Element | null {
+    if (this.#surface().collapseTo !== "none") {
+      return null;
+    }
+    const selector = this.getAttribute("anchor");
+    if (this.#anchor === null && (selector === null || selector === "")) {
+      return null;
+    }
+    const found = this.#anchor ?? findAnchor(this.getRootNode(), selector ?? "");
+    if (found?.isConnected === true) {
+      return found;
+    }
+    if (!this.#anchorWarned) {
+      this.#anchorWarned = true;
+      console.warn(
+        `<ag-ui-chat>: the anchor ${this.#anchor === null ? `"${selector}"` : "element"} ` +
+          "is not in the document, so the panel opens from its placement's own corner.",
+      );
+    }
+    return null;
+  }
+
+  /**
    * Whether to mount collapsed.
    *
    * A stored choice always wins -- in either direction, so a user who opened
@@ -1890,10 +2055,7 @@ export class AgUiChat extends HTMLElement {
     if (stored !== null) {
       return stored === "1";
     }
-    return (
-      surfaceFor(this.getAttribute("placement")).startsCollapsed &&
-      !this.hasAttribute("data-start-open")
-    );
+    return this.#surface().startsCollapsed && !this.hasAttribute("data-start-open");
   }
 
   /**
@@ -2089,7 +2251,22 @@ export class AgUiChat extends HTMLElement {
    * {@link toggleCollapsed} and {@link toggleTheme}.
    */
   openThreads(): void {
+    // Collapsed into the bar, the list opens as a popover over the bar rather
+    // than expanding the panel: the same drawer, moved beside the bar, since
+    // nothing inside the hidden panel can be drawn.
+    if (this.collapsed && this.#surface().collapseTo === "bar") {
+      this.#dockBar.append(this.#drawer.element);
+    } else {
+      this.#homeDrawer();
+    }
     this.#history.openThreads();
+  }
+
+  /** Put the drawer back in the panel, where every surface but the bar's popover draws it. */
+  #homeDrawer(): void {
+    if (this.#drawer.element.parentNode === this.#dockBar) {
+      this.#chat.insertBefore(this.#drawer.element, this.#checkpoints.element);
+    }
   }
 
   /**
@@ -2524,12 +2701,31 @@ export class AgUiChat extends HTMLElement {
       launcher: this.#launcher,
       badge: this.#badge,
       railLabel: this.#railLabel,
+      bar: this.#dockBar,
+      barHistory: this.#barHistory,
       titleText,
       iconUrl: readLauncherIconUrl(this),
       strings: this.#strings,
       signal,
-      onOpen: () => this.setCollapsed(false),
+      // The bar stays on screen with the panel open, as the way to minimise
+      // it, so its strip toggles; everywhere else the launcher is only drawn
+      // while collapsed and only ever opens.
+      onOpen: () => this.setCollapsed(this.#surface().collapseTo === "bar" && !this.collapsed),
+      onHistory: () => this.openThreads(),
     });
+    // The popover has no backdrop to catch a click away, so a press outside
+    // the bar closes it, as Escape already does.
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (this.#drawer.element.parentNode === this.#dockBar && this.#drawer.isOpen()) {
+          if (!event.composedPath().includes(this.#dockBar)) {
+            this.#drawer.close();
+          }
+        }
+      },
+      { signal },
+    );
     this.#placement.enableLauncherDrag(signal);
 
     this.#placement.mountResizeGrips(this.#chat);
@@ -2537,7 +2733,7 @@ export class AgUiChat extends HTMLElement {
     const probe = this.#placement.probe;
     probe.className = "viewport-probe";
     probe.setAttribute("aria-hidden", "true");
-    this.#root.replaceChildren(probe, this.#announcer.region, this.#chat, this.#launcher);
+    this.#root.replaceChildren(probe, this.#announcer.region, this.#chat, this.#dockBar);
   }
 
   /**
@@ -2554,9 +2750,12 @@ export class AgUiChat extends HTMLElement {
     // layout problem — the badge is a circle, not a field.
     this.#badge.textContent = unread > 9 ? "9+" : String(unread);
     this.#badge.hidden = unread === 0 || !isUnreadBadgeEnabled(this);
-    const label = this.#badge.hidden
-      ? this.#strings.expand
-      : fillUiString(this.#strings.expandUnread, { count: unread });
+    const label =
+      !this.collapsed && this.#surface().collapseTo === "bar"
+        ? this.#strings.collapse
+        : this.#badge.hidden
+          ? this.#strings.expand
+          : fillUiString(this.#strings.expandUnread, { count: unread });
     this.#launcher.setAttribute("aria-label", label);
     this.#launcher.title = label;
   }

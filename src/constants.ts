@@ -15,10 +15,17 @@ export const ELEMENT_TAG = "ag-ui-chat";
 export const SUBMIT_EVENT = "ag-ui-submit";
 
 /**
- * Collapsed state changed, via the built-in toggle or `setCollapsed`.
+ * Collapsed state changed, via the built-in toggle or `setCollapsed`; and,
+ * under `collapse-to="none"`, once at connect with the state it mounted in.
  * `detail` is {@link ToggleDetail}.
  */
 export const TOGGLE_EVENT = "ag-ui-toggle";
+
+/**
+ * The bottom bar's height changed (`collapse-to="bar"`): the host pads its
+ * page by it. `detail` is {@link BarHeightDetail}; 0 when no bar is drawn.
+ */
+export const BAR_HEIGHT_EVENT = "ag-ui-bar-height";
 
 /**
  * The count of answers that arrived while collapsed changed. `detail` is

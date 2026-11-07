@@ -1,20 +1,19 @@
 import type { ResizeAxis } from "./resize_handle.js";
 
 /**
- * What a collapsed panel shrinks to.
- *
- * Only `null` versus not-`null` is read today: every caller asks whether the
- * surface can collapse at all, never which target it collapses to. The three
- * names below therefore describe the surface rather than drive it, and nothing
- * relies on them (changing one fails only the test of this record). The
- * bottom-bar collapse is expected to read or replace them, and a reader that
- * does should come with a test outside this record's own.
+ * What a collapsed panel shrinks to, stamped on the element as
+ * data-collapsed-to so the stylesheet draws it.
  *
  * - `launcher` -- the round button in a corner.
  * - `rail` -- the slim full-height edge the sidebar docks against; the same
  *   launcher element, shaped by the stylesheet.
  * - `header` -- the in-flow collapse: the body hides and the header bar stays
  *   in the host's layout, so there is no launcher at all.
+ * - `bar` -- `collapse-to="bar"` over a placement that would otherwise
+ *   collapse to `launcher`: a strip along the bottom edge, the panel rising
+ *   from its right end.
+ * - `none` -- `collapse-to="none"` over any collapsible placement: collapsed
+ *   is hidden, and the host's own control brings the panel back.
  * - `null` -- no collapsed state. `page` is a dedicated route rather than a
  *   panel on someone else's page, so there is no "away" for it to go to:
  *   collapsing it left a strip of application chrome fixed over a route with
@@ -25,7 +24,7 @@ import type { ResizeAxis } from "./resize_handle.js";
  *   those paths asks this record; the stylesheet covers the one path that
  *   never does, an attribute written straight onto the element.
  */
-export type CollapseTarget = "launcher" | "rail" | "header" | null;
+export type CollapseTarget = "launcher" | "rail" | "header" | "bar" | "none" | null;
 
 /**
  * Everything the script needs to know about one display surface, in one
@@ -36,11 +35,7 @@ export type CollapseTarget = "launcher" | "rail" | "header" | null;
  * under this directory); this is the part of a surface that code decides.
  */
 export interface Surface {
-  /**
-   * What collapsing shrinks the panel to; `null` when it cannot collapse. Only
-   * the `null` test is authoritative: the non-null names are descriptive (see
-   * {@link CollapseTarget}), and nothing branches on which one a surface has.
-   */
+  /** What collapsing shrinks the panel to; `null` when it cannot collapse. */
   readonly collapseTo: CollapseTarget;
   /**
    * Whether a gesture may move the launcher. The rest have nowhere to put it:
@@ -127,9 +122,25 @@ const UNKNOWN: Surface = {
 };
 
 /**
- * The surface `placement` describes. Read per interaction by every caller,
- * because `placement` is a live attribute.
+ * The surface `placement` and `collapse-to` describe together. Read per
+ * interaction by every caller, because both are live attributes.
+ *
+ * `collapse-to` only ever replaces the round launcher or the whole collapsed
+ * state, never a placement's own shape: `bar` applies where the placement
+ * collapses to `launcher`, so the sidebar keeps its rail and an embedded chat
+ * its header bar, and `none` applies to every collapsible placement. Absent,
+ * `auto` and any other value leave the placement as it was. A docked surface
+ * cannot be moved -- the panel rises from the bar or the host's anchor, and a
+ * position the user dragged would take it away from either -- so both turn
+ * the launcher drag off, and with it the header drag and `moveTo`.
  */
-export function surfaceFor(placement: string | null): Surface {
-  return SURFACES.get(placement) ?? UNKNOWN;
+export function surfaceFor(placement: string | null, collapseTo: string | null = null): Surface {
+  const surface = SURFACES.get(placement) ?? UNKNOWN;
+  if (collapseTo === "bar" && surface.collapseTo === "launcher") {
+    return { ...surface, collapseTo: "bar", launcherDraggable: false };
+  }
+  if (collapseTo === "none" && surface.collapseTo !== null) {
+    return { ...surface, collapseTo: "none", launcherDraggable: false };
+  }
+  return surface;
 }

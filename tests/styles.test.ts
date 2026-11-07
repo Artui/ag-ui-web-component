@@ -381,11 +381,18 @@ describe("STYLES token indirection", () => {
       .map(([, name, value]) => `${name}: ${value}`)
       .filter((declaration) => {
         const [name, value] = declaration.split(": ", 2);
-        // The dragged size is state the placement code writes inline, not a
-        // theming point, so it has no public token; its :host declaration is
-        // initial only to stop it inheriting. Named exactly, so no alias can
-        // hide behind the same shape.
-        if (declaration === "--_drag-width: initial" || declaration === "--_drag-height: initial") {
+        // The dragged size and the dock are state the placement code writes
+        // inline, not theming points, so they have no public token; their
+        // :host declarations are initial only to stop them inheriting. Named
+        // exactly, so no alias can hide behind the same shape.
+        if (
+          [
+            "--_drag-width: initial",
+            "--_drag-height: initial",
+            "--_dock-bottom: initial",
+            "--_dock-right: initial",
+          ].includes(declaration)
+        ) {
           return false;
         }
         return !(

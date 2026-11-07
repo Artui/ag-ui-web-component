@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { X_DESTRUCTIVE_KEY } from "../src/constants.js";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { ELEMENT_TAG, X_DESTRUCTIVE_KEY } from "../src/constants.js";
+import type { AgUiChat } from "../src/core/ag_ui_chat.js";
+import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import {
   CHAT_CORNERS,
   type ChatCorner,
@@ -26,6 +28,7 @@ function makeSurface(overrides: Partial<ChatSurfaceReport> = {}) {
   const calls: string[] = [];
   const report: ChatSurfaceReport = {
     placement: "floating",
+    collapseTo: "launcher",
     collapsed: false,
     collapsible: true,
     movable: true,
@@ -195,6 +198,28 @@ describe("chat surface tools", () => {
     expect(String(second["reason"])).toContain("sidebar");
   });
 
+  it("names the dock when that is what holds the panel, not the page or the placement", async () => {
+    // A docked panel reports draggable false, because the drag is off; the
+    // "turned off" sentence would then blame the host for a rule of the dock.
+    for (const collapseTo of ["bar", "none"] as const) {
+      const docked = makeSurface({ movable: false, draggable: false, collapseTo });
+      const result = (await tool(docked.tools, "move_chat").handler({
+        corner: "top-left",
+      })) as Record<string, unknown>;
+      expect(String(result["reason"])).toContain("docked");
+      expect(String(result["reason"])).not.toContain("turned off");
+      expect(result["suggestion"]).toBe("minimise_chat");
+    }
+  });
+
+  it("does not promise a launcher when minimising", () => {
+    // Under the bar or the host's own control there is no launcher to point
+    // the agent at, so the description names where the panel goes instead.
+    const minimise = tool(built.tools, "minimise_chat");
+    expect(minimise.description).not.toContain("to its launcher");
+    expect(minimise.description).toContain("bottom bar");
+  });
+
   it("minimises, and restores", async () => {
     await tool(built.tools, "minimise_chat").handler({});
     await tool(built.tools, "restore_chat").handler({});
@@ -235,5 +260,79 @@ describe("chat surface tools", () => {
     // gate firing while this kept agreeing that nothing is stamped.
     expect(destructive).toEqual([undefined, undefined, undefined, undefined]);
     expect(built.tools).toHaveLength(4);
+  });
+});
+
+/**
+ * The element's own answer for what it collapses to, read from a mounted chat
+ * rather than from the record, so a swap of two names in the resolver fails
+ * here as well as in the stylesheet that draws them.
+ */
+describe("describeSurface().collapseTo, per placement and collapse-to", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    sessionStorage.clear();
+  });
+
+  function collapseToOf(attrs: Record<string, string>): unknown {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    for (const [key, value] of Object.entries(attrs)) {
+      el.setAttribute(key, value);
+    }
+    document.body.appendChild(el);
+    return el.describeSurface().collapseTo;
+  }
+
+  it.each([
+    [{}, "launcher"],
+    [{ placement: "floating" }, "launcher"],
+    [{ placement: "bottom-left" }, "launcher"],
+    [{ placement: "side" }, "launcher"],
+    [{ placement: "full" }, "launcher"],
+    [{ placement: "sidebar" }, "rail"],
+    [{ placement: "embedded" }, "header"],
+    [{ placement: "page" }, null],
+    [{ placement: "nonsense" }, "launcher"],
+    [{ "collapse-to": "auto" }, "launcher"],
+    [{ "collapse-to": "bar" }, "bar"],
+    [{ placement: "bottom-left", "collapse-to": "bar" }, "bar"],
+    [{ placement: "side", "collapse-to": "bar" }, "bar"],
+    [{ placement: "full", "collapse-to": "bar" }, "bar"],
+    [{ placement: "nonsense", "collapse-to": "bar" }, "bar"],
+    [{ placement: "sidebar", "collapse-to": "bar" }, "rail"],
+    [{ placement: "embedded", "collapse-to": "bar" }, "header"],
+    [{ placement: "page", "collapse-to": "bar" }, null],
+    [{ "collapse-to": "none" }, "none"],
+    [{ placement: "sidebar", "collapse-to": "none" }, "none"],
+    [{ placement: "embedded", "collapse-to": "none" }, "none"],
+    [{ placement: "page", "collapse-to": "none" }, null],
+    [{ "collapse-to": "sideways" }, "launcher"],
+  ])("%o collapses to %s", (attrs, expected) => {
+    expect(collapseToOf(attrs)).toBe(expected);
+  });
+
+  it("is live: a change of collapse-to re-stamps the record and the attribute", () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    document.body.appendChild(el);
+    expect(el.getAttribute("data-collapsed-to")).toBe("launcher");
+    el.setAttribute("collapse-to", "bar");
+    expect(el.describeSurface().collapseTo).toBe("bar");
+    expect(el.getAttribute("data-collapsed-to")).toBe("bar");
+    el.setAttribute("placement", "page");
+    expect(el.hasAttribute("data-collapsed-to")).toBe(false);
+  });
+
+  it("refuses to move a docked panel, from the agent's tool and from the host's call", () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("collapse-to", "bar");
+    el.setAttribute("data-start-open", "");
+    document.body.appendChild(el);
+    const report = el.describeSurface();
+    expect(report.movable).toBe(false);
+    expect(el.moveTo("top-left")).toBe(false);
   });
 });

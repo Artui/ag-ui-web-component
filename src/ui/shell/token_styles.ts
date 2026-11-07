@@ -316,6 +316,12 @@ export const TOKEN_STYLES: string = `
      beats this default. */
   --_drag-width: initial;
   --_drag-height: initial;
+  /* Where a docked panel stands, written inline the same way by the placement
+     code: the bottom bar's height, or the host anchor's distance from the
+     bottom and right edges. Read only by the dock rules, each with a 0px
+     fallback; declared initial so it never inherits either. */
+  --_dock-bottom: initial;
+  --_dock-right: initial;
   --_width: var(--_drag-width, var(--ag-ui-width, 380px));
   --_height: var(--_drag-height, var(--ag-ui-height, 560px));
   /* The gutter a resting floating panel keeps between itself and the edge of
