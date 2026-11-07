@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A collapsed embedded chat no longer shows the above-composer slot.** The
+  collapse hid the composer and its stack but not the `above-composer` slot, so
+  a host's row stayed on screen under the header bar. The slot is hidden with
+  the composer and returns on expand. No opt-in: a host that kept content in
+  that slot to stay visible while collapsed should use the footer slot, which
+  collapse leaves alone.
+
 ## [0.47.0] — 2026-11-07
 
 ### Added

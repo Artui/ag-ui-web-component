@@ -101,11 +101,17 @@ export const COLLAPSE_STYLES: string = `
 :host([collapsed][placement="embedded"]) .messages-wrap,
 :host([collapsed][placement="embedded"]) .messages,
 :host([collapsed][placement="embedded"]) .input-row,
+:host([collapsed][placement="embedded"]) slot[name="above-composer"],
 :host([collapsed][placement="embedded"]) .skill-chips,
 :host([collapsed][placement="embedded"]) .skill-palette,
 :host([collapsed][placement="embedded"]) .skill-hint {
   display: none;
 }
+
+/* The above-composer slot is in the list above because it is the host's content
+   against the composer: a bare slot has no box of its own, so hiding the input
+   row alone left the slotted row showing under the header bar. Its sibling slot
+   below the composer is a footer and is left to the host. */
 
 /* The page placement has no collapsed state, so it offers no control for one.
    A dedicated route has no "away" to go to: shrinking it left a strip of
