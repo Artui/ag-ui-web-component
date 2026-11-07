@@ -67,6 +67,23 @@ $("cfg-slot").addEventListener("change", (event) => {
 });
 $("cfg-user-name").addEventListener("input", syncSlot);
 
+// The above-composer slot: host markup directly above the composer. On the
+// empty page it has to travel with the centred composer, which is the reason
+// to look at it here rather than only in the playground.
+let strip = null;
+$("cfg-above").addEventListener("change", (event) => {
+  if (event.target.checked) {
+    strip = document.createElement("div");
+    strip.slot = "above-composer";
+    strip.className = "context-strip";
+    strip.textContent = "Context: the Create Article form, 4 fields";
+    chat.append(strip);
+  } else {
+    strip?.remove();
+    strip = null;
+  }
+});
+
 // The bar is fixed chrome the widget knows nothing about, and it wraps at
 // narrow widths, so publish its height for the placement to subtract -- the
 // same answer the playground gives, for the same reason.

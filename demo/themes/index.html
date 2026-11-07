@@ -160,6 +160,98 @@
         color: #b0b0c4;
         font-size: 13px;
       }
+      /* The 0.47.0 additions: one card, four sections, each a control and a
+         readout for something the playground bar had no room for. */
+      .additions {
+        margin-top: 20px;
+      }
+      .additions h2 {
+        margin: 0 0 4px;
+        font-size: 17px;
+      }
+      .additions section {
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid #e2e2ec;
+      }
+      .additions h3 {
+        margin: 0 0 4px;
+        font-size: 14px;
+      }
+      .additions p {
+        margin: 0 0 8px;
+        font-size: 13px;
+        line-height: 1.5;
+        color: #4b5563;
+      }
+      .additions .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 12px;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+      .additions code,
+      .additions output {
+        background: #eef2ff;
+        padding: 1px 6px;
+        border-radius: 5px;
+        font-size: 12px;
+      }
+      .additions button,
+      .additions select {
+        font: inherit;
+        font-size: 13px;
+        padding: 4px 10px;
+      }
+      .additions ol.log {
+        margin: 6px 0 0;
+        padding-left: 20px;
+        font-size: 12px;
+        font-family: ui-monospace, Menlo, monospace;
+        color: #374151;
+      }
+      .additions .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .additions .legend span {
+        font-size: 12px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 2px solid var(--swatch);
+      }
+
+      /* The host's own markup for the above-composer slot. A slotted node is
+         styled from here like any light-DOM element. */
+      .context-strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+        color: #374151;
+        background: #eef2ff;
+        border: 1px solid #c7d2fe;
+        border-radius: 8px;
+      }
+      .context-strip b {
+        font-weight: 600;
+      }
+      .context-strip button {
+        margin-left: auto;
+        font: inherit;
+        font-size: 12px;
+        border: 1px solid #c7d2fe;
+        background: #fff;
+        border-radius: 6px;
+        padding: 2px 8px;
+        cursor: pointer;
+      }
+
       .tour {
         margin: 0 0 18px;
         font-size: 13px;
@@ -364,6 +456,13 @@
           <summary>What to try</summary>
           <ul>
             <li>
+              <strong>0.47.0 additions.</strong> The card under the form has a control and
+              a readout for the <code>above-composer</code> slot, the thread API
+              (<code>threadId</code>, <code>newChat()</code>, <code>switchThread()</code>,
+              <code>ag-ui-thread</code>), the <code>tool-card-status-*</code> and
+              <code>tool-group-*</code> parts, and the <code>--ag-ui-ring</code> token.
+            </li>
+            <li>
               <strong>Step group.</strong> Run <em>Fill the article</em>: its calls fold
               into one row, <em>Worked through 5 steps</em>, with the cards one click
               down and the second <em>Fill field</em> numbered <em>(2)</em>. Ask it to
@@ -492,6 +591,94 @@
         <code>Create an article titled "Hello, AG-UI", slug hello-ag-ui, published and featured, then save</code>
         — or pick a skill from the chips / <code>/</code> palette.
       </p>
+
+      <div class="card additions" id="additions">
+        <h2>0.47.0 additions</h2>
+        <p>
+          Four things the bar above has no room for. Each section has a control and a
+          readout; the numbers beside them are read from the element, not kept here.
+        </p>
+
+        <section id="add-slot">
+          <h3>The above-composer slot</h3>
+          <p>
+            Host markup directly above the composer, below the chips, the hint, queued
+            turns and the attachment tray. It takes no space while empty. Switch
+            <em>Placement</em> to <em>page</em> and press <em>New chat</em> to see it
+            travel with the centred composer.
+          </p>
+          <div class="row">
+            <label
+              ><input type="checkbox" id="cfg-above" /> Fill
+              <code>slot="above-composer"</code></label
+            >
+            <output id="cfg-above-out">empty</output>
+          </div>
+        </section>
+
+        <section id="add-thread">
+          <h3>The thread API</h3>
+          <p>
+            <code>threadId</code> is read-only; <code>newChat()</code> and
+            <code>switchThread()</code> change the conversation, and each change fires one
+            <code>ag-ui-thread</code> with a <code>reason</code>. Send a message or two,
+            press <em>newChat()</em>, then pick the first thread back.
+          </p>
+          <div class="row">
+            <span>threadId: <output id="thr-id">-</output></span>
+            <span>running: <output id="thr-running">-</output></span>
+          </div>
+          <div class="row">
+            <button type="button" id="thr-new">newChat()</button>
+            <label
+              >switchThread(
+              <select id="thr-pick">
+                <option value="">(stored threads)</option>
+              </select>
+              )</label
+            >
+            <button type="button" id="thr-reload">reload()</button>
+          </div>
+          <ol class="log" id="thr-log" aria-label="ag-ui-thread events"></ol>
+        </section>
+
+        <section id="add-status">
+          <h3>Tool status parts</h3>
+          <p>
+            Every tool card carries <code>tool-card-status-&lt;status&gt;</code> and every
+            step group <code>tool-group-&lt;state&gt;</code>, so a host styles one outcome
+            with <code>::part()</code>. Tick the box to draw each in its own colour from this
+            page. The census counts the parts in the transcript now. Reach each:
+            <em>Fill the article</em> (done, then the group settles), <em>break something</em>
+            (error), <em>import three rows</em> (deferred, the group waits; deny one for
+            declined), <em>delegate this</em> (sub-agent error). Press Stop mid-run for
+            interrupted. Needs <em>Tool cards</em> on <em>grouped</em>.
+          </p>
+          <div class="row">
+            <label><input type="checkbox" id="cfg-status-parts" /> Style the status parts</label>
+          </div>
+          <div class="legend" id="status-legend"></div>
+          <div class="row" style="margin-top: 8px">
+            <span>census: <output id="status-census">no tool cards yet</output></span>
+          </div>
+        </section>
+
+        <section id="add-ring">
+          <h3>The focus ring token</h3>
+          <p>
+            <code>--ag-ui-ring</code> is the step group head's focus outline (default: the
+            accent at 55%). Pick a colour to set it on the element, then Tab to a group head
+            (or press the button from the keyboard) to see it. Needs a settled step group:
+            run <em>Fill the article</em> first.
+          </p>
+          <div class="row">
+            <label><input type="checkbox" id="cfg-ring-on" /> Set</label>
+            <input type="color" id="cfg-ring" value="#e11d48" aria-label="Ring colour" />
+            <button type="button" id="cfg-ring-focus">Focus a group head</button>
+            <output id="cfg-ring-out">default</output>
+          </div>
+        </section>
+      </div>
 
       <div class="embed-slot">
         <ag-ui-chat

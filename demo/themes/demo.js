@@ -5,6 +5,7 @@
 // config — theme / density / placement / text-animation / tool-display — flips
 // live by setting an attribute on the element (no page reload).
 import {
+  THREAD_EVENT,
   defineAgUiChat,
   fillField,
   pressButton,
@@ -375,4 +376,194 @@ $("cfg-spotlight").addEventListener("click", () => {
     gradient: true,
   });
   setTimeout(dismiss, 4000);
+});
+
+// ── The 0.47.0 additions card ────────────────────────────────────────────────
+
+// The above-composer slot: host markup, filled and emptied live. It is a real
+// control rather than static markup so the "takes no space when empty" half of
+// the contract can be looked at too.
+let aboveStrip = null;
+$("cfg-above").addEventListener("change", (event) => {
+  if (event.target.checked) {
+    aboveStrip = document.createElement("div");
+    aboveStrip.slot = "above-composer";
+    aboveStrip.className = "context-strip";
+    aboveStrip.innerHTML =
+      "<span>Context: <b>Create Article</b>, 4 fields</span><button type=\"button\">Attach form</button>";
+    aboveStrip.querySelector("button").addEventListener("click", () => {
+      void chat.sendMessage("Summarize the current values of the article form.");
+    });
+    chat.append(aboveStrip);
+    $("cfg-above-out").textContent = "filled";
+  } else {
+    aboveStrip?.remove();
+    aboveStrip = null;
+    $("cfg-above-out").textContent = "empty";
+  }
+});
+
+// The thread API. threadId and running are read off the element on every
+// event and on a short tick (running changes with no thread event), the
+// picker lists what the conversation store holds, and the log shows the last
+// few ag-ui-thread events as they fire.
+const tail = (value) => (value === null || value === undefined ? "null" : String(value).slice(-6));
+const syncThreadReadout = () => {
+  $("thr-id").textContent = chat.threadId === null ? "null" : tail(chat.threadId);
+  $("thr-running").textContent = String(chat.running);
+};
+// Rebuilt only when what it lists changed: replacing the options of a select
+// that is open closes it under the pointer.
+let pickerSignature = "";
+const refreshThreadPicker = async () => {
+  const pick = $("thr-pick");
+  const threads = await chat.conversationStore.listThreads();
+  const signature = JSON.stringify([chat.threadId, threads.map((t) => [t.threadId, t.title, t.preview])]);
+  if (signature === pickerSignature) {
+    return;
+  }
+  pickerSignature = signature;
+  pick.replaceChildren(new Option("(stored threads)", ""));
+  for (const thread of threads) {
+    const label = `${tail(thread.threadId)} ${thread.title ?? thread.preview ?? ""}`.trim();
+    pick.append(new Option(thread.threadId === chat.threadId ? `${label} (on screen)` : label, thread.threadId));
+  }
+};
+chat.addEventListener(THREAD_EVENT, (event) => {
+  const { threadId, previousThreadId, reason } = event.detail;
+  const item = document.createElement("li");
+  item.textContent = `${reason}: ${tail(previousThreadId)} -> ${tail(threadId)}`;
+  const log = $("thr-log");
+  log.prepend(item);
+  while (log.children.length > 5) {
+    log.lastElementChild.remove();
+  }
+  syncThreadReadout();
+  void refreshThreadPicker();
+});
+$("thr-new").addEventListener("click", () => {
+  chat.newChat();
+});
+$("thr-pick").addEventListener("change", (event) => {
+  const target = event.target.value;
+  if (target !== "") {
+    void chat.switchThread(target);
+  }
+});
+$("thr-reload").addEventListener("click", () => {
+  void chat.reload();
+});
+// Messages sent land a thread in the store without a thread event, and
+// running changes with none either, so both readouts also tick.
+setInterval(() => {
+  syncThreadReadout();
+  void refreshThreadPicker();
+}, 600);
+syncThreadReadout();
+void refreshThreadPicker();
+
+// The tool status parts. ::part() takes no attribute selector, so each status
+// is its own part name, and one rule per name is the whole of the host's side.
+// The sheet is added to and removed from this document, which is where a host's
+// ::part() rules live.
+const CARD_STATUSES = {
+  pending: "#2563eb",
+  deferred: "#d97706",
+  done: "#059669",
+  error: "#dc2626",
+  declined: "#7c3aed",
+  interrupted: "#6b7280",
+};
+const GROUP_STATES = {
+  waiting: "#d97706",
+  running: "#2563eb",
+  done: "#059669",
+  error: "#dc2626",
+};
+const statusSheet = () =>
+  [
+    ...Object.entries(CARD_STATUSES).flatMap(([name, color]) => [
+      `ag-ui-chat::part(tool-card-${name}) { outline: 2px solid ${color}; outline-offset: -2px; }`,
+      `ag-ui-chat::part(tool-card-status-${name}) { background: ${color}; color: #fff; border-radius: 999px; }`,
+    ]),
+    ...Object.entries(GROUP_STATES).map(
+      ([name, color]) =>
+        `ag-ui-chat::part(tool-group-${name}) { box-shadow: inset 4px 0 0 ${color}; }`,
+    ),
+  ].join("\n");
+const legend = $("status-legend");
+for (const [name, color] of Object.entries(CARD_STATUSES)) {
+  legend.append(Object.assign(document.createElement("span"), { textContent: `card ${name}` }));
+  legend.lastElementChild.style.setProperty("--swatch", color);
+}
+for (const [name, color] of Object.entries(GROUP_STATES)) {
+  legend.append(Object.assign(document.createElement("span"), { textContent: `group ${name}` }));
+  legend.lastElementChild.style.setProperty("--swatch", color);
+}
+let statusStyle = null;
+$("cfg-status-parts").addEventListener("change", (event) => {
+  if (event.target.checked) {
+    statusStyle = document.createElement("style");
+    statusStyle.textContent = statusSheet();
+    document.head.append(statusStyle);
+  } else {
+    statusStyle?.remove();
+    statusStyle = null;
+  }
+});
+
+// What the transcript carries right now, counted from the parts themselves:
+// the census is the readout, so a card that lost its status part shows up here
+// rather than only as a missing colour.
+const census = () => {
+  const counts = new Map();
+  for (const el of chat.shadowRoot.querySelectorAll("[part]")) {
+    for (const name of el.getAttribute("part").split(/\s+/)) {
+      const card = /^tool-card-status-(\w+)$/.exec(name);
+      const group = /^tool-group-(waiting|running|done|error)$/.exec(name);
+      const key = card ? `card ${card[1]}` : group ? `group ${group[1]}` : null;
+      if (key !== null) {
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+  }
+  $("status-census").textContent =
+    counts.size === 0
+      ? "no tool cards yet"
+      : [...counts].map(([key, count]) => `${key} ${count}`).join(", ");
+};
+new MutationObserver(census).observe(chat.shadowRoot, {
+  subtree: true,
+  childList: true,
+  attributes: true,
+  attributeFilter: ["part"],
+});
+census();
+
+// The focus ring token. It is set on the element, which is where a host sets
+// it; the readout reads the value back and says whether a head is showing it.
+const applyRing = () => {
+  if ($("cfg-ring-on").checked) {
+    chat.style.setProperty("--ag-ui-ring", $("cfg-ring").value);
+    $("cfg-ring-out").textContent = $("cfg-ring").value;
+  } else {
+    chat.style.removeProperty("--ag-ui-ring");
+    $("cfg-ring-out").textContent = "default";
+  }
+};
+$("cfg-ring-on").addEventListener("change", applyRing);
+$("cfg-ring").addEventListener("input", () => {
+  $("cfg-ring-on").checked = true;
+  applyRing();
+});
+$("cfg-ring-focus").addEventListener("click", () => {
+  const head = chat.shadowRoot.querySelector(".tool-group-head");
+  if (head === null) {
+    $("cfg-ring-out").textContent = "no step group yet: run Fill the article";
+    return;
+  }
+  chat.setCollapsed(false);
+  head.focus({ focusVisible: true });
+  const outline = getComputedStyle(head).outlineStyle;
+  $("cfg-ring-out").textContent = `${$("cfg-ring-on").checked ? $("cfg-ring").value : "default"}, outline ${outline}`;
 });
