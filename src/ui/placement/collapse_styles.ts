@@ -213,6 +213,15 @@ export const COLLAPSE_STYLES: string = `
   background: var(--_wash);
 }
 
+/* Bare at rest, like the history button beside it. The themes frame the
+   round launcher with a border or a shadow at the weight of the rule above
+   and later in the cascade, so the child combinator on the bar is there for
+   weight, not scope: the launcher is always the bar's direct child. */
+:host([data-collapsed-to="bar"]) .dock-bar > .launcher {
+  border: 0;
+  box-shadow: none;
+}
+
 :host([data-collapsed-to="bar"][collapsed]) .launcher:hover,
 :host([data-collapsed-to="bar"][collapsed]) .launcher:active {
   transform: none;
@@ -293,10 +302,17 @@ export const COLLAPSE_STYLES: string = `
 
 /* History from the bar: the panel's own drawer, moved beside the bar while
    the panel is away, drawn as a popover standing on the bar's end. There is
-   no backdrop; a press outside the bar closes it, as Escape does. */
+   no backdrop; a press outside the bar closes it, as Escape does.
+
+   Its outer edge keeps the panel's gutter, so the popover and the panel line
+   up on the side they share. The bar is already inset by the host's reserved
+   edges, so the gutter alone is the whole offset from it, and the width cap
+   leaves the gutter free on both sides. A phone keeps a narrow margin
+   instead, in the block below: the panel there is the whole screen, so there
+   is no edge to line up with. */
 :host([data-collapsed-to="bar"]) .dock-bar > .drawer {
-  inset: auto 8px calc(100% + 8px) auto;
-  width: min(320px, calc(100vw - 16px));
+  inset: auto var(--_edge-gutter) calc(100% + 8px) auto;
+  width: min(320px, calc(var(--_viewport-width) - 2 * var(--_edge-gutter)));
   height: min(440px, calc(var(--_viewport-height) - var(--_dock-bottom, 0px) - 16px));
   border-radius: var(--_panel-radius);
   box-shadow: var(--_shadow);
@@ -304,7 +320,18 @@ export const COLLAPSE_STYLES: string = `
 }
 
 :host([data-collapsed-to="bar"][placement="bottom-left"]) .dock-bar > .drawer {
-  inset: auto auto calc(100% + 8px) 8px;
+  inset: auto auto calc(100% + 8px) var(--_edge-gutter);
+}
+
+@media (max-width: 600px) {
+  :host([data-collapsed-to="bar"]:not([data-small-viewport="off"])) .dock-bar > .drawer {
+    inset: auto 8px calc(100% + 8px) auto;
+    width: min(320px, calc(100vw - 16px));
+  }
+
+  :host([data-collapsed-to="bar"][placement="bottom-left"]:not([data-small-viewport="off"])) .dock-bar > .drawer {
+    inset: auto auto calc(100% + 8px) 8px;
+  }
 }
 
 :host([data-collapsed-to="bar"]) .dock-bar > .drawer .drawer-backdrop {

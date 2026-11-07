@@ -197,7 +197,7 @@ describe("the bottom bar (real browser)", () => {
     const bar = part(el, ".dock-bar").getBoundingClientRect();
     const list = part(el, ".drawer-panel").getBoundingClientRect();
     expect(list.bottom).toBeLessThanOrEqual(bar.top);
-    expect(list.right).toBeCloseTo(screenWidth() - 8, 0);
+    expect(list.right).toBeCloseTo(screenWidth() - GUTTER, 0);
     expect(list.height).toBeGreaterThan(100);
     // Drawn and pressable, not just unhidden: the panel it used to live in is
     // transparent and scaled while collapsed.
@@ -209,6 +209,69 @@ describe("the bottom bar (real browser)", () => {
     expect(part(el, ".drawer").hidden).toBe(true);
     expect(el.collapsed).toBe(true);
   });
+
+  it.each([
+    ["the right", {}, "right", "--ag-ui-viewport-inset-right"],
+    ["the left", { placement: "bottom-left" }, "left", "--ag-ui-viewport-inset-left"],
+  ] as const)("lines the popover up with the panel on %s", async (_name, attrs, side, reserved) => {
+    // A reserved edge as well, so the popover is shown to line up with the
+    // panel and not merely to sit a gutter in from the window.
+    const el = mount({ ...attrs, "data-start-open": "" });
+    el.style.setProperty(reserved, "30px");
+    await settle();
+    const panel = el.getBoundingClientRect()[side];
+    el.setCollapsed(true);
+    await settle();
+    part<HTMLButtonElement>(el, ".bar-history").click();
+    await settle();
+    const list = part(el, ".drawer-panel").getBoundingClientRect();
+    expect(list[side]).toBeCloseTo(panel, 0);
+    expect(list.width).toBe(320);
+  });
+
+  it("leaves the gutter on both sides of a popover on a narrow window", async () => {
+    await page.viewport(640, DESKTOP.height);
+    const el = mount();
+    el.style.setProperty("--ag-ui-edge-gutter", "200px");
+    await settle();
+    part<HTMLButtonElement>(el, ".bar-history").click();
+    await settle();
+    const list = part(el, ".drawer-panel").getBoundingClientRect();
+    expect(list.left).toBeCloseTo(200, 0);
+    expect(list.right).toBeCloseTo(screenWidth() - 200, 0);
+  });
+
+  it.each(["quiet", "soft", "ledger", "classic", "code", "soft dark"])(
+    "draws the bar's two buttons as a pair under the %s theme",
+    async (theme) => {
+      const el = mount({ theme });
+      await settle();
+      const strip = part(el, ".launcher");
+      const history = part(el, ".bar-history");
+      // At rest: the pointer an earlier test left over the strip moves off it.
+      await userEvent.unhover(strip);
+      for (const property of [
+        "border-top-width",
+        "border-right-width",
+        "border-bottom-width",
+        "border-left-width",
+        "box-shadow",
+        "background-color",
+        "border-radius",
+      ]) {
+        expect(getComputedStyle(strip).getPropertyValue(property), property).toBe(
+          getComputedStyle(history).getPropertyValue(property),
+        );
+      }
+      expect(getComputedStyle(strip).boxShadow).toBe("none");
+      // The same wash under the pointer.
+      await userEvent.hover(strip);
+      const washed = getComputedStyle(strip).backgroundColor;
+      await userEvent.hover(history);
+      expect(getComputedStyle(history).backgroundColor).toBe(washed);
+      expect(washed).not.toBe("rgba(0, 0, 0, 0)");
+    },
+  );
 
   it("keeps resize and refuses a move on a wide viewport", async () => {
     const el = mount({ "data-start-open": "" });
@@ -272,4 +335,21 @@ describe("the bottom bar (real browser)", () => {
     await settle();
     expect(el.barHeight).toBe(collapsedHeight);
   });
+
+  it.each([
+    ["the right", {}, "right"],
+    ["the left", { placement: "bottom-left" }, "left"],
+  ] as const)(
+    "keeps a phone's popover 8px in from %s, with no panel edge to meet",
+    async (_name, attrs, side) => {
+      await page.viewport(PHONE.width, PHONE.height);
+      const el = mount(attrs);
+      await settle();
+      part<HTMLButtonElement>(el, ".bar-history").click();
+      await settle();
+      const list = part(el, ".drawer-panel").getBoundingClientRect();
+      expect(side === "right" ? screenWidth() - list.right : list.left).toBeCloseTo(8, 0);
+      expect(list.width).toBe(320);
+    },
+  );
 });

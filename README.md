@@ -1411,9 +1411,10 @@ sections above describe. It is live, like `placement`.
   indicator while an interaction is in flight. Pressing the strip toggles the panel, which rises
   from the bar's right end with the bar still beneath it as the minimise target. The bar's
   history button opens the conversation list as a popover above the bar, without expanding the
-  panel; `openThreads()` while collapsed does the same. It replaces the launcher only, so it
-  applies to the corner placements, `side` and `full`: `sidebar` keeps its rail, `embedded` its
-  header bar, and `page` has no collapsed state at all.
+  panel, its outer edge in line with the panel's on a wide viewport; `openThreads()` while
+  collapsed does the same. It replaces the launcher only, so it applies to the corner
+  placements, `side` and `full`: `sidebar` keeps its rail, `embedded` its header bar, and `page`
+  has no collapsed state at all.
 - **`none`: your own bar.** Collapsed is hidden: nothing of the widget is left to see or hit,
   under every collapsible placement. Your bar's button drives the [public
   API](#driving-the-conversation-from-your-own-chrome) (`collapsed`, `toggleCollapsed()`), and
@@ -1437,6 +1438,21 @@ sections above describe. It is live, like `placement`.
   });
 </script>
 ```
+
+**Clearing your toolbar.** Under `none` the panel stands `--ag-ui-anchor-gap` (default `8px`)
+above the anchor's top edge. The anchor is the button, not the toolbar around it, so a button
+sitting inside a taller toolbar puts the panel's foot across the toolbar's top border. Set the gap
+to the button's distance from the toolbar's top plus the clearance you want:
+
+```css
+/* The button stands 7px below the toolbar's top edge; clear it by 8px. */
+ag-ui-chat {
+  --ag-ui-anchor-gap: 15px;
+}
+```
+
+A gap wider than the gutter is taken off the panel's max height as well, so a tall panel still
+stops at the top of the window.
 
 Under `none` the element dispatches `ag-ui-toggle` once as it connects, with whichever state it
 mounted in, collapsed or open. Under `auto` and `bar` it does not, as before. That event touches
@@ -3449,6 +3465,10 @@ ag-ui-chat { --ag-ui-viewport-inset-top: var(--bar-h, 0px); }
 keeps between itself and that box. The size cap subtracts the same one, so a
 panel grown to its limit reaches the far edge of the usable box and no further —
 set it to `0` for a panel flush against the corner.
+
+`--ag-ui-anchor-gap` (default `8px`) is the gap between the panel and the button
+it rises from under `collapse-to="none"`; see [Collapsing to a bottom
+bar](#collapsing-to-a-bottom-bar).
 
 `--ag-ui-keyboard-inset` overrides the lift an on-screen keyboard earns. The
 widget measures the hidden band and publishes it as

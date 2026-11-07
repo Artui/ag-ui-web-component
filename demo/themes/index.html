@@ -352,8 +352,19 @@
       .host-bar .spacer {
         flex: 1;
       }
+      .host-bar button {
+        height: 28px;
+      }
       .host-bar button[aria-pressed="true"] {
         background: #e0e7ff;
+      }
+      /* The panel rises from the Agent button, which stands about 7px below
+         the toolbar's top edge (the border, then half of what is left of 40
+         less 28). The default 8px gap would leave the panel's foot on that
+         edge, so the host opens the gap to 15px and the panel clears the
+         toolbar by about 8px. */
+      ag-ui-chat {
+        --ag-ui-anchor-gap: 15px;
       }
       /* When embedded + collapsed, shrink to the header instead of filling the slot. */
       ag-ui-chat[collapsed] {
