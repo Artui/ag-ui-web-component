@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Choose how a step group draws its calls.** A new `data-tool-group-display`
+  attribute and `toolGroupDisplay` property, one of `full`, `compact`,
+  `minimal` or `inline`, set how an opened group draws its calls under
+  `grouped`. Each draws the regions the flat card of that mode draws, as a row
+  of the group. It is read only under `grouped`, is live, and leaves an
+  approval's arguments and buttons on screen in every mode. Exported as
+  `TOOL_GROUP_DISPLAY` with the `ToolGroupDisplayMode` type. **Opt-in**: an
+  absent or unknown value reads as `full`, which is what a group drew before,
+  so a host sees no change until it sets the attribute.
+
 ## [0.47.0] — 2026-11-07
 
 ### Added

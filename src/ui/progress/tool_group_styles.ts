@@ -21,6 +21,18 @@ const GROUPED = `:host(:where(:not(${CARD_MODES})))`;
 /** The host in one of the four card modes, where a group drawn earlier is flattened. */
 const CARDS = `:host(:is(${CARD_MODES}))`;
 
+/**
+ * A card inside an opened group, with the host in grouped mode and the given
+ * data-tool-group-display. The inner attribute sits inside the same :host()
+ * as the grouped test, since the host is featureless outside it, and being
+ * grouped-only is what lets an outer card mode flatten the group into its own
+ * cards: none of these rules match there. Full is no rule at all, so an absent
+ * or unknown inner value draws the full card a group always drew.
+ */
+function inner(mode: string): string {
+  return `:host(:where(:not(${CARD_MODES}))[data-tool-group-display="${mode}"]) .tool-group-list .tool-call`;
+}
+
 export const TOOL_GROUP_STYLES: string = `
 /* ── The folded tool-step group ──────────────────────────────────
    One quiet row per run of consecutive calls, the cards one click down as
@@ -203,6 +215,41 @@ ${GROUPED} .tool-group .tool-call-body,
 ${GROUPED} .tool-group .tool-call-approval,
 ${GROUPED} .tool-group .tool-call-subagent {
   flex-basis: 100%;
+}
+
+/* The inner display mode: how an opened group draws its calls. The same
+   visibility rules the card modes apply to a flat card, so a call inside the
+   group shows the regions the flat card of that mode shows. The flat inline
+   mode's chrome rule is left out on purpose: a card in the group has already
+   lost its box and is laid out as a row of the list, and that rule's padding
+   and gap would undo the row. Selected from the host attribute, so changing it
+   restyles groups already on screen. */
+${inner("compact")}[data-expanded="false"] .tool-call-section {
+  display: none;
+}
+
+${inner("inline")} .tool-call-section--args {
+  display: none;
+}
+
+${inner("minimal")} .tool-call-toggle,
+${inner("minimal")} .tool-call-body {
+  display: none;
+}
+
+/* A call waiting on an approval shows its arguments in every inner mode, as it
+   does in every card mode, and for the same reason: the arguments are what
+   tell three gated calls of one tool apart. These come after the hides above,
+   which they tie with on weight. The arguments region only, never every
+   section, since the result region carries the hidden attribute until a
+   result exists and a display value here would override it. */
+${inner("minimal")}[data-status="deferred"] .tool-call-body {
+  display: flex;
+}
+
+${inner("compact")}[data-status="deferred"] .tool-call-section--args,
+${inner("inline")}[data-status="deferred"] .tool-call-section--args {
+  display: flex;
 }
 
 /* Grouping is decided as each card is built, so a card mode set afterwards

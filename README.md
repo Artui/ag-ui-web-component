@@ -178,6 +178,7 @@ another origin, add `credentials="include"` too; see
 | `credentials` | `credentials` | Cookie policy for every request the element makes: `omit` / `same-origin` / `include`. Unset means the browser default (`same-origin`), which sends no cookies cross-origin. See [Authenticating requests](#authenticating-requests). |
 | `title-text` | — | Header label; defaults to `"Assistant"`. Live: writing it after the element connects re-labels the header. See [When each attribute is read](#when-each-attribute-is-read). |
 | `data-tool-display` | `toolDisplay` | How tool calls are drawn: `grouped` (the default: a run's consecutive calls fold into one row) / `inline` / `minimal` / `compact` / `full` (per-call cards; `full` was the default before `grouped`). An unknown value reads as `grouped`. See [Tool-call display modes](#tool-call-display-modes). |
+| `data-tool-group-display` | `toolGroupDisplay` | How an opened step group draws its calls under `grouped`: `full` (the default) / `compact` / `minimal` / `inline`. Ignored under the four card modes. An absent or unknown value reads as `full`. See [Choosing how a group draws its calls](#choosing-how-a-group-draws-its-calls). |
 | `data-text-animation` | — | Incoming-text reveal: `none` (default) / `fade` / `word`. |
 | `data-prompt-chips` | — | Present (bare, or any value but `"false"`) to surface skills as chips. |
 | `data-slash-commands` | — | Present (bare, or any value but `"false"`) to enable the `/`-command palette. |
@@ -234,7 +235,7 @@ same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 
 The element observes two groups of attributes, and they behave differently once it is in the DOM.
 Nothing outside those groups is observed: a CSS-only attribute (`theme`, `density`, `data-side`,
-`data-answer-well`) is read by the stylesheet rather than by script, and `endpoint`,
+`data-answer-well`, `data-tool-group-display`) is read by the stylesheet rather than by script, and `endpoint`,
 `data-tool-display`, `data-text-animation`, `data-runs-url`, `data-page-actions`,
 `data-message-actions`, `data-max-tool-rounds`, `data-unread-badge`, `data-launcher-drag` and
 `data-quote-selection` are re-read at each use, so a late write to any of those simply takes effect. The one attribute in
@@ -1557,7 +1558,7 @@ absent or unknown value reads as `grouped`):
 
 - `grouped` — the default. A run's consecutive tool calls fold into one quiet row, **"Worked
   through 5 steps"**, with a note such as **"1 failed"** beside it, and the calls one click down
-  as `full` cards. Anything else in the turn (text, a confirmation, a question) ends the group, and
+  as `full` cards, or in the mode `data-tool-group-display` names. Anything else in the turn (text, a confirmation, a question) ends the group, and
   the next call starts a new one; a call's own rendered output does not. A group of one call shows that call's own label. See
   [The step group](#the-step-group).
 - `inline` — the lightest mode: a single status row (icon + summary, no card chrome) with the
@@ -1590,6 +1591,25 @@ over one DOM shape, selected by the shadow CSS from the host attribute. Grouping
 each card is built: switching **to** `grouped` folds only the calls drawn afterwards, and
 switching **away** from it flattens the groups already drawn, by CSS, into exactly the cards the
 new mode builds (the group stops generating a box and its row is hidden).
+
+### Choosing how a group draws its calls
+
+Under `grouped`, an opened group draws its calls as `full` cards unless the
+`data-tool-group-display` attribute (or `toolGroupDisplay` property) names another of the card
+modes: `compact`, `minimal` or `inline`. Each draws the regions the flat card of that mode draws,
+laid out as a row of the group's list rather than as a boxed card. An absent or unknown value
+reads as `full`, so nothing changes for a host that does not set it.
+
+```html
+<ag-ui-chat endpoint="/agent/" data-tool-group-display="compact"></ag-ui-chat>
+```
+
+It is read only under `grouped`. Under one of the four card modes the groups are flattened into
+that mode's cards and the inner value is ignored; switching back to `grouped` applies it again.
+It is live like the outer attribute: changing it restyles groups already in the transcript.
+
+A call waiting on an approval shows its arguments and its Approve and Deny buttons in every inner
+mode, as it does in every card mode, and Approve takes focus when the group opens for it.
 
 ### The step group
 
@@ -2951,6 +2971,7 @@ re-export point. Internal modules import from leaf paths.
 | --- | --- | --- |
 | `ToolCallCard` | class | A live tool-call card for the transcript. |
 | `ToolCallStatus` / `SettledStatus` / `ToolDisplayMode` | type | Card lifecycle states + display mode. |
+| `ToolGroupDisplayMode` | type | How an opened step group draws its calls (`TOOL_GROUP_DISPLAY`'s values). |
 | `ToolPayloadFormatter` | type | Draws one region of a card's body (`AgUiChat.formatToolPayload`); `null` falls through to the built-in pretty-print. |
 | `ToolPayload` | type | The region being drawn: `arguments` (the parsed record) or `result` (the raw string and its outcome). |
 | `ToolCallCardOptions` | type | Per-card wiring beyond name / args / label / strings — currently `formatPayload`. |
@@ -3013,6 +3034,7 @@ re-export point. Internal modules import from leaf paths.
 | `MESSAGE_ACTIONS` | The message-action tokens `data-message-actions` selects by (`copy` / `retry` / `feedback`). |
 | `TOOL_CALL_STATUS` | Tool-call card status constants. |
 | `TOOL_DISPLAY` | Tool-call display-mode constants (`inline` / `minimal` / `compact` / `full`). |
+| `TOOL_GROUP_DISPLAY` | How an opened step group draws its calls under `grouped` (`inline` / `minimal` / `compact` / `full`). |
 | `TOOL_OUTCOME` | How a tool call ended, as a server states it on `TOOL_CALL_RESULT` (`success` / `failed` / `denied`). |
 | `X_CONFIRM_KEY` | Confirmation-prompt key: on a tool's JSON Schema for a client-side confirmation, and in an AG-UI interrupt's `metadata` for a server-side approval. |
 | `X_SUMMARY_KEY` | JSON-Schema key carrying a short tool-card label. |
