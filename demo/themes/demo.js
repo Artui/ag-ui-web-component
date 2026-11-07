@@ -228,6 +228,25 @@ $("cfg-well").addEventListener("change", (event) => {
   chat.toggleAttribute("data-answer-well", event.target.checked);
 });
 
+// The accent recipe from the README, set on the element as a host would. The
+// header buttons follow the header text, and grouped tool names the tool token.
+const ACCENT_RECIPE = {
+  "--ag-ui-header-bg": "#3d5afe",
+  "--ag-ui-header-fg": "#ffffff",
+  "--ag-ui-launcher-bg": "#3d5afe",
+  "--ag-ui-launcher-fg": "#ffffff",
+  "--ag-ui-tool-fg": "#3d5afe",
+};
+$("cfg-accent-recipe").addEventListener("change", (event) => {
+  for (const [token, value] of Object.entries(ACCENT_RECIPE)) {
+    if (event.target.checked) {
+      chat.style.setProperty(token, value);
+    } else {
+      chat.style.removeProperty(token);
+    }
+  }
+});
+
 // Header control icons: the glyphs are slot fallbacks, so projecting light-DOM
 // markup into `icon-*` replaces them without touching the shadow styles.
 const HEADER_ICONS = {
