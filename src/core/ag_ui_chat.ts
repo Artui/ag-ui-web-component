@@ -1894,10 +1894,11 @@ export class AgUiChat extends HTMLElement {
     if (collapsed) {
       this.setAttribute("collapsed", "");
     } else {
-      this.removeAttribute("collapsed");
-      // The history popover belongs to the bar only while the panel is away;
-      // opening the panel takes the drawer back into it, open as it was.
+      // The history popover belongs to the bar only while the panel is away.
+      // Opening the panel closes it and takes the drawer back, so the panel
+      // lands on the conversation rather than on a list over it.
       this.#homeDrawer();
+      this.removeAttribute("collapsed");
     }
     this.#syncDock();
     writeStoredItem(this.#storage.key(COLLAPSED_KEY), collapsed ? "1" : "0");
@@ -2272,9 +2273,15 @@ export class AgUiChat extends HTMLElement {
     this.#history.openThreads();
   }
 
-  /** Put the drawer back in the panel, where every surface but the bar's popover draws it. */
+  /**
+   * Put the drawer back in the panel, where every surface but the bar's
+   * popover draws it. A popover still open is closed first: the list was
+   * opened over the bar, and carried into the panel it would cover the
+   * conversation the user asked to see.
+   */
   #homeDrawer(): void {
     if (this.#drawer.element.parentNode === this.#dockBar) {
+      this.#drawer.close();
       this.#chat.insertBefore(this.#drawer.element, this.#checkpoints.element);
     }
   }
@@ -2721,7 +2728,16 @@ export class AgUiChat extends HTMLElement {
       // it, so its strip toggles; everywhere else the launcher is only drawn
       // while collapsed and only ever opens.
       onOpen: () => this.setCollapsed(this.#surface().collapseTo === "bar" && !this.collapsed),
-      onHistory: () => this.openThreads(),
+      // The bar's history button toggles: the popover has no backdrop, and a
+      // press on the bar is not a press outside it, so this is how the button
+      // that opened the list closes it again. openThreads() stays open-only.
+      onHistory: () => {
+        if (this.#drawer.isOpen()) {
+          this.#drawer.close();
+        } else {
+          this.openThreads();
+        }
+      },
     });
     // The popover has no backdrop to catch a click away, so a press outside
     // the bar closes it, as Escape already does.

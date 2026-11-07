@@ -1411,8 +1411,9 @@ sections above describe. It is live, like `placement`.
   indicator while an interaction is in flight. Pressing the strip toggles the panel, which rises
   from the bar's right end with the bar still beneath it as the minimise target. The bar's
   history button opens the conversation list as a popover above the bar, without expanding the
-  panel, its outer edge in line with the panel's on a wide viewport; `openThreads()` while
-  collapsed does the same. It replaces the launcher only, so it applies to the corner
+  panel, its outer edge in line with the panel's on a wide viewport, and a second press closes
+  it; `openThreads()` while collapsed opens it too. Expanding the panel closes the popover, so the
+  panel opens on the conversation. It replaces the launcher only, so it applies to the corner
   placements, `side` and `full`: `sidebar` keeps its rail, `embedded` its header bar, and `page`
   has no collapsed state at all.
 - **`none`: your own bar.** Collapsed is hidden: nothing of the widget is left to see or hit,

@@ -3372,7 +3372,7 @@ describe("AgUiChat collapse-to", () => {
       expect(launcher?.getAttribute("aria-label")).toBe("Expand");
     });
 
-    it("opens the history as a popover beside the bar while collapsed, and takes it home on expand", () => {
+    it("opens the history as a popover beside the bar while collapsed, and closes it home on expand", () => {
       const el = create({ "collapse-to": "bar" });
       document.body.appendChild(el);
       const root = shadow(el);
@@ -3381,14 +3381,30 @@ describe("AgUiChat collapse-to", () => {
       expect(el.collapsed).toBe(true);
       expect(drawer?.parentElement?.className).toBe("dock-bar");
       expect(drawer?.hidden).toBe(false);
-      // Opening the panel keeps the list open, now inside it.
+      // Opening the panel closes the list and takes it home, so the panel
+      // lands on the conversation rather than on the list.
       el.setCollapsed(false);
       expect(drawer?.parentElement?.className).toBe("chat");
-      expect(drawer?.hidden).toBe(false);
-      el.closeThreads();
+      expect(drawer?.hidden).toBe(true);
       // And an open panel's history opens in the panel, as it always has.
       el.openThreads();
       expect(drawer?.parentElement?.className).toBe("chat");
+      expect(drawer?.hidden).toBe(false);
+    });
+
+    it("closes the popover from the bar's history button, and opens it again", () => {
+      const el = create({ "collapse-to": "bar" });
+      document.body.appendChild(el);
+      const root = shadow(el);
+      const drawer = root.querySelector<HTMLElement>(".drawer");
+      const button = root.querySelector<HTMLButtonElement>(".bar-history");
+      button?.click();
+      expect(drawer?.hidden).toBe(false);
+      button?.click();
+      expect(drawer?.hidden).toBe(true);
+      expect(el.collapsed).toBe(true);
+      button?.click();
+      expect(drawer?.hidden).toBe(false);
     });
 
     it("takes a popover opened earlier back into the panel when the list opens there", () => {
@@ -3439,6 +3455,8 @@ describe("AgUiChat collapse-to", () => {
       expect(drawer?.parentElement?.className).toBe("dock-bar");
       el.setAttribute("collapse-to", "auto");
       expect(drawer?.parentElement?.className).toBe("chat");
+      // Closed on the way, so it does not resurface over the panel.
+      expect(drawer?.hidden).toBe(true);
     });
 
     it("keeps the popover in the bar when collapse-to is set to bar again", () => {

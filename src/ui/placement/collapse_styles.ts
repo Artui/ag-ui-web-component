@@ -338,15 +338,26 @@ export const COLLAPSE_STYLES: string = `
   display: none;
 }
 
+/* The popover closes in one step. The in-panel drawer slides its panel out
+   and holds the overlay's visibility until the slide ends; here the overlay
+   is the popover's own box, rounded and clipped, so the slide moved the list
+   inside a box that stayed put (read as a shrink) and the box went only once
+   the slide had finished. This outweighs the drawer's own hidden rule, so the
+   box hides at once, and whatever the list inside does is out of sight. The
+   way in needs no rule: the drawer is moved into the bar as it opens, and a
+   moved element starts no transition. Nothing is left for reduced motion. */
+:host([data-collapsed-to="bar"]) .dock-bar > .drawer {
+  transition: none;
+}
+
+/* Border-box, so the list's own border sits inside the popover's clipped box
+   rather than 2px past its bottom edge. */
 :host([data-collapsed-to="bar"]) .dock-bar > .drawer .drawer-panel {
+  box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--_border);
   border-radius: inherit;
   box-shadow: none;
-}
-
-:host([data-collapsed-to="bar"]) .dock-bar > .drawer[hidden] .drawer-panel {
-  transform: translateY(8px);
 }
 
 /* ── The host's own bar (collapse-to="none") ─────────────────────────────────

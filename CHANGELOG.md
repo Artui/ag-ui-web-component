@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Collapse into a bottom bar.** A new live `collapse-to` attribute chooses
   what a collapsed panel becomes. `bar` draws a strip along the bottom edge in
   place of the round launcher, with the title, the unread badge, a running
-  mark and a history button that opens the conversation list as a popover;
+  mark and a history button that opens and closes the conversation list as a
+  popover;
   the panel rises from the bar's right end. `none` hides the collapsed widget
   so the host's own toolbar drives it, and the `anchor` attribute or property
   names the host element the panel rises from. Under both, the panel's height

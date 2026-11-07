@@ -3,6 +3,7 @@ import { page, userEvent } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
+import { createChatSurfaceTools } from "../../src/tools/chat_surface_tools.js";
 
 /**
  * collapse-to="bar": the strip along the bottom edge, measured.
@@ -352,4 +353,94 @@ describe("the bottom bar (real browser)", () => {
       expect(list.width).toBe(320);
     },
   );
+
+  it("opens and closes the popover at once, with nothing sliding inside it", async () => {
+    const el = mount();
+    // Real motion: at 0s a close in two stages and one in a single step look
+    // the same, which is how the slide reached a phone.
+    el.style.setProperty("--ag-ui-motion", "1s");
+    await settle();
+    const drawer = part(el, ".drawer");
+    part<HTMLButtonElement>(el, ".bar-history").click();
+    await settle();
+    // Open: the list fills the popover's box from the first frames, rather
+    // than rising inside a box already drawn.
+    expect(getComputedStyle(drawer).visibility).toBe("visible");
+    const box = drawer.getBoundingClientRect();
+    const list = part(el, ".drawer-panel").getBoundingClientRect();
+    expect(list.top).toBeCloseTo(box.top, 0);
+    expect(list.bottom).toBeCloseTo(box.bottom, 0);
+    // Closed: gone a frame later, not held on screen while the list moves.
+    part<HTMLButtonElement>(el, ".drawer-close").click();
+    await settle();
+    expect(getComputedStyle(drawer).visibility).toBe("hidden");
+  });
+
+  it("closes the popover from the button that opened it", async () => {
+    const el = mount();
+    await settle();
+    const button = part<HTMLButtonElement>(el, ".bar-history");
+    const drawer = part(el, ".drawer");
+    // Real presses, so the press-outside check sees the pointerdown first.
+    await userEvent.click(button);
+    await settle();
+    expect(drawer.hidden).toBe(false);
+    await userEvent.click(button);
+    await settle();
+    expect(drawer.hidden).toBe(true);
+    expect(el.collapsed).toBe(true);
+    await userEvent.click(button);
+    await settle();
+    expect(drawer.hidden).toBe(false);
+  });
+
+  const expandRoutes = [
+    [
+      "the bar's title button",
+      (el: AgUiChat) => userEvent.click(part(el, ".dock-bar > .launcher")),
+    ],
+    ["toggleCollapsed()", (el: AgUiChat) => el.toggleCollapsed()],
+    [
+      "collapsed = false",
+      (el: AgUiChat) => {
+        el.collapsed = false;
+      },
+    ],
+    [
+      "the restore_chat page action",
+      async (el: AgUiChat) => {
+        const restore = createChatSurfaceTools(el).find((tool) => tool.name === "restore_chat");
+        await restore?.handler({});
+      },
+    ],
+  ] as const;
+
+  describe.each([
+    ["a wide viewport", DESKTOP],
+    ["a phone", PHONE],
+  ] as const)("expanding with the popover open, on %s", (_screen, size) => {
+    it.each(expandRoutes)("closes the list when %s opens the panel", async (_route, expand) => {
+      await page.viewport(size.width, size.height);
+      const el = mount();
+      // Real motion, so a list closed only in name, still drawn while its
+      // visibility waits out a transition, would be seen.
+      el.style.setProperty("--ag-ui-motion", "1s");
+      await settle();
+      const drawer = part(el, ".drawer");
+      part<HTMLButtonElement>(el, ".bar-history").click();
+      await settle();
+      expect(drawer.hidden).toBe(false);
+      await expand(el);
+      await settle();
+      expect(el.collapsed).toBe(false);
+      expect(drawer.parentElement?.className).toBe("chat");
+      expect(drawer.hidden).toBe(true);
+      expect(getComputedStyle(drawer).visibility).toBe("hidden");
+      // The panel's own history still opens the list, in the panel.
+      part<HTMLButtonElement>(el, ".header-btn--history").click();
+      await settle();
+      expect(drawer.hidden).toBe(false);
+      expect(drawer.parentElement?.className).toBe("chat");
+    });
+  });
 });
