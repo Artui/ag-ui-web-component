@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { page } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
@@ -34,6 +35,20 @@ function hostBar(): HTMLButtonElement {
   bar.append(button);
   document.body.append(bar);
   return button;
+}
+
+function centre(rect: DOMRect): [number, number] {
+  return [rect.left + rect.width / 2, rect.top + rect.height / 2];
+}
+
+/** Pull one resize grip by a delta, as a pointer would. */
+async function pull(el: AgUiChat, name: string, dx: number, dy: number): Promise<void> {
+  const grip = el.shadowRoot?.querySelector(`.resize-handle--${name}`) as HTMLElement;
+  const [x, y] = centre(grip.getBoundingClientRect());
+  grip.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }));
+  window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
+  window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + dx, clientY: y + dy }));
+  await settle();
 }
 
 const settle = async (): Promise<void> => {
@@ -143,6 +158,30 @@ describe("the host's own bar (real browser)", () => {
     expect(panel.bottom).toBeCloseTo(anchor.top - GUTTER - 16, 0);
     // The cap spends the gap, so the header stops at the top of the window.
     expect(panel.top).toBeCloseTo(0, 0);
+  });
+
+  it("keeps the edges the anchor holds through a resize", async () => {
+    await page.viewport(1280, 800);
+    const button = hostBar();
+    const el = mount({ anchor: "#host-agent", "data-start-open": "" });
+    await settle();
+    const anchor = button.getBoundingClientRect();
+    const before = el.getBoundingClientRect();
+    expect(before.bottom).toBeCloseTo(anchor.top - 8, 0);
+    expect(before.right).toBeCloseTo(anchor.right, 0);
+    // A grip on a free edge resizes, from the corner the anchor holds still.
+    await pull(el, "top-left", -60, -40);
+    const grown = el.getBoundingClientRect();
+    expect(grown.width).toBeGreaterThan(before.width + 40);
+    expect(grown.bottom).toBeCloseTo(before.bottom, 0);
+    expect(grown.right).toBeCloseTo(before.right, 0);
+    // A grip on an edge the anchor holds never moves the panel off it, and
+    // writes no inline position that would outlive the anchor.
+    await pull(el, "bottom-right", 80, 60);
+    const held = el.getBoundingClientRect();
+    expect(held.bottom).toBeCloseTo(before.bottom, 0);
+    expect(held.right).toBeCloseTo(before.right, 0);
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
   });
 
   it("opens from the placement's own corner when the anchor is not there", async () => {
