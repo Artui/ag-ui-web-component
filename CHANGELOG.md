@@ -133,6 +133,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   empty box sat above the Approve button. The rule now skips a hidden section. No host
   opt-in.
 
+- **The theme toggle flips the scheme the panel is drawn in.** With no `light` or
+  `dark` word in `theme`, as under `auto` on a dark system or when a host rule sets
+  the element's `color-scheme`, the first press wrote `dark` over a panel that was
+  already dark, and the glyph offered dark. The toggle and its glyph now read the
+  drawn scheme. A `light` or `dark` word also now holds against a host rule that
+  sets `color-scheme` on the element, which used to win over it. No host opt-in.
+
 ## [0.47.0] — 2026-11-07
 
 ### Added

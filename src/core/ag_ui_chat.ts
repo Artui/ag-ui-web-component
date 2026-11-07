@@ -2114,8 +2114,9 @@ export class AgUiChat extends HTMLElement {
    * Flip the scheme word of the `theme` attribute between `light` and `dark`
    * and persist the choice per tab. Bound to the optional built-in header theme
    * toggle (`data-theme-toggle`). The theme name and any host words are kept:
-   * `soft` becomes `soft dark`, and `soft dark` becomes `soft light`. Any
-   * scheme but `dark` (including `auto`) flips to `dark` first.
+   * `soft` becomes `soft dark`, and `soft dark` becomes `soft light`. With no
+   * scheme word (`auto`, or a host rule setting `color-scheme` on the element),
+   * it flips away from the scheme the panel is drawn in.
    */
   toggleTheme(): void {
     // Only the scheme word flips, so a named theme survives the toggle:
@@ -2123,7 +2124,7 @@ export class AgUiChat extends HTMLElement {
     // only the scheme word is saved: the name is the host's, and a name saved
     // on one page would replace another page's theme on restore.
     const theme = this.getAttribute("theme") ?? "";
-    const scheme = theme.split(/\s+/).includes("dark") ? "light" : "dark";
+    const scheme = this.#drawnScheme() === "dark" ? "light" : "dark";
     this.setAttribute("theme", withScheme(theme, scheme));
     this.#storage.writePreference(THEME_KEY, scheme);
     this.#syncThemeGlyph();
@@ -2241,9 +2242,37 @@ export class AgUiChat extends HTMLElement {
     this.#wireThreadStore();
   }
 
+  /**
+   * The scheme the panel is drawn in, which the toggle flips and its glyph
+   * offers the way out of. A scheme word decides it, since the scheme rules
+   * hold against a host's. Without one the panel follows whatever sets its
+   * color-scheme: a host rule on the element, auto's "light dark", or the
+   * light default. Both schemes allowed means the system picks. Read before
+   * the shadow styles apply too (the glyph is drawn first), when the computed
+   * value carries only a host rule, so auto is answered from its word.
+   */
+  #drawnScheme(): "light" | "dark" {
+    const words = (this.getAttribute("theme") ?? "").split(/\s+/);
+    if (words.includes("dark")) {
+      return "dark";
+    }
+    if (words.includes("light")) {
+      return "light";
+    }
+    const declared = getComputedStyle(this).colorScheme.split(/\s+/);
+    const dark = declared.includes("dark");
+    if (dark !== declared.includes("light")) {
+      return dark ? "dark" : "light";
+    }
+    if (dark || words.includes("auto")) {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    return "light";
+  }
+
   /** Reflect the current theme on the toggle: show the destination's glyph. */
   #syncThemeGlyph(): void {
-    const dark = (this.getAttribute("theme") ?? "").split(/\s+/).includes("dark");
+    const dark = this.#drawnScheme() === "dark";
     // Replaced wholesale rather than toggling a class: the two marks are
     // different paths, not one path in two states, and the slot has to keep
     // working so a host can still supply its own.

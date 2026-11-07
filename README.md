@@ -3840,7 +3840,10 @@ mic appears even with no `data-transcribe-url`.
 `slot="header-actions"`. For convenience, the boolean `data-theme-toggle` attribute adds a built-in
 light⇄dark toggle to the header (part `theme-toggle`) that flips the scheme word of `theme` and
 persists the choice per tab. Only the scheme changes: `soft` becomes `soft dark`, `soft dark`
-becomes `soft light`, and `auto` becomes `dark`, an explicit choice. Only the scheme is saved, too:
+becomes `soft light`, and `auto` becomes the opposite of what the system shows, an explicit
+choice. With no scheme word the toggle flips the scheme the panel is drawn in, so a host rule
+that sets the element's `color-scheme` (to follow the page's own dark mode) is flipped from,
+and the written word then holds against that rule. Only the scheme is saved, too:
 on the next load it is put beside whatever theme name the markup carries, so `dark` chosen on a
 `soft` page restores as `classic dark` on a `classic` one. Off by default so it never competes with
 a host-supplied control.
