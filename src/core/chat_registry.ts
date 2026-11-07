@@ -29,12 +29,11 @@ export class ChatRegistration {
   }
 
   /**
-   * Join, or move to the end. Deleted first, because a `Set` keeps an existing
-   * entry's position: an element moved in the DOM reconnects, and is then the
-   * most recently connected chat.
+   * Join, as the most recently connected chat. An element moved in the DOM
+   * left on disconnect before it reconnected, so it rejoins at the end and no
+   * entry needs removing first.
    */
   join(): void {
-    CONNECTED_CHATS.delete(this.#chat);
     CONNECTED_CHATS.add(this.#chat);
   }
 
