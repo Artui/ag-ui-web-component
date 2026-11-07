@@ -1066,8 +1066,18 @@ dark scheme. When a call passes no `color`, the first of these that is set wins:
 1. `--ag-ui-highlight-ring-color` on the target (so `:root` reaches every ring);
 2. `--ag-ui-highlight-ring-color` on the chat — on `ag-ui-chat` or anything above it;
 3. the target's `--ag-ui-accent`, so a page that themes its accent keeps the rings it has;
-4. the chat's resolved accent, its theme's default included;
+4. the chat's resolved accent, its theme's default included, held to 3:1 against the page (below);
 5. the package indigo, when no chat is on the page at all.
+
+The chat's own accent follows the widget's scheme, not the page's, so a dark widget's near-white
+accent would all but vanish on a light page. When the ring falls to step 4 it is measured against
+**the surface behind the target**: the background of the target's parent, and of each element
+above it until one is opaque, composited over the page canvas (which follows the root's
+`color-scheme`). The target's own fill is not that surface, because the ring is drawn outside its
+box: a white field on a dark page is ringed on the dark page. Background images are not read. The
+ring takes the first of these that holds 3:1 there (WCAG 2.4.13): the accent as the chat resolves
+it, the other half of the chat's `light-dark()` pair, or the accent stepped toward black or white.
+Steps 1 to 3 are a host's own choice and are drawn as given, contrast or not.
 
 ```css
 /* Rings in the brand colour, whatever the widget's accent. */
@@ -3150,11 +3160,20 @@ first, so each stays an override point. The tokens the themes add:
 - **Charts:** `--ag-ui-chart-1` to `--ag-ui-chart-6`. A host's value beats the theme's.
 - **Status marks:** `--ag-ui-ico-check`, `--ag-ui-ico-error`, `--ag-ui-ico-declined`, mask images
   drawn in the state's colour, and `--ag-ui-ico-chevron`, the step group's disclosure chevron.
-- **Focus:** `--ag-ui-ring`, the step group head's focus outline (the accent at 55%).
+- **Focus:** `--ag-ui-ring`, the step group head's focus outline. Unset, it is two parts accent
+  to three parts ink (`--ag-ui-fg`), which holds 3:1 against the panel for any accent.
 
 The font is part of the theme: Quiet, Soft and Ledger set their own stack (Inter, then the system
-UI font), and Classic inherits the page's font as the component always did. Set
-`--ag-ui-font: inherit` to take the page's font under any theme.
+UI font), and Classic inherits the page's font as the component always did. To take the page's font
+under any theme, set `--ag-ui-font` to the page's family, or to the page's own font token:
+
+```css
+ag-ui-chat { --ag-ui-font: var(--body-font); }   /* or the family itself */
+```
+
+`--ag-ui-font: inherit` does not do this. A CSS-wide keyword in a custom property applies to the
+custom property itself, so it takes the `--ag-ui-font` of the parent, which nothing sets, and the
+theme's stack wins.
 
 #### Text on the accent
 
