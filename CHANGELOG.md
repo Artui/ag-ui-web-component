@@ -45,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `conversationStore.threadId()` made only to learn the thread on screen.
   `ag-ui-submit` keeps its meaning: a turn was sent, not a run started.
 
+- **An `above-composer` slot.** Light-DOM content with
+  `slot="above-composer"` sits directly above the composer, after the skill
+  chips, the hint, the queued turns and the attachment tray, in every placement,
+  and moves with the composer in the greeting layout. An empty slot takes no
+  space. **Opt-in**: a host uses it by slotting content. A host that slotted
+  into `footer` and reordered the panel's flex column through `::part(composer)`
+  to lift it above the input can slot here instead and drop the reorder.
+
 ### Changed
 
 - **Highlight rings on an unthemed page follow the widget's theme.** Since

@@ -2417,6 +2417,12 @@ export class AgUiChat extends HTMLElement {
       onFilesPicked: () => this.#attachments.onFilesPicked(),
     });
 
+    // Host content against the input, after everything of the turn being
+    // written. A bare slot, whose own box is none, so an empty one takes no
+    // space and the greeting layout carries a filled one with the composer.
+    const aboveComposer = document.createElement("slot");
+    aboveComposer.name = "above-composer";
+
     // A coarse footer slot below the composer.
     const footer = document.createElement("slot");
     footer.name = "footer";
@@ -2428,7 +2434,8 @@ export class AgUiChat extends HTMLElement {
 
     // Composer surfaces sit just above the input: the skills palette (opens on
     // `/`), the chips, the hint saying what the composer still needs, the
-    // queued messages and the pending-attachments tray.
+    // queued messages and the pending-attachments tray, then the host's own
+    // content directly over the input.
     this.#chat.replaceChildren(
       header,
       this.#messagesWrap,
@@ -2437,6 +2444,7 @@ export class AgUiChat extends HTMLElement {
       this.#composerHint,
       this.#queuedRow,
       this.#attachSlot,
+      aboveComposer,
       inputRow,
       footer,
       this.#drawer.element,
