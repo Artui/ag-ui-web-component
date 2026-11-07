@@ -354,45 +354,58 @@ describe("the bottom bar (real browser)", () => {
     },
   );
 
-  it("opens and closes the popover at once, with nothing sliding inside it", async () => {
-    const el = mount();
-    // Real motion: at 0s a close in two stages and one in a single step look
-    // the same, which is how the slide reached a phone.
-    el.style.setProperty("--ag-ui-motion", "1s");
-    await settle();
-    const drawer = part(el, ".drawer");
-    part<HTMLButtonElement>(el, ".bar-history").click();
-    await settle();
-    // Open: the list fills the popover's box from the first frames, rather
-    // than rising inside a box already drawn.
-    expect(getComputedStyle(drawer).visibility).toBe("visible");
-    const box = drawer.getBoundingClientRect();
-    const list = part(el, ".drawer-panel").getBoundingClientRect();
-    expect(list.top).toBeCloseTo(box.top, 0);
-    expect(list.bottom).toBeCloseTo(box.bottom, 0);
-    // Closed: gone a frame later, not held on screen while the list moves.
-    part<HTMLButtonElement>(el, ".drawer-close").click();
-    await settle();
-    expect(getComputedStyle(drawer).visibility).toBe("hidden");
-  });
+  const screens = [
+    ["a wide viewport", DESKTOP],
+    ["a phone", PHONE],
+  ] as const;
 
-  it("closes the popover from the button that opened it", async () => {
-    const el = mount();
-    await settle();
-    const button = part<HTMLButtonElement>(el, ".bar-history");
-    const drawer = part(el, ".drawer");
-    // Real presses, so the press-outside check sees the pointerdown first.
-    await userEvent.click(button);
-    await settle();
-    expect(drawer.hidden).toBe(false);
-    await userEvent.click(button);
-    await settle();
-    expect(drawer.hidden).toBe(true);
-    expect(el.collapsed).toBe(true);
-    await userEvent.click(button);
-    await settle();
-    expect(drawer.hidden).toBe(false);
-  });
+  it.each(screens)(
+    "opens and closes the popover at once on %s, with nothing sliding inside it",
+    async (_screen, size) => {
+      await page.viewport(size.width, size.height);
+      const el = mount();
+      // Real motion: at 0s a close in two stages and one in a single step look
+      // the same, which is how the slide reached a phone.
+      el.style.setProperty("--ag-ui-motion", "1s");
+      await settle();
+      const drawer = part(el, ".drawer");
+      part<HTMLButtonElement>(el, ".bar-history").click();
+      await settle();
+      // Open: the list fills the popover's box from the first frames, rather
+      // than rising inside a box already drawn.
+      expect(getComputedStyle(drawer).visibility).toBe("visible");
+      const box = drawer.getBoundingClientRect();
+      const list = part(el, ".drawer-panel").getBoundingClientRect();
+      expect(list.top).toBeCloseTo(box.top, 0);
+      expect(list.bottom).toBeCloseTo(box.bottom, 0);
+      // Closed: gone a frame later, not held on screen while the list moves.
+      part<HTMLButtonElement>(el, ".drawer-close").click();
+      await settle();
+      expect(getComputedStyle(drawer).visibility).toBe("hidden");
+    },
+  );
+
+  it.each(screens)(
+    "closes the popover on %s from the button that opened it",
+    async (_screen, size) => {
+      await page.viewport(size.width, size.height);
+      const el = mount();
+      await settle();
+      const button = part<HTMLButtonElement>(el, ".bar-history");
+      const drawer = part(el, ".drawer");
+      // Real presses, so the press-outside check sees the pointerdown first.
+      await userEvent.click(button);
+      await settle();
+      expect(drawer.hidden).toBe(false);
+      await userEvent.click(button);
+      await settle();
+      expect(drawer.hidden).toBe(true);
+      expect(el.collapsed).toBe(true);
+      await userEvent.click(button);
+      await settle();
+      expect(drawer.hidden).toBe(false);
+    },
+  );
 
   const expandRoutes = [
     [
@@ -415,10 +428,7 @@ describe("the bottom bar (real browser)", () => {
     ],
   ] as const;
 
-  describe.each([
-    ["a wide viewport", DESKTOP],
-    ["a phone", PHONE],
-  ] as const)("expanding with the popover open, on %s", (_screen, size) => {
+  describe.each(screens)("expanding with the popover open, on %s", (_screen, size) => {
     it.each(expandRoutes)("closes the list when %s opens the panel", async (_route, expand) => {
       await page.viewport(size.width, size.height);
       const el = mount();
