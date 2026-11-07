@@ -3497,6 +3497,7 @@ with a matching `slot=`):
 | `header-actions` | Extra controls between the title and the built-in buttons. |
 | `greeting` | The greeting's text, above the empty state, where the [greeting layout](#the-greeting-on-an-empty-page) is on. Replaces the text only; `empty` and the starters still render beneath it. |
 | `empty` | The empty-state shown before any message. |
+| `above-composer` | Directly above the composer, below the skill chips, hint, queued turns and attachment tray. Takes no space when empty, and moves with the composer in the [greeting layout](#the-greeting-on-an-empty-page). |
 | `footer` | Below the composer. |
 | `launcher` | The collapsed widget's mark — the floating launcher, or the sidebar rail. |
 | `icon-send` / `icon-stop` | The composer button's two glyphs (idle and mid-run). |
