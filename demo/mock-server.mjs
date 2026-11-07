@@ -41,6 +41,9 @@ const PAGE_ASSETS = new Map([
   ["/page/", { path: "page/index.html", contentType: HTML }],
   ["/page/index.html", { path: "page/index.html", contentType: HTML }],
   ["/page/page.js", { path: "page/page.js", contentType: "text/javascript" }],
+  // The page-context prototype (prototypes/place.html).
+  ["/prototypes/place/", { path: "../prototypes/place.html", contentType: HTML }],
+  ["/prototypes/place.js", { path: "../prototypes/place.js", contentType: "text/javascript" }],
   // Both pages load it; it does nothing unless the URL carries `?readout`.
   ["/viewport-readout.js", { path: "viewport-readout.js", contentType: "text/javascript" }],
 ]);
@@ -417,6 +420,18 @@ async function handleAgent(res, body) {
         allowCustom: true,
       },
       parent,
+    );
+  } else if (/\bwhere\b/i.test(prompt)) {
+    // Quotes back the place entry the element sent in this run's context, so
+    // the page-context prototype can show the agent is told what the chip says.
+    const entry = (input.context ?? []).find((c) => /Where in the application/.test(c.description));
+    const place = entry === undefined ? null : JSON.parse(entry.value);
+    await streamText(
+      res,
+      id("msg"),
+      place === null
+        ? ["I was not told which page you are on, ", "so I will not assume one."]
+        : [`You are on ${place.label}`, place.detail ? ` (${place.detail})` : "", place.href ? `, at ${place.href}.` : "."],
     );
   } else if (/\bfail|error|break\b/i.test(prompt)) {
     // A tool that throws, so the card's error region is reachable.

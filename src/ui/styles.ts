@@ -22,6 +22,7 @@ import { HISTORY_STYLES } from "./history/history_styles.js";
 import { APPROVAL_STYLES } from "./interrupts/approval_styles.js";
 import { CONFIRMATION_STYLES } from "./interrupts/confirmation_styles.js";
 import { QUESTION_STYLES } from "./interrupts/question_styles.js";
+import { PLACE_STYLES } from "./place/place_styles.js";
 import { COLLAPSE_STYLES } from "./placement/collapse_styles.js";
 import { EMBEDDED_STYLES } from "./placement/embedded_styles.js";
 import { LAUNCHER_STYLES } from "./placement/launcher_styles.js";
@@ -87,6 +88,7 @@ export const STYLES: string = [
   APPROVAL_STYLES,
   QUESTION_STYLES,
   SKILL_STYLES,
+  PLACE_STYLES,
   HISTORY_STYLES,
   // The step group restates, inside a group, card rules the modules above set
   // at rest; it outweighs them rather than relying on order, and sits ahead

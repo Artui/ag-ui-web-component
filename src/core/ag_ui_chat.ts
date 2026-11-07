@@ -48,6 +48,9 @@ import { type ApprovalRenderer } from "../ui/interrupts/approval_card.js";
 import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
+import type { Place } from "../ui/place/place.js";
+import { PlaceChip } from "../ui/place/place_chip.js";
+import { placeFromRoute } from "../ui/place/place_from_route.js";
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
 import { surfaceFor } from "../ui/placement/surface_for.js";
 import { RunAnnouncer } from "../ui/progress/run_announcer.js";
@@ -343,6 +346,15 @@ export class AgUiChat extends HTMLElement {
   /** Provider for the per-run page map; see {@link getContext}. */
   getPageMap: (() => PageMap) | null = null;
 
+  /**
+   * Where in the app the user is, read fresh before every round and on the
+   * host's {@link refreshPlace}. Drawn above the composer and sent as one
+   * context entry from the same read. When unset, the route in
+   * {@link routeMap} that matches the current path stands in; with neither,
+   * nothing is shown and nothing is sent.
+   */
+  getPlace: (() => Place | null) | null = null;
+
   /** Whether to auto-inject the page map into context each run. */
   autoInjectPageMap = true;
 
@@ -444,6 +456,7 @@ export class AgUiChat extends HTMLElement {
   #warnedOrigins = new Set<string>();
   /** The resolved string table (defaults ← `data-strings` ← `strings`). */
   #strings: UiStrings = DEFAULT_UI_STRINGS;
+  #placeChip: PlaceChip | null = null;
 
   /** A delegated sub-agent's progress, hung off the card that delegated. */
   readonly #subagents = new SubAgentProgress({
@@ -840,7 +853,10 @@ export class AgUiChat extends HTMLElement {
       navigate: () => this.navigate,
       approveWithEdits: () => this.approveWithEdits,
       approvalRenderer: () => this.approvalRenderer,
-      getContext: () => this.getContext(),
+      // The place rides after the host's context rather than inside the
+      // default provider, so a host that replaces getContext keeps it, and a
+      // user who took it out of the message is obeyed whatever the host sends.
+      getContext: () => [...this.getContext(), ...this.#placeContext()],
       conversationStore: () => this.conversationStore,
       threadId: () => this.#history.threadId,
       // Read live and compared, the way each client compares the one it was
@@ -1739,6 +1755,27 @@ export class AgUiChat extends HTMLElement {
    * per-tab, and emit a {@link TOGGLE_EVENT} so a host can mirror the state in
    * its own chrome.
    */
+  /**
+   * Read {@link getPlace} again and redraw the chip. A single-page app calls
+   * this after its router moves; history traversal and hash changes are
+   * caught without it.
+   */
+  refreshPlace(): void {
+    this.#placeChip?.update(this.#readPlace());
+  }
+
+  #readPlace(): Place | null {
+    if (this.getPlace !== null) {
+      return this.getPlace();
+    }
+    return placeFromRoute(this.routeMap, window.location);
+  }
+
+  #placeContext(): Context[] {
+    this.refreshPlace();
+    return this.#placeChip?.context() ?? [];
+  }
+
   setCollapsed(collapsed: boolean, options: { readonly announce?: boolean } = {}): void {
     if (collapsed && surfaceFor(this.getAttribute("placement")).collapseTo === null) {
       return;
@@ -1761,6 +1798,7 @@ export class AgUiChat extends HTMLElement {
       this.#announceSurfaceChange(this.#strings.chatMinimised, null);
     }
     if (!collapsed) {
+      this.refreshPlace();
       // Re-decide which way to open before opening: the viewport may have
       // changed since the launcher was dropped, and this corner is what the
       // panel grows from.
@@ -2344,6 +2382,33 @@ export class AgUiChat extends HTMLElement {
     const footer = document.createElement("slot");
     footer.name = "footer";
 
+    // Prototype: the place chip in one of three positions, and a stand-in for
+    // the above-composer slot at its decided position, so the two can be
+    // judged together. tools: inside the composer's tool row. row: its own
+    // row directly above the field, below the slot. slot: the same row as the
+    // slot's fallback content, which a host filling the slot replaces.
+    this.#placeChip = new PlaceChip(signal);
+    const aboveComposer = document.createElement("slot");
+    aboveComposer.name = "above-composer";
+    aboveComposer.className = "above-composer";
+    const placeRow = document.createElement("div");
+    placeRow.className = "place-row";
+    const position = this.getAttribute("data-place-position") ?? "tools";
+    if (position === "tools") {
+      const tools = inputRow.querySelector(".composer-tools");
+      tools?.insertBefore(this.#placeChip.element, tools.querySelector(".send"));
+      placeRow.hidden = true;
+    } else if (position === "slot") {
+      aboveComposer.append(this.#placeChip.element);
+      placeRow.append(aboveComposer);
+    } else {
+      placeRow.append(this.#placeChip.element);
+    }
+    this.#input.addEventListener("focus", () => this.refreshPlace(), { signal });
+    window.addEventListener("popstate", () => this.refreshPlace(), { signal });
+    window.addEventListener("hashchange", () => this.refreshPlace(), { signal });
+    this.refreshPlace();
+
     this.#messagesWrap.className = "messages-wrap";
     // Sibling of the list inside a shared box, not a child of it: the
     // affordance offering to scroll must not scroll away with the content.
@@ -2360,6 +2425,8 @@ export class AgUiChat extends HTMLElement {
       this.#composerHint,
       this.#queuedRow,
       this.#attachSlot,
+      ...(this.getAttribute("data-place-position") === "slot" ? [] : [aboveComposer]),
+      placeRow,
       inputRow,
       footer,
       this.#drawer.element,

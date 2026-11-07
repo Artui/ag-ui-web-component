@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ag-ui-chat page context prototype</title>
+    <style>
+      /* A neutral stand-in host: an order screen with tabs, so the chip has a
+         page, a record and a tab to name. */
+      :root {
+        color-scheme: light;
+        --page-bg: #f6f6f4;
+        --page-card: #ffffff;
+        --page-fg: #1c1c1a;
+        --page-muted: #6b6b66;
+        --page-line: #e4e4df;
+      }
+      :root[data-scheme="dark"] {
+        color-scheme: dark;
+        --page-bg: #111112;
+        --page-card: #1a1a1c;
+        --page-fg: #ececea;
+        --page-muted: #9a9a95;
+        --page-line: #2b2b2e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: var(--page-bg);
+        color: var(--page-fg);
+      }
+      .topnav {
+        height: 52px;
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 0 28px;
+        border-bottom: 1px solid var(--page-line);
+        background: var(--page-card);
+        font-size: 14px;
+      }
+      .topnav b { font-weight: 650; }
+      .topnav span { color: var(--page-muted); }
+      main { max-width: 680px; margin: 32px 0 0 64px; padding: 0 24px; }
+      .card {
+        background: var(--page-card);
+        border: 1px solid var(--page-line);
+        border-radius: 10px;
+        padding: 20px 24px;
+      }
+      h1 { margin: 0 0 4px; font-size: 20px; }
+      .sub { margin: 0 0 16px; color: var(--page-muted); font-size: 14px; }
+      .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+      .tabs button {
+        font: inherit;
+        font-size: 13px;
+        padding: 6px 12px;
+        border: 1px solid var(--page-line);
+        border-radius: 7px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      .tabs button[aria-selected="true"] { background: var(--page-bg); font-weight: 600; }
+      dl { display: grid; grid-template-columns: 120px 1fr; gap: 8px 12px; margin: 0; font-size: 14px; }
+      dt { color: var(--page-muted); }
+      .told {
+        margin-top: 20px;
+        font-size: 12px;
+        color: var(--page-muted);
+      }
+      .told pre {
+        margin: 6px 0 0;
+        padding: 10px 12px;
+        border: 1px dashed var(--page-line);
+        border-radius: 7px;
+        white-space: pre-wrap;
+        font-size: 12px;
+      }
+      body[data-placement="page"] main,
+      body[data-placement="page"] .topnav { display: none; }
+      body[data-placement="embedded"] main { display: grid; grid-template-columns: 1fr 380px; gap: 24px; max-width: 1100px; }
+      body[data-placement="embedded"] ag-ui-chat { height: 640px; }
+      ag-ui-chat { --ag-ui-z-index: 5; }
+      /* Desktop only: a token set here unconditionally would keep the corner
+         panel's height on a phone, where the panel goes full-bleed. */
+      @media (min-width: 601px) {
+        body[data-placement="floating"] ag-ui-chat,
+        body[data-placement="bottom-left"] ag-ui-chat { --ag-ui-height: 620px; }
+      }
+      .host-banner {
+        margin: 0 12px 6px;
+        padding: 6px 10px;
+        border-radius: 7px;
+        font-size: 12px;
+        background: color-mix(in oklch, #b45309 14%, transparent);
+        color: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="topnav"><b>Northwind Ops</b><span>Orders</span><span>Customers</span><span>Settings</span></nav>
+    <main>
+      <div class="card">
+        <h1 id="heading">Order #4821</h1>
+        <p class="sub">Placed by Ada Lovelace, 3 items, awaiting shipment.</p>
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" data-tab="Summary">Summary</button>
+          <button type="button" role="tab" data-tab="Shipping" aria-selected="true">Shipping</button>
+          <button type="button" role="tab" data-tab="Refunds">Refunds</button>
+        </div>
+        <dl>
+          <dt>Carrier</dt><dd>DHL Express</dd>
+          <dt>Service</dt><dd>Next day</dd>
+          <dt>Address</dt><dd>12 St James's Square, London</dd>
+        </dl>
+        <div class="told">What the agent was told on the last round:<pre id="told">nothing sent yet</pre></div>
+      </div>
+    </main>
+    <ag-ui-chat
+      id="chat"
+      endpoint="/agent/"
+      title-text="Copilot"
+      user-name="Ada"
+      data-start-open
+      data-text-animation="none"
+    ></ag-ui-chat>
+    <script type="module" src="/prototypes/place.js"></script>
+  </body>
+</html>
