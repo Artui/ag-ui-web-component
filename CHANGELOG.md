@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Quiet's header buttons follow `--ag-ui-header-fg`.** The accent recipe
+  (0.45.0) put the accent on the header, but Quiet drew the history, new-chat,
+  theme and collapse buttons in its third ink at 0.85 opacity, about 1.2:1 on
+  a `#3d5afe` header, and hovered them on the panel's near-white or near-black
+  shade. Once a host sets `--ag-ui-header-fg`, the buttons draw in it at full
+  opacity, and the hover square is the opposite of that text at 18% (darker
+  under white text, lighter under dark), so a hovered button reads at least
+  what the host's header pair reads: white on `#3d5afe` is 5.1:1 at rest and
+  about 7:1 hovered. This applies under Quiet and any theme of the host's own
+  named after it, in every scheme; Soft, Ledger, Classic and code are
+  unchanged. Unset, nothing changes. **No opt-in is needed.** A host that
+  wrote `ag-ui-chat::part(header-button) { color: var(--ag-ui-header-fg) }`
+  and the `:hover` background beside it may delete both: kept, the colour
+  rule is harmless, but the page's 18% tint of the text still beats the new
+  square, and on a mid-tone accent it takes the hovered glyph under 4.5:1
+  (3.75:1 on `#3d5afe`). Delete the hover background at least. With the
+  header text set, the header buttons no longer read `--ag-ui-hover`; the
+  rest of the panel still does. A host that sets neither `--ag-ui-header-fg`
+  nor `--ag-ui-tool-fg`, the Django admin among them, sees no change.
+- **`--ag-ui-tool-fg` reaches the calls in a step group.** Under the grouped
+  default (0.46.0) every call in a group was drawn in the second ink whatever
+  the token said, so the recipe's tool colour reached nothing. A set
+  `--ag-ui-tool-fg` now colours grouped calls under every theme; unset, they
+  keep the second ink, Classic included. **No opt-in is needed**, but a host
+  that set the token and kept the grouped default sees its calls in that
+  colour from this release.
+
 ## [0.48.0] — 2026-11-07
 
 ### Added

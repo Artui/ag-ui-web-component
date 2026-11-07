@@ -58,6 +58,23 @@ export const TOKEN_STYLES: string = `
   --_tool-fg: var(--ag-ui-tool-fg, var(--_ink-2));
   --_header-bg: var(--ag-ui-header-bg, var(--_bg));
   --_header-fg: var(--ag-ui-header-fg, var(--_fg));
+  /* Switches: a public token read with no fallback, named for it with -set.
+     With the token unset the switch computes to the guaranteed-invalid value,
+     so a rule that reads it with a fallback gets the fallback; that is how a
+     rule tells a token the host set from the theme's default for it. The
+     default theme's header buttons follow the header text only once a host
+     sets it, and a step group's calls follow the tool token only once a host
+     sets it (classic defaults --_tool-fg to the accent, which a group never
+     drew). */
+  --_header-fg-set: var(--ag-ui-header-fg);
+  --_tool-fg-set: var(--ag-ui-tool-fg);
+  /* The header buttons' hover square once the header text is set: the
+     text's opposite at about a fifth, so white text gets a darker square and
+     dark text a lighter one. A square mixed from the text itself moves the
+     ground toward the glyph, and white on a mid-blue header fell from 5.1:1
+     to 3.75:1 under the pointer; moving away from it can only raise what the
+     host's own pair reads. It reads the switch, so it is unset with it. */
+  --_header-btn-hover: color-mix(in srgb, rgb(from var(--_header-fg-set) calc(255 - r) calc(255 - g) calc(255 - b)) 18%, transparent);
   --_border: var(--ag-ui-border, var(--_line));
   --_radius: var(--ag-ui-radius, 12px);
   /* The panel's own frame, which is the one corner a placement can put against

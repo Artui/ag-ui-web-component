@@ -3302,6 +3302,34 @@ fallback white (2.5:1), as it always was. What they miss is the correction for a
 mid-tone brand accent can fall under 4.5:1 there, under any theme. If you support those browsers
 and set a mid-tone accent, set `--ag-ui-on-accent` yourself. There is no script path.
 
+#### Keeping a brand accent on the header
+
+Quiet draws the header, the launcher and the tool names in the panel's own colours, so a host that
+sets only `--ag-ui-accent` gets a neutral header. To put the accent back without leaving Quiet, set
+the surfaces to the accent and the text on them to a colour that reads on it:
+
+```css
+ag-ui-chat {
+  --ag-ui-header-bg: #3d5afe;
+  --ag-ui-header-fg: #ffffff;
+  --ag-ui-launcher-bg: #3d5afe;
+  --ag-ui-launcher-fg: #ffffff;
+  --ag-ui-tool-fg: #3d5afe;
+}
+```
+
+- **The header buttons follow `--ag-ui-header-fg`.** Unset, Quiet draws them in its third ink at
+  0.85 opacity, on a hover square of the panel's hover shade. Once you set the header text they
+  draw in it at full opacity, and the hover square is the opposite of that text at about a fifth
+  (a darker square under white text, a lighter one under dark text), so a hovered button reads at
+  least what your header pair reads. The same holds for a theme of your own named after Quiet.
+  There is no separate token, and no `::part(header-button)` rule is needed.
+- **`--ag-ui-tool-fg` colours every tool call**, in a step group as well as in the card displays.
+  Unset, a grouped call is drawn in the second ink (`--ag-ui-ink-2`) under every theme.
+- Pick the pair yourself: `--ag-ui-header-fg` is not derived from the header colour the way
+  `--ag-ui-on-accent` is from the accent. Under Soft and Ledger the header buttons keep their own
+  third ink whatever you set.
+
 #### Overriding a theme, lightest layer first
 
 Four layers, each documented and each lighter than the next. Reach for the first one that does
