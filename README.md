@@ -269,9 +269,9 @@ element after the fact.
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
 `autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
-`resolvePageTarget`, `sharedState`, `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `running` and `barHeight`, and
+`resolvePageTarget`, `sharedState`, `anchor` (an element, which wins over the attribute's selector), `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `running` and `barHeight`, and
 the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `toolGroupDisplay` / `collapsed` /
-`credentials` / `anchor`.
+`credentials`.
 
 `headers` and `getHeaders` authenticate **every** request the element makes, not only the agent
 run; `getHeaders` is the one to use for a credential that rotates. See

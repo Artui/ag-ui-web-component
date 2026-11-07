@@ -3418,6 +3418,49 @@ describe("AgUiChat collapse-to", () => {
       expect(drawer?.hidden).toBe(true);
     });
 
+    it("relabels the strip when collapse-to changes on an open chat", () => {
+      const el = create({});
+      el.setAttribute("data-start-open", "");
+      document.body.appendChild(el);
+      const launcher = shadow(el).querySelector<HTMLButtonElement>(".launcher");
+      expect(launcher?.getAttribute("aria-label")).toBe("Expand");
+      el.setAttribute("collapse-to", "bar");
+      expect(launcher?.getAttribute("aria-label")).toBe("Collapse");
+      expect(launcher?.title).toBe("Collapse");
+      el.setAttribute("collapse-to", "auto");
+      expect(launcher?.getAttribute("aria-label")).toBe("Expand");
+    });
+
+    it("takes an open popover back into the panel when collapse-to leaves bar", () => {
+      const el = create({ "collapse-to": "bar" });
+      document.body.appendChild(el);
+      const drawer = shadow(el).querySelector<HTMLElement>(".drawer");
+      el.openThreads();
+      expect(drawer?.parentElement?.className).toBe("dock-bar");
+      el.setAttribute("collapse-to", "auto");
+      expect(drawer?.parentElement?.className).toBe("chat");
+    });
+
+    it("keeps the popover in the bar when collapse-to is set to bar again", () => {
+      const el = create({ "collapse-to": "bar" });
+      document.body.appendChild(el);
+      const drawer = shadow(el).querySelector<HTMLElement>(".drawer");
+      el.openThreads();
+      el.setAttribute("collapse-to", "bar");
+      expect(drawer?.parentElement?.className).toBe("dock-bar");
+    });
+
+    it("does not close an in-panel drawer on a press inside it, whatever the target", () => {
+      const el = create({});
+      el.setAttribute("data-start-open", "");
+      document.body.appendChild(el);
+      const drawer = shadow(el).querySelector<HTMLElement>(".drawer");
+      el.openThreads();
+      expect(drawer?.parentElement?.className).toBe("chat");
+      drawer?.dispatchEvent(new Event("pointerdown", { bubbles: true, composed: true }));
+      expect(drawer?.hidden).toBe(false);
+    });
+
     it("reports no height where no bar is drawn, and writes the dock only under the bar", () => {
       const heights: number[] = [];
       const el = create({});

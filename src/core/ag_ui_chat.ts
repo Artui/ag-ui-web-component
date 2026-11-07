@@ -180,17 +180,6 @@ function withScheme(theme: string, scheme: string): string {
 }
 
 /**
- * `<ag-ui-chat>` — a framework-free chat sidebar Web Component over AG-UI.
- *
- * Owns the Shadow DOM shell (header, scrolling message list, input row),
- * builds an {@link AgUiClient} on first send via the overridable
- * {@link agentFactory}, and renders streaming assistant text plus tool-call
- * activity. Emits a {@link SUBMIT_EVENT} for host visibility.
- *
- * The per-run frontend tool catalog and context come from {@link getTools} and
- * {@link getContext}.
- */
-/**
  * The element a selector names, in the given root first and then the
  * document; null for no match, and for a selector that does not parse, which
  * is the same mistake from the host's side.
@@ -204,6 +193,17 @@ function findAnchor(root: Node, selector: string): Element | null {
   }
 }
 
+/**
+ * `<ag-ui-chat>` — a framework-free chat sidebar Web Component over AG-UI.
+ *
+ * Owns the Shadow DOM shell (header, scrolling message list, input row),
+ * builds an {@link AgUiClient} on first send via the overridable
+ * {@link agentFactory}, and renders streaming assistant text plus tool-call
+ * activity. Emits a {@link SUBMIT_EVENT} for host visibility.
+ *
+ * The per-run frontend tool catalog and context come from {@link getTools} and
+ * {@link getContext}.
+ */
 export class AgUiChat extends HTMLElement {
   /** Agent factory; override to inject a custom or fake agent (tests). */
   agentFactory: AgentFactory = createHttpAgent;
@@ -1143,6 +1143,14 @@ export class AgUiChat extends HTMLElement {
         this.setCollapsed(false);
       }
       this.#stampCollapseTarget();
+      if (name === "collapse-to") {
+        // The strip's label and the popover's home both depend on the target,
+        // and neither is re-derived by the dock sync.
+        this.#syncLauncher();
+        if (this.#surface().collapseTo !== "bar") {
+          this.#homeDrawer();
+        }
+      }
       this.#syncDock();
       // Placement also moves the panel, so the edges its layout holds still
       // change with it. Deferred a frame so the new rules have applied.
