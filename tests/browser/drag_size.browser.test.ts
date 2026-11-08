@@ -699,6 +699,10 @@ describe("a grip on a dragged corner panel (real browser)", () => {
     await frames();
     expect(el.getBoundingClientRect().left).toBeCloseTo(0, 0);
     expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
+
+    await reopen(el);
+    expect(el.getBoundingClientRect().left).toBeCloseTo(0, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
   });
 
   it("leaves a key gesture on a grip alone until the key comes up", async () => {
@@ -726,6 +730,36 @@ describe("a grip on a dragged corner panel (real browser)", () => {
     expect(after.bottom).toBeCloseTo(before.bottom, 0);
     await reopen(el);
     expect(el.getBoundingClientRect().top).toBeCloseTo(held.top, 0);
+  });
+
+  it("answers the window again after it is taken out in the middle of a key gesture", async () => {
+    const el = await placed();
+    const grip = part(el, ".resize-handle--top-left");
+    grip.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    await frames();
+    el.remove();
+    document.body.appendChild(el);
+    await frames();
+    await page.viewport(PHONE.width, PHONE.height);
+    await frames();
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+    expect(el.getBoundingClientRect().left).toBeCloseTo(0, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
+  });
+
+  it("keeps the launcher at its place when a host's size drops while it is collapsed", async () => {
+    const el = await placed();
+    const stored = JSON.parse(localStorage.getItem(LAUNCHER_KEY) as string);
+    const size = part(el, ".launcher").offsetWidth;
+    setHostSize(el);
+    el.resetSize();
+    await frames();
+    el.setCollapsed(true);
+    await frames();
+    dropHostSize(el);
+    await frames();
+    expect(bubbleCentre(el).x).toBeCloseTo(stored.left + size / 2, 0);
+    expect(bubbleCentre(el).y).toBeCloseTo(stored.top + size / 2, 0);
   });
 
   it("leaves a panel only its launcher placed where a grip left it", async () => {

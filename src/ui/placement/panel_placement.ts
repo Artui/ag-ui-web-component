@@ -230,6 +230,10 @@ export class PanelPlacement {
 
   /** Build the eight resize grips into `chat`, with one of them in the tab order. */
   mountResizeGrips(chat: HTMLElement): void {
+    // The grips a key gesture was on are gone, and a key that comes up on nothing
+    // ends nothing, so an element taken out mid-gesture would otherwise come back
+    // deaf to every window resize.
+    this.#resizing = false;
     for (const grip of RESIZE_GRIPS) {
       const handle = createResizeHandle(grip, {
         axis: () => this.#resizeAxis(),

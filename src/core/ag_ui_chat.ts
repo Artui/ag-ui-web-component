@@ -1588,15 +1588,23 @@ export class AgUiChat extends HTMLElement {
     this.#connection.signal.addEventListener("abort", () => dockObserver.disconnect());
     // A host's own size arrives with no event: a token written or a class changed
     // moves nothing here until the next window resize or reopen, and a panel
-    // re-placed under a size that has since gone stays held short of its spot. Its
-    // viewport insets too, and a page publishing a bar's height from an observer of
-    // its own does so after the window's resize event, so that restore reads the
-    // bar as it was. The probe carries those insets as padding around no content,
-    // which only its border box sees.
+    // re-placed under a size that has since gone stays held short of its spot. The
+    // transcript is watched rather than this element, whose box it follows, because
+    // a page publishing a token from an observer of its own, as the README's recipe
+    // does, changes this box after that observer has run, and the browser reports
+    // the answer to a target no deeper than that one as a loop on the window. One
+    // of its own already watches the transcript, so this adds no report of its own.
     const layoutObserver = new ResizeObserver(this.#onViewportResize);
-    layoutObserver.observe(this, { box: "border-box" });
-    layoutObserver.observe(this.#placement.probe, { box: "border-box" });
+    layoutObserver.observe(this.#messages);
     this.#connection.signal.addEventListener("abort", () => layoutObserver.disconnect());
+    // The viewport insets arrive the same way, and a page's observer writes them after
+    // the window's resize event, so that restore reads the bar as it was. The probe
+    // carries them, and an observer on it would be a report on the window for the same
+    // reason, so it takes them as a transition instead: heard the next frame, whichever
+    // element wrote them and however late.
+    this.#placement.probe.addEventListener("transitionrun", this.#onViewportResize, {
+      signal: this.#connection.signal,
+    });
     this.#syncDock();
     // Under collapse-to="none" the host draws the collapsed state itself, so
     // it has to learn the state the element mounted in -- restored from
@@ -2806,6 +2814,12 @@ export class AgUiChat extends HTMLElement {
     const probe = this.#placement.probe;
     probe.className = "viewport-probe";
     probe.setAttribute("aria-hidden", "true");
+    // A transition, so a token changing is an event. On the margin of a box out of
+    // flow, which moves nothing and takes what the padding takes, because the padding
+    // is what the viewport is read from and has to stay instant.
+    probe.style.margin =
+      "var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)";
+    probe.style.transition = "margin 1ms";
     this.#root.replaceChildren(probe, this.#announcer.region, this.#chat, this.#dockBar);
   }
 

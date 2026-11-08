@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
@@ -97,6 +97,18 @@ function barAtDepth(depth: number): void {
 }
 
 let observer: ResizeObserver | null = null;
+
+/**
+ * What the browser reported as a ResizeObserver loop. A page's publishing observer
+ * below the element's depth makes any observation of ours that its write changes
+ * into one, and a report on the window is what a host's error tracking counts.
+ */
+let loopReports = 0;
+const countLoopReport = (event: ErrorEvent): void => {
+  if (event.message.includes("ResizeObserver")) {
+    loopReports += 1;
+  }
+};
 const sheet = document.createElement("style");
 sheet.textContent = `
   .inset-bar { height: ${SHORT_BAR}px; }
@@ -107,9 +119,15 @@ sheet.textContent = `
 beforeAll(() => {
   defineAgUiChat();
   document.head.appendChild(sheet);
+  window.addEventListener("error", countLoopReport);
+});
+
+beforeEach(() => {
+  loopReports = 0;
 });
 
 afterEach(async () => {
+  expect(loopReports).toBe(0);
   observer?.disconnect();
   observer = null;
   document.body.innerHTML = "";
@@ -122,6 +140,7 @@ afterEach(async () => {
 });
 
 afterAll(() => {
+  window.removeEventListener("error", countLoopReport);
   sheet.remove();
 });
 

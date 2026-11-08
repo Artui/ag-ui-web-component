@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   narrowed below the small-viewport breakpoint, which held it 8px off two edges
   and past the other two. It now fills the screen, with no inline inset, while
   its launcher stays on the screen for when it is collapsed. A header drag no
-  longer moves a panel that is the screen, as `moveTo` already refused to. The
+  longer moves a panel that is the screen, as `moveTo` already refused to, and its
+  cursor stops offering one. The
   place the user put the panel is now kept as they stated it: a window that
   narrows, by any amount, holds the panel inside it without changing the record,
   and widening gives that place back, as a reload already did. A gesture made in
@@ -113,23 +114,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that spot, rather than growing away from the corner the layout held. A window-filling
   size stands it at 0,0 at once, with no resize needed. **A host has nothing to do.**
 - **A moved panel answers a viewport inset token when the token changes.** A page
-  that publishes `--ag-ui-viewport-inset-top` from its own `ResizeObserver` does so
-  after the window's resize event, so the restore that event starts read the bar at
-  its old height. Widening a window past the width where the bar shrinks left the
-  panel 35px below its spot on the playground, top 224 for a spot of 189, and
-  narrowing left it under a bar that had grown. It now settles from the token as it
-  stands, on any of the four viewport inset tokens and however late the page writes
-  them. **A host has nothing to do.** The panel answers from a `ResizeObserver` too,
-  so a page whose publishing observer sits below `<body>` in the tree may now see the
-  browser's own "ResizeObserver loop completed with undelivered notifications" on the
-  window as its bar changes: a report rather than an exception, and the panel settles
-  a frame later. A host whose error reporting or tests count window errors should
-  expect it.
+  that publishes `--ag-ui-viewport-inset-top` from its own `ResizeObserver`, as the
+  README recommends, does so after the window's resize event, so the restore that event
+  starts read the bar at its old height. Widening a window past the width where the bar
+  shrinks left the panel 35px below its spot on the playground, top 224 for a spot of
+  189, and narrowing left it under a bar that had grown. It now settles from the token
+  as it stands, a frame later, on any of the four viewport inset tokens and however
+  late the page writes them. **A host has nothing to do.**
 - **The header's cursor no longer offers a drag that cannot happen.** A panel that
-  had become the screen, on a narrow window with a mouse or under a host's own size,
-  showed `cursor: move` although its header could not move it. The cursor is now `auto`
-  there, on a corner panel and under `collapse-to="bar"` or `"none"` alike, and stays
-  `move` everywhere the drag is allowed. **A host has nothing to do.**
+  had become the screen on a narrow window with a mouse, or a docked panel under
+  `collapse-to="bar"` or `"none"` that a host's own size had made the window, showed
+  `cursor: move` although its header could not move it. The cursor is now `auto` there,
+  and stays `move` everywhere the drag is allowed. **A host has nothing to do.**
 
 ## [0.49.0] — 2026-11-07
 
