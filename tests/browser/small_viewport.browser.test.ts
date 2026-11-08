@@ -471,6 +471,107 @@ describe("a corner panel placed on a wide window (real browser)", () => {
     expect(el.getBoundingClientRect().bottom).toBeCloseTo(home.bottom, 0);
   });
 
+  describe("a host that fills a wide window through its own sizing", () => {
+    const WIDE = { width: 1200, height: 760 };
+
+    function fill(el: AgUiChat, top = "0px"): void {
+      el.style.setProperty("--ag-ui-viewport-inset-top", top);
+      el.style.setProperty("--ag-ui-width", "100vw");
+      el.style.setProperty("--ag-ui-height", `calc(100vh - ${top})`);
+      el.style.setProperty("--ag-ui-max-width", "100vw");
+      el.style.setProperty("--ag-ui-max-height", "100vh");
+    }
+
+    function unfill(el: AgUiChat): void {
+      for (const token of [
+        "--ag-ui-viewport-inset-top",
+        "--ag-ui-width",
+        "--ag-ui-height",
+        "--ag-ui-max-width",
+        "--ag-ui-max-height",
+      ]) {
+        el.style.removeProperty(token);
+      }
+    }
+
+    function expectFills(el: AgUiChat, size: { width: number; height: number }): void {
+      const box = el.getBoundingClientRect();
+      expect([box.left, box.top, box.width, box.height]).toEqual([0, 0, size.width, size.height]);
+    }
+
+    it("stands at 0,0 after a window resize, and the spot waits for its size to drop", async () => {
+      const el = await placed();
+      const stored = localStorage.getItem(LAUNCHER_KEY);
+      fill(el);
+      await resize(WIDE);
+      expectFills(el, WIDE);
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+      // The report tells the truth about what is on the screen.
+      const report = el.describeSurface();
+      expect(report.fullBleed).toBe(true);
+      expect(report.movable).toBe(false);
+      expect(report.draggable).toBe(true);
+      expect(report.box).toEqual({ left: 0, top: 0, width: WIDE.width, height: WIDE.height });
+      expect(report.viewport).toEqual({ left: 0, top: 0, width: WIDE.width, height: WIDE.height });
+
+      unfill(el);
+      await resize(DESKTOP);
+      expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+      expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+      expect(el.describeSurface().fullBleed).toBe(false);
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+    });
+
+    it("keeps the launcher on the screen behind it", async () => {
+      const el = await placed();
+      fill(el);
+      await resize(WIDE);
+      el.setCollapsed(true);
+      await frames();
+      const at = bubble(el);
+      expect(at.left).toBeGreaterThanOrEqual(8 - 0.5);
+      expect(at.top).toBeGreaterThanOrEqual(8 - 0.5);
+      expect(at.right).toBeLessThanOrEqual(WIDE.width - 8 + 0.5);
+      expect(at.bottom).toBeLessThanOrEqual(WIDE.height - 8 + 0.5);
+    });
+
+    it("stands at the start of the room the host left free", async () => {
+      const el = await placed();
+      fill(el, "56px");
+      await resize(WIDE);
+      const box = el.getBoundingClientRect();
+      expect([box.left, box.top, box.width, box.height]).toEqual([0, 56, WIDE.width, 704]);
+    });
+
+    // One edge each, because a resting inset that hangs the box off any one of
+    // them is the case, and a chain of four conditions is one branch to coverage.
+    it.each([
+      ["left", "0 24px auto auto"],
+      ["top", "auto 0 24px auto"],
+      ["right", "0 auto auto 24px"],
+      ["bottom", "24px auto auto 0"],
+    ])("comes in off the %s edge a host's own inset hangs it past", async (_edge, inset) => {
+      const rule = document.createElement("style");
+      rule.textContent = `#${ID} { --ag-ui-inset: ${inset}; }`;
+      document.body.appendChild(rule);
+      const el = await placed();
+      fill(el);
+      await resize(WIDE);
+      expectFills(el, WIDE);
+    });
+
+    it("leaves a host's own rule alone once it already stands the box on the screen", async () => {
+      const rule = document.createElement("style");
+      rule.textContent = `#${ID} { --ag-ui-inset: 0 auto auto 0; }`;
+      document.body.appendChild(rule);
+      const el = await placed();
+      fill(el);
+      await resize(WIDE);
+      expectFills(el, WIDE);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+    });
+  });
+
   it("holds a launcher moved by a key through an expand before the key comes up", async () => {
     const el = chat();
     await frames();

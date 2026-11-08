@@ -90,6 +90,24 @@ function coversViewport(box: Extent, viewport: Extent): boolean {
 }
 
 /**
+ * Whether a box that covers the usable viewport stands off any edge of it.
+ *
+ * The far edges are read against the layout viewport rather than the usable box,
+ * because a keyboard shortens the second and pans the panel down inside the
+ * first: a phone's full-bleed panel is correctly past the usable box's foot then,
+ * and pinning it back would put its header above the screen.
+ */
+function hangsOff(box: PanelRect, viewport: ViewportBox, screen: Extent): boolean {
+  const slack = 0.5;
+  return (
+    box.left < viewport.left - slack ||
+    box.top < viewport.top - slack ||
+    box.right > screen.width + slack ||
+    box.bottom > screen.height + slack
+  );
+}
+
+/**
  * The `--ag-ui-inset` value that pins `box` by `corner`.
  *
  * Only the two sides the corner names get a length; the other two are `auto`,
@@ -1331,6 +1349,13 @@ export class PanelPlacement {
    * so it is measured again from the box that has just moved, and it is held on
    * the screen, because it is the way back from a collapsed conversation. The
    * spot itself is untouched, for the next time there is room for it.
+   *
+   * Above the breakpoint nothing in the stylesheet takes the panel to the edges.
+   * A host's own size makes it the screen while the resting inset still spends a
+   * gutter on one corner, which hangs the box off the opposite one, so there it
+   * stands at the start of the room the host left free and keeps that inset. A
+   * box the placement already holds on the screen has no inset to keep, which is
+   * every phone, and a host's rule that placed the box itself.
    */
   #standFullBleed(spot: CornerSpot): boolean {
     const element = this.#host.element;
@@ -1339,12 +1364,21 @@ export class PanelPlacement {
       return false;
     }
     element.style.removeProperty("--ag-ui-inset");
-    const box = element.getBoundingClientRect();
+    const rest = element.getBoundingClientRect();
+    const hanging = hangsOff(rest, viewport, this.#screen());
+    const box = hanging
+      ? {
+          left: viewport.left,
+          top: viewport.top,
+          right: viewport.left + rest.width,
+          bottom: viewport.top + rest.height,
+        }
+      : rest;
     const launcher = { ...this.#launcherBox(), left: spot.left, top: spot.top };
     this.#placePanelAndLauncher(box, { ...launcher, ...clampLauncher(launcher, viewport) });
-    // That wrote the box as an inset as well as the launcher from it. The box is
-    // where the placement already has it, so it has no inset to keep.
-    element.style.removeProperty("--ag-ui-inset");
+    if (!hanging) {
+      element.style.removeProperty("--ag-ui-inset");
+    }
     return true;
   }
 
