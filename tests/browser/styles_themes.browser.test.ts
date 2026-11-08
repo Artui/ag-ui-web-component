@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { cdp } from "vitest/browser";
+import { cdp, userEvent } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
@@ -496,16 +496,17 @@ describe("text on the accent (real browser)", () => {
 
   /**
    * The built-in sheet as an engine without relative colour syntax applies
-   * it (Firefox 120 to 127, Safari 17.5 and 17.6): the block that asks for it
-   * deleted, and the block that asks for its absence unwrapped in place.
+   * it (Firefox 120 to 127, Safari 17.5 and 17.6): the two blocks that ask for
+   * it deleted, the text on the accent's and the header buttons' hover
+   * square's, and the block that asks for its absence unwrapped in place.
    * Edited in a parsed sheet rather than in the source text, and counted, so
-   * a change to either condition cannot leave this testing the full sheet
-   * under another name.
+   * a change to any condition cannot leave this testing the full sheet under
+   * another name.
    */
   function relativeColourBlocks(styles: CSSStyleSheet): CSSSupportsRule[] {
     return [...styles.cssRules].filter(
       (rule): rule is CSSSupportsRule =>
-        rule instanceof CSSSupportsRule && rule.conditionText.includes("color(from"),
+        rule instanceof CSSSupportsRule && /(?:color|rgb)\(from/.test(rule.conditionText),
     );
   }
 
@@ -513,7 +514,7 @@ describe("text on the accent (real browser)", () => {
     const edited = sheet(STYLES);
     const blocks = relativeColourBlocks(edited);
     const present = blocks.filter((block) => !block.conditionText.startsWith("not "));
-    expect(present).toHaveLength(1);
+    expect(present).toHaveLength(2);
     // Last first, so each index still names the block it was read from.
     for (const block of blocks.reverse()) {
       const index = [...edited.cssRules].indexOf(block);
@@ -531,8 +532,12 @@ describe("text on the accent (real browser)", () => {
   it("negates the computing block exactly where a theme falls back", () => {
     // Two conditions spelled twice: if they drifted apart, an engine could
     // apply both blocks or neither.
-    const [present, ...absent] = relativeColourBlocks(sheet(STYLES));
-    expect(absent.map((block) => block.conditionText)).toEqual([`not ${present?.conditionText}`]);
+    const blocks = relativeColourBlocks(sheet(STYLES));
+    const absent = blocks.filter((block) => block.conditionText.startsWith("not "));
+    const computing = blocks.find(
+      (block) => !absent.includes(block) && block.conditionText.includes("color(from"),
+    );
+    expect(absent.map((block) => block.conditionText)).toEqual([`not ${computing?.conditionText}`]);
   });
 
   /** The colour the element resolves for text on its accent, read from a probe. */
@@ -564,6 +569,31 @@ describe("text on the accent (real browser)", () => {
     }
     el.shadowRoot.adoptedStyleSheets = [withoutRelativeColour()];
     expect(onAccent(el)).toEqual(expected);
+  });
+
+  // The other thing behind relative colour syntax. The square is the opposite
+  // of the header text where it can be computed, and mixed from the text itself
+  // where it cannot, which the white on this blue pays for: 5.1:1 falls to 3.75:1.
+  it("mixes the header buttons' hover square from the header text without relative colour syntax", async () => {
+    const el = mount({ placement: "floating", "data-start-open": "" }, (e) => {
+      e.style.setProperty("--ag-ui-header-bg", "#3d5afe");
+      e.style.setProperty("--ag-ui-header-fg", "#ffffff");
+    });
+    if (el.shadowRoot === null) {
+      throw new Error("expected a shadow root");
+    }
+    el.shadowRoot.adoptedStyleSheets = [withoutRelativeColour()];
+    const button = part(el, ".header-btn--history");
+    await userEvent.hover(button);
+    // A pointer left over the panel reveals the next test's hover-only rows.
+    try {
+      expect(button.matches(":hover")).toBe(true);
+      const square = rgba(getComputedStyle(button).backgroundColor);
+      expect(square).toEqual(rgba("color-mix(in srgb, #ffffff 18%, transparent)"));
+      expect(contrast(WHITE, over(square, rgba("#3d5afe")))).toBeCloseTo(3.75, 2);
+    } finally {
+      await userEvent.hover(document.body, { position: { x: 1, y: 1 } });
+    }
   });
 
   // Where it can compute, the pick matches the fallback's side on every

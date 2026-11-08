@@ -639,3 +639,19 @@ $("cfg-ring-focus").addEventListener("click", () => {
   const outline = getComputedStyle(head).outlineStyle;
   $("cfg-ring-out").textContent = `${$("cfg-ring-on").checked ? $("cfg-ring").value : "default"}, outline ${outline}`;
 });
+
+// The header buttons' hover square, set on the element as a host would.
+const applyHeaderHover = () => {
+  if ($("cfg-hover-on").checked) {
+    chat.style.setProperty("--ag-ui-header-btn-hover", $("cfg-hover").value);
+    $("cfg-hover-out").textContent = $("cfg-hover").value;
+  } else {
+    chat.style.removeProperty("--ag-ui-header-btn-hover");
+    $("cfg-hover-out").textContent = "default";
+  }
+};
+$("cfg-hover-on").addEventListener("change", applyHeaderHover);
+$("cfg-hover").addEventListener("input", () => {
+  $("cfg-hover-on").checked = true;
+  applyHeaderHover();
+});

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The themes demo sets `--ag-ui-header-btn-hover`.** A new control on its
+  page draws the header buttons' hover square in a colour you pick. The suite
+  now tests that square as a browser without relative colour syntax draws it,
+  mixed from the header text, which only a string check saw before. Demo and
+  tests only, nothing shipped changes. **A host has nothing to do.**
+
 ### Fixed
 
 - **A corner panel that was moved goes full-bleed on a phone, and stays there.**
