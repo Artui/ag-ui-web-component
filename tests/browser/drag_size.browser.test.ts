@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
@@ -368,5 +368,197 @@ describe("a grip on a dragged corner panel (real browser)", () => {
     await frames();
     expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
     expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+  });
+
+  async function reopen(el: AgUiChat): Promise<void> {
+    el.setCollapsed(true);
+    await frames();
+    el.setCollapsed(false);
+    await frames();
+  }
+
+  function expectAt(el: AgUiChat, box: { left: number; top: number }): void {
+    expect(el.getBoundingClientRect().left).toBeCloseTo(box.left, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(box.top, 0);
+  }
+
+  const setHostSize = (el: AgUiChat): void => {
+    el.style.setProperty("--ag-ui-width", "720px");
+    el.style.setProperty("--ag-ui-height", "700px");
+  };
+  const dropHostSize = (el: AgUiChat): void => {
+    el.style.removeProperty("--ag-ui-width");
+    el.style.removeProperty("--ag-ui-height");
+  };
+
+  it("keeps the spot when a host enters a sized state of its own with resetSize", async () => {
+    // The README's recipe for an "expanded" mode. The panel is the host's while
+    // it lasts, and no gesture stated anything, so leaving it finds the spot.
+    const first = await placed();
+    const stored = localStorage.getItem(LAUNCHER_KEY);
+    setHostSize(first);
+    first.resetSize();
+    await frames();
+    expect(first.getBoundingClientRect().width).toBeCloseTo(720, 0);
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+
+    dropHostSize(first);
+    await frames();
+    await reopen(first);
+    expectAt(first, { left: 376, top: 96 });
+
+    first.remove();
+    const second = chat();
+    await frames();
+    expectAt(second, { left: 376, top: 96 });
+  });
+
+  it.each([
+    ["width", "--ag-ui-width"],
+    ["height", "--ag-ui-height"],
+  ])("does not shift the spot by a host %s in force at resetSize", async (_axis, token) => {
+    // Which part of that change is the dragged size coming off and which is the
+    // host's own cannot be told apart, and the host's would throw the spot off
+    // by as much as it is bigger. So the top-left stays where the grip left it.
+    const el = await placed();
+    await drag(part(el, ".resize-handle--top-left"), -52, -32);
+    const grown = el.getBoundingClientRect();
+    const stored = localStorage.getItem(LAUNCHER_KEY);
+    el.style.setProperty(token, "700px");
+    el.resetSize();
+    await frames();
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+
+    el.style.removeProperty(token);
+    await frames();
+    await reopen(el);
+    expectAt(el, grown);
+  });
+
+  it("keeps a resetSize's spot when the host sizes the panel only afterwards", async () => {
+    const el = await placed();
+    await drag(part(el, ".resize-handle--top-left"), -52, -32);
+    el.resetSize();
+    await frames();
+    const reset = el.getBoundingClientRect();
+    setHostSize(el);
+    await frames();
+    dropHostSize(el);
+    await frames();
+    await reopen(el);
+    expectAt(el, reset);
+  });
+
+  it("moves a spot read from storage when resetSize runs on a fresh mount", async () => {
+    const first = await placed();
+    await drag(part(first, ".resize-handle--top-left"), -52, -32);
+    first.remove();
+    const second = chat();
+    await frames();
+    second.resetSize();
+    await frames();
+    const reset = second.getBoundingClientRect();
+    expect(reset.left).toBeCloseTo(376, 0);
+    await reopen(second);
+    expectAt(second, reset);
+  });
+
+  it("carries the spot in memory where storage refuses it", async () => {
+    const refused = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("refused");
+    });
+    try {
+      const el = await placed();
+      await drag(part(el, ".resize-handle--top-left"), -52, -32);
+      el.resetSize();
+      await frames();
+      const reset = el.getBoundingClientRect();
+      await reopen(el);
+      expectAt(el, reset);
+    } finally {
+      refused.mockRestore();
+    }
+  });
+
+  it("gives a stated spot back after a resetSize in a narrower window", async () => {
+    // Held inside that window, the panel stands short of the spot, and nothing
+    // about a size coming off, or there being none, states a new one.
+    const el = chat();
+    await frames();
+    const box = el.getBoundingClientRect();
+    await drag(part(el, ".header"), 800 - box.left, 96 - box.top);
+    await page.viewport(900, 620);
+    await frames();
+    expect(el.getBoundingClientRect().left).toBeLessThan(800);
+    expect(el.getBoundingClientRect().top).toBeLessThan(96);
+    el.resetSize();
+    await frames();
+    await page.viewport(DESKTOP.width, DESKTOP.height);
+    await frames();
+    expectAt(el, { left: 800, top: 96 });
+  });
+
+  it.each([
+    ["top-left", -200, -60],
+    ["left", -200, 0],
+    ["bottom-right", 200, 60],
+  ])("comes back as drawn after the %s grip pulled past a host's maximum", async (name, dx, dy) => {
+    const style = "--ag-ui-motion: 0s; --ag-ui-max-width: 420px; --ag-ui-max-height: 600px";
+    const first = mount({}, style);
+    await frames();
+    const box = first.getBoundingClientRect();
+    await drag(part(first, ".header"), 500 - box.left, 96 - box.top);
+    await drag(part(first, `.resize-handle--${name}`), dx, dy);
+    const drawn = first.getBoundingClientRect();
+    expect(drawn.width).toBeCloseTo(420, 0);
+    await reopen(first);
+    expectAt(first, drawn);
+
+    first.remove();
+    const second = mount({}, style);
+    await frames();
+    expectAt(second, drawn);
+  });
+
+  it("does not take a grip on a dragged-off docked panel as the corner's spot", async () => {
+    // An undo under the dock is what leaves a corner position standing there.
+    const el = await placed();
+    el.moveTo("top-left", { announce: true });
+    await frames();
+    el.setAttribute("collapse-to", "bar");
+    await frames();
+    part(el, ".run-notice-undo").click();
+    await frames();
+    await drag(part(el, ".header"), -100, -100);
+    await drag(part(el, ".resize-handle--top-left"), -30, -30);
+
+    el.removeAttribute("collapse-to");
+    await frames();
+    await page.viewport(1270, 800);
+    await frames();
+    expectAt(el, { left: 376, top: 96 });
+  });
+
+  it("leaves a grip gesture alone when the window resizes under it", async () => {
+    // A tablet's viewport changes mid-gesture. Re-applying the last stated spot
+    // here would put the launcher back where the gesture already moved it from.
+    const el = await placed();
+    const grip = part(el, ".resize-handle--bottom-right");
+    const rect = grip.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    grip.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }));
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + 60, clientY: y + 60 }));
+    window.dispatchEvent(new Event("resize"));
+    await settle();
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + 60, clientY: y + 60 }));
+    await frames();
+
+    const stored = JSON.parse(localStorage.getItem(LAUNCHER_KEY) as string);
+    const size = part(el, ".launcher").offsetWidth;
+    el.setCollapsed(true);
+    await frames();
+    expect(bubbleCentre(el).x).toBeCloseTo(stored.left + size / 2, 0);
+    expect(bubbleCentre(el).y).toBeCloseTo(stored.top + size / 2, 0);
   });
 });

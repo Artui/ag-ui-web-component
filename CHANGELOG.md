@@ -32,10 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `collapse-to="auto"`, growing a moved panel by a grip on its free edges, which
   moves its top-left corner while the layout holds the opposite one, was lost on
   the next reopen or reload: the panel came back at its old top-left, grown away
-  from its launcher. It now comes back as it was left, and `resetSize()` keeps
-  the panel where the size came off. **A host has nothing to do.**
+  from its launcher. It now comes back as it was drawn, a host's maximum included,
+  and `resetSize()` keeps the panel where the size came off, unless the host's own
+  `--ag-ui-width` or `--ag-ui-height` is in force at that moment, when the top-left
+  stays as the grip left it. **A host has nothing to do.**
 - **`read_chat_surface` reports the page's setting for `draggable`, whatever the
-  placement.** A docked sidebar, embedded or side panel under `collapse-to="auto"`
+  placement.** A sidebar, embedded, side, page or full panel under `collapse-to="auto"`
   reported `draggable: false` with `movable: false`, so `move_chat` answered that
   the page had turned off moving the panel when the placement owned its position,
   while the same placement under `collapse-to="none"` or `"bar"` reported `true`.
@@ -44,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The refusal names the placement. **A host has nothing to do.**
 - **Every theme's header buttons follow `--ag-ui-header-fg`.** 0.49.0 did this
   for Quiet alone, so the accent recipe still fell short under the others:
-  white on a `#3d5afe` header read 1.1 to 3.3:1 at rest under Soft and Ledger,
+  white on a `#3d5afe` header read 1.1 to 1.6:1 at rest under Soft and Ledger,
   and 4.16:1 at rest and 3.75:1 hovered under Classic and code. Once a host sets
   `--ag-ui-header-fg`, the buttons draw in it at full opacity under every theme
   and scheme, and the hover square is the opposite of that text at 18%: that

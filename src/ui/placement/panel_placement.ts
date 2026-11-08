@@ -239,6 +239,7 @@ export class PanelPlacement {
    * it always has.
    */
   resetSize(): void {
+    const sized = this.#host.element.getBoundingClientRect();
     this.#host.element.style.removeProperty(DRAG_WIDTH);
     this.#host.element.style.removeProperty(DRAG_HEIGHT);
     this.#host.clearPreference(SIZE_KEY);
@@ -249,7 +250,7 @@ export class PanelPlacement {
       this.#dockPos = null;
       this.#storeDockPosition(null);
     } else {
-      this.#keepPanelTopLeft();
+      this.#carrySpotWithSize(sized);
     }
     // The anchor was measured against the dragged box; the resting one may
     // pin different edges.
@@ -257,19 +258,39 @@ export class PanelPlacement {
   }
 
   /**
-   * Re-read a stated corner panel's top-left after its size changed without a
-   * grip. The size comes off toward the corner the layout holds still, so the
-   * top-left the spot is kept as moves with it, and a restore from the old one
-   * would swing the panel away from its launcher. Not while the panel is the
-   * screen: the screen's origin is not a place anyone put it.
+   * Carry a stated corner spot along with a dragged size coming off.
+   *
+   * The size comes off toward the corner the layout holds still, so the top-left
+   * the spot is kept as moves with it, and a restore from the old one would swing
+   * the panel away from its launcher. Only that movement goes onto the spot, not
+   * where the box stands: in a window narrower than the spot the box is held
+   * short of it, and that is not something the user stated.
+   *
+   * Left alone while a host's own size is in force, because that cannot be told
+   * from the dragged size coming off, and it may be a state the host is about to
+   * leave: counting it would throw the spot off by as much as that state is
+   * bigger. A panel that is the screen needs no case of its own: the small-viewport
+   * block ignores a dragged size, so its box does not move.
    */
-  #keepPanelTopLeft(): void {
-    const box = this.#host.element.getBoundingClientRect();
-    if (this.#panelPos === null || coversViewport(box, this.#viewport())) {
+  #carrySpotWithSize(sized: DOMRect): void {
+    const element = this.#host.element;
+    const box = element.getBoundingClientRect();
+    const spot = this.#cornerSpot ?? this.#readLauncherPosition();
+    const style = getComputedStyle(element);
+    if (
+      spot?.panel === undefined ||
+      style.getPropertyValue("--ag-ui-width") !== "" ||
+      style.getPropertyValue("--ag-ui-height") !== ""
+    ) {
       return;
     }
-    this.#panelPos = { left: box.left, top: box.top };
-    this.#storeLauncherPosition();
+    this.#writeCornerSpot({
+      ...spot,
+      panel: {
+        left: spot.panel.left + box.left - sized.left,
+        top: spot.panel.top + box.top - sized.top,
+      },
+    });
   }
 
   /**
@@ -307,8 +328,8 @@ export class PanelPlacement {
    * viewport, because that is where a press finds them and a drag starts from.
    * This is what the user asked for, kept apart so that a window narrower than
    * the spot, or a phone that took the panel full-bleed, gives it back unchanged
-   * once there is room again. Only a gesture or a move changes it; re-applying
-   * it against a viewport never does, which is the difference from a clamped
+   * once there is room again. Only a gesture, a move or a dragged size coming off
+   * changes it; re-applying it against a viewport never does, which is the difference from a clamped
    * position quietly becoming the record one resize at a time.
    */
   #cornerSpot: CornerSpot | null = null;
@@ -392,7 +413,8 @@ export class PanelPlacement {
   dragging(): boolean {
     return (
       this.#host.launcher.hasAttribute("data-dragging") ||
-      this.#host.root.querySelector(".header[data-dragging]") !== null
+      this.#host.root.querySelector(".header[data-dragging], .resize-handle[data-dragging]") !==
+        null
     );
   }
 
@@ -1415,29 +1437,31 @@ export class PanelPlacement {
       // on a free edge, which leaves the inset alone.
       this.#dockPos = { left: box.left, top: box.top };
     }
-    // The same for a stated corner panel: a claim about this box, so it moves
-    // with it, by a free edge as well as by a pinned one.
-    if (this.#panelPos !== null) {
-      this.#panelPos = { left: box.left, top: box.top };
+    if (grip.x === this.#anchor.x || grip.y === this.#anchor.y) {
+      // The whole screen, not the usable box: a CSS inset on a fixed element is
+      // measured from the real edges, so expressing a right or bottom against a
+      // box the host has inset comes out short by exactly that inset.
+      const anchor = this.#anchor;
+      this.#host.element.style.setProperty("--ag-ui-inset", insetFrom(anchor, box, this.#screen()));
+      // The launcher lives at this corner of the panel, so a corner that moved
+      // takes it along. Without this the next expand would re-derive the panel's
+      // position from a launcher still standing where the panel used to be, and
+      // undo the move.
+      if (this.#launcherPos !== null) {
+        const size = this.#host.launcher.offsetWidth;
+        this.#launcherPos = {
+          left: anchor.x === "left" ? box.left : box.right - size,
+          top: anchor.y === "top" ? box.top : box.bottom - size,
+        };
+      }
     }
-    if (grip.x !== this.#anchor.x && grip.y !== this.#anchor.y) {
-      return box;
-    }
-    // The whole screen, not the usable box: a CSS inset on a fixed element is
-    // measured from the real edges, so expressing a right or bottom against a
-    // box the host has inset comes out short by exactly that inset.
-    const anchor = this.#anchor;
-    this.#host.element.style.setProperty("--ag-ui-inset", insetFrom(anchor, box, this.#screen()));
-    // The launcher lives at this corner of the panel, so a corner that moved
-    // takes it along. Without this the next expand would re-derive the panel's
-    // position from a launcher still standing where the panel used to be, and
-    // undo the move.
-    if (this.#launcherPos !== null) {
-      const size = this.#host.launcher.offsetWidth;
-      this.#launcherPos = {
-        left: anchor.x === "left" ? box.left : box.right - size,
-        top: anchor.y === "top" ? box.top : box.bottom - size,
-      };
+    // A stated corner panel's spot is a claim about this box, so it moves with
+    // it, by a free edge as well as by a pinned one. Read from what was drawn,
+    // not what the pointer asked for, because a host's maximum stops the box short
+    // of the pointer. Not while docked: this position belongs to the corner.
+    if (this.#panelPos !== null && !this.#docked()) {
+      const drawn = this.#host.element.getBoundingClientRect();
+      this.#panelPos = { left: drawn.left, top: drawn.top };
     }
     return box;
   }
