@@ -32,14 +32,15 @@ export const LEDGER_STYLES: string = `
   vertical-align: 1px;
 }
 
+/* Both inks yield once the host sets the header text, since the header behind
+   them is then the host's colour (see the switches in the token defaults). */
 :host([theme~="ledger"]) .header-btn {
-  color: var(--_ink-3);
+  color: var(--_header-fg-set, var(--_ink-3));
   border-radius: 3px;
 }
 
 :host([theme~="ledger"]) .header-btn:hover {
-  background: var(--_hover);
-  color: var(--_fg);
+  color: var(--_header-fg-set, var(--_fg));
 }
 
 :host([theme~="ledger"]) .message--user {

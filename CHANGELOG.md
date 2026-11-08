@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The themes demo sets `--ag-ui-header-btn-hover`.** A new control on its
+  page draws the header buttons' hover square in a colour you pick. The suite
+  now tests that square as a browser without relative colour syntax draws it,
+  mixed from the header text, which only a string check saw before. Demo and
+  tests only, nothing shipped changes. **A host has nothing to do.**
+
 ### Fixed
 
 - **A corner panel that was moved goes full-bleed on a phone, and stays there.**
@@ -34,6 +42,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `draggable` is now `true` for every placement unless the page sets
   `data-launcher-drag="false"`, and whether this panel moves stays in `movable`.
   The refusal names the placement. **A host has nothing to do.**
+- **Every theme's header buttons follow `--ag-ui-header-fg`.** 0.49.0 did this
+  for Quiet alone, so the accent recipe still fell short under the others:
+  white on a `#3d5afe` header read 1.1 to 3.3:1 at rest under Soft and Ledger,
+  and 4.16:1 at rest and 3.75:1 hovered under Classic and code. Once a host sets
+  `--ag-ui-header-fg`, the buttons draw in it at full opacity under every theme
+  and scheme, and the hover square is the opposite of that text at 18%: that
+  pair now reads 5.13:1 at rest and 6.95:1 hovered under all of them. What
+  changes for a host that sets it, by theme. Soft: the glyph was the third ink,
+  the accent's ink hovered, on a square of `--ag-ui-tint-2`. Ledger: the glyph
+  was the third ink, the full ink hovered, on a square of `--ag-ui-hover`.
+  Classic and code: the glyph already was the header text, but at 0.85 opacity,
+  and the square was 18% white, so under white text it now darkens where it
+  lightened. Browsers without relative colour syntax (Firefox 120 to 127,
+  Safari 17.5 and 17.6) mix the square from the text itself, as under Quiet, at
+  3.75:1 hovered for that pair.
+  **`--ag-ui-header-btn-hover`, inert until now under Soft, Ledger, Classic and
+  code, works under them**, as it does under Quiet: drawn exactly as given,
+  whether or not the header text is set. A host that set it for Quiet and also
+  wears one of these themes will now see it. With neither token set, every
+  theme's header buttons are exactly as they were, whatever the header colour
+  or `--ag-ui-hover`. **No opt-in is needed.** A page's own
+  `::part(header-button)` rules still win: a host that wrote one to get here may
+  delete it, and should at least delete a `:hover` background of 18% of the text,
+  which keeps the glyph at 3.75:1 on a mid-tone accent. A host that sets neither
+  token, the Django admin among them, sees no change.
 
 ## [0.49.0] — 2026-11-07
 

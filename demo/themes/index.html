@@ -386,6 +386,7 @@
           <option value="soft">soft</option>
           <option value="ledger">ledger</option>
           <option value="classic">classic</option>
+          <option value="code">code</option>
         </select>
       </label>
       <label
@@ -484,7 +485,7 @@
         >Header icons
         <input type="checkbox" id="cfg-icons" />
       </label>
-      <label title="The documented recipe for keeping a brand accent under Quiet: header, launcher and tool names"
+      <label title="The documented recipe for keeping a brand accent, under any theme: header, launcher and tool names"
         >Accent recipe
         <input type="checkbox" id="cfg-accent-recipe" />
       </label>
@@ -761,6 +762,20 @@
             <input type="color" id="cfg-ring" value="#e11d48" aria-label="Ring colour" />
             <button type="button" id="cfg-ring-focus">Focus a group head</button>
             <output id="cfg-ring-out">default</output>
+          </div>
+        </section>
+
+        <section id="add-header-hover">
+          <h3>The header hover square token</h3>
+          <p>
+            <code>--ag-ui-header-btn-hover</code> draws the square behind a hovered header button
+            exactly as given. Unset, the square follows the header text once the accent recipe sets
+            it, and is the theme's own otherwise. Hover a header button to see it.
+          </p>
+          <div class="row">
+            <label><input type="checkbox" id="cfg-hover-on" /> Set</label>
+            <input type="color" id="cfg-hover" value="#fde68a" aria-label="Hover square colour" />
+            <output id="cfg-hover-out">default</output>
           </div>
         </section>
       </div>
