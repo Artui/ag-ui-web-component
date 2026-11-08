@@ -25,12 +25,15 @@ export interface ChatSurfaceReport {
   /** Whether the panel can be moved, or the placement owns its position. */
   readonly movable: boolean;
   /**
-   * Whether this page allows the panel to be moved at all.
+   * Whether this page allows the panel to be moved at all: true for every
+   * placement unless the host set `data-launcher-drag="false"`. It is the
+   * page's setting alone and does not vary with the placement or `collapse-to`;
+   * whether this panel moves is {@link ChatSurfaceReport.movable}.
    *
-   * Reported apart from {@link ChatSurfaceReport.movable} only because the two
-   * reasons a move is refused call for different sentences: a host that turned
-   * dragging off is not the placement owning the position, and telling the
-   * user the second when the first is true is a plain falsehood.
+   * Reported apart from `movable` only because the two reasons a move is
+   * refused call for different sentences: a host that turned dragging off is
+   * not the placement owning the position, and telling the user the second
+   * when the first is true is a plain falsehood.
    */
   readonly draggable: boolean;
   /** Whether the panel currently covers the whole viewport. */

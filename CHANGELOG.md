@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the next reopen or reload: the panel came back at its old top-left, grown away
   from its launcher. It now comes back as it was left, and `resetSize()` keeps
   the panel where the size came off. **A host has nothing to do.**
+- **`read_chat_surface` reports the page's setting for `draggable`, whatever the
+  placement.** A docked sidebar, embedded or side panel under `collapse-to="auto"`
+  reported `draggable: false` with `movable: false`, so `move_chat` answered that
+  the page had turned off moving the panel when the placement owned its position,
+  while the same placement under `collapse-to="none"` or `"bar"` reported `true`.
+  `draggable` is now `true` for every placement unless the page sets
+  `data-launcher-drag="false"`, and whether this panel moves stays in `movable`.
+  The refusal names the placement. **A host has nothing to do.**
 
 ## [0.49.0] — 2026-11-07
 

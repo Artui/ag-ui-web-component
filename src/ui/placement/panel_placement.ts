@@ -407,13 +407,12 @@ export class PanelPlacement {
       collapsed: this.#host.collapsed(),
       collapsible: this.#host.collapsible(),
       movable: this.#panelMovable() && !fullBleed,
-      // Whether the page left moving on, which is not the same question as
-      // whether this panel moves: a docked sidebar's position is owned by its
-      // placement, and reporting that as the host having turned moving off is
-      // the sentence the move refusal would then get wrong.
-      draggable:
-        this.#host.element.getAttribute("data-launcher-drag") !== "false" &&
-        (this.#surface().launcherDraggable || this.#docked()),
+      // The page's setting alone: true for every placement unless the host set
+      // `data-launcher-drag="false"`. Whether this panel moves is `movable`,
+      // and reading the launcher or the dock in here made the field change
+      // with `collapse-to`, so a docked sidebar reported that the page had
+      // turned moving off when the placement owned its position.
+      draggable: this.#host.element.getAttribute("data-launcher-drag") !== "false",
       fullBleed,
       box: {
         left: Math.round(box.left),

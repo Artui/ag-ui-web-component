@@ -347,6 +347,15 @@ describe("describeSurface().collapseTo, per placement and collapse-to", () => {
     [{ "collapse-to": "none", placement: "sidebar" }, false, true, "sidebar"],
     [{ "collapse-to": "none", placement: "embedded" }, false, true, "embedded"],
     [{ "collapse-to": "bar", "data-launcher-drag": "false" }, false, false, "turned off"],
+    // Under auto, which is where a real sidebar sits unless the host says
+    // otherwise: the page left moving on, so the refusal names the placement.
+    [{ placement: "sidebar" }, false, true, "sidebar"],
+    [{ placement: "sidebar", "collapse-to": "auto" }, false, true, "sidebar"],
+    [{ placement: "embedded" }, false, true, "embedded"],
+    [{ placement: "side" }, false, true, "side"],
+    [{ placement: "sidebar", "data-launcher-drag": "false" }, false, false, "turned off"],
+    [{ placement: "embedded", "data-launcher-drag": "false" }, false, false, "turned off"],
+    [{ "data-launcher-drag": "false" }, false, false, "turned off"],
   ])(
     "under %o reports movable %s and draggable %s, and refuses naming %s",
     async (attrs, movable, draggable, reason) => {
@@ -369,6 +378,28 @@ describe("describeSurface().collapseTo, per placement and collapse-to", () => {
       if (reason !== null) {
         expect(String(result["reason"])).toContain(reason);
         expect(String(result["reason"])).not.toContain("docked");
+      }
+    },
+  );
+
+  it.each(["sidebar", "embedded", "side", "bottom-left", "floating", "page"])(
+    "reports the same draggable for placement=%s under auto, bar and none",
+    (placement) => {
+      // The field is the page's setting alone, so the collapse target a
+      // placement sits under cannot change it. It used to read the launcher
+      // as well, which made it true under none and false under auto.
+      for (const collapseTo of ["auto", "bar", "none"]) {
+        for (const drag of [null, "false"]) {
+          document.body.innerHTML = "";
+          const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+          el.setAttribute("placement", placement);
+          el.setAttribute("collapse-to", collapseTo);
+          if (drag !== null) {
+            el.setAttribute("data-launcher-drag", drag);
+          }
+          document.body.appendChild(el);
+          expect(el.describeSurface().draggable).toBe(drag === null);
+        }
       }
     },
   );
