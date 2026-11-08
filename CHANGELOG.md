@@ -112,6 +112,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under a bigger size it stands where a reopen already put it, held on the screen from
   that spot, rather than growing away from the corner the layout held. A window-filling
   size stands it at 0,0 at once, with no resize needed. **A host has nothing to do.**
+- **A moved panel answers a viewport inset token when the token changes.** A page
+  that publishes `--ag-ui-viewport-inset-top` from its own `ResizeObserver` does so
+  after the window's resize event, so the restore that event starts read the bar at
+  its old height. Widening a window past the width where the bar shrinks left the
+  panel 35px below its spot on the playground, top 224 for a spot of 189, and
+  narrowing left it under a bar that had grown. It now settles from the token as it
+  stands, on any of the four viewport inset tokens and however late the page writes
+  them. **A host has nothing to do.** The panel answers from a `ResizeObserver` too,
+  so a page whose publishing observer sits below `<body>` in the tree may now see the
+  browser's own "ResizeObserver loop completed with undelivered notifications" on the
+  window as its bar changes: a report rather than an exception, and the panel settles
+  a frame later. A host whose error reporting or tests count window errors should
+  expect it.
 
 ## [0.49.0] — 2026-11-07
 

@@ -1588,9 +1588,14 @@ export class AgUiChat extends HTMLElement {
     this.#connection.signal.addEventListener("abort", () => dockObserver.disconnect());
     // A host's own size arrives with no event: a token written or a class changed
     // moves nothing here until the next window resize or reopen, and a panel
-    // re-placed under a size that has since gone stays held short of its spot.
+    // re-placed under a size that has since gone stays held short of its spot. Its
+    // viewport insets too, and a page publishing a bar's height from an observer of
+    // its own does so after the window's resize event, so that restore reads the
+    // bar as it was. The probe carries those insets as padding around no content,
+    // which only its border box sees.
     const layoutObserver = new ResizeObserver(this.#onViewportResize);
     layoutObserver.observe(this, { box: "border-box" });
+    layoutObserver.observe(this.#placement.probe, { box: "border-box" });
     this.#connection.signal.addEventListener("abort", () => layoutObserver.disconnect());
     this.#syncDock();
     // Under collapse-to="none" the host draws the collapsed state itself, so
