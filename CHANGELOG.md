@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   narrows, by any amount, holds the panel inside it without changing the record,
   and widening gives that place back, as a reload already did. A gesture made in
   the narrower window states a new one. **A host has nothing to do.**
+- **A corner panel remembers the corner a resize grip moved.** Under
+  `collapse-to="auto"`, growing a moved panel by a grip on its free edges, which
+  moves its top-left corner while the layout holds the opposite one, was lost on
+  the next reopen or reload: the panel came back at its old top-left, grown away
+  from its launcher. It now comes back as it was left, and `resetSize()` keeps
+  the panel where the size came off. **A host has nothing to do.**
 
 ## [0.49.0] — 2026-11-07
 

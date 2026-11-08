@@ -19,6 +19,7 @@ const DESKTOP = { width: 1280, height: 800 };
 const PHONE = { width: 500, height: 720 };
 const ID = "drag-size";
 const SIZE_KEY = `ag-ui-chat:size:${ID}`;
+const LAUNCHER_KEY = `ag-ui-chat:launcher:${ID}`;
 
 function mount(attrs: Record<string, string> = {}, style = ""): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
@@ -46,6 +47,8 @@ afterEach(async () => {
   });
   localStorage.removeItem(SIZE_KEY);
   sessionStorage.removeItem(SIZE_KEY);
+  localStorage.removeItem(LAUNCHER_KEY);
+  sessionStorage.removeItem(LAUNCHER_KEY);
   await page.viewport(DESKTOP.width, DESKTOP.height);
 });
 
@@ -194,5 +197,176 @@ describe("resetSize and the resize anchor (real browser)", () => {
     const edge = el.getBoundingClientRect();
     expect(edge.left).toBeCloseTo(24, 0);
     expect(edge.top).toBeCloseTo(24, 0);
+  });
+});
+
+describe("a grip on a dragged corner panel (real browser)", () => {
+  const part = (el: AgUiChat, selector: string): HTMLElement => {
+    const found = el.shadowRoot?.querySelector<HTMLElement>(selector);
+    if (found === null || found === undefined) {
+      throw new Error(`expected ${selector} in the shadow root`);
+    }
+    return found;
+  };
+
+  const frames = async (): Promise<void> => {
+    for (let frame = 0; frame < 3; frame += 1) {
+      await settle();
+    }
+  };
+
+  async function drag(handle: HTMLElement, dx: number, dy: number): Promise<void> {
+    const rect = handle.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + dx, clientY: y + dy }));
+    await frames();
+  }
+
+  /** Motion off, so a rect read after a frame is the resting one. */
+  function chat(attrs: Record<string, string> = {}): AgUiChat {
+    return mount(attrs, "--ag-ui-motion: 0s");
+  }
+
+  /**
+   * The panel dragged by its header to [376, 96]. The launcher rides at its
+   * bottom-right and the corner is re-picked from there, so bottom-right is
+   * what the layout holds still and the top and left grips are the free ones.
+   */
+  async function placed(): Promise<AgUiChat> {
+    const el = chat();
+    await frames();
+    const box = el.getBoundingClientRect();
+    await drag(part(el, ".header"), 376 - box.left, 96 - box.top);
+    expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+    return el;
+  }
+
+  /** The launcher's centre, the one point a centred scale cannot move. */
+  function bubbleCentre(el: AgUiChat): { x: number; y: number } {
+    const rect = part(el, ".launcher").getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+
+  it.each([
+    ["top-left", -52, -32],
+    ["top", 0, -32],
+    ["left", -52, 0],
+  ])(
+    "remembers the corner the %s grip moved, through a reopen and a reload",
+    async (name, dx, dy) => {
+      const first = await placed();
+      const before = first.getBoundingClientRect();
+      await drag(part(first, `.resize-handle--${name}`), dx, dy);
+      const grown = first.getBoundingClientRect();
+      // Read off the box rather than summed from the pull: the grip sets the edge
+      // where the pointer is, and the press lands inside the grip's own strip.
+      expect(grown.left < before.left).toBe(dx !== 0);
+      expect(grown.top < before.top).toBe(dy !== 0);
+      expect(grown.right).toBeCloseTo(before.right, 0);
+      expect(grown.bottom).toBeCloseTo(before.bottom, 0);
+
+      first.setCollapsed(true);
+      await frames();
+      first.setCollapsed(false);
+      await frames();
+      const reopened = first.getBoundingClientRect();
+      expect(reopened.left).toBeCloseTo(grown.left, 0);
+      expect(reopened.top).toBeCloseTo(grown.top, 0);
+      expect(reopened.width).toBeCloseTo(grown.width, 0);
+      expect(reopened.height).toBeCloseTo(grown.height, 0);
+
+      first.remove();
+      const second = chat();
+      await frames();
+      const reloaded = second.getBoundingClientRect();
+      expect(reloaded.left).toBeCloseTo(grown.left, 0);
+      expect(reloaded.top).toBeCloseTo(grown.top, 0);
+      expect(reloaded.width).toBeCloseTo(grown.width, 0);
+      expect(reloaded.height).toBeCloseTo(grown.height, 0);
+    },
+  );
+
+  it("leaves the launcher at the corner the panel collapses into", async () => {
+    const el = await placed();
+    await drag(part(el, ".resize-handle--top-left"), -52, -32);
+    const grown = el.getBoundingClientRect();
+    const size = part(el, ".launcher").offsetWidth;
+
+    el.setCollapsed(true);
+    await frames();
+    expect(bubbleCentre(el).x).toBeCloseTo(grown.right - size / 2, 0);
+    expect(bubbleCentre(el).y).toBeCloseTo(grown.bottom - size / 2, 0);
+
+    el.setCollapsed(false);
+    await frames();
+    el.setCollapsed(true);
+    await frames();
+    expect(bubbleCentre(el).x).toBeCloseTo(grown.right - size / 2, 0);
+    expect(bubbleCentre(el).y).toBeCloseTo(grown.bottom - size / 2, 0);
+  });
+
+  it("holds the panel where resetSize left it, through a reopen and a reload", async () => {
+    // A size coming off shrinks the panel toward the corner the layout holds
+    // still, so the top-left the spot is kept as moves with it. Keeping the
+    // grown one would swing the panel away from its launcher on the next
+    // restore.
+    const first = await placed();
+    await drag(part(first, ".resize-handle--top-left"), -52, -32);
+    const grown = first.getBoundingClientRect();
+    first.resetSize();
+    await frames();
+    const reset = first.getBoundingClientRect();
+    expect(reset.right).toBeCloseTo(grown.right, 0);
+    expect(reset.bottom).toBeCloseTo(grown.bottom, 0);
+    expect(reset.left).toBeGreaterThan(grown.left);
+
+    first.setCollapsed(true);
+    await frames();
+    first.setCollapsed(false);
+    await frames();
+    expect(first.getBoundingClientRect().left).toBeCloseTo(reset.left, 0);
+    expect(first.getBoundingClientRect().top).toBeCloseTo(reset.top, 0);
+
+    first.remove();
+    const second = chat();
+    await frames();
+    expect(second.getBoundingClientRect().left).toBeCloseTo(reset.left, 0);
+    expect(second.getBoundingClientRect().top).toBeCloseTo(reset.top, 0);
+  });
+
+  it("states no panel spot when resetSize runs on a panel only its launcher placed", async () => {
+    // A launcher drag leaves the panel to be derived from it, so the panel opens
+    // into whatever room a later viewport has. resetSize must not turn that into
+    // a position nobody stated.
+    const el = chat();
+    await frames();
+    el.setCollapsed(true);
+    await frames();
+    await drag(part(el, ".launcher"), -300, -200);
+    const stored = localStorage.getItem(LAUNCHER_KEY);
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored as string)).not.toHaveProperty("panel");
+    el.resetSize();
+    await frames();
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+  });
+
+  it("leaves the stated spot alone when resetSize runs on a phone", async () => {
+    // Full-bleed, there is no panel top-left to take as the spot: the screen's
+    // origin is not where the user put it.
+    const el = await placed();
+    await page.viewport(390, 844);
+    await frames();
+    el.resetSize();
+    await frames();
+    await page.viewport(DESKTOP.width, DESKTOP.height);
+    await frames();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
   });
 });

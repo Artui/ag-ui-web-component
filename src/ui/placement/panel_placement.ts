@@ -248,10 +248,28 @@ export class PanelPlacement {
       }
       this.#dockPos = null;
       this.#storeDockPosition(null);
+    } else {
+      this.#keepPanelTopLeft();
     }
     // The anchor was measured against the dragged box; the resting one may
     // pin different edges.
     this.syncResizeAnchor();
+  }
+
+  /**
+   * Re-read a stated corner panel's top-left after its size changed without a
+   * grip. The size comes off toward the corner the layout holds still, so the
+   * top-left the spot is kept as moves with it, and a restore from the old one
+   * would swing the panel away from its launcher. Not while the panel is the
+   * screen: the screen's origin is not a place anyone put it.
+   */
+  #keepPanelTopLeft(): void {
+    const box = this.#host.element.getBoundingClientRect();
+    if (this.#panelPos === null || coversViewport(box, this.#viewport())) {
+      return;
+    }
+    this.#panelPos = { left: box.left, top: box.top };
+    this.#storeLauncherPosition();
   }
 
   /**
@@ -1354,7 +1372,6 @@ export class PanelPlacement {
     }
     this.#launcherPos = null;
     this.#panelPos = null;
-    this.#cornerSpot = null;
     this.#expandCorner = null;
     this.#host.element.style.removeProperty("--ag-ui-inset");
     this.#host.element.style.removeProperty("--ag-ui-launcher-inset");
@@ -1399,6 +1416,11 @@ export class PanelPlacement {
       // on a free edge, which leaves the inset alone.
       this.#dockPos = { left: box.left, top: box.top };
     }
+    // The same for a stated corner panel: a claim about this box, so it moves
+    // with it, by a free edge as well as by a pinned one.
+    if (this.#panelPos !== null) {
+      this.#panelPos = { left: box.left, top: box.top };
+    }
     if (grip.x !== this.#anchor.x && grip.y !== this.#anchor.y) {
       return box;
     }
@@ -1417,10 +1439,6 @@ export class PanelPlacement {
         left: anchor.x === "left" ? box.left : box.right - size,
         top: anchor.y === "top" ? box.top : box.bottom - size,
       };
-    }
-    // A stated panel position is a claim about this box, so it moves with it.
-    if (this.#panelPos !== null) {
-      this.#panelPos = { left: box.left, top: box.top };
     }
     return box;
   }

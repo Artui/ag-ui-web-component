@@ -437,6 +437,60 @@ describe("a corner panel placed on a wide window (real browser)", () => {
     expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
   });
 
+  it("puts a stored spot back after a move undone on a fresh mount", async () => {
+    // The spot came from storage here, not from a gesture this element saw, and
+    // undoing the move has to leave that record standing.
+    const first = await placed();
+    const stored = localStorage.getItem(LAUNCHER_KEY);
+    first.remove();
+    const el = chat({ "data-start-open": "" });
+    await frames();
+    el.moveTo("top-left", { announce: true });
+    await frames();
+    expect(localStorage.getItem(LAUNCHER_KEY)).not.toBe(stored);
+    part(el, ".run-notice-undo").click();
+    await frames();
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+    expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+  });
+
+  it("forgets the move once undone back to no spot at all", async () => {
+    // Nothing had been stated, so the next viewport change must have nothing to
+    // re-apply: the record of the undone move would otherwise take the panel
+    // back to the corner the user just rejected.
+    const el = chat({ "data-start-open": "" });
+    await frames();
+    const home = el.getBoundingClientRect();
+    el.moveTo("top-left", { announce: true });
+    await frames();
+    part(el, ".run-notice-undo").click();
+    await frames();
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+    await resize({ width: 1200, height: DESKTOP.height });
+    expect(el.getBoundingClientRect().right).toBeCloseTo(home.right - (DESKTOP.width - 1200), 0);
+    expect(el.getBoundingClientRect().bottom).toBeCloseTo(home.bottom, 0);
+  });
+
+  it("holds a launcher moved by a key through an expand before the key comes up", async () => {
+    const el = chat();
+    await frames();
+    el.setCollapsed(true);
+    await frames();
+    const launcher = part(el, ".launcher");
+    // A spot already stated, which is what the expand would otherwise go back to.
+    await drag(launcher, -300, -200);
+    const dropped = bubble(el);
+    launcher.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    const moved = bubble(el);
+    expect(moved.left).toBeLessThan(dropped.left);
+    el.setCollapsed(false);
+    await frames();
+    el.setCollapsed(true);
+    await frames();
+    expect(bubble(el).left).toBeCloseTo(moved.left, 0);
+    expect(bubble(el).top).toBeCloseTo(moved.top, 0);
+  });
+
   it("leaves a placement that owns its position alone on a phone", async () => {
     // Without the launcher's gate the stored spot would stamp a corner and a
     // launcher inset on a sidebar that covers the screen here.
