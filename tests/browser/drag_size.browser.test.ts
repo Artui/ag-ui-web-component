@@ -435,6 +435,41 @@ describe("a grip on a dragged corner panel (real browser)", () => {
     expectAt(el, grown);
   });
 
+  it('leaves the stored spot byte for byte when resetSize runs under data-launcher-drag="false"', async () => {
+    // Only the record changes, and only matters if the attribute comes off: then
+    // the panel would return to a top-left nobody stated.
+    const el = await placed();
+    await drag(part(el, ".resize-handle--top-left"), -52, -32);
+    const grown = el.getBoundingClientRect();
+    const stored = localStorage.getItem(LAUNCHER_KEY);
+    el.setAttribute("data-launcher-drag", "false");
+    el.resetSize();
+    await frames();
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+
+    el.removeAttribute("data-launcher-drag");
+    await reopen(el);
+    expectAt(el, grown);
+  });
+
+  it("carries the same spot when resetSize runs during the open animation", async () => {
+    // The animation is the panel's, inside the host, so the box the delta is read
+    // from does not move with it. If it ever did, this reads a scaled box.
+    const el = await placed();
+    await drag(part(el, ".resize-handle--top-left"), -52, -32);
+    el.setCollapsed(true);
+    await frames();
+    el.style.setProperty("--ag-ui-motion", "400ms");
+    el.setCollapsed(false);
+    expect(part(el, ".chat").getAnimations().length).toBeGreaterThan(0);
+    el.resetSize();
+    const { panel } = JSON.parse(localStorage.getItem(LAUNCHER_KEY) ?? "{}") as {
+      panel: { left: number; top: number };
+    };
+    expect(panel.left).toBeCloseTo(376, 0);
+    expect(panel.top).toBeCloseTo(96, 0);
+  });
+
   it("keeps a resetSize's spot when the host sizes the panel only afterwards", async () => {
     const el = await placed();
     await drag(part(el, ".resize-handle--top-left"), -52, -32);

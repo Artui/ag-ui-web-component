@@ -35,9 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moves its top-left corner while the layout holds the opposite one, was lost on
   the next reopen or reload: the panel came back at its old top-left, grown away
   from its launcher. It now comes back as it was drawn, a host's maximum included,
-  and `resetSize()` keeps the panel where the size came off, unless the host's own
-  `--ag-ui-width` or `--ag-ui-height` is in force at that moment, when the top-left
-  stays as the grip left it. **A host has nothing to do.**
+  and `resetSize()` keeps the panel where the size came off. The top-left stays as the
+  grip left it while the host's own `--ag-ui-width` or `--ag-ui-height` is in force at
+  that moment, and the stored spot stays as it was under `data-launcher-drag="false"`.
+  **A host has nothing to do.**
 - **`read_chat_surface` reports the page's setting for `draggable`, whatever the
   placement.** A sidebar, embedded, side, page or full panel under `collapse-to="auto"`
   reported `draggable: false` with `movable: false`, so `move_chat` answered that

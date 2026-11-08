@@ -299,6 +299,10 @@ export class PanelPlacement {
    * leave: counting it would throw the spot off by as much as that state is
    * bigger. A panel that is the screen needs no case of its own: the small-viewport
    * block ignores a dragged size, so its box does not move.
+   *
+   * Left alone too under data-launcher-drag="false", where a spot left over from
+   * before the attribute is a record kept for the day it comes off, and nothing
+   * that happens to the box now is a statement about it.
    */
   #carrySpotWithSize(sized: DOMRect): void {
     const element = this.#host.element;
@@ -307,6 +311,7 @@ export class PanelPlacement {
     const style = getComputedStyle(element);
     if (
       spot?.panel === undefined ||
+      !this.#launcherDraggable() ||
       style.getPropertyValue("--ag-ui-width") !== "" ||
       style.getPropertyValue("--ag-ui-height") !== ""
     ) {
