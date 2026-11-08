@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delete it, and should at least delete a `:hover` background of 18% of the text,
   which keeps the glyph at 3.75:1 on a mid-tone accent. A host that sets neither
   token, the Django admin among them, sees no change.
-- **A panel a host's own size makes the window stands at 0,0.** A host that
+- **A corner panel a host's own size makes the window stands at 0,0.** A host that
   fills a wide window with `--ag-ui-width` and `--ag-ui-height` found a panel the
   user had moved standing at 8,8 after a window resize, 8px past the right and
   bottom edges. It now exactly fills the window, from the start of whatever the

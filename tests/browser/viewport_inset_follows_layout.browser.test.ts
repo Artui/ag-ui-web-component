@@ -231,6 +231,72 @@ describe("a viewport inset token that changes after the window resize (real brow
     expect(after.left + after.width / 2).toBeCloseTo(stored.left + size / 2, 0);
   });
 
+  it.each([
+    ["--ag-ui-viewport-inset-top", "top", 300],
+    ["--ag-ui-viewport-inset-left", "left", 600],
+    ["--ag-ui-viewport-inset-right", "right", 760],
+    ["--ag-ui-viewport-inset-bottom", "bottom", 400],
+  ] as const)("hears %s change, with no resize", async (token, edge, inset) => {
+    const el = await placed();
+    el.style.setProperty(token, `${inset}px`);
+    await frames();
+    const box = el.getBoundingClientRect();
+    const room = {
+      top: inset,
+      left: inset,
+      right: WIDE.width - inset,
+      bottom: WIDE.height - inset,
+    };
+    if (edge === "top" || edge === "left") {
+      expect(box[edge]).toBeGreaterThanOrEqual(room[edge] - 1);
+    } else {
+      expect(box[edge]).toBeLessThanOrEqual(room[edge] + 1);
+    }
+  });
+
+  describe("the probe that hears them", () => {
+    const TOKENS = {
+      "--ag-ui-viewport-inset-top": "64px",
+      "--ag-ui-viewport-inset-left": "240px",
+    };
+
+    function embeddedIn(card: { width: number; height: number }): HTMLElement {
+      const holder = document.createElement("div");
+      holder.style.cssText = `position:relative;overflow:auto;width:${card.width}px;height:${card.height}px`;
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.id = ID;
+      el.setAttribute("placement", "embedded");
+      el.setAttribute("data-start-open", "");
+      for (const [token, value] of Object.entries(TOKENS)) {
+        el.style.setProperty(token, value);
+      }
+      holder.appendChild(el);
+      document.body.appendChild(holder);
+      return holder;
+    }
+
+    it.each([
+      [320, 400],
+      [400, 400],
+      [700, 100],
+    ])("adds no scroll to a %ipx by %ipx card holding an embedded chat", async (width, height) => {
+      const holder = embeddedIn({ width, height });
+      await frames();
+      expect(holder.scrollWidth).toBe(holder.clientWidth);
+      expect(holder.scrollHeight).toBe(holder.clientHeight);
+    });
+
+    it("adds no scroll to the page, with tokens on both axes", async () => {
+      const el = chat({ placement: "embedded" });
+      el.style.setProperty("--ag-ui-viewport-inset-top", "450px");
+      el.style.setProperty("--ag-ui-viewport-inset-left", "700px");
+      el.style.setProperty("--ag-ui-height", "100px");
+      await frames();
+      expect(document.documentElement.scrollWidth).toBe(document.documentElement.clientWidth);
+      expect(document.documentElement.scrollHeight).toBe(document.documentElement.clientHeight);
+    });
+  });
+
   it("stands a panel a host fills at the start of the room the token leaves", async () => {
     document.documentElement.style.setProperty("--bar-h", `${SHORT_BAR}px`);
     const el = chat();

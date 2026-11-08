@@ -1383,12 +1383,23 @@ export class PanelPlacement {
    * gestures check their own before they ever reach the placing below.
    */
   restoreLauncherPosition(): void {
-    this.#placeFromRecord();
+    this.#placeFromRecord(true);
+    this.#stampHeader();
+  }
+
+  /**
+   * Re-apply it for a change in the panel's own layout, which needs no window or
+   * reopen to happen: a line typed in the composer is one. A position waiting to
+   * be handed back under data-launcher-drag="false" waits on, because a panel that leaves for the
+   * host's corner as the reader starts typing is a jump with no cause they can see.
+   */
+  settleLauncherPosition(): void {
+    this.#placeFromRecord(false);
     this.#stampHeader();
   }
 
   /** The placing behind {@link restoreLauncherPosition}. */
-  #placeFromRecord(): void {
+  #placeFromRecord(handBack: boolean): void {
     // Before the launcher's record is read at all: it belongs to the corner
     // surface, and seeding anything from it would put a spot dragged there on
     // a panel that should stand on its dock.
@@ -1401,11 +1412,14 @@ export class PanelPlacement {
     }
     // Under data-launcher-drag="false" the widget is wherever the host's CSS puts
     // it, so a position this element took before the attribute went on is handed
-    // back here, the first time it is re-applied, and the record stays for the
+    // back here, at the first window resize or reopen, and the record stays for the
     // day the attribute comes off. Nothing watches the attribute: it is read per
     // interaction, like every other answer here.
     const draggable = this.#launcherDraggable();
     if (!draggable && this.#launcherPos !== null) {
+      if (!handBack) {
+        return;
+      }
       this.releaseLauncherPosition();
     }
     const spot = draggable ? (this.#cornerSpot ?? this.#readLauncherPosition()) : null;

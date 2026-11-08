@@ -633,6 +633,24 @@ export class AgUiChat extends HTMLElement {
    * a field so `removeEventListener` on disconnect gets the same reference.
    */
   readonly #onViewportResize = (): void => {
+    if (this.#readyToPlace()) {
+      this.#placement.restoreLauncherPosition();
+    }
+  };
+
+  /**
+   * The same for a change only the panel's own layout shows: a host's size, a
+   * viewport inset token, a line typed in the composer. Not a moment to hand a
+   * position back, so a panel under data-launcher-drag="false" stays put.
+   */
+  readonly #onLayoutChange = (): void => {
+    if (this.#readyToPlace()) {
+      this.#placement.settleLauncherPosition();
+    }
+  };
+
+  /** Bring the viewport's readings up to date, and say whether placing may follow. */
+  #readyToPlace(): boolean {
     this.#placement.publishVisualViewport();
     this.#syncDock();
     // Not while a gesture owns the position. Restoring re-applies the *stored*
@@ -647,11 +665,8 @@ export class AgUiChat extends HTMLElement {
     // sent me looking -- that was an inset measured from the wrong box -- so it
     // is a guard against a fight that had not been observed rather than a fix
     // for one that had.
-    if (this.#placement.dragging()) {
-      return;
-    }
-    this.#placement.restoreLauncherPosition();
-  };
+    return !this.#placement.dragging();
+  }
 
   /** Mic button mount point (input row); the control mounts on connect when enabled. */
   readonly #voiceSlot: HTMLSpanElement;
@@ -1594,7 +1609,7 @@ export class AgUiChat extends HTMLElement {
     // does, changes this box after that observer has run, and the browser reports
     // the answer to a target no deeper than that one as a loop on the window. One
     // of its own already watches the transcript, so this adds no report of its own.
-    const layoutObserver = new ResizeObserver(this.#onViewportResize);
+    const layoutObserver = new ResizeObserver(this.#onLayoutChange);
     layoutObserver.observe(this.#messages);
     this.#connection.signal.addEventListener("abort", () => layoutObserver.disconnect());
     // The viewport insets arrive the same way, and a page's observer writes them after
@@ -1602,7 +1617,7 @@ export class AgUiChat extends HTMLElement {
     // carries them, and an observer on it would be a report on the window for the same
     // reason, so it takes them as a transition instead: heard the next frame, whichever
     // element wrote them and however late.
-    this.#placement.probe.addEventListener("transitionrun", this.#onViewportResize, {
+    this.#placement.probe.addEventListener("transitionrun", this.#onLayoutChange, {
       signal: this.#connection.signal,
     });
     this.#syncDock();
@@ -2814,12 +2829,13 @@ export class AgUiChat extends HTMLElement {
     const probe = this.#placement.probe;
     probe.className = "viewport-probe";
     probe.setAttribute("aria-hidden", "true");
-    // A transition, so a token changing is an event. On the margin of a box out of
-    // flow, which moves nothing and takes what the padding takes, because the padding
-    // is what the viewport is read from and has to stay instant.
-    probe.style.margin =
+    // A transition, so a token changing is an event. On the corners of a box with no
+    // size, which draw nothing: a margin would push it out by the token again, and that
+    // is scroll on a page or a card holding the chat. Not on the padding, which the
+    // viewport is read from and has to stay instant.
+    probe.style.borderRadius =
       "var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)";
-    probe.style.transition = "margin 1ms";
+    probe.style.transition = "border-radius 1ms";
     this.#root.replaceChildren(probe, this.#announcer.region, this.#chat, this.#dockBar);
   }
 

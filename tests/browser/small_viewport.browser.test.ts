@@ -705,6 +705,34 @@ describe("a corner panel placed on a wide window (real browser)", () => {
       expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
     });
 
+    it("stays where it is while the reader types, and rests at the next resize", async () => {
+      const el = await placed();
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      const transcript = part(el, ".messages").getBoundingClientRect().height;
+      const input = part(el, "textarea") as HTMLTextAreaElement;
+      input.value = "one\ntwo\nthree\nfour";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await frames();
+      // The keystroke has to have reached the observer, or this proves nothing.
+      expect(part(el, ".messages").getBoundingClientRect().height).toBeLessThan(transcript);
+      expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+      expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+
+      await resize({ width: 1200, height: 760 });
+      expectAtRest(el, { width: 1200, height: 760 });
+    });
+
+    it("stays where it is when a viewport inset token changes", async () => {
+      const el = await placed();
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      el.style.setProperty("--ag-ui-viewport-inset-top", "40px");
+      await frames();
+      expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+      expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+    });
+
     it("goes full-bleed on a phone", async () => {
       const el = await placed();
       el.setAttribute("data-launcher-drag", "false");
