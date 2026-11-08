@@ -59,6 +59,16 @@ const LAUNCHER_KEY = "ag-ui-chat:launcher";
  */
 const DOCK_KEY = "ag-ui-chat:dock";
 
+/**
+ * Where the user last put a corner panel's launcher, and the panel itself when
+ * they stated that too. The shape the launcher's record is stored in.
+ */
+interface CornerSpot {
+  readonly left: number;
+  readonly top: number;
+  readonly panel?: { readonly left: number; readonly top: number };
+}
+
 /** A stored `{ left, top }` pair, or null for anything that is not one. */
 function asPoint(value: unknown): { readonly left: number; readonly top: number } | null {
   if (typeof value !== "object" || value === null) {
@@ -77,6 +87,34 @@ function asPoint(value: unknown): { readonly left: number; readonly top: number 
  */
 function coversViewport(box: Extent, viewport: Extent): boolean {
   return box.width >= viewport.width - 1 && box.height >= viewport.height - 1;
+}
+
+/**
+ * Whether a box that covers the usable viewport stands off any edge of it.
+ *
+ * The far edges are read against the layout viewport rather than the usable box,
+ * because a keyboard shortens the second and pans the panel down inside the
+ * first: a phone's full-bleed panel is correctly past the usable box's foot then,
+ * and pinning it back would put its header above the screen.
+ */
+function hangsOff(box: PanelRect, viewport: ViewportBox, screen: Extent): boolean {
+  const slack = 0.5;
+  return (
+    box.left < viewport.left - slack ||
+    box.top < viewport.top - slack ||
+    box.right > screen.width + slack ||
+    box.bottom > screen.height + slack
+  );
+}
+
+/** A box of the same size as `box`, standing at the start of the usable viewport. */
+function atStartOf(viewport: ViewportBox, box: PanelRect): PanelRect {
+  return {
+    left: viewport.left,
+    top: viewport.top,
+    right: viewport.left + (box.right - box.left),
+    bottom: viewport.top + (box.bottom - box.top),
+  };
 }
 
 /**
@@ -165,6 +203,7 @@ export class PanelPlacement {
    * header on screen, and the launcher is the handle then.
    */
   enablePanelDrag(header: HTMLElement): void {
+    this.#header = header;
     enablePanelDrag(header, {
       enabled: () => !this.#host.collapsed() && this.#canDragPanel(),
       rect: () => this.#host.element.getBoundingClientRect(),
@@ -191,12 +230,22 @@ export class PanelPlacement {
 
   /** Build the eight resize grips into `chat`, with one of them in the tab order. */
   mountResizeGrips(chat: HTMLElement): void {
+    // The grips a key gesture was on are gone, and a key that comes up on nothing
+    // ends nothing, so an element taken out mid-gesture would otherwise come back
+    // deaf to every window resize.
+    this.#resizing = false;
     for (const grip of RESIZE_GRIPS) {
       const handle = createResizeHandle(grip, {
         axis: () => this.#resizeAxis(),
         rect: () => this.#host.element.getBoundingClientRect(),
-        apply: (box) => this.#applyResize(grip, box),
-        commit: (box) => this.#commitResize(grip, box),
+        apply: (box) => {
+          this.#resizing = true;
+          this.#applyResize(grip, box);
+        },
+        commit: (box) => {
+          this.#resizing = false;
+          this.#commitResize(grip, box);
+        },
         label: this.#host.strings().resizePanel,
       });
       // Only one of the eight is in the tab order. Eight separators between the
@@ -229,6 +278,7 @@ export class PanelPlacement {
    * it always has.
    */
   resetSize(): void {
+    const sized = this.#host.element.getBoundingClientRect();
     this.#host.element.style.removeProperty(DRAG_WIDTH);
     this.#host.element.style.removeProperty(DRAG_HEIGHT);
     this.#host.clearPreference(SIZE_KEY);
@@ -238,10 +288,53 @@ export class PanelPlacement {
       }
       this.#dockPos = null;
       this.#storeDockPosition(null);
+    } else {
+      this.#carrySpotWithSize(sized);
     }
     // The anchor was measured against the dragged box; the resting one may
     // pin different edges.
     this.syncResizeAnchor();
+  }
+
+  /**
+   * Carry a stated corner spot along with a dragged size coming off.
+   *
+   * The size comes off toward the corner the layout holds still, so the top-left
+   * the spot is kept as moves with it, and a restore from the old one would swing
+   * the panel away from its launcher. Only that movement goes onto the spot, not
+   * where the box stands: in a window narrower than the spot the box is held
+   * short of it, and that is not something the user stated.
+   *
+   * Left alone while a host's own size is in force, because that cannot be told
+   * from the dragged size coming off, and it may be a state the host is about to
+   * leave: counting it would throw the spot off by as much as that state is
+   * bigger. A panel that is the screen needs no case of its own: the small-viewport
+   * block ignores a dragged size, so its box does not move.
+   *
+   * Left alone too under data-launcher-drag="false", where a spot left over from
+   * before the attribute is a record kept for the day it comes off, and nothing
+   * that happens to the box now is a statement about it.
+   */
+  #carrySpotWithSize(sized: DOMRect): void {
+    const element = this.#host.element;
+    const box = element.getBoundingClientRect();
+    const spot = this.#cornerSpot ?? this.#readLauncherPosition();
+    const style = getComputedStyle(element);
+    if (
+      spot?.panel === undefined ||
+      !this.#launcherDraggable() ||
+      style.getPropertyValue("--ag-ui-width") !== "" ||
+      style.getPropertyValue("--ag-ui-height") !== ""
+    ) {
+      return;
+    }
+    this.#writeCornerSpot({
+      ...spot,
+      panel: {
+        left: spot.panel.left + box.left - sized.left,
+        top: spot.panel.top + box.top - sized.top,
+      },
+    });
   }
 
   /**
@@ -270,6 +363,35 @@ export class PanelPlacement {
    * from the launcher would move the panel the user just placed.
    */
   #panelPos: { readonly left: number; readonly top: number } | null = null;
+
+  /**
+   * The spot #launcherPos and #panelPos were last stated as, or null while
+   * nothing has been stated since this element connected.
+   *
+   * Those two say where the launcher and the panel stand now, held inside the
+   * viewport, because that is where a press finds them and a drag starts from.
+   * This is what the user asked for, kept apart so that a window narrower than
+   * the spot, or a phone that took the panel full-bleed, gives it back unchanged
+   * once there is room again. Only a gesture, a move or a dragged size coming off
+   * changes it; re-applying it against a viewport never does, which is the difference from a clamped
+   * position quietly becoming the record one resize at a time.
+   */
+  #cornerSpot: CornerSpot | null = null;
+
+  /**
+   * The inset a grip wrote on a corner panel with no spot, or null. A grip on an
+   * edge the layout holds moves the panel without stating a spot, so this is the
+   * only way to tell its inline inset from one a host wrote there, which stays,
+   * and to give it back once a phone has taken the panel full-bleed.
+   */
+  #gripInset: string | null = null;
+
+  /**
+   * The inset standing a panel with no spot at the start of a window a host's
+   * size fills, or null. Told apart from a host's own for the same reason, and it
+   * lasts only as long as that size does.
+   */
+  #fillInset: string | null = null;
 
   /**
    * Where the user dragged a docked panel, in viewport coordinates, or null
@@ -302,6 +424,12 @@ export class PanelPlacement {
    * second while the panel is already being laid out on every one of them.
    */
   #anchor: ResizeAnchor = { x: "right", y: "bottom" };
+
+  /** The header the panel drag listens on, stamped by #stampHeader. */
+  #header: HTMLElement | null = null;
+
+  /** Whether a grip has applied a box it has not committed yet. */
+  #resizing = false;
 
   /** The eight grips, by name, so the keyboard-reachable one can be moved. */
   readonly #resizeHandles = new Map<string, HTMLDivElement>();
@@ -345,12 +473,16 @@ export class PanelPlacement {
    *
    * Read from the stamp the drag helpers already set, rather than tracked
    * separately: one source of truth, and it clears on `pointercancel` as well
-   * as `pointerup`, which is the end a touch gesture usually gets.
+   * as `pointerup`, which is the end a touch gesture usually gets. The one
+   * gesture that stamps nothing is an arrow key on a grip, which applies a box
+   * per key and states it only when the key comes up, hence #resizing.
    */
   dragging(): boolean {
     return (
+      this.#resizing ||
       this.#host.launcher.hasAttribute("data-dragging") ||
-      this.#host.root.querySelector(".header[data-dragging]") !== null
+      this.#host.root.querySelector(".header[data-dragging], .resize-handle[data-dragging]") !==
+        null
     );
   }
 
@@ -365,13 +497,12 @@ export class PanelPlacement {
       collapsed: this.#host.collapsed(),
       collapsible: this.#host.collapsible(),
       movable: this.#panelMovable() && !fullBleed,
-      // Whether the page left moving on, which is not the same question as
-      // whether this panel moves: a docked sidebar's position is owned by its
-      // placement, and reporting that as the host having turned moving off is
-      // the sentence the move refusal would then get wrong.
-      draggable:
-        this.#host.element.getAttribute("data-launcher-drag") !== "false" &&
-        (this.#surface().launcherDraggable || this.#docked()),
+      // The page's setting alone: true for every placement unless the host set
+      // `data-launcher-drag="false"`. Whether this panel moves is `movable`,
+      // and reading the launcher or the dock in here made the field change
+      // with `collapse-to`, so a docked sidebar reported that the page had
+      // turned moving off when the placement owned its position.
+      draggable: this.#host.element.getAttribute("data-launcher-drag") !== "false",
       fullBleed,
       box: {
         left: Math.round(box.left),
@@ -451,6 +582,13 @@ export class PanelPlacement {
    * puts the box back and animates it out of the wrong side. Absent values are
    * captured as absent and removed on the way back, rather than written as
    * empty strings that would outrank the placement.
+   *
+   * The surface may have changed by the time of the undo, so the two halves are
+   * put back apart. Both records are, always, each to its own store, so the
+   * memory and the storage cannot disagree and the surface they belong to finds
+   * them when it comes back. The inline values only mean something to the surface
+   * they were read from: written on any other, they pin a sidebar to where a
+   * floating panel used to be.
    */
   #captureGeometry(): () => void {
     const inset = this.#host.element.style.getPropertyValue("--ag-ui-inset");
@@ -458,39 +596,50 @@ export class PanelPlacement {
     const corner = this.#host.element.getAttribute("data-expand-corner");
     const launcherPos = this.#launcherPos;
     const panelPos = this.#panelPos;
-    const dockPos = this.#dockPos;
+    const dockPos = this.#dockPos ?? this.#readDockPosition();
     const expandCorner = this.#expandCorner;
+    const cornerSpot = this.#cornerSpot ?? this.#readLauncherPosition();
+    const owner = this.#positionOwner();
     return () => {
-      this.#restoreProperty("--ag-ui-inset", inset);
-      this.#restoreProperty("--ag-ui-launcher-inset", launcherInset);
-      if (corner === null) {
-        this.#host.element.removeAttribute("data-expand-corner");
-      } else {
-        this.#host.element.setAttribute("data-expand-corner", corner);
-      }
-      this.#launcherPos = launcherPos;
-      this.#panelPos = panelPos;
       this.#dockPos = dockPos;
-      this.#expandCorner = expandCorner;
-      if (this.#docked()) {
-        // The dock's own record, and only that: the launcher's belongs to the
-        // corner surface and has nothing to undo here.
-        this.#storeDockPosition(dockPos);
-        this.syncResizeAnchor();
-        return;
-      }
-      // Erased rather than rewritten when there was nothing to go back to.
-      // #storeLauncherPosition returns early for a null position, which would
-      // leave the move this is undoing sitting in storage -- and since that
-      // store outlives the tab, the next resize or reload would quietly put
-      // the panel back in the corner the user had just rejected.
-      if (launcherPos === null) {
+      this.#storeDockPosition(dockPos);
+      // Erased rather than rewritten when there was nothing to go back to,
+      // which would leave the move this is undoing sitting in storage -- and
+      // since that store outlives the tab, the next resize or reload would
+      // quietly put the panel back in the corner the user had just rejected.
+      if (cornerSpot === null) {
+        this.#cornerSpot = null;
         this.#host.clearPreference(LAUNCHER_KEY);
       } else {
-        this.#storeLauncherPosition();
+        this.#writeCornerSpot(cornerSpot);
       }
+      if (owner === this.#positionOwner()) {
+        this.#restoreProperty("--ag-ui-inset", inset);
+        this.#restoreProperty("--ag-ui-launcher-inset", launcherInset);
+        if (corner === null) {
+          this.#host.element.removeAttribute("data-expand-corner");
+        } else {
+          this.#host.element.setAttribute("data-expand-corner", corner);
+        }
+        this.#launcherPos = launcherPos;
+        this.#panelPos = panelPos;
+        this.#expandCorner = expandCorner;
+      } else {
+        this.#forgetCornerPosition();
+      }
+      // Against the viewport there is now, which may be a phone's: the insets
+      // put back above were written for the one the move was made in.
+      this.restoreLauncherPosition();
       this.syncResizeAnchor();
     };
+  }
+
+  /** Which of the three kinds of surface decides where the panel stands. */
+  #positionOwner(): "dock" | "corner" | "placement" {
+    if (this.#docked()) {
+      return "dock";
+    }
+    return this.#surface().launcherDraggable ? "corner" : "placement";
   }
 
   /**
@@ -584,6 +733,19 @@ export class PanelPlacement {
     this.#anchor = anchor;
     this.#host.element.setAttribute("data-resize-anchor", `${anchor.y}-${anchor.x}`);
     this.#focusableGrip();
+    this.#stampHeader();
+  }
+
+  /**
+   * Tell the stylesheet whether the panel is the screen, for the header's cursor.
+   *
+   * Only this half of what refuses a header drag: the resting rules already answer
+   * for the placement and for data-launcher-drag="false", and neither of those
+   * re-applies anything when it changes, so a stamp taking them in would go on
+   * refusing, in the cursor, a drag the header would take.
+   */
+  #stampHeader(): void {
+    this.#header?.toggleAttribute("data-fills-screen", this.#fillsScreen());
   }
 
   /** Put a custom property back to a previous value, or remove it if there was none. */
@@ -788,18 +950,17 @@ export class PanelPlacement {
   }
 
   /**
-   * Whether a header drag may start now. A docked panel on a phone is the
-   * screen, and a drag there would pull it off the edges it fills; a corner
-   * panel's header is left as it was.
+   * Whether a header drag may start now. A panel that is the screen, on a phone
+   * or by a host's own sizing, has nowhere to go, and a drag there would pull it
+   * off the edges it fills.
    */
   #canDragPanel(): boolean {
-    if (!this.#panelMovable()) {
-      return false;
-    }
-    return (
-      !this.#docked() ||
-      !coversViewport(this.#host.element.getBoundingClientRect(), this.#viewport())
-    );
+    return this.#panelMovable() && !this.#fillsScreen();
+  }
+
+  /** Whether the panel covers the usable viewport, as it stands now. */
+  #fillsScreen(): boolean {
+    return coversViewport(this.#host.element.getBoundingClientRect(), this.#viewport());
   }
 
   /**
@@ -988,12 +1149,6 @@ export class PanelPlacement {
    * back rather than leaving a stale inline one behind.
    */
   #applyLauncherPlacement(at: { readonly left: number; readonly top: number }): void {
-    // The single gate: callers hand over a position and this decides whether
-    // it is this element's to honour. Checking in both places instead would
-    // leave one of the two checks permanently unreachable.
-    if (!this.#launcherDraggable()) {
-      return;
-    }
     this.#launcherPos = at;
     // Dropping the bubble hands the panel's position back to the placement.
     // Keeping a stated one would pin the panel where it was dragged and leave
@@ -1021,6 +1176,9 @@ export class PanelPlacement {
 
   /** Move the launcher live during a drag, without persisting. */
   #moveLauncher(left: number, top: number): void {
+    // Stated from the first move, not the last: a key gesture only ends at its
+    // keyup, and an Enter pressed before then expands by way of a restore.
+    this.#cornerSpot = { left, top };
     this.#applyLauncherPlacement({ left, top });
   }
 
@@ -1166,9 +1324,6 @@ export class PanelPlacement {
    * its own right.
    */
   #restorePanelPosition(at: { readonly left: number; readonly top: number }): void {
-    if (!this.#launcherDraggable()) {
-      return;
-    }
     const rect = this.#host.element.getBoundingClientRect();
     // The same bound the drag itself used. Taking the default here instead is
     // what made a panel dragged to an edge jump a whole resting gutter inward
@@ -1199,6 +1354,9 @@ export class PanelPlacement {
    * with it, the panel goes back where it was put; without it, the panel is
    * re-derived from the launcher and opens into whatever room the viewport has
    * now.
+   *
+   * Every caller is a gesture ending or a move being made, so where the two
+   * stand now is what was stated. A restore never calls this.
    */
   #storeLauncherPosition(): void {
     const position = this.#launcherPos;
@@ -1206,10 +1364,13 @@ export class PanelPlacement {
       return;
     }
     const panel = this.#panelPos;
-    this.#host.writePreference(
-      LAUNCHER_KEY,
-      JSON.stringify(panel === null ? position : { ...position, panel }),
-    );
+    this.#writeCornerSpot(panel === null ? position : { ...position, panel });
+  }
+
+  /** Make `spot` the stated one, and remember it. */
+  #writeCornerSpot(spot: CornerSpot): void {
+    this.#cornerSpot = spot;
+    this.#host.writePreference(LAUNCHER_KEY, JSON.stringify(spot));
   }
 
   /**
@@ -1217,8 +1378,28 @@ export class PanelPlacement {
    * whenever the window resizes, and before an expand. The viewport that
    * stored a position may since have shrunk, and a launcher past the edge is
    * unreachable -- it is the only way back to a collapsed conversation.
+   *
+   * The one gate on whether a stored position is this element's to honour: the
+   * gestures check their own before they ever reach the placing below.
    */
   restoreLauncherPosition(): void {
+    this.#placeFromRecord(true);
+    this.#stampHeader();
+  }
+
+  /**
+   * Re-apply it for a change in the panel's own layout, which needs no window or
+   * reopen to happen: a line typed in the composer is one. A position waiting to
+   * be handed back under data-launcher-drag="false" waits on, because a panel that leaves for the
+   * host's corner as the reader starts typing is a jump with no cause they can see.
+   */
+  settleLauncherPosition(): void {
+    this.#placeFromRecord(false);
+    this.#stampHeader();
+  }
+
+  /** The placing behind {@link restoreLauncherPosition}. */
+  #placeFromRecord(handBack: boolean): void {
     // Before the launcher's record is read at all: it belongs to the corner
     // surface, and seeding anything from it would put a spot dragged there on
     // a panel that should stand on its dock.
@@ -1226,32 +1407,120 @@ export class PanelPlacement {
       this.#placeDocked();
       return;
     }
-    const stored = this.#readLauncherPosition();
-    const launcher = this.#launcherPos ?? stored;
-    if (launcher === null) {
+    if (!this.#surface().launcherDraggable) {
       return;
     }
-    const panel = this.#panelPos ?? stored?.panel ?? null;
-    if (panel !== null) {
+    // Under data-launcher-drag="false" the widget is wherever the host's CSS puts
+    // it, so a position this element took before the attribute went on is handed
+    // back here, at the first window resize or reopen, and the record stays for the
+    // day the attribute comes off. Nothing watches the attribute: it is read per
+    // interaction, like every other answer here.
+    const draggable = this.#launcherDraggable();
+    if (!draggable && this.#launcherPos !== null) {
+      if (!handBack) {
+        return;
+      }
+      this.releaseLauncherPosition();
+    }
+    const spot = draggable ? (this.#cornerSpot ?? this.#readLauncherPosition()) : null;
+    if (spot === null) {
+      this.#placeUnstated();
+      return;
+    }
+    if (this.#standFullBleed(spot)) {
+      return;
+    }
+    if (spot.panel !== undefined) {
       // Stated rather than derived: the launcher is only read here to keep the
       // offset the two were left with, so it has to be seeded before the panel
       // is placed around it.
-      this.#launcherPos = { left: launcher.left, top: launcher.top };
-      this.#restorePanelPosition(panel);
+      this.#launcherPos = { left: spot.left, top: spot.top };
+      this.#restorePanelPosition(spot.panel);
       return;
     }
     const box = this.#launcherBox();
     this.#applyLauncherPlacement(
-      clampLauncher({ ...box, left: launcher.left, top: launcher.top }, this.#viewport()),
+      clampLauncher({ ...box, left: spot.left, top: spot.top }, this.#viewport()),
     );
   }
 
+  /**
+   * Leave a corner panel full-bleed if it has become the screen, and say whether
+   * it has.
+   *
+   * The inline inset comes off, because the small-viewport block reads the
+   * host's inset before its own: a spot written there holds the panel off the
+   * edges it should fill, and past them by the same amount, since its size is
+   * the screen's. What the panel covers is read before that, from the size
+   * alone, which no inset changes.
+   *
+   * The launcher stays a place of its own. It is positioned from the host box,
+   * so it is measured again from the box that has just moved, and it is held on
+   * the screen, because it is the way back from a collapsed conversation. The
+   * spot itself is untouched, for the next time there is room for it.
+   *
+   * Above the breakpoint nothing in the stylesheet takes the panel to the edges.
+   * A host's own size makes it the screen while the resting inset still spends a
+   * gutter on one corner, which hangs the box off the opposite one, so there it
+   * stands at the start of the room the host left free and keeps that inset. A
+   * box the placement already holds on the screen has no inset to keep, which is
+   * every phone, and a host's rule that placed the box itself.
+   */
+  #standFullBleed(spot: CornerSpot): boolean {
+    const element = this.#host.element;
+    const viewport = this.#viewport();
+    if (!coversViewport(element.getBoundingClientRect(), viewport)) {
+      return false;
+    }
+    element.style.removeProperty("--ag-ui-inset");
+    const rest = element.getBoundingClientRect();
+    const hanging = hangsOff(rest, viewport, this.#screen());
+    const box = hanging ? atStartOf(viewport, rest) : rest;
+    const launcher = { ...this.#launcherBox(), left: spot.left, top: spot.top };
+    this.#placePanelAndLauncher(box, { ...launcher, ...clampLauncher(launcher, viewport) });
+    if (!hanging) {
+      element.style.removeProperty("--ag-ui-inset");
+    }
+    return true;
+  }
+
+  /**
+   * Place a corner panel that has no spot, the half of {@link #standFullBleed}
+   * with nothing stated to keep and no launcher of its own to measure.
+   *
+   * Only an inset this element wrote comes off or goes back. One the host wrote
+   * inline is a token a host may state on a phone as anywhere else, and with no
+   * spot it never came from here.
+   */
+  #placeUnstated(): void {
+    const element = this.#host.element;
+    const inline = element.style.getPropertyValue("--ag-ui-inset");
+    const viewport = this.#viewport();
+    if (!coversViewport(element.getBoundingClientRect(), viewport)) {
+      if (inline === "" || inline === this.#fillInset) {
+        this.#restoreProperty("--ag-ui-inset", this.#gripInset ?? "");
+        this.syncResizeAnchor();
+      }
+      this.#fillInset = null;
+      return;
+    }
+    if (inline === this.#gripInset || inline === this.#fillInset) {
+      element.style.removeProperty("--ag-ui-inset");
+    }
+    const rest = element.getBoundingClientRect();
+    const screen = this.#screen();
+    if (
+      element.style.getPropertyValue("--ag-ui-inset") === "" &&
+      hangsOff(rest, viewport, screen)
+    ) {
+      this.#fillInset = insetFrom({ x: "left", y: "top" }, atStartOf(viewport, rest), screen);
+      element.style.setProperty("--ag-ui-inset", this.#fillInset);
+      this.syncResizeAnchor();
+    }
+  }
+
   /** The persisted position for this instance, or null. */
-  #readLauncherPosition(): {
-    readonly left: number;
-    readonly top: number;
-    readonly panel?: { readonly left: number; readonly top: number };
-  } | null {
+  #readLauncherPosition(): CornerSpot | null {
     const raw = this.#host.readPreference(LAUNCHER_KEY);
     if (raw === null) {
       return null;
@@ -1293,9 +1562,16 @@ export class PanelPlacement {
     if (this.#launcherDraggable()) {
       return;
     }
+    this.#forgetCornerPosition();
+  }
+
+  /** Take everything off that placed a corner panel, leaving its record alone. */
+  #forgetCornerPosition(): void {
     this.#launcherPos = null;
     this.#panelPos = null;
     this.#expandCorner = null;
+    this.#gripInset = null;
+    this.#fillInset = null;
     this.#host.element.style.removeProperty("--ag-ui-inset");
     this.#host.element.style.removeProperty("--ag-ui-launcher-inset");
     this.#host.element.removeAttribute("data-expand-corner");
@@ -1339,28 +1615,33 @@ export class PanelPlacement {
       // on a free edge, which leaves the inset alone.
       this.#dockPos = { left: box.left, top: box.top };
     }
-    if (grip.x !== this.#anchor.x && grip.y !== this.#anchor.y) {
-      return box;
+    if (grip.x === this.#anchor.x || grip.y === this.#anchor.y) {
+      // The whole screen, not the usable box: a CSS inset on a fixed element is
+      // measured from the real edges, so expressing a right or bottom against a
+      // box the host has inset comes out short by exactly that inset.
+      const anchor = this.#anchor;
+      const inset = insetFrom(anchor, box, this.#screen());
+      this.#host.element.style.setProperty("--ag-ui-inset", inset);
+      this.#gripInset = this.#launcherPos === null && !this.#docked() ? inset : null;
+      // The launcher lives at this corner of the panel, so a corner that moved
+      // takes it along. Without this the next expand would re-derive the panel's
+      // position from a launcher still standing where the panel used to be, and
+      // undo the move.
+      if (this.#launcherPos !== null) {
+        const size = this.#host.launcher.offsetWidth;
+        this.#launcherPos = {
+          left: anchor.x === "left" ? box.left : box.right - size,
+          top: anchor.y === "top" ? box.top : box.bottom - size,
+        };
+      }
     }
-    // The whole screen, not the usable box: a CSS inset on a fixed element is
-    // measured from the real edges, so expressing a right or bottom against a
-    // box the host has inset comes out short by exactly that inset.
-    const anchor = this.#anchor;
-    this.#host.element.style.setProperty("--ag-ui-inset", insetFrom(anchor, box, this.#screen()));
-    // The launcher lives at this corner of the panel, so a corner that moved
-    // takes it along. Without this the next expand would re-derive the panel's
-    // position from a launcher still standing where the panel used to be, and
-    // undo the move.
-    if (this.#launcherPos !== null) {
-      const size = this.#host.launcher.offsetWidth;
-      this.#launcherPos = {
-        left: anchor.x === "left" ? box.left : box.right - size,
-        top: anchor.y === "top" ? box.top : box.bottom - size,
-      };
-    }
-    // A stated panel position is a claim about this box, so it moves with it.
-    if (this.#panelPos !== null) {
-      this.#panelPos = { left: box.left, top: box.top };
+    // A stated corner panel's spot is a claim about this box, so it moves with
+    // it, by a free edge as well as by a pinned one. Read from what was drawn,
+    // not what the pointer asked for, because a host's maximum stops the box short
+    // of the pointer. Not while docked: this position belongs to the corner.
+    if (this.#panelPos !== null && !this.#docked()) {
+      const drawn = this.#host.element.getBoundingClientRect();
+      this.#panelPos = { left: drawn.left, top: drawn.top };
     }
     return box;
   }
@@ -1372,6 +1653,14 @@ export class PanelPlacement {
     // mount, which is the same disagreement between apply and commit that made
     // the header drag jump on release.
     const held = this.#applyResize(grip, box);
+    // A grip on the free edges of a panel standing at the start of a filled window
+    // leaves that inset alone, and the size it stated takes the panel off the
+    // screen's shape. It has to stay where the grip left it, so the inset stops
+    // being one that lasts only as long as the host's size does.
+    if (this.#host.element.style.getPropertyValue("--ag-ui-inset") === this.#fillInset) {
+      this.#gripInset = this.#fillInset;
+      this.#fillInset = null;
+    }
     this.#persistSize({ width: held.right - held.left, height: held.bottom - held.top });
     this.#storeLauncherPosition();
     if (this.#dockPos !== null) {

@@ -3330,7 +3330,8 @@ and set a mid-tone accent, set `--ag-ui-on-accent` yourself. There is no script 
 
 Quiet draws the header, the launcher and the tool names in the panel's own colours, so a host that
 sets only `--ag-ui-accent` gets a neutral header. To put the accent back without leaving Quiet, set
-the surfaces to the accent and the text on them to a colour that reads on it:
+the surfaces to the accent and the text on them to a colour that reads on it. The same recipe holds
+under every other theme:
 
 ```css
 ag-ui-chat {
@@ -3342,19 +3343,19 @@ ag-ui-chat {
 }
 ```
 
-- **The header buttons follow `--ag-ui-header-fg`.** Unset, Quiet draws them in its third ink at
-  0.85 opacity, on a hover square of the panel's hover shade. Once you set the header text they
-  draw in it at full opacity, and the hover square is the opposite of that text at about a fifth
-  (a darker square under white text, a lighter one under dark text), so a hovered button reads at
-  least what your header pair reads. The same holds under a theme word of your own, which starts
-  from Quiet. No `::part(header-button)` rule is needed. The opposite is computed with relative
+- **The header buttons follow `--ag-ui-header-fg`, under every theme.** Unset, each theme draws
+  them its own way at 0.85 opacity: Quiet, Soft and Ledger in their third ink, Classic and Code in
+  the header text, each on its own hover square. Once you set the header text they draw in it at
+  full opacity, and the hover square is the opposite of that text at about a fifth (a darker square
+  under white text, a lighter one under dark text), so a hovered button reads at least what your
+  header pair reads. A theme word of your own starts from Quiet, so it holds there too. No
+  `::part(header-button)` rule is needed. The opposite is computed with relative
   colour syntax; the browsers without it (see the fallback above) mix the square from the text
   itself, which on a mid-tone header can take the hovered glyph under your pair (white on
   `#3d5afe`: 3.75:1).
-- **`--ag-ui-header-btn-hover` sets the hover square outright** under Quiet and a theme word of your
-  own, whether or not the header text is set, and is drawn exactly as given. Classic, Soft and
-  Ledger draw their own squares and do not read it. For a square that lightens under white text
-  instead, at the cost of contrast on a mid-tone header:
+- **`--ag-ui-header-btn-hover` sets the hover square outright** under every theme, whether or not
+  the header text is set, and is drawn exactly as given. For a square that lightens under white
+  text instead, at the cost of contrast on a mid-tone header:
 
   ```css
   ag-ui-chat { --ag-ui-header-btn-hover: color-mix(in srgb, #ffffff 18%, transparent); }
@@ -3362,8 +3363,7 @@ ag-ui-chat {
 - **`--ag-ui-tool-fg` colours every tool call**, in a step group as well as in the card displays.
   Unset, a grouped call is drawn in the second ink (`--ag-ui-ink-2`) under every theme.
 - Pick the pair yourself: `--ag-ui-header-fg` is not derived from the header colour the way
-  `--ag-ui-on-accent` is from the accent. Under Soft and Ledger the header buttons keep their own
-  third ink whatever you set.
+  `--ag-ui-on-accent` is from the accent.
 
 #### Overriding a theme, lightest layer first
 

@@ -7,6 +7,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] — 2026-11-08
+
+### Changed
+
+- **The themes demo sets `--ag-ui-header-btn-hover`.** A new control on its
+  page draws the header buttons' hover square in a colour you pick. The suite
+  now tests that square as a browser without relative colour syntax draws it,
+  mixed from the header text, which only a string check saw before. Demo and
+  tests only, nothing shipped changes. **A host has nothing to do.**
+
+### Fixed
+
+- **A corner panel that was moved goes full-bleed on a phone, and stays there.**
+  Under `collapse-to="auto"`, a panel moved by its header, its launcher or
+  `moveTo` on a wide window kept an inline `--ag-ui-inset` when the window
+  narrowed below the small-viewport breakpoint, which held it 8px off two edges
+  and past the other two. It now fills the screen, with no inline inset, while
+  its launcher stays on the screen for when it is collapsed. A header drag no
+  longer moves a panel that is the screen, as `moveTo` already refused to, and its
+  cursor stops offering one. The
+  place the user put the panel is now kept as they stated it: a window that
+  narrows, by any amount, holds the panel inside it without changing the record,
+  and widening gives that place back, as a reload already did. A gesture made in
+  the narrower window states a new one. **A host has nothing to do.**
+- **A corner panel remembers the corner a resize grip moved.** Under
+  `collapse-to="auto"`, growing a moved panel by a grip on its free edges, which
+  moves its top-left corner while the layout holds the opposite one, was lost on
+  the next reopen or reload: the panel came back at its old top-left, grown away
+  from its launcher. It now comes back as it was drawn, a host's maximum included,
+  and `resetSize()` keeps the panel where the size came off. The top-left stays as the
+  grip left it while the host's own `--ag-ui-width` or `--ag-ui-height` is in force at
+  that moment, and the stored spot stays as it was under `data-launcher-drag="false"`.
+  **A host has nothing to do.**
+- **`read_chat_surface` reports the page's setting for `draggable`, whatever the
+  placement.** A sidebar, embedded, side, page or full panel under `collapse-to="auto"`
+  reported `draggable: false` with `movable: false`, so `move_chat` answered that
+  the page had turned off moving the panel when the placement owned its position,
+  while the same placement under `collapse-to="none"` or `"bar"` reported `true`.
+  `draggable` is now `true` for every placement unless the page sets
+  `data-launcher-drag="false"`, and whether this panel moves stays in `movable`.
+  The refusal names the placement. **A host has nothing to do.**
+- **Every theme's header buttons follow `--ag-ui-header-fg`.** 0.49.0 did this
+  for Quiet alone, so the accent recipe still fell short under the others:
+  white on a `#3d5afe` header read 1.1 to 1.6:1 at rest under Soft and Ledger,
+  and 4.16:1 at rest and 3.75:1 hovered under Classic and code. Once a host sets
+  `--ag-ui-header-fg`, the buttons draw in it at full opacity under every theme
+  and scheme, and the hover square is the opposite of that text at 18%: that
+  pair now reads 5.13:1 at rest and 6.95:1 hovered under all of them. What
+  changes for a host that sets it, by theme. Soft: the glyph was the third ink,
+  the accent's ink hovered, on a square of `--ag-ui-tint-2`. Ledger: the glyph
+  was the third ink, the full ink hovered, on a square of `--ag-ui-hover`.
+  Classic and code: the glyph already was the header text, but at 0.85 opacity,
+  and the square was 18% white, so under white text it now darkens where it
+  lightened. Browsers without relative colour syntax (Firefox 120 to 127,
+  Safari 17.5 and 17.6) mix the square from the text itself, as under Quiet, at
+  3.75:1 hovered for that pair.
+  **`--ag-ui-header-btn-hover`, inert until now under Soft, Ledger, Classic and
+  code, works under them**, as it does under Quiet: drawn exactly as given,
+  whether or not the header text is set. A host that set it for Quiet and also
+  wears one of these themes will now see it. With neither token set, every
+  theme's header buttons are exactly as they were, whatever the header colour
+  or `--ag-ui-hover`. **No opt-in is needed.** A page's own
+  `::part(header-button)` rules still win: a host that wrote one to get here may
+  delete it, and should at least delete a `:hover` background of 18% of the text,
+  which keeps the glyph at 3.75:1 on a mid-tone accent. A host that sets neither
+  token, the Django admin among them, sees no change.
+- **A corner panel a host's own size makes the window stands at 0,0.** A host that
+  fills a wide window with `--ag-ui-width` and `--ag-ui-height` found a panel the
+  user had moved standing at 8,8 after a window resize, 8px past the right and
+  bottom edges. It now exactly fills the window, from the start of whatever the
+  viewport inset tokens reserve, as a
+  phone's full-bleed panel does, and comes back to where the user put it when the
+  host's size drops. A host's own `--ag-ui-inset` rule that already stands the box
+  on the screen is left alone. **A host has nothing to do.**
+- **A panel placed only by a resize grip goes full-bleed on a phone.** A grip on
+  an edge the layout holds moves an unmoved corner panel without storing a spot,
+  and that inline inset stayed on when the window narrowed, which held the panel
+  off two edges and past the other two. It now fills the screen with no inline
+  inset, and widening gives the place back. An inset the host wrote inline stays
+  where the host wrote it. An unmoved panel a host's own size makes the window
+  stands at 0,0 as well. **A host has nothing to do.**
+- **`data-launcher-drag="false"` on a moved panel hands it to the host's CSS.**
+  Turned on after the user had moved the panel, the attribute left an inline
+  inset behind for good, which put the panel off the screen on a phone. Nothing
+  moves when it goes on. The next window resize or reopen rests the panel where
+  the host's CSS puts it, as a reload under the attribute always did, and on a
+  phone that is full-bleed. The stored spot stays, and comes back at the first
+  restore after the attribute comes off. **A host has nothing to do.**
+- **Undoing a move after the surface changed leaves everything in agreement.** A
+  move undone once the panel had gone from a corner to a sidebar, a side panel, a
+  page or a dock wrote the corner's inset back onto the new surface, which pinned
+  a sidebar or a page off the screen and took a docked panel off its dock, and
+  left the stored spot on the move the reader had just undone. Going the other way
+  left a docked panel's stored spot on the move too. The undo now puts both
+  records back, in memory and in storage, and leaves the new surface standing where
+  its own layout puts it; the spot comes back with the surface it belongs to.
+  **A host has nothing to do.**
+- **A moved panel answers a host's size when the size changes.** A change to
+  `--ag-ui-width` or `--ag-ui-height` fires no event, so a panel the user had moved
+  stayed as the last restore left it until the next window resize or reopen. Reopened
+  under a host's size that then dropped, it stood short of its spot, at 716,232 for a
+  spot of 376,96, with the stored spot still right; sized up with no reopen, it could
+  grow past the top of the window. It now goes back to its spot as the size drops, and
+  under a bigger size it stands where a reopen already put it, held on the screen from
+  that spot, rather than growing away from the corner the layout held. A window-filling
+  size stands it at 0,0 at once, with no resize needed. **A host has nothing to do.**
+- **A moved panel answers a viewport inset token when the token changes.** A page
+  that publishes `--ag-ui-viewport-inset-top` from its own `ResizeObserver`, as the
+  README recommends, does so after the window's resize event, so the restore that event
+  starts read the bar at its old height. Widening a window past the width where the bar
+  shrinks left the panel 35px below its spot on the playground, top 224 for a spot of
+  189, and narrowing left it under a bar that had grown. It now settles from the token
+  as it stands, a frame later, on any of the four viewport inset tokens and however
+  late the page writes them. **A host has nothing to do.**
+- **The header's cursor no longer offers a drag that cannot happen.** A panel that
+  had become the screen on a narrow window with a mouse, or a docked panel under
+  `collapse-to="bar"` or `"none"` that a host's own size had made the window, showed
+  `cursor: move` although its header could not move it. The cursor is now `auto` there,
+  and stays `move` everywhere the drag is allowed. **A host has nothing to do.**
+
 ## [0.49.0] — 2026-11-07
 
 ### Added
@@ -5048,7 +5168,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.49.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.0...HEAD
+[0.50.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.46.0...v0.47.0

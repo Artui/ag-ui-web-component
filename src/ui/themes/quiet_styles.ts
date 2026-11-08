@@ -26,28 +26,15 @@ ${THEME_HOST.quiet} .header-title {
 
 /* The buttons sit back in the third ink on the panel. Once the host sets the
    header text they draw in it instead, since the header behind them is then
-   the host's colour (see the switches in the token defaults). So does their
-   rest opacity: the frame's 0.85 lets the header through the glyph, which
-   took white on a mid-blue header from 5.1:1 to 4.2:1. With the header text
-   set, the opacity below reads a colour, which no opacity can be, so it is
-   invalid at computed-value time and falls to the initial 1; unset, it reads
-   the fallback, the frame's own 0.85. */
+   the host's colour (see the switches in the token defaults). */
 ${THEME_HOST.quiet} .header-btn {
   color: var(--_header-fg-set, var(--_ink-3));
-  opacity: var(--_header-fg-set, 0.85);
   border-radius: 8px;
 }
 
-/* The hover square is the host's own when it set one; otherwise it is mixed
-   from the header text when the host set that, so it reads on any header the
-   host painted; otherwise it is the panel shade.
-   The glyph takes the header text, which is the full ink when that is unset.
-   The opacity restates the frame's hover value, which the rest rule above
-   outweighs. */
+/* The glyph takes the header text, which is the full ink when that is unset. */
 ${THEME_HOST.quiet} .header-btn:hover {
   color: var(--_header-fg);
-  opacity: 1;
-  background: var(--_header-btn-hover);
 }
 
 ${THEME_HOST.quiet} .message--user {

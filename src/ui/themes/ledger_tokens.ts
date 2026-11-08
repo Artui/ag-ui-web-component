@@ -20,6 +20,7 @@ export const LEDGER_TOKENS: string = `
   --_msg-radius: var(--ag-ui-msg-radius, 0px);
   --_composer-radius: var(--ag-ui-composer-radius, 4px);
   --_user-bg: var(--ag-ui-user-bg, transparent);
+  --_header-btn-hover: var(--ag-ui-header-btn-hover, var(--_header-btn-hover-auto, var(--_hover)));
   --_frame-shadow: var(--ag-ui-frame-shadow, 0 0 0 1px var(--_line-strong), 0 20px 40px -28px rgb(0 0 0 / 0.45));
   --_launcher-bg: var(--ag-ui-launcher-bg, var(--_fg));
   --_launcher-fg: var(--ag-ui-launcher-fg, var(--_bg));

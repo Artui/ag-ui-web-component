@@ -314,6 +314,16 @@ describe("dragging the panel by its header", () => {
     const handle = shadow(el).querySelector(".resize-handle--top-left") as HTMLElement;
     handle.dispatchEvent(pointer("pointerdown", 596, 216));
     window.dispatchEvent(pointer("pointermove", 500, 180));
+    // The spot is read off the box as drawn, which this double does not move on
+    // its own, so it reports where a real layout puts the corner the grip moved.
+    el.getBoundingClientRect = (() => ({
+      left: 500,
+      top: 180,
+      width: 476,
+      height: 596,
+      right: 976,
+      bottom: 776,
+    })) as never;
     window.dispatchEvent(pointer("pointerup", 500, 180));
 
     // Without this the next mount would put the panel back where the header

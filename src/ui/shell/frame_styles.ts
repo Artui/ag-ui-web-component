@@ -44,6 +44,15 @@ export const FRAME_STYLES: string = `
   touch-action: auto;
 }
 
+/* A panel that is the screen has nowhere to go, so its header refuses the drag
+   and must not offer it. No selector can see that a host has sized the panel to
+   the window, so the placement stamps this from the measurement that refuses the
+   drag. :host is carried for the specificity, not the scope, as below. Before the
+   dragging rule, so a drag the header did take keeps its grabbing cursor. */
+:host .header[data-fills-screen] {
+  cursor: auto;
+}
+
 /* :host is carried for the specificity, not the scope: the placement rules
    above are a host selector plus a class plus an attribute, and a bare
    .header[data-dragging] loses to them -- silently, because the drag still
@@ -93,6 +102,14 @@ export const FRAME_STYLES: string = `
   flex: none;
 }
 
+/* Under every theme: once the host sets the header text, the header behind the
+   buttons is the host's colour, so their rest opacity goes. The frame's 0.85
+   lets the header through the glyph, which took white on a mid-blue header from
+   5.1:1 to 4.2:1. With the header text set, the opacity below reads a colour,
+   which no opacity can be, so it is invalid at computed-value time and falls to
+   the initial 1; unset, it reads the fallback. The glyph is each theme's own
+   business: this inherits the header text, and a theme that draws the buttons
+   in another ink reads the same switch to yield. */
 .header-btn {
   display: inline-flex;
   flex: 0 0 auto;
@@ -109,11 +126,14 @@ export const FRAME_STYLES: string = `
   padding: 0;
   border-radius: 6px;
   cursor: pointer;
-  opacity: 0.85;
+  opacity: var(--_header-fg-set, 0.85);
 }
 
+/* The square is the host's own when it set one; otherwise it is mixed from the
+   header text when the host set that, so it reads on any header the host
+   painted; otherwise it is the theme's own. See the alias in the token defaults. */
 .header-btn:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--_header-btn-hover);
 }
 `;
