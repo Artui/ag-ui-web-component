@@ -79,6 +79,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   phone's full-bleed panel does, and comes back to where the user put it when the
   host's size drops. A host's own `--ag-ui-inset` rule that already stands the box
   on the screen is left alone. **A host has nothing to do.**
+- **A panel placed only by a resize grip goes full-bleed on a phone.** A grip on
+  an edge the layout holds moves an unmoved corner panel without storing a spot,
+  and that inline inset stayed on when the window narrowed, which held the panel
+  off two edges and past the other two. It now fills the screen with no inline
+  inset, and widening gives the place back. An inset the host wrote inline stays
+  where the host wrote it. An unmoved panel a host's own size makes the window
+  stands at 0,0 as well, after a window resize. **A host has nothing to do.**
+- **`data-launcher-drag="false"` on a moved panel hands it to the host's CSS.**
+  Turned on after the user had moved the panel, the attribute left an inline
+  inset behind for good, which put the panel off the screen on a phone. Nothing
+  moves when it goes on. The next window resize or reopen rests the panel where
+  the host's CSS puts it, as a reload under the attribute always did, and on a
+  phone that is full-bleed. The stored spot stays, and comes back at the first
+  restore after the attribute comes off. **A host has nothing to do.**
 
 ## [0.49.0] — 2026-11-07
 

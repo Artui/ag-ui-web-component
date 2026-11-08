@@ -572,6 +572,160 @@ describe("a corner panel placed on a wide window (real browser)", () => {
     });
   });
 
+  describe("a corner panel with no spot", () => {
+    /** Motion off and open, with a grip pulled on an edge the layout holds. */
+    async function gripped(attrs: Record<string, string> = {}): Promise<AgUiChat> {
+      const el = chat({ "data-start-open": "", ...attrs });
+      await frames();
+      await drag(part(el, ".resize-handle--bottom-right"), -40, -30);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).not.toBe("");
+      return el;
+    }
+
+    it("goes full-bleed on a phone when only a grip placed it, and widening gives that back", async () => {
+      const el = await gripped();
+      const grown = el.getBoundingClientRect();
+      await resize(PHONE);
+      expectFullBleed(el);
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+      await resize(DESKTOP);
+      const back = el.getBoundingClientRect();
+      expect(back.left).toBeCloseTo(grown.left, 0);
+      expect(back.top).toBeCloseTo(grown.top, 0);
+      expect(back.width).toBeCloseTo(grown.width, 0);
+      expect(back.height).toBeCloseTo(grown.height, 0);
+    });
+
+    it("keeps its launcher on the screen and stays full-bleed through a reopen", async () => {
+      const el = await gripped();
+      await resize(PHONE);
+      el.setCollapsed(true);
+      await frames();
+      // At the panel's corner, where an unmoved one rests, rather than held off
+      // the edges as a dragged one is.
+      const at = bubble(el);
+      expect(at.left).toBeGreaterThanOrEqual(0);
+      expect(at.top).toBeGreaterThanOrEqual(0);
+      expect(at.right).toBeLessThanOrEqual(PHONE.width);
+      expect(at.bottom).toBeLessThanOrEqual(PHONE.height);
+      el.setCollapsed(false);
+      await frames();
+      expectFullBleed(el);
+    });
+
+    it("leaves an inset the host wrote inline where the host wrote it, phone or not", async () => {
+      const el = chat({ "data-start-open": "" });
+      el.style.setProperty("--ag-ui-inset", "56px 0 0 0");
+      await frames();
+      await resize(PHONE);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("56px 0 0 0");
+      expect(el.getBoundingClientRect().top).toBeCloseTo(56, 0);
+      await resize(DESKTOP);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("56px 0 0 0");
+    });
+
+    it("stands at 0,0 when a host fills a wide window, and rests again when it stops", async () => {
+      const el = chat({ "data-start-open": "" });
+      await frames();
+      const home = el.getBoundingClientRect();
+      const sized = {
+        "--ag-ui-width": "100vw",
+        "--ag-ui-height": "100vh",
+        "--ag-ui-max-width": "100vw",
+        "--ag-ui-max-height": "100vh",
+      };
+      for (const [token, value] of Object.entries(sized)) {
+        el.style.setProperty(token, value);
+      }
+      await resize({ width: 1200, height: 760 });
+      const box = el.getBoundingClientRect();
+      expect([box.left, box.top, box.width, box.height]).toEqual([0, 0, 1200, 760]);
+      expect(el.describeSurface().box).toEqual({ left: 0, top: 0, width: 1200, height: 760 });
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+
+      for (const token of Object.keys(sized)) {
+        el.style.removeProperty(token);
+      }
+      await resize(DESKTOP);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(el.getBoundingClientRect().left).toBeCloseTo(home.left, 0);
+      expect(el.getBoundingClientRect().top).toBeCloseTo(home.top, 0);
+    });
+
+    it("puts the grip's place back, not the resting one, when a host's fill stops", async () => {
+      const el = await gripped();
+      const grown = el.getBoundingClientRect();
+      el.resetSize();
+      await frames();
+      const reset = el.getBoundingClientRect();
+      for (const token of ["--ag-ui-width", "--ag-ui-max-width"]) {
+        el.style.setProperty(token, "100vw");
+      }
+      for (const token of ["--ag-ui-height", "--ag-ui-max-height"]) {
+        el.style.setProperty(token, "100vh");
+      }
+      await resize({ width: 1200, height: 760 });
+      expect(el.getBoundingClientRect().left).toBe(0);
+      expect(el.getBoundingClientRect().top).toBe(0);
+      for (const token of [
+        "--ag-ui-width",
+        "--ag-ui-max-width",
+        "--ag-ui-height",
+        "--ag-ui-max-height",
+      ]) {
+        el.style.removeProperty(token);
+      }
+      await resize(DESKTOP);
+      expect(el.getBoundingClientRect().right).toBeCloseTo(reset.right, 0);
+      expect(el.getBoundingClientRect().bottom).toBeCloseTo(grown.bottom, 0);
+    });
+  });
+
+  describe("data-launcher-drag turned to false on a moved panel", () => {
+    /** Where the host's CSS rests a default corner panel at this window. */
+    function expectAtRest(el: AgUiChat, size: { width: number; height: number }): void {
+      const box = el.getBoundingClientRect();
+      expect(box.right).toBeCloseTo(size.width - 24, 0);
+      expect(box.bottom).toBeCloseTo(size.height - 24, 0);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe("");
+    }
+
+    it("does nothing until the next restore, which hands the panel to the host's CSS", async () => {
+      const el = await placed();
+      const stored = localStorage.getItem(LAUNCHER_KEY);
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      // Nothing watches the attribute, and it is not a reason for a panel to jump.
+      expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+      expect(el.describeSurface().movable).toBe(false);
+
+      await resize({ width: 1200, height: 760 });
+      expectAtRest(el, { width: 1200, height: 760 });
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+    });
+
+    it("goes full-bleed on a phone", async () => {
+      const el = await placed();
+      el.setAttribute("data-launcher-drag", "false");
+      await resize(PHONE);
+      expectFullBleed(el);
+    });
+
+    it("takes the spot back when the attribute comes off, from the stored record", async () => {
+      const el = await placed();
+      el.setAttribute("data-launcher-drag", "false");
+      await resize(PHONE);
+      await resize(DESKTOP);
+      expectAtRest(el, DESKTOP);
+
+      el.removeAttribute("data-launcher-drag");
+      await resize({ width: DESKTOP.width - 10, height: DESKTOP.height });
+      expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+      expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+    });
+  });
+
   it("holds a launcher moved by a key through an expand before the key comes up", async () => {
     const el = chat();
     await frames();
