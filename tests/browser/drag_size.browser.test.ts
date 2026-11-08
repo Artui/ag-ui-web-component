@@ -574,6 +574,177 @@ describe("a grip on a dragged corner panel (real browser)", () => {
     expectAt(el, { left: 376, top: 96 });
   });
 
+  /** A host size that makes the panel the window, as a host's "fill" state does. */
+  const fillWindow = (el: AgUiChat): void => {
+    for (const [token, value] of [
+      ["--ag-ui-width", "100vw"],
+      ["--ag-ui-height", "100vh"],
+      ["--ag-ui-max-width", "100vw"],
+      ["--ag-ui-max-height", "100vh"],
+    ] as const) {
+      el.style.setProperty(token, value);
+    }
+  };
+  const dropFill = (el: AgUiChat): void => {
+    for (const token of [
+      "--ag-ui-width",
+      "--ag-ui-height",
+      "--ag-ui-max-width",
+      "--ag-ui-max-height",
+    ]) {
+      el.style.removeProperty(token);
+    }
+  };
+
+  it("stands at the stored spot when a host's size drops after a reopen under it", async () => {
+    // Reopening under the size holds the box on the screen and writes that held
+    // box from the corner re-picked for it. The size dropping fires no event, so
+    // nothing but the box's own change can put the panel back.
+    const el = await placed();
+    const stored = localStorage.getItem(LAUNCHER_KEY);
+    setHostSize(el);
+    el.resetSize();
+    await frames();
+    await reopen(el);
+    expect(el.getBoundingClientRect().width).toBeCloseTo(720, 0);
+
+    dropHostSize(el);
+    await frames();
+    expectAt(el, { left: 376, top: 96 });
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+  });
+
+  it("opens at the stored spot when a host's size drops while it is collapsed", async () => {
+    const el = await placed();
+    setHostSize(el);
+    el.resetSize();
+    await frames();
+    el.setCollapsed(true);
+    await frames();
+    dropHostSize(el);
+    await frames();
+    el.setCollapsed(false);
+    await frames();
+    expectAt(el, { left: 376, top: 96 });
+  });
+
+  it("gives the launcher back with the panel when a host's size drops", async () => {
+    // The launcher is carried by the clamp under the size, and the way back has
+    // to bring it along or the panel opens away from its bubble.
+    const el = await placed();
+    const stored = JSON.parse(localStorage.getItem(LAUNCHER_KEY) as string);
+    const size = part(el, ".launcher").offsetWidth;
+    setHostSize(el);
+    el.resetSize();
+    await frames();
+    await reopen(el);
+    dropHostSize(el);
+    await frames();
+    el.setCollapsed(true);
+    await frames();
+    expect(bubbleCentre(el).x).toBeCloseTo(stored.left + size / 2, 0);
+    expect(bubbleCentre(el).y).toBeCloseTo(stored.top + size / 2, 0);
+  });
+
+  it("holds the panel on the screen when a host sizes it up with no event", async () => {
+    const el = await placed();
+    setHostSize(el);
+    await frames();
+    const box = el.getBoundingClientRect();
+    expect(box.width).toBeCloseTo(720, 0);
+    expect(box.top).toBeGreaterThanOrEqual(8);
+    expect(box.left).toBeCloseTo(376, 0);
+  });
+
+  it("returns a panel from a host's fill to its spot once the fill drops", async () => {
+    // The start of the window is where a filled panel stands after a resize; it
+    // says nothing about where the panel goes when the fill is gone.
+    const el = await placed();
+    fillWindow(el);
+    await frames();
+    await page.viewport(1200, 760);
+    await frames();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(0, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
+
+    dropFill(el);
+    await frames();
+    expectAt(el, { left: 376, top: 96 });
+  });
+
+  it("stands a moved panel at the start of the window as soon as a host fills it", async () => {
+    const el = await placed();
+    fillWindow(el);
+    await frames();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(0, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
+  });
+
+  it("keeps a filled panel with no spot where a grip on its free edges left it", async () => {
+    // The release is a change of size like any other, so the panel must not leave
+    // the pointer for the resting corner as the fill's inset comes off.
+    const el = chat();
+    await frames();
+    fillWindow(el);
+    await frames();
+    await drag(part(el, ".resize-handle--bottom-right"), -300, -200);
+    await frames();
+    const box = el.getBoundingClientRect();
+    expect([box.left, box.top]).toEqual([0, 0]);
+    expect(box.width).toBeLessThan(1000);
+
+    await page.viewport(PHONE.width, PHONE.height);
+    await frames();
+    await page.viewport(DESKTOP.width, DESKTOP.height);
+    await frames();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(0, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
+  });
+
+  it("leaves a key gesture on a grip alone until the key comes up", async () => {
+    // A held arrow resizes per key and only states the spot when the key comes
+    // up, and the box changes on every one of those keys. Answering that from the
+    // old spot would swing the panel away from its launcher mid-gesture.
+    const el = await placed();
+    const grip = part(el, ".resize-handle--top-left");
+    const key = (type: string): void => {
+      grip.dispatchEvent(new KeyboardEvent(type, { key: "ArrowUp", bubbles: true }));
+    };
+    const before = el.getBoundingClientRect();
+    key("keydown");
+    await frames();
+    key("keydown");
+    await frames();
+    const held = el.getBoundingClientRect();
+    expect(held.top).toBeLessThan(before.top);
+    expect(held.bottom).toBeCloseTo(before.bottom, 0);
+
+    key("keyup");
+    await frames();
+    const after = el.getBoundingClientRect();
+    expect(after.top).toBeCloseTo(held.top, 0);
+    expect(after.bottom).toBeCloseTo(before.bottom, 0);
+    await reopen(el);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(held.top, 0);
+  });
+
+  it("leaves a panel only its launcher placed where a grip left it", async () => {
+    // With no stated panel the restore derives the box from the launcher, and the
+    // grip's release is now a change of size that reaches it.
+    const el = chat();
+    await frames();
+    el.setCollapsed(true);
+    await frames();
+    await drag(part(el, ".launcher"), -500, -300);
+    el.setCollapsed(false);
+    await frames();
+    await drag(part(el, ".resize-handle--top-left"), -40, -30);
+    const drawn = el.getBoundingClientRect();
+    await frames();
+    expect(el.getBoundingClientRect().left).toBeCloseTo(drawn.left, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(drawn.top, 0);
+  });
+
   it("leaves a grip gesture alone when the window resizes under it", async () => {
     // A tablet's viewport changes mid-gesture. Re-applying the last stated spot
     // here would put the launcher back where the gesture already moved it from.

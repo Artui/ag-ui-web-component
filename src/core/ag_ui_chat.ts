@@ -1586,6 +1586,12 @@ export class AgUiChat extends HTMLElement {
     const dockObserver = new ResizeObserver(() => this.#syncDock());
     dockObserver.observe(this.#dockBar);
     this.#connection.signal.addEventListener("abort", () => dockObserver.disconnect());
+    // A host's own size arrives with no event: a token written or a class changed
+    // moves nothing here until the next window resize or reopen, and a panel
+    // re-placed under a size that has since gone stays held short of its spot.
+    const layoutObserver = new ResizeObserver(this.#onViewportResize);
+    layoutObserver.observe(this, { box: "border-box" });
+    this.#connection.signal.addEventListener("abort", () => layoutObserver.disconnect());
     this.#syncDock();
     // Under collapse-to="none" the host draws the collapsed state itself, so
     // it has to learn the state the element mounted in -- restored from

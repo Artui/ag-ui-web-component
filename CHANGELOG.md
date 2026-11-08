@@ -86,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   off two edges and past the other two. It now fills the screen with no inline
   inset, and widening gives the place back. An inset the host wrote inline stays
   where the host wrote it. An unmoved panel a host's own size makes the window
-  stands at 0,0 as well, after a window resize. **A host has nothing to do.**
+  stands at 0,0 as well. **A host has nothing to do.**
 - **`data-launcher-drag="false"` on a moved panel hands it to the host's CSS.**
   Turned on after the user had moved the panel, the attribute left an inline
   inset behind for good, which put the panel off the screen on a phone. Nothing
@@ -103,6 +103,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   records back, in memory and in storage, and leaves the new surface standing where
   its own layout puts it; the spot comes back with the surface it belongs to.
   **A host has nothing to do.**
+- **A moved panel answers a host's size when the size changes.** A change to
+  `--ag-ui-width` or `--ag-ui-height` fires no event, so a panel the user had moved
+  stayed as the last restore left it until the next window resize or reopen. Reopened
+  under a host's size that then dropped, it stood short of its spot, at 716,232 for a
+  spot of 376,96, with the stored spot still right; sized up with no reopen, it could
+  grow past the top of the window. It now goes back to its spot as the size drops, and
+  under a bigger size it stands where a reopen already put it, held on the screen from
+  that spot, rather than growing away from the corner the layout held. A window-filling
+  size stands it at 0,0 at once, with no resize needed. **A host has nothing to do.**
 
 ## [0.49.0] — 2026-11-07
 

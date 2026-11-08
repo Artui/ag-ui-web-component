@@ -233,8 +233,14 @@ export class PanelPlacement {
       const handle = createResizeHandle(grip, {
         axis: () => this.#resizeAxis(),
         rect: () => this.#host.element.getBoundingClientRect(),
-        apply: (box) => this.#applyResize(grip, box),
-        commit: (box) => this.#commitResize(grip, box),
+        apply: (box) => {
+          this.#resizing = true;
+          this.#applyResize(grip, box);
+        },
+        commit: (box) => {
+          this.#resizing = false;
+          this.#commitResize(grip, box);
+        },
         label: this.#host.strings().resizePanel,
       });
       // Only one of the eight is in the tab order. Eight separators between the
@@ -414,6 +420,9 @@ export class PanelPlacement {
    */
   #anchor: ResizeAnchor = { x: "right", y: "bottom" };
 
+  /** Whether a grip has applied a box it has not committed yet. */
+  #resizing = false;
+
   /** The eight grips, by name, so the keyboard-reachable one can be moved. */
   readonly #resizeHandles = new Map<string, HTMLDivElement>();
 
@@ -456,10 +465,13 @@ export class PanelPlacement {
    *
    * Read from the stamp the drag helpers already set, rather than tracked
    * separately: one source of truth, and it clears on `pointercancel` as well
-   * as `pointerup`, which is the end a touch gesture usually gets.
+   * as `pointerup`, which is the end a touch gesture usually gets. The one
+   * gesture that stamps nothing is an arrow key on a grip, which applies a box
+   * per key and states it only when the key comes up, hence #resizing.
    */
   dragging(): boolean {
     return (
+      this.#resizing ||
       this.#host.launcher.hasAttribute("data-dragging") ||
       this.#host.root.querySelector(".header[data-dragging], .resize-handle[data-dragging]") !==
         null
@@ -1598,6 +1610,14 @@ export class PanelPlacement {
     // mount, which is the same disagreement between apply and commit that made
     // the header drag jump on release.
     const held = this.#applyResize(grip, box);
+    // A grip on the free edges of a panel standing at the start of a filled window
+    // leaves that inset alone, and the size it stated takes the panel off the
+    // screen's shape. It has to stay where the grip left it, so the inset stops
+    // being one that lasts only as long as the host's size does.
+    if (this.#host.element.style.getPropertyValue("--ag-ui-inset") === this.#fillInset) {
+      this.#gripInset = this.#fillInset;
+      this.#fillInset = null;
+    }
     this.#persistSize({ width: held.right - held.left, height: held.bottom - held.top });
     this.#storeLauncherPosition();
     if (this.#dockPos !== null) {
