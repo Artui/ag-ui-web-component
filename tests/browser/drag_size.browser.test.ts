@@ -687,6 +687,8 @@ describe("a grip on a dragged corner panel (real browser)", () => {
     await frames();
     fillWindow(el);
     await frames();
+    await page.viewport(DESKTOP.width - 80, DESKTOP.height - 40);
+    await frames();
     await drag(part(el, ".resize-handle--bottom-right"), -300, -200);
     await frames();
     const box = el.getBoundingClientRect();
