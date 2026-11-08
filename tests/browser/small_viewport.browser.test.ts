@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
@@ -142,5 +142,320 @@ describe("small-viewport layout (real browser)", () => {
     const box = launcher.getBoundingClientRect();
     expect(box.width).toBeGreaterThan(0);
     expect(box.bottom).toBeLessThanOrEqual(window.innerHeight + 1);
+  });
+});
+
+/**
+ * A corner panel the user placed on a wide window, and the phone that window
+ * becomes. A spot stated on a wide window is written inline, and the phone
+ * block reads the host's inset before its own, so it has to come off for the
+ * panel to be the screen, and it has to come back when there is room again.
+ *
+ * Its own block because the one above runs the whole file at a phone's width.
+ * Motion is off on each chat, so a rect read after a frame is the resting one
+ * and not a frame of the collapse morph.
+ */
+describe("a corner panel placed on a wide window (real browser)", () => {
+  const PHONE = { width: 390, height: 844 };
+  const ID = "placed";
+  const LAUNCHER_KEY = `ag-ui-chat:launcher:${ID}`;
+
+  function chat(attrs: Record<string, string> = {}): AgUiChat {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.id = ID;
+    for (const [name, value] of Object.entries(attrs)) {
+      el.setAttribute(name, value);
+    }
+    el.style.setProperty("--ag-ui-motion", "0s");
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function part(el: AgUiChat, selector: string): HTMLElement {
+    const found = el.shadowRoot?.querySelector<HTMLElement>(selector);
+    if (found === null || found === undefined) {
+      throw new Error(`expected ${selector} in the shadow root`);
+    }
+    return found;
+  }
+
+  const frames = async (): Promise<void> => {
+    for (let frame = 0; frame < 3; frame += 1) {
+      await settle();
+    }
+  };
+
+  async function resize(size: { width: number; height: number }): Promise<void> {
+    await page.viewport(size.width, size.height);
+    await frames();
+  }
+
+  /** A gesture by a pointer: press, travel, release. */
+  async function drag(handle: HTMLElement, dx: number, dy: number): Promise<void> {
+    const rect = handle.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + dx, clientY: y + dy }));
+    await frames();
+  }
+
+  /** The panel dragged by its header to [376, 96] on a wide window. */
+  async function placed(attrs: Record<string, string> = {}): Promise<AgUiChat> {
+    const el = chat({ "data-start-open": "", ...attrs });
+    await frames();
+    const box = el.getBoundingClientRect();
+    await drag(part(el, ".header"), 376 - box.left, 96 - box.top);
+    expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+    return el;
+  }
+
+  /** Full-bleed, measured, with nothing inline holding it off the edges. */
+  function expectFullBleed(el: AgUiChat): void {
+    const box = el.getBoundingClientRect();
+    expect([box.left, box.top, box.width, box.height]).toEqual([0, 0, PHONE.width, PHONE.height]);
+    expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+  }
+
+  /**
+   * The bubble's resting box. The size from the layout and the position from
+   * the centre, because it is scaled in several states and a centred scale is
+   * the one point that cannot move.
+   */
+  function bubble(el: AgUiChat): { left: number; top: number; right: number; bottom: number } {
+    const launcher = part(el, ".launcher");
+    const rect = launcher.getBoundingClientRect();
+    const left = rect.left + rect.width / 2 - launcher.offsetWidth / 2;
+    const top = rect.top + rect.height / 2 - launcher.offsetHeight / 2;
+    return { left, top, right: left + launcher.offsetWidth, bottom: top + launcher.offsetHeight };
+  }
+
+  /** On the screen, and held off its edges as a dragged bubble always is. */
+  function expectBubbleOnScreen(el: AgUiChat): void {
+    const at = bubble(el);
+    expect(at.left).toBeGreaterThanOrEqual(8 - 0.5);
+    expect(at.top).toBeGreaterThanOrEqual(8 - 0.5);
+    expect(at.right).toBeLessThanOrEqual(PHONE.width - 8 + 0.5);
+    expect(at.bottom).toBeLessThanOrEqual(PHONE.height - 8 + 0.5);
+  }
+
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  beforeEach(async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    await page.viewport(DESKTOP.width, DESKTOP.height);
+  });
+
+  afterEach(async () => {
+    document.body.innerHTML = "";
+    localStorage.clear();
+    sessionStorage.clear();
+    await page.viewport(DESKTOP.width, DESKTOP.height);
+  });
+
+  it("goes full-bleed when the window narrows to a phone", async () => {
+    const el = await placed();
+    await resize(PHONE);
+    expectFullBleed(el);
+    expect(getComputedStyle(panelOf(el)).borderRadius).toBe("0px");
+  });
+
+  it("stays full-bleed through a reopen on the phone", async () => {
+    const el = await placed();
+    await resize(PHONE);
+    el.setCollapsed(true);
+    await frames();
+    expectBubbleOnScreen(el);
+    el.setCollapsed(false);
+    await frames();
+    expectFullBleed(el);
+  });
+
+  it("goes full-bleed when it was collapsed as the window narrowed", async () => {
+    const el = await placed();
+    el.setCollapsed(true);
+    await frames();
+    await resize(PHONE);
+    expectBubbleOnScreen(el);
+    el.setCollapsed(false);
+    await frames();
+    expectFullBleed(el);
+  });
+
+  it("refuses a header drag and moveTo on the phone, placed or not", async () => {
+    const dragged = await placed();
+    await resize(PHONE);
+    for (const el of [dragged, chat({ "data-start-open": "" })]) {
+      await frames();
+      await drag(part(el, ".header"), 60, 80);
+      expectFullBleed(el);
+      expect(el.describeSurface().movable).toBe(false);
+      expect(el.moveTo("top-left")).toBe(false);
+      expectFullBleed(el);
+      el.remove();
+    }
+  });
+
+  it("takes its spot back when the window widens", async () => {
+    const el = await placed();
+    const before = bubble(el);
+    await resize(PHONE);
+    await resize(DESKTOP);
+    expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+    // The launcher comes back with it: it is what the panel collapses into,
+    // and the clamp on the way down is what would have lost its offset.
+    expect(bubble(el).left).toBeCloseTo(before.left, 0);
+    expect(bubble(el).top).toBeCloseTo(before.top, 0);
+  });
+
+  it("takes its spot back after a window that narrowed by way of the widths between", async () => {
+    // How a desktop window actually narrows. Each width that cannot hold the
+    // panel where it was put holds it further in, and the spot has to survive
+    // all of them rather than be the last one held.
+    const el = await placed();
+    await resize({ width: 700, height: DESKTOP.height });
+    const held = el.getBoundingClientRect();
+    expect(held.right).toBeLessThanOrEqual(700 - 8 + 0.5);
+    expect(held.left).toBeLessThan(376);
+    await resize(PHONE);
+    expectFullBleed(el);
+    await resize(DESKTOP);
+    expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+  });
+
+  it("does not store what the phone or a narrower window made of the spot", async () => {
+    const el = await placed();
+    const stored = localStorage.getItem(LAUNCHER_KEY);
+    expect(stored).not.toBeNull();
+    await resize({ width: 700, height: DESKTOP.height });
+    await resize(PHONE);
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+    el.remove();
+    const again = chat({ "data-start-open": "" });
+    await frames();
+    expectFullBleed(again);
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+    await resize(DESKTOP);
+    expect(again.getBoundingClientRect().left).toBeCloseTo(376, 0);
+    expect(again.getBoundingClientRect().top).toBeCloseTo(96, 0);
+  });
+
+  it("goes full-bleed and comes back when only the launcher was dragged", async () => {
+    const el = chat();
+    await frames();
+    el.setCollapsed(true);
+    await frames();
+    const home = bubble(el);
+    await drag(part(el, ".launcher"), 500 - home.left, 300 - home.top);
+    expect(bubble(el).left).toBeCloseTo(500, 0);
+    expect(bubble(el).top).toBeCloseTo(300, 0);
+    await resize(PHONE);
+    expectBubbleOnScreen(el);
+    el.setCollapsed(false);
+    await frames();
+    expectFullBleed(el);
+    await resize(DESKTOP);
+    el.setCollapsed(true);
+    await frames();
+    expect(bubble(el).left).toBeCloseTo(500, 0);
+    expect(bubble(el).top).toBeCloseTo(300, 0);
+  });
+
+  it("keeps a launcher dragged on the phone where it was dropped", async () => {
+    await page.viewport(PHONE.width, PHONE.height);
+    const el = chat();
+    await frames();
+    el.setCollapsed(true);
+    await frames();
+    const home = bubble(el);
+    // From where it stands: a drag starting anywhere else makes the bubble
+    // leap under the finger.
+    await drag(part(el, ".launcher"), 120 - home.left, 300 - home.top);
+    expect(bubble(el).left).toBeCloseTo(120, 0);
+    expect(bubble(el).top).toBeCloseTo(300, 0);
+    el.setCollapsed(false);
+    await frames();
+    expectFullBleed(el);
+    el.setCollapsed(true);
+    await frames();
+    expect(bubble(el).left).toBeCloseTo(120, 0);
+    expect(bubble(el).top).toBeCloseTo(300, 0);
+    // A second drag starts from there as well, after the panel has been open.
+    await drag(part(el, ".launcher"), 40, 40);
+    expect(bubble(el).left).toBeCloseTo(160, 0);
+    expect(bubble(el).top).toBeCloseTo(340, 0);
+  });
+
+  it("drags a launcher the narrowing held in from where it now stands", async () => {
+    // The spot stays as stated for a wider window to give back. The bubble on
+    // screen is where a press finds it, and a drag measured from the stated
+    // spot would make it leap.
+    const el = await placed();
+    el.setCollapsed(true);
+    await frames();
+    await resize(PHONE);
+    const held = bubble(el);
+    await drag(part(el, ".launcher"), -40, -40);
+    expect(bubble(el).left).toBeCloseTo(held.left - 40, 0);
+    expect(bubble(el).top).toBeCloseTo(held.top - 40, 0);
+  });
+
+  it("drags the panel from where a narrower window holds it, and that becomes the spot", async () => {
+    const el = await placed();
+    await resize({ width: 700, height: DESKTOP.height });
+    const held = el.getBoundingClientRect();
+    await drag(part(el, ".header"), -30, 20);
+    expect(el.getBoundingClientRect().left).toBeCloseTo(held.left - 30, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(held.top + 20, 0);
+    await resize(DESKTOP);
+    expect(el.getBoundingClientRect().left).toBeCloseTo(held.left - 30, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(held.top + 20, 0);
+  });
+
+  it("gives back an undone move as the spot, on a phone full-bleed", async () => {
+    const el = await placed();
+    el.moveTo("top-left", { announce: true });
+    await frames();
+    expect(el.getBoundingClientRect().left).not.toBeCloseTo(376, 0);
+    await resize(PHONE);
+    const undo = el.shadowRoot?.querySelector<HTMLButtonElement>(".run-notice-undo");
+    expect(undo).toBeTruthy();
+    undo?.click();
+    await frames();
+    expectFullBleed(el);
+    await resize(DESKTOP);
+    expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+  });
+
+  it("leaves a placement that owns its position alone on a phone", async () => {
+    // Without the launcher's gate the stored spot would stamp a corner and a
+    // launcher inset on a sidebar that covers the screen here.
+    localStorage.setItem(
+      LAUNCHER_KEY,
+      JSON.stringify({ left: 200, top: 200, panel: { left: 100, top: 100 } }),
+    );
+    await page.viewport(PHONE.width, PHONE.height);
+    const el = chat({ placement: "sidebar", "data-start-open": "" });
+    await frames();
+    expect(el.getBoundingClientRect().width).toBe(PHONE.width);
+    expect(el.hasAttribute("data-expand-corner")).toBe(false);
+    expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe("");
+  });
+
+  it("keeps the placed spot under data-small-viewport=off, where a phone is not the screen", async () => {
+    const el = await placed({ "data-small-viewport": "off" });
+    await resize({ width: 420, height: PHONE.height });
+    expect(el.getBoundingClientRect().width).toBeLessThan(420);
+    expect(el.style.getPropertyValue("--ag-ui-inset")).not.toBe("");
   });
 });

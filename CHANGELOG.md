@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A corner panel that was moved goes full-bleed on a phone, and stays there.**
+  Under `collapse-to="auto"`, a panel moved by its header, its launcher or
+  `moveTo` on a wide window kept an inline `--ag-ui-inset` when the window
+  narrowed below the small-viewport breakpoint, which held it 8px off two edges
+  and past the other two. It now fills the screen, with no inline inset, while
+  its launcher stays on the screen for when it is collapsed. A header drag no
+  longer moves a panel that is the screen, as `moveTo` already refused to. The
+  place the user put the panel is now kept as they stated it: a window that
+  narrows, by any amount, holds the panel inside it without changing the record,
+  and widening gives that place back, as a reload already did. A gesture made in
+  the narrower window states a new one. **A host has nothing to do.**
+
 ## [0.49.0] — 2026-11-07
 
 ### Added
