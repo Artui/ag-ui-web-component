@@ -203,6 +203,7 @@ export class PanelPlacement {
    * header on screen, and the launcher is the handle then.
    */
   enablePanelDrag(header: HTMLElement): void {
+    this.#header = header;
     enablePanelDrag(header, {
       enabled: () => !this.#host.collapsed() && this.#canDragPanel(),
       rect: () => this.#host.element.getBoundingClientRect(),
@@ -419,6 +420,9 @@ export class PanelPlacement {
    * second while the panel is already being laid out on every one of them.
    */
   #anchor: ResizeAnchor = { x: "right", y: "bottom" };
+
+  /** The header the panel drag listens on, stamped by #stampHeader. */
+  #header: HTMLElement | null = null;
 
   /** Whether a grip has applied a box it has not committed yet. */
   #resizing = false;
@@ -725,6 +729,19 @@ export class PanelPlacement {
     this.#anchor = anchor;
     this.#host.element.setAttribute("data-resize-anchor", `${anchor.y}-${anchor.x}`);
     this.#focusableGrip();
+    this.#stampHeader();
+  }
+
+  /**
+   * Tell the stylesheet whether the panel is the screen, for the header's cursor.
+   *
+   * Only this half of what refuses a header drag: the resting rules already answer
+   * for the placement and for data-launcher-drag="false", and neither of those
+   * re-applies anything when it changes, so a stamp taking them in would go on
+   * refusing, in the cursor, a drag the header would take.
+   */
+  #stampHeader(): void {
+    this.#header?.toggleAttribute("data-fills-screen", this.#fillsScreen());
   }
 
   /** Put a custom property back to a previous value, or remove it if there was none. */
@@ -934,10 +951,12 @@ export class PanelPlacement {
    * off the edges it fills.
    */
   #canDragPanel(): boolean {
-    return (
-      this.#panelMovable() &&
-      !coversViewport(this.#host.element.getBoundingClientRect(), this.#viewport())
-    );
+    return this.#panelMovable() && !this.#fillsScreen();
+  }
+
+  /** Whether the panel covers the usable viewport, as it stands now. */
+  #fillsScreen(): boolean {
+    return coversViewport(this.#host.element.getBoundingClientRect(), this.#viewport());
   }
 
   /**
@@ -1360,6 +1379,12 @@ export class PanelPlacement {
    * gestures check their own before they ever reach the placing below.
    */
   restoreLauncherPosition(): void {
+    this.#placeFromRecord();
+    this.#stampHeader();
+  }
+
+  /** The placing behind {@link restoreLauncherPosition}. */
+  #placeFromRecord(): void {
     // Before the launcher's record is read at all: it belongs to the corner
     // surface, and seeding anything from it would put a spot dragged there on
     // a panel that should stand on its dock.

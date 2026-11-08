@@ -44,6 +44,15 @@ export const FRAME_STYLES: string = `
   touch-action: auto;
 }
 
+/* A panel that is the screen has nowhere to go, so its header refuses the drag
+   and must not offer it. No selector can see that a host has sized the panel to
+   the window, so the placement stamps this from the measurement that refuses the
+   drag. :host is carried for the specificity, not the scope, as below. Before the
+   dragging rule, so a drag the header did take keeps its grabbing cursor. */
+:host .header[data-fills-screen] {
+  cursor: auto;
+}
+
 /* :host is carried for the specificity, not the scope: the placement rules
    above are a host selector plus a class plus an attribute, and a bare
    .header[data-dragging] loses to them -- silently, because the drag still

@@ -125,6 +125,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window as its bar changes: a report rather than an exception, and the panel settles
   a frame later. A host whose error reporting or tests count window errors should
   expect it.
+- **The header's cursor no longer offers a drag that cannot happen.** A panel that
+  had become the screen, on a narrow window with a mouse or under a host's own size,
+  showed `cursor: move` although its header could not move it. The cursor is now `auto`
+  there, on a corner panel and under `collapse-to="bar"` or `"none"` alike, and stays
+  `move` everywhere the drag is allowed. **A host has nothing to do.**
 
 ## [0.49.0] — 2026-11-07
 
