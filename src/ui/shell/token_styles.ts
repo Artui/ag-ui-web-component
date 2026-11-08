@@ -61,18 +61,19 @@ export const TOKEN_STYLES: string = `
   /* Switches: a public token read with no fallback, named for it with -set.
      With the token unset the switch computes to the guaranteed-invalid value,
      so a rule that reads it with a fallback gets the fallback; that is how a
-     rule tells a token the host set from the theme's default for it. The
-     default theme's header buttons follow the header text only once a host
-     sets it, and a step group's calls follow the tool token only once a host
-     sets it (classic defaults --_tool-fg to the accent, which a group never
-     drew). */
+     rule tells a token the host set from the theme's default for it. Every
+     theme's header buttons follow the header text only once a host sets it,
+     and a step group's calls follow the tool token only once a host sets it
+     (classic defaults --_tool-fg to the accent, which a group never drew). */
   --_header-fg-set: var(--ag-ui-header-fg);
   --_tool-fg-set: var(--ag-ui-tool-fg);
   /* The header buttons' hover square, by default, once the header text is
      set. Here it is the text at about a fifth, which every browser can mix;
      where relative colour syntax is supported (see the block at the end) it
      is the text's opposite instead. It reads the switch, so it is unset with
-     it, and the square below falls to the panel's hover shade. */
+     it, and the square below falls to the theme's own: the panel's hover shade
+     here, restated by each theme that draws another, so one rule in the frame
+     paints them all. */
   --_header-btn-hover-auto: color-mix(in srgb, var(--_header-fg-set) 18%, transparent);
   --_header-btn-hover: var(--ag-ui-header-btn-hover, var(--_header-btn-hover-auto, var(--_hover)));
   --_border: var(--ag-ui-border, var(--_line));

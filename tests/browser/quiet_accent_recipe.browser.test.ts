@@ -6,16 +6,20 @@ import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 import { type Emit, makeFakeAgent } from "../helpers/fake_agent.js";
 
 /**
- * The documented recipe for keeping a brand accent under the default theme:
- * the header and launcher take the accent, the text on them takes the colour
- * that reads on it, and the tool names take the accent too.
+ * The documented recipe for keeping a brand accent: the header and launcher
+ * take the accent, the text on them takes the colour that reads on it, and the
+ * tool names take the accent too. It was written for the default theme, and it
+ * holds under every other.
  *
  * Two parts of it reached nothing. Quiet drew its header buttons in its own
  * third ink, so on an accent header they read about 1.2:1, and its hover
  * square was the panel's near-white or near-black, so a glyph recoloured to
  * the header's text vanished under the pointer. And the grouped tool display,
  * the default since the step group shipped, drew every call name in the
- * second ink whatever the tool token said.
+ * second ink whatever the tool token said. The other themes fell short too:
+ * Soft and Ledger kept their own inks, at 1.1 to 3.3:1, and Classic and code let
+ * the header through the glyph and lightened the ground under it, at 4.16:1 at
+ * rest and 3.75:1 hovered.
  *
  * Chromium, because each assertion is on a painted colour: an opacity, a
  * color-mix() and a chained var() fallback, none of which happy-dom resolves.
@@ -39,6 +43,66 @@ const BUTTONS = ["history", "new", "theme", "collapse"] as const;
  * host's own named theme starts from Quiet.
  */
 const QUIET_REACH = ["", "light", "dark", "auto", "acme", "acme dark"] as const;
+
+/** The other built-in themes, in each scheme word. Code is dark whichever it is given. */
+const OTHER_THEMES = [
+  "soft",
+  "soft light",
+  "soft dark",
+  "soft auto",
+  "ledger",
+  "ledger light",
+  "ledger dark",
+  "ledger auto",
+  "classic",
+  "classic light",
+  "classic dark",
+  "classic auto",
+  "code",
+  "code light",
+  "code dark",
+  "code auto",
+] as const;
+
+const EVERY_THEME_AND_SCHEME = [...QUIET_REACH, ...OTHER_THEMES] as const;
+
+/** One of each structure, for what the scheme cannot change. */
+const ONE_OF_EACH = ["", "acme", "soft", "ledger", "classic", "code"] as const;
+
+/**
+ * Two theme names at once, which nothing documents and which still resolve:
+ * the later module's rules win, and a theme's tokens only where it sets them.
+ */
+const TWO_THEMES = ["classic soft", "soft ledger", "classic ledger", "code ledger"] as const;
+
+/** What a theme draws on its own with no header text set: its inks, square and corner. */
+function ownLook(theme: string): {
+  readonly rest: string;
+  readonly hover: string;
+  readonly square: string;
+  readonly radius: string;
+} {
+  if (theme.includes("ledger")) {
+    return { rest: "var(--_ink-3)", hover: "var(--_fg)", square: "var(--_hover)", radius: "3px" };
+  }
+  if (theme.includes("soft")) {
+    return {
+      rest: "var(--_ink-3)",
+      hover: "var(--_accent-ink)",
+      square: "var(--_tint-2)",
+      radius: "10px",
+    };
+  }
+  if (theme.startsWith("classic") || theme.startsWith("code")) {
+    return {
+      rest: "var(--_header-fg)",
+      hover: "var(--_header-fg)",
+      square: "rgba(255, 255, 255, 0.18)",
+      radius: "6px",
+    };
+  }
+  return { rest: "var(--_ink-3)", hover: "var(--_fg)", square: "var(--_hover)", radius: "8px" };
+}
 
 function rgba(color: string): Rgba {
   const context = document.createElement("canvas").getContext("2d");
@@ -129,6 +193,21 @@ function mountPanel(theme: string): AgUiChat {
   return el;
 }
 
+/** An open floating panel inside a wrapper, for a token set on the wrapper. */
+function mountInBrand(theme: string): AgUiChat {
+  const wrapper = document.createElement("div");
+  wrapper.className = "brand";
+  document.body.appendChild(wrapper);
+  const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+  el.setAttribute("placement", "floating");
+  el.setAttribute("data-start-open", "");
+  if (theme !== "") {
+    el.setAttribute("theme", theme);
+  }
+  wrapper.appendChild(el);
+  return el;
+}
+
 function headerButtons(el: AgUiChat): Map<string, HTMLElement> {
   const found = new Map<string, HTMLElement>();
   for (const name of BUTTONS) {
@@ -181,10 +260,10 @@ afterEach(async () => {
 
 describe("the accent recipe's header buttons (real browser)", () => {
   for (const accent of [INDIGO, AMBER]) {
-    it.each(QUIET_REACH)(
+    it.each(EVERY_THEME_AND_SCHEME)(
       `read 4.5:1 on a ${accent.bg} header, at rest and hovered, under theme "%s"`,
       async (theme) => {
-        if (theme === "auto") {
+        if (theme.endsWith("auto")) {
           await emulateDark();
         }
         followRecipe(accent);
@@ -210,40 +289,44 @@ describe("the accent recipe's header buttons (real browser)", () => {
     );
   }
 
-  it.each([
-    [INDIGO, "#000000"],
-    [AMBER, "#e4e4e2"],
-  ])(
-    "mixes the hover square from the opposite of the header text, about a fifth of it",
-    async (accent, opposite) => {
-      followRecipe(accent);
-      const el = mountPanel("");
-      const button = part(el, ".header-btn--history");
-      await hover(button);
-      expect(rgba(getComputedStyle(button).backgroundColor)).toEqual(
-        resolved(el, `color-mix(in srgb, ${opposite} 18%, transparent)`),
-      );
-    },
-  );
+  for (const theme of ONE_OF_EACH) {
+    it.each([
+      [INDIGO, "#000000"],
+      [AMBER, "#e4e4e2"],
+    ])(
+      `mixes the hover square from the opposite of the header text, about a fifth of it, under theme "${theme}"`,
+      async (accent, opposite) => {
+        followRecipe(accent);
+        const el = mountPanel(theme);
+        const button = part(el, ".header-btn--history");
+        await hover(button);
+        expect(rgba(getComputedStyle(button).backgroundColor)).toEqual(
+          resolved(el, `color-mix(in srgb, ${opposite} 18%, transparent)`),
+        );
+      },
+    );
+  }
 
   // Mid-tone accents whose white text sits a little over 4.5:1, which a
   // square mixed from the text itself took under it.
-  it.each([
-    { bg: "#dc2626", fg: "#ffffff" },
-    { bg: "#7c3aed", fg: "#ffffff" },
-  ])(
-    "never draws the hovered glyph below what the host's own pair reads, on $bg",
-    async (accent) => {
-      followRecipe(accent);
-      const el = mountPanel("");
-      const pair = contrast(rgba(accent.fg), rgba(accent.bg));
-      const button = part(el, ".header-btn--new");
-      await hover(button);
-      const hovered = painted(el, button);
-      expect(contrast(hovered.glyph, hovered.ground)).toBeGreaterThanOrEqual(pair);
-      expect(contrast(hovered.glyph, hovered.ground)).toBeGreaterThanOrEqual(4.5);
-    },
-  );
+  for (const theme of ONE_OF_EACH) {
+    it.each([
+      { bg: "#dc2626", fg: "#ffffff" },
+      { bg: "#7c3aed", fg: "#ffffff" },
+    ])(
+      `never draws the hovered glyph below what the host's own pair reads, on $bg under theme "${theme}"`,
+      async (accent) => {
+        followRecipe(accent);
+        const el = mountPanel(theme);
+        const pair = contrast(rgba(accent.fg), rgba(accent.bg));
+        const button = part(el, ".header-btn--new");
+        await hover(button);
+        const hovered = painted(el, button);
+        expect(contrast(hovered.glyph, hovered.ground)).toBeGreaterThanOrEqual(pair);
+        expect(contrast(hovered.glyph, hovered.ground)).toBeGreaterThanOrEqual(4.5);
+      },
+    );
+  }
 
   // A pair per scheme, as a page that follows its own dark mode writes it:
   // the light-dark() halves resolve against the element's scheme, and the
@@ -252,8 +335,18 @@ describe("the accent recipe's header buttons (real browser)", () => {
     ["", "#3d5afe", "#ffffff"],
     ["dark", "#8a9dff", "#14161b"],
     ["auto", "#8a9dff", "#14161b"],
+    ["soft", "#3d5afe", "#ffffff"],
+    ["soft dark", "#8a9dff", "#14161b"],
+    ["soft auto", "#8a9dff", "#14161b"],
+    ["ledger", "#3d5afe", "#ffffff"],
+    ["ledger dark", "#8a9dff", "#14161b"],
+    ["ledger auto", "#8a9dff", "#14161b"],
+    ["classic", "#3d5afe", "#ffffff"],
+    ["classic dark", "#8a9dff", "#14161b"],
+    ["classic auto", "#8a9dff", "#14161b"],
+    ["code", "#8a9dff", "#14161b"],
   ])('reads 4.5:1 with a light-dark() pair under theme "%s"', async (theme, bg, fg) => {
-    if (theme === "auto") {
+    if (theme.endsWith("auto")) {
       await emulateDark();
     }
     followRecipe({ bg: "light-dark(#3d5afe, #8a9dff)", fg: "light-dark(#ffffff, #14161b)" });
@@ -273,40 +366,40 @@ describe("the accent recipe's header buttons (real browser)", () => {
     expect(contrast(hovered.glyph, hovered.ground)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("reaches the header buttons from a token set on an ancestor", async () => {
-    addPageRule(`.brand { --ag-ui-header-bg: ${INDIGO.bg}; --ag-ui-header-fg: ${INDIGO.fg}; }`);
-    const wrapper = document.createElement("div");
-    wrapper.className = "brand";
-    document.body.appendChild(wrapper);
-    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
-    el.setAttribute("placement", "floating");
-    el.setAttribute("data-start-open", "");
-    wrapper.appendChild(el);
-    const rest = painted(el, part(el, ".header-btn--history"));
-    expect(rest.ink).toEqual(rgba(INDIGO.fg));
-    expect(contrast(rest.glyph, rest.ground)).toBeGreaterThanOrEqual(4.5);
-  });
+  it.each(ONE_OF_EACH)(
+    'reaches the header buttons from a token set on an ancestor under theme "%s"',
+    async (theme) => {
+      addPageRule(`.brand { --ag-ui-header-bg: ${INDIGO.bg}; --ag-ui-header-fg: ${INDIGO.fg}; }`);
+      const el = mountInBrand(theme);
+      const rest = painted(el, part(el, ".header-btn--history"));
+      expect(rest.ink).toEqual(rgba(INDIGO.fg));
+      expect(contrast(rest.glyph, rest.ground)).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 });
 
-describe("Quiet's header buttons with no header text set (real browser)", () => {
-  it.each(QUIET_REACH)(
-    'keep the third ink, the 0.85 rest and the panel hover under theme "%s"',
+describe("the header buttons with no header text set (real browser)", () => {
+  it.each([...EVERY_THEME_AND_SCHEME, ...TWO_THEMES])(
+    'keep the theme\'s own inks, corner, square and the 0.85 rest under theme "%s"',
     async (theme) => {
-      if (theme === "auto") {
+      if (theme.endsWith("auto")) {
         await emulateDark();
       }
+      const look = ownLook(theme);
       const el = mountPanel(theme);
       const button = part(el, ".header-btn--history");
       const rest = getComputedStyle(button);
-      expect(rgba(rest.color)).toEqual(resolved(el, "var(--_ink-3)"));
+      expect(rgba(rest.color)).toEqual(resolved(el, look.rest));
       expect(rest.opacity).toBe("0.85");
+      expect(rest.borderRadius).toBe(look.radius);
       expect(rgba(rest.backgroundColor)).toEqual([0, 0, 0, 0]);
 
       await hover(button);
       const hovered = getComputedStyle(button);
-      expect(rgba(hovered.color)).toEqual(resolved(el, "var(--_fg)"));
+      expect(rgba(hovered.color)).toEqual(resolved(el, look.hover));
       expect(hovered.opacity).toBe("1");
-      expect(rgba(hovered.backgroundColor)).toEqual(resolved(el, "var(--_hover)"));
+      expect(hovered.borderRadius).toBe(look.radius);
+      expect(rgba(hovered.backgroundColor)).toEqual(resolved(el, look.square));
     },
   );
 });
@@ -397,10 +490,10 @@ describe("the tool token in a step group (real browser)", () => {
 });
 
 describe("the header buttons' hover token (real browser)", () => {
-  it.each(QUIET_REACH)(
+  it.each(EVERY_THEME_AND_SCHEME)(
     'draws a set square exactly as given, with the header text set, under theme "%s"',
     async (theme) => {
-      if (theme === "auto") {
+      if (theme.endsWith("auto")) {
         await emulateDark();
       }
       followRecipe(INDIGO);
@@ -414,27 +507,30 @@ describe("the header buttons' hover token (real browser)", () => {
     },
   );
 
-  it("draws a set square exactly as given with no header text set", async () => {
-    addPageRule(`${ELEMENT_TAG} { --ag-ui-header-btn-hover: #fde68a; }`);
-    const el = mountPanel("");
-    const button = part(el, ".header-btn--history");
-    await hover(button);
-    expect(rgba(getComputedStyle(button).backgroundColor)).toEqual(rgba("#fde68a"));
-    // The glyph still follows the header text, which is unset, so the full ink.
-    expect(rgba(getComputedStyle(button).color)).toEqual(resolved(el, "var(--_fg)"));
-  });
+  it.each(EVERY_THEME_AND_SCHEME)(
+    'draws a set square exactly as given with no header text set, under theme "%s"',
+    async (theme) => {
+      if (theme.endsWith("auto")) {
+        await emulateDark();
+      }
+      addPageRule(`${ELEMENT_TAG} { --ag-ui-header-btn-hover: #fde68a; }`);
+      const el = mountPanel(theme);
+      const button = part(el, ".header-btn--history");
+      await hover(button);
+      expect(rgba(getComputedStyle(button).backgroundColor)).toEqual(rgba("#fde68a"));
+      // The square alone: the glyph is still the theme's own hover ink.
+      expect(rgba(getComputedStyle(button).color)).toEqual(resolved(el, ownLook(theme).hover));
+    },
+  );
 
-  it("reaches the square from a token set on an ancestor", async () => {
-    addPageRule(".brand { --ag-ui-header-btn-hover: #fde68a; }");
-    const wrapper = document.createElement("div");
-    wrapper.className = "brand";
-    document.body.appendChild(wrapper);
-    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
-    el.setAttribute("placement", "floating");
-    el.setAttribute("data-start-open", "");
-    wrapper.appendChild(el);
-    const button = part(el, ".header-btn--history");
-    await hover(button);
-    expect(rgba(getComputedStyle(button).backgroundColor)).toEqual(rgba("#fde68a"));
-  });
+  it.each(ONE_OF_EACH)(
+    'reaches the square from a token set on an ancestor under theme "%s"',
+    async (theme) => {
+      addPageRule(".brand { --ag-ui-header-btn-hover: #fde68a; }");
+      const el = mountInBrand(theme);
+      const button = part(el, ".header-btn--history");
+      await hover(button);
+      expect(rgba(getComputedStyle(button).backgroundColor)).toEqual(rgba("#fde68a"));
+    },
+  );
 });

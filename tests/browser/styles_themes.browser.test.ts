@@ -573,27 +573,49 @@ describe("text on the accent (real browser)", () => {
 
   // The other thing behind relative colour syntax. The square is the opposite
   // of the header text where it can be computed, and mixed from the text itself
-  // where it cannot, which the white on this blue pays for: 5.1:1 falls to 3.75:1.
-  it("mixes the header buttons' hover square from the header text without relative colour syntax", async () => {
-    const el = mount({ placement: "floating", "data-start-open": "" }, (e) => {
-      e.style.setProperty("--ag-ui-header-bg", "#3d5afe");
-      e.style.setProperty("--ag-ui-header-fg", "#ffffff");
+  // where it cannot, under every theme. Both pairs, because white is also what
+  // Classic and code mix their own square from.
+  describe.each([
+    { bg: "#3d5afe", fg: "#ffffff" },
+    { bg: "#ffd60a", fg: "#1b1b1d" },
+  ])("the header buttons' hover square on $bg without relative colour syntax", ({ bg, fg }) => {
+    it.each([
+      "",
+      "dark",
+      "acme",
+      "soft",
+      "soft dark",
+      "ledger",
+      "ledger dark",
+      "classic",
+      "classic dark",
+      "code",
+    ])("is mixed from the header text under theme %j", async (theme) => {
+      const attrs = { placement: "floating", "data-start-open": "" };
+      const el = mount(theme === "" ? attrs : { ...attrs, theme }, (e) => {
+        e.style.setProperty("--ag-ui-header-bg", bg);
+        e.style.setProperty("--ag-ui-header-fg", fg);
+      });
+      if (el.shadowRoot === null) {
+        throw new Error("expected a shadow root");
+      }
+      el.shadowRoot.adoptedStyleSheets = [withoutRelativeColour()];
+      const button = part(el, ".header-btn--history");
+      await userEvent.hover(button);
+      // A pointer left over the panel reveals the next test's hover-only rows.
+      try {
+        expect(button.matches(":hover")).toBe(true);
+        const square = rgba(getComputedStyle(button).backgroundColor);
+        expect(square).toEqual(rgba(`color-mix(in srgb, ${fg} 18%, transparent)`));
+        expect(ink(button)).toEqual(rgba(fg));
+        // What this fallback pays for: 5.1:1 falls to 3.75:1 on the mid-blue.
+        if (fg === "#ffffff") {
+          expect(contrast(WHITE, over(square, rgba(bg)))).toBeCloseTo(3.75, 2);
+        }
+      } finally {
+        await userEvent.hover(document.body, { position: { x: 1, y: 1 } });
+      }
     });
-    if (el.shadowRoot === null) {
-      throw new Error("expected a shadow root");
-    }
-    el.shadowRoot.adoptedStyleSheets = [withoutRelativeColour()];
-    const button = part(el, ".header-btn--history");
-    await userEvent.hover(button);
-    // A pointer left over the panel reveals the next test's hover-only rows.
-    try {
-      expect(button.matches(":hover")).toBe(true);
-      const square = rgba(getComputedStyle(button).backgroundColor);
-      expect(square).toEqual(rgba("color-mix(in srgb, #ffffff 18%, transparent)"));
-      expect(contrast(WHITE, over(square, rgba("#3d5afe")))).toBeCloseTo(3.75, 2);
-    } finally {
-      await userEvent.hover(document.body, { position: { x: 1, y: 1 } });
-    }
   });
 
   // Where it can compute, the pick matches the fallback's side on every

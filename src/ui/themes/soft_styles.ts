@@ -31,14 +31,15 @@ export const SOFT_STYLES: string = `
   background: linear-gradient(140deg, color-mix(in oklch, var(--_accent) 55%, var(--_bg)), var(--_accent));
 }
 
+/* Both inks yield once the host sets the header text, since the header behind
+   them is then the host's colour (see the switches in the token defaults). */
 :host([theme~="soft"]) .header-btn {
-  color: var(--_ink-3);
+  color: var(--_header-fg-set, var(--_ink-3));
   border-radius: 10px;
 }
 
 :host([theme~="soft"]) .header-btn:hover {
-  background: var(--_tint-2);
-  color: var(--_accent-ink);
+  color: var(--_header-fg-set, var(--_accent-ink));
 }
 
 :host([theme~="soft"]) .messages {

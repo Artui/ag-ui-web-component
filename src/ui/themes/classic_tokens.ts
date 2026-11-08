@@ -18,6 +18,7 @@ export const CLASSIC_TOKENS: string = `
   --_tool-fg: var(--ag-ui-tool-fg, var(--_accent));
   --_header-bg: var(--ag-ui-header-bg, light-dark(var(--_accent), #1f1f30));
   --_header-fg: var(--ag-ui-header-fg, light-dark(#ffffff, #e8e8f2));
+  --_header-btn-hover: var(--ag-ui-header-btn-hover, var(--_header-btn-hover-auto, rgba(255, 255, 255, 0.18)));
   --_border: var(--ag-ui-border, light-dark(#e2e2ec, #33334a));
   --_muted: var(--ag-ui-muted, light-dark(#6b7280, #9aa0b4));
   --_success: var(--ag-ui-success, #15803d);

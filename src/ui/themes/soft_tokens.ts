@@ -10,6 +10,7 @@ export const SOFT_TOKENS: string = `
   --_tint: var(--ag-ui-tint, color-mix(in oklch, var(--_accent) 5%, var(--_bg)));
   --_tint-2: var(--ag-ui-tint-2, color-mix(in oklch, var(--_accent) 13%, var(--_bg)));
   --_header-bg: var(--ag-ui-header-bg, var(--_tint));
+  --_header-btn-hover: var(--ag-ui-header-btn-hover, var(--_header-btn-hover-auto, var(--_tint-2)));
   --_user-bg: var(--ag-ui-user-bg, var(--_tint-2));
   --_border: var(--ag-ui-border, color-mix(in oklch, var(--_accent) 14%, var(--_bg)));
   --_radius: var(--ag-ui-radius, 16px);
