@@ -557,6 +557,13 @@ export class PanelPlacement {
    * puts the box back and animates it out of the wrong side. Absent values are
    * captured as absent and removed on the way back, rather than written as
    * empty strings that would outrank the placement.
+   *
+   * The surface may have changed by the time of the undo, so the two halves are
+   * put back apart. Both records are, always, each to its own store, so the
+   * memory and the storage cannot disagree and the surface they belong to finds
+   * them when it comes back. The inline values only mean something to the surface
+   * they were read from: written on any other, they pin a sidebar to where a
+   * floating panel used to be.
    */
   #captureGeometry(): () => void {
     const inset = this.#host.element.style.getPropertyValue("--ag-ui-inset");
@@ -564,43 +571,50 @@ export class PanelPlacement {
     const corner = this.#host.element.getAttribute("data-expand-corner");
     const launcherPos = this.#launcherPos;
     const panelPos = this.#panelPos;
-    const dockPos = this.#dockPos;
+    const dockPos = this.#dockPos ?? this.#readDockPosition();
     const expandCorner = this.#expandCorner;
     const cornerSpot = this.#cornerSpot ?? this.#readLauncherPosition();
+    const owner = this.#positionOwner();
     return () => {
-      this.#restoreProperty("--ag-ui-inset", inset);
-      this.#restoreProperty("--ag-ui-launcher-inset", launcherInset);
-      if (corner === null) {
-        this.#host.element.removeAttribute("data-expand-corner");
-      } else {
-        this.#host.element.setAttribute("data-expand-corner", corner);
-      }
-      this.#launcherPos = launcherPos;
-      this.#panelPos = panelPos;
       this.#dockPos = dockPos;
-      this.#expandCorner = expandCorner;
-      this.#cornerSpot = cornerSpot;
-      if (this.#docked()) {
-        // The dock's own record, and only that: the launcher's belongs to the
-        // corner surface and has nothing to undo here.
-        this.#storeDockPosition(dockPos);
-        this.syncResizeAnchor();
-        return;
-      }
+      this.#storeDockPosition(dockPos);
       // Erased rather than rewritten when there was nothing to go back to,
       // which would leave the move this is undoing sitting in storage -- and
       // since that store outlives the tab, the next resize or reload would
       // quietly put the panel back in the corner the user had just rejected.
       if (cornerSpot === null) {
+        this.#cornerSpot = null;
         this.#host.clearPreference(LAUNCHER_KEY);
       } else {
         this.#writeCornerSpot(cornerSpot);
-        // Against the viewport there is now, which may be a phone's: the insets
-        // put back above were written for the one the move was made in.
-        this.restoreLauncherPosition();
       }
+      if (owner === this.#positionOwner()) {
+        this.#restoreProperty("--ag-ui-inset", inset);
+        this.#restoreProperty("--ag-ui-launcher-inset", launcherInset);
+        if (corner === null) {
+          this.#host.element.removeAttribute("data-expand-corner");
+        } else {
+          this.#host.element.setAttribute("data-expand-corner", corner);
+        }
+        this.#launcherPos = launcherPos;
+        this.#panelPos = panelPos;
+        this.#expandCorner = expandCorner;
+      } else {
+        this.#forgetCornerPosition();
+      }
+      // Against the viewport there is now, which may be a phone's: the insets
+      // put back above were written for the one the move was made in.
+      this.restoreLauncherPosition();
       this.syncResizeAnchor();
     };
+  }
+
+  /** Which of the three kinds of surface decides where the panel stands. */
+  #positionOwner(): "dock" | "corner" | "placement" {
+    if (this.#docked()) {
+      return "dock";
+    }
+    return this.#surface().launcherDraggable ? "corner" : "placement";
   }
 
   /**
@@ -1488,6 +1502,11 @@ export class PanelPlacement {
     if (this.#launcherDraggable()) {
       return;
     }
+    this.#forgetCornerPosition();
+  }
+
+  /** Take everything off that placed a corner panel, leaving its record alone. */
+  #forgetCornerPosition(): void {
     this.#launcherPos = null;
     this.#panelPos = null;
     this.#expandCorner = null;

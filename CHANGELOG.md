@@ -93,6 +93,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the host's CSS puts it, as a reload under the attribute always did, and on a
   phone that is full-bleed. The stored spot stays, and comes back at the first
   restore after the attribute comes off. **A host has nothing to do.**
+- **Undoing a move after the surface changed leaves everything in agreement.** A
+  move undone once the panel had gone from a corner to a sidebar, a side panel, a
+  page or a dock wrote the corner's inset back onto the new surface, which pinned
+  a sidebar or a page off the screen and took a docked panel off its dock, and
+  left the stored spot on the move the reader had just undone. Going the other way
+  left a docked panel's stored spot on the move too. The undo now puts both
+  records back, in memory and in storage, and leaves the new surface standing where
+  its own layout puts it; the spot comes back with the surface it belongs to.
+  **A host has nothing to do.**
 
 ## [0.49.0] — 2026-11-07
 
