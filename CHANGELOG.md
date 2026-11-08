@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] — 2026-11-08
+
 ### Changed
 
 - **The themes demo sets `--ag-ui-header-btn-hover`.** A new control on its
@@ -5111,7 +5113,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.49.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.0...HEAD
+[0.50.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.46.0...v0.47.0
