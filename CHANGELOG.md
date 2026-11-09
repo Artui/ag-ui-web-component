@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.2] — 2026-11-09
+
+### Fixed
+
+- **The transcript follows the last answer's action row.** The row under a
+  finished answer was added after the transcript had followed the answer, so a
+  transcript pinned to its foot came to rest 32px short of it when a run ended,
+  when a run failed, and when a thread was restored. Retry and Copy on the last
+  answer sat under the composer until the reader scrolled. The transcript now
+  follows the row as well. A reader who has scrolled up stays where they are, and
+  the jump-to-latest button behaves as before. **A host has nothing to do.**
+
 ## [0.50.1] — 2026-11-09
 
 ### Fixed
@@ -5220,7 +5232,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.1...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.2...HEAD
+[0.50.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.1...v0.50.2
 [0.50.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.0...v0.50.1
 [0.50.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.48.0...v0.49.0
