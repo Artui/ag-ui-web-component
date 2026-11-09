@@ -1114,7 +1114,61 @@ describe("a corner panel placed on a wide window (real browser)", () => {
       return el;
     }
 
+    it("leaves a corner panel its grips while it fills, with no bar to stand clear of", async () => {
+      const el = chat({ "data-start-open": "" });
+      await frames();
+      fill(el);
+      await frames();
+      expectFills(el, DESKTOP);
+      const grips = [...(el.shadowRoot?.querySelectorAll(".resize-handle") ?? [])];
+      expect(grips.length).toBeGreaterThan(0);
+      expect(grips.map((grip) => getComputedStyle(grip).display)).not.toContain("none");
+    });
+
     describe.each(["bar", "none"])('under collapse-to="%s"', (collapseTo) => {
+      it.each([
+        ["unmoved", false],
+        ["moved", true],
+      ])(
+        "takes the grips away while the panel fills, %s, as a phone does",
+        async (_name, moved) => {
+          const el = await docked(collapseTo, moved);
+          const grips = [...(el.shadowRoot?.querySelectorAll(".resize-handle") ?? [])];
+          const shown = (): string[] => grips.map((grip) => getComputedStyle(grip).display);
+          expect(grips.length).toBeGreaterThan(0);
+          expect(shown()).not.toContain("none");
+
+          fill(el);
+          await frames();
+          expectFills(el, DESKTOP);
+          expect(new Set(shown())).toEqual(new Set(["none"]));
+
+          unfill(el);
+          await frames();
+          expect(shown()).not.toContain("none");
+        },
+      );
+
+      it("stays at 0,0 when resetSize takes the spot it was moved to", async () => {
+        const el = await docked(collapseTo, true);
+        fill(el);
+        await frames();
+        expectFills(el, DESKTOP);
+        expect(localStorage.getItem(DOCK_KEY)).not.toBeNull();
+
+        // Nothing resizes, so no observer is coming to put it right.
+        el.resetSize();
+        expectFills(el, DESKTOP);
+        expect(localStorage.getItem(DOCK_KEY)).toBeNull();
+        await frames();
+        expectFills(el, DESKTOP);
+
+        unfill(el);
+        await frames();
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+        expect(el.getBoundingClientRect().left).not.toBeCloseTo(376, 0);
+      });
+
       it("stands at 0,0 unmoved, and goes back on its dock when the fill stops", async () => {
         const el = await docked(collapseTo, false);
         const home = el.getBoundingClientRect();

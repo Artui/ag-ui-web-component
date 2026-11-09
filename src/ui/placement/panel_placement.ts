@@ -288,6 +288,9 @@ export class PanelPlacement {
       }
       this.#dockPos = null;
       this.#storeDockPosition(null);
+      // A size the host holds does not change here, so no observer is coming to
+      // stand a panel that fills the window back on the screen.
+      this.#placeDocked();
     } else {
       this.#carrySpotWithSize(sized);
     }
@@ -752,12 +755,26 @@ export class PanelPlacement {
    * refusing, in the cursor, a drag the header would take.
    */
   #stampHeader(): void {
-    const fills = this.#fillsScreen();
-    this.#header?.toggleAttribute("data-fills-screen", fills);
-    // And for the bar, which would draw over a panel standing on it. Not for a
-    // placement that owns its position: full stops at the bar, so taking the bar away
-    // would make it fill the window, and that would take the bar away for good.
-    this.#host.element.toggleAttribute("data-fills-window", fills && this.#surface().panelMovable);
+    this.#header?.toggleAttribute("data-fills-screen", this.#fillsScreen());
+    // And for the bar and the grips, which go while it does. The next frame, because
+    // this runs inside the transcript's observer, and the bar it takes away sits
+    // above that in the tree: its own observer would be left undelivered, which the
+    // browser reports on the window, where a host's error tracking counts it.
+    const element = this.#host.element;
+    if (this.#fillsWindow() !== element.hasAttribute("data-fills-window")) {
+      requestAnimationFrame(() => {
+        element.toggleAttribute("data-fills-window", this.#fillsWindow());
+      });
+    }
+  }
+
+  /**
+   * Whether the panel fills the window in a placement it can move in. Not one that owns
+   * its position: full stops at the bar, so taking the bar away would make it fill the
+   * window, and that would take the bar away for good.
+   */
+  #fillsWindow(): boolean {
+    return this.#fillsScreen() && this.#surface().panelMovable;
   }
 
   /** Put a custom property back to a previous value, or remove it if there was none. */

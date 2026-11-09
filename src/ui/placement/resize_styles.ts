@@ -90,6 +90,15 @@ export const RESIZE_STYLES: string = `
   bottom: 0;
 }
 
+/* A docked panel a host sized to the whole window has nothing to give a grip: its size
+   is the host's, and a place a grip left would outlast that size with the bar back
+   under it. They go as they do on a phone. A corner panel keeps them, since it has no
+   bar to stand clear of and a grip's place is its own. */
+:host([data-collapsed-to="bar"][data-fills-window]) .resize-handle,
+:host([data-collapsed-to="none"][data-fills-window]) .resize-handle {
+  display: none;
+}
+
 /* Docked: the placement owns the height, so the horizontal edges and every
    corner are inert and must not advertise a drag that does nothing. The two
    vertical edges remain, which is the same affordance these placements had

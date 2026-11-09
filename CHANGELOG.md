@@ -34,10 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the whole header was out of reach, and -24,-24 under a host's own control. It now
   stands at the start of the room the host left free, moved or not, as a corner panel
   has since 0.50.0, and under `data-launcher-drag="false"` too. While it does the bar
-  goes, as it does on a phone, with `ag-ui-bar-height` saying 0 and the header's minimise
-  control as the way back, because the strip would draw over the composer's foot. It
-  comes back when the panel is collapsed or the size stops filling. The dock's stored spot stays unchanged, and the panel goes back to its spot
-  or its dock when the size stops filling. A host's own inline `--ag-ui-inset` stays
+  and the grips go, as they do on a phone, with `ag-ui-bar-height` saying 0 and the
+  header's minimise control as the way back, because the strip would draw over the
+  composer's foot. The bar comes back when the panel is collapsed, and both when the
+  size stops filling. The dock's stored spot stays unchanged, and the panel goes back
+  to its spot or its dock when the size stops filling. A host's own inline `--ag-ui-inset` stays
   where the host wrote it, and a placement that owns its position is left alone. **A
   host has nothing to do.**
 - **A viewport inset token wider than the card holding an embedded chat adds no

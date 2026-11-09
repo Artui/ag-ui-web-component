@@ -672,6 +672,51 @@ function trackLive(): {
   };
 }
 
+describe("a host's size that fills the window under the bar (real browser)", () => {
+  const TOKENS = {
+    "--ag-ui-width": "100vw",
+    "--ag-ui-height": "100vh",
+    "--ag-ui-max-width": "none",
+    "--ag-ui-max-height": "none",
+  };
+
+  it.each([
+    ["unmoved", false],
+    ["moved", true],
+  ])("reports no loop as the fill comes and goes, %s", async (_name, moved) => {
+    const el = chat({ "collapse-to": "bar", "data-start-open": "" });
+    await frames();
+    if (moved) {
+      await drag(el.shadowRoot?.querySelector(".header") as HTMLElement, -80, -40);
+      await frames();
+    }
+    const bar = el.shadowRoot?.querySelector(".dock-bar") as HTMLElement;
+    for (let round = 0; round < 2; round += 1) {
+      for (const [token, value] of Object.entries(TOKENS)) {
+        el.style.setProperty(token, value);
+      }
+      await frames();
+      expect(getComputedStyle(bar).display).toBe("none");
+      expect(loopReports).toBe(0);
+
+      el.setCollapsed(true);
+      await frames();
+      expect(getComputedStyle(bar).display).toBe("flex");
+      el.setCollapsed(false);
+      await frames();
+      expect(getComputedStyle(bar).display).toBe("none");
+      expect(loopReports).toBe(0);
+
+      for (const token of Object.keys(TOKENS)) {
+        el.style.removeProperty(token);
+      }
+      await frames();
+      expect(getComputedStyle(bar).display).toBe("flex");
+      expect(loopReports).toBe(0);
+    }
+  });
+});
+
 describe("what a detached element leaves wired to the page (real browser)", () => {
   it("leaves no observer and no listener live after four reconnects", async () => {
     const live = trackLive();
