@@ -27,8 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gets it at 0,0. The stored spot stays for the day the attribute comes off. A size
   that still fits moves nothing. **A host has nothing to do.**
 - **A docked panel a host fills stands at 0,0.** Under `collapse-to="bar"` and
-  `"none"`, a corner panel a host sized to the whole window stood past the top of the
-  window by what the resting inset spends: at 1200x760, -24,-65 under the bar, where
+  `"none"`, a panel a host sized to the whole window stood past the top of the window
+  by what the resting inset spends: at 1200x760, -24,-65 under the bar, where
   the whole header was out of reach, and -24,-24 under a host's own control. It now
   stands at the start of the room the host left free, moved or not, as a corner panel
   has since 0.50.0, and under `data-launcher-drag="false"` too. It covers the bar while
@@ -36,6 +36,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or its dock when the size stops filling. A host's own inline `--ag-ui-inset` stays
   where the host wrote it, and a placement that owns its position is left alone. **A
   host has nothing to do.**
+- **A viewport inset token wider than the card holding an embedded chat adds no
+  scroll.** The box the component reads the four `--ag-ui-viewport-inset-*`
+  tokens from took its size from them, so a 200px card under a 240px left token
+  scrolled by 40px, and the same on the other axis. The tokens read back as
+  before, a percentage against the same box. **A host has nothing to do.**
+- **A hidden panel stays where it was moved.** Hiding the element, or anything
+  holding it, had it place itself from a box of nothing and write that as its
+  inset, so a script reading the panel straight after showing it again found it
+  off the screen, until a few frames later it stood at its spot. A window resize
+  while hidden, connecting hidden and expanding hidden did the same. None of those
+  writes an inset now, and showing the element places it against the window as it
+  then is. The stored spot was never touched, and `ag-ui-bar-height` still says 0
+  while hidden. **A host has nothing to do.**
 
 ## [0.50.0] — 2026-11-08
 
