@@ -681,6 +681,13 @@ export class AgUiChat extends HTMLElement {
     return this.getClientRects().length > 0;
   }
 
+  /** Restore for a moment that is not a viewport's, which showing this reports anyway. */
+  #restoreIfBoxed(): void {
+    if (this.#hasBox()) {
+      this.#placement.restoreLauncherPosition();
+    }
+  }
+
   /** Mic button mount point (input row); the control mounts on connect when enabled. */
   readonly #voiceSlot: HTMLSpanElement;
   /** The composer's mic, mounted on connect when transcription is available. */
@@ -1580,7 +1587,7 @@ export class AgUiChat extends HTMLElement {
     requestAnimationFrame(() => {
       // Before the anchor, which the placement stamps itself once a dragged
       // position exists.
-      this.#placement.restoreLauncherPosition();
+      this.#restoreIfBoxed();
       this.#placement.syncResizeAnchor();
     });
     // Resolve the string table before rendering any chrome (defaults are the
@@ -1937,7 +1944,7 @@ export class AgUiChat extends HTMLElement {
       // Re-decide which way to open before opening: the viewport may have
       // changed since the launcher was dropped, and this corner is what the
       // panel grows from.
-      this.#placement.restoreLauncherPosition();
+      this.#restoreIfBoxed();
     }
     if (collapsed) {
       this.setAttribute("collapsed", "");

@@ -106,9 +106,9 @@ export const TRANSCRIPT_STYLES: string = `
    and the containing block a percentage resolves against. Position fixed would add
    no scroll either, and would change that block.
 
-   From its own corner, which is inside whatever holds it, because the centre of the
-   padding is not, and only Chromium has been seen to leave out a point with no area.
-   So no test here can tell the origin is needed. */
+   From its own corner, which is inside whatever holds it where the centre of the
+   padding need not be: kept for an engine that counts a point with no area. Chromium
+   does not, so the suite cannot pin the origin. */
 .viewport-probe {
   position: absolute;
   top: 0;

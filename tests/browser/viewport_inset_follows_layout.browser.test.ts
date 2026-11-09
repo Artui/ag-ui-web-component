@@ -464,6 +464,47 @@ describe("a viewport inset token that changes after the window resize (real brow
       expectAt(el, SPOT);
     });
 
+    it("writes no inset from nothing when it connects hidden", async () => {
+      const first = await placed();
+      const spot = first.style.getPropertyValue(INSET);
+      first.remove();
+      await frames();
+
+      const holder = document.createElement("div");
+      holder.hidden = true;
+      document.body.appendChild(holder);
+      const el = chat({}, holder);
+      const held = watchInset(el);
+      await frames();
+      for (const written of held()) {
+        expect(["", spot]).toContain(written);
+      }
+
+      holder.hidden = false;
+      await frames();
+      expectAt(el, SPOT);
+    });
+
+    it("writes no inset from nothing when it expands hidden", async () => {
+      const el = await placed();
+      const spot = el.style.getPropertyValue(INSET);
+      el.setCollapsed(true);
+      await frames();
+      el.style.display = "none";
+      await frames();
+      const held = watchInset(el);
+
+      el.setCollapsed(false);
+      await frames();
+      for (const written of held()) {
+        expect(["", spot]).toContain(written);
+      }
+
+      el.style.display = "";
+      await frames();
+      expectAt(el, SPOT);
+    });
+
     it("keeps placing a launcher on a host a page has sized to nothing", async () => {
       // It has a box, of no size. That is not the same as having none: the launcher
       // hangs off it and is the only way back to the conversation.
