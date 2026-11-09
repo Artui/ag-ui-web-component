@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
-import { ELEMENT_TAG } from "../../src/constants.js";
+import { BAR_HEIGHT_EVENT, ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 
@@ -33,7 +33,7 @@ const frames = async (): Promise<void> => {
   }
 };
 
-function chat(attrs: Record<string, string> = {}): AgUiChat {
+function chat(attrs: Record<string, string> = {}, parent: HTMLElement = document.body): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.id = ID;
   el.setAttribute("data-start-open", "");
@@ -41,7 +41,7 @@ function chat(attrs: Record<string, string> = {}): AgUiChat {
     el.setAttribute(name, value);
   }
   el.style.setProperty("--ag-ui-motion", "0s");
-  document.body.appendChild(el);
+  parent.appendChild(el);
   return el;
 }
 
@@ -63,8 +63,11 @@ async function drag(handle: HTMLElement, dx: number, dy: number): Promise<void> 
   await frames();
 }
 
-async function placed(attrs: Record<string, string> = {}): Promise<AgUiChat> {
-  const el = chat(attrs);
+async function placed(
+  attrs: Record<string, string> = {},
+  parent: HTMLElement = document.body,
+): Promise<AgUiChat> {
+  const el = chat(attrs, parent);
   await frames();
   const box = el.getBoundingClientRect();
   await drag(part(el, ".header"), SPOT.left - box.left, SPOT.top - box.top);
@@ -362,6 +365,144 @@ describe("a viewport inset token that changes after the window resize (real brow
       expect(holder.scrollWidth).toBe(holder.clientWidth);
       const el = holder.firstElementChild as AgUiChat;
       expect(getComputedStyle(part(el, ".viewport-probe")).paddingLeft).toBe("240px");
+    });
+  });
+
+  describe("a panel whose host has no box", () => {
+    const INSET = "--ag-ui-inset";
+
+    /** The inset a style attribute holds, by way of an element nothing else sees. */
+    function insetIn(attribute: string | null): string {
+      const scratch = document.createElement("div");
+      scratch.setAttribute("style", attribute ?? "");
+      return scratch.style.getPropertyValue(INSET);
+    }
+
+    /**
+     * Every inset the element has held from now on. From the old values of each write
+     * as well as the last, so a wrong one corrected within the same task is still seen.
+     */
+    function watchInset(el: AgUiChat): () => string[] {
+      const watcher = new MutationObserver(() => undefined);
+      watcher.observe(el, {
+        attributes: true,
+        attributeFilter: ["style"],
+        attributeOldValue: true,
+      });
+      return () => {
+        const records = watcher.takeRecords();
+        watcher.disconnect();
+        return [
+          ...records.map((record) => insetIn(record.oldValue)),
+          el.style.getPropertyValue(INSET),
+        ];
+      };
+    }
+
+    it.each([
+      ["a floating panel", {}],
+      ["a panel docked to its bar", { "collapse-to": "bar" }],
+    ])("gives %s back at its spot, hidden on the host", async (_what, attrs) => {
+      const el = await placed(attrs);
+      const inset = el.style.getPropertyValue(INSET);
+      const stored = localStorage.getItem(KEYS[0] as string);
+      const dock = localStorage.getItem(KEYS[1] as string);
+      const held = watchInset(el);
+
+      el.style.display = "none";
+      await frames();
+      expect(el.style.getPropertyValue(INSET)).toBe(inset);
+
+      el.style.display = "";
+      // Synchronous: nothing has had a frame to correct it.
+      expectAt(el, SPOT);
+      expect(new Set(held())).toEqual(new Set([inset]));
+      await frames();
+      expectAt(el, SPOT);
+      expect(localStorage.getItem(KEYS[0] as string)).toBe(stored);
+      expect(localStorage.getItem(KEYS[1] as string)).toBe(dock);
+    });
+
+    it("gives a panel back at its spot, hidden by an ancestor", async () => {
+      const holder = document.createElement("div");
+      document.body.appendChild(holder);
+      const el = await placed({}, holder);
+      const inset = el.style.getPropertyValue(INSET);
+      const held = watchInset(el);
+
+      holder.hidden = true;
+      await frames();
+      holder.hidden = false;
+      expectAt(el, SPOT);
+      expect(new Set(held())).toEqual(new Set([inset]));
+    });
+
+    it("writes no inset when the window resizes while it is hidden", async () => {
+      const el = await placed();
+      const inset = el.style.getPropertyValue(INSET);
+      el.style.display = "none";
+      await frames();
+      const held = watchInset(el);
+      await page.viewport(NARROW.width, NARROW.height);
+      await frames();
+      expect(new Set(held())).toEqual(new Set([inset]));
+    });
+
+    it("places the panel against a window that changed while it was hidden", async () => {
+      const el = await placed();
+      el.style.display = "none";
+      await frames();
+      await page.viewport(NARROW.width, NARROW.height);
+      await frames();
+      el.style.display = "";
+      await frames();
+      const box = el.getBoundingClientRect();
+      expect(box.right).toBeLessThanOrEqual(NARROW.width);
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      await page.viewport(WIDE.width, WIDE.height);
+      await frames();
+      expectAt(el, SPOT);
+    });
+
+    it("keeps placing a launcher on a host a page has sized to nothing", async () => {
+      // It has a box, of no size. That is not the same as having none: the launcher
+      // hangs off it and is the only way back to the conversation.
+      const el = chat();
+      await frames();
+      el.setCollapsed(true);
+      await frames();
+      const launcher = part(el, ".launcher");
+      const rect = launcher.getBoundingClientRect();
+      await drag(launcher, 600 - rect.left, 100 - rect.top);
+      el.style.width = "0";
+      el.style.height = "0";
+      await frames();
+      expect(el.getBoundingClientRect().width).toBe(0);
+
+      // Past the window that follows, so only placing it again brings it back.
+      await page.viewport(PHONE.width, PHONE.height);
+      await frames();
+      expect(launcher.getBoundingClientRect().right).toBeLessThanOrEqual(PHONE.width);
+    });
+
+    it("still tells the host its bar is gone, and back", async () => {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      el.setCollapsed(true);
+      await frames();
+      const heights: number[] = [];
+      el.addEventListener(BAR_HEIGHT_EVENT, (event) => {
+        heights.push((event as CustomEvent<{ height: number }>).detail.height);
+      });
+      const drawn = part(el, ".dock-bar").offsetHeight;
+      expect(drawn).toBeGreaterThan(0);
+
+      el.style.display = "none";
+      await frames();
+      expect(heights).toEqual([0]);
+      el.style.display = "";
+      await frames();
+      expect(heights).toEqual([0, drawn]);
     });
   });
 
