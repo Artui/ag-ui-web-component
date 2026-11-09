@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A viewport inset token wider than the card holding an embedded chat adds no
+  scroll.** The box the component reads the four `--ag-ui-viewport-inset-*`
+  tokens from took its size from them, so a 200px card under a 240px left token
+  scrolled by 40px, on either axis and in either writing direction. The tokens
+  read back as before, a percentage against the same box. **A host has nothing
+  to do.** A host that overrode this with `overflow: hidden` on the card can take
+  that off.
+
 ## [0.50.0] — 2026-11-08
 
 ### Changed

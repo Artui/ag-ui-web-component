@@ -279,6 +279,9 @@ describe("a viewport inset token that changes after the window resize (real brow
       [320, 400],
       [400, 400],
       [700, 100],
+      [200, 400],
+      [700, 40],
+      [200, 40],
     ])("adds no scroll to a %ipx by %ipx card holding an embedded chat", async (width, height) => {
       const holder = embeddedIn({ width, height });
       await frames();
@@ -294,6 +297,71 @@ describe("a viewport inset token that changes after the window resize (real brow
       await frames();
       expect(document.documentElement.scrollWidth).toBe(document.documentElement.clientWidth);
       expect(document.documentElement.scrollHeight).toBe(document.documentElement.clientHeight);
+    });
+
+    it("adds no scroll to the page, with tokens wider than the window", async () => {
+      const el = chat({ placement: "embedded" });
+      el.style.setProperty("--ag-ui-viewport-inset-top", `${WIDE.height + 100}px`);
+      el.style.setProperty("--ag-ui-viewport-inset-left", `${WIDE.width + 100}px`);
+      el.style.setProperty("--ag-ui-height", "100px");
+      await frames();
+      expect(document.documentElement.scrollWidth).toBe(document.documentElement.clientWidth);
+      expect(document.documentElement.scrollHeight).toBe(document.documentElement.clientHeight);
+    });
+
+    it("adds no scroll with opposite tokens that together outrun the card twice", async () => {
+      const holder = embeddedIn({ width: 200, height: 100 });
+      const el = holder.firstElementChild as AgUiChat;
+      el.style.setProperty("--ag-ui-viewport-inset-right", "240px");
+      el.style.setProperty("--ag-ui-viewport-inset-bottom", "200px");
+      el.style.setProperty("--ag-ui-viewport-inset-top", "100px");
+      await frames();
+      expect(holder.scrollWidth).toBe(holder.clientWidth);
+      expect(holder.scrollHeight).toBe(holder.clientHeight);
+    });
+
+    it("adds no scroll to a card that reads right to left", async () => {
+      const holder = embeddedIn({ width: 200, height: 100 });
+      holder.dir = "rtl";
+      await frames();
+      expect(holder.scrollWidth).toBe(holder.clientWidth);
+      expect(holder.scrollHeight).toBe(holder.clientHeight);
+    });
+
+    it("reads all four tokens back in px from a card narrower than one of them", async () => {
+      const holder = embeddedIn({ width: 200, height: 100 });
+      const el = holder.firstElementChild as AgUiChat;
+      el.style.setProperty("--ag-ui-viewport-inset-top", "calc(4rem + 2px)");
+      el.style.setProperty("--ag-ui-viewport-inset-right", "16rem");
+      el.style.setProperty("--ag-ui-viewport-inset-bottom", "calc(10px + 20px)");
+      await frames();
+      const style = getComputedStyle(part(el, ".viewport-probe"));
+      expect(style.paddingTop).toBe("66px");
+      expect(style.paddingRight).toBe("256px");
+      expect(style.paddingBottom).toBe("30px");
+      expect(style.paddingLeft).toBe("240px");
+    });
+
+    it("resolves a percentage token against the same box as ever", async () => {
+      // Padding resolves a percentage against its containing block, so a fix that took
+      // the probe out of the host's box would change what such a token reserves.
+      const el = chat();
+      el.style.setProperty("--ag-ui-viewport-inset-left", "10%");
+      await frames();
+      const probe = part(el, ".viewport-probe");
+      expect(Number.parseFloat(getComputedStyle(probe).paddingLeft)).toBeCloseTo(
+        el.getBoundingClientRect().width * 0.1,
+        1,
+      );
+    });
+
+    it("still resolves a token in a card with a transform of its own", async () => {
+      const holder = embeddedIn({ width: 200, height: 100 });
+      holder.style.transform = "translateX(10px)";
+      await frames();
+      expect(holder.scrollWidth).toBe(holder.clientWidth);
+      const el = holder.firstElementChild as AgUiChat;
+      expect(getComputedStyle(part(el, ".viewport-probe")).paddingLeft).toBe("240px");
     });
   });
 
