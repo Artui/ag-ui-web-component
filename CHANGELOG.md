@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.1] — 2026-11-09
+
 ### Fixed
 
 - **A corner panel a grip placed goes full-bleed on a phone after a move is
@@ -5213,7 +5215,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.1...HEAD
+[0.50.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.0...v0.50.1
 [0.50.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.47.0...v0.48.0
