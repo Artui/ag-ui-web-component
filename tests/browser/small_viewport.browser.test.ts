@@ -809,6 +809,37 @@ describe("a corner panel placed on a wide window (real browser)", () => {
         expect(el.getAttribute("data-resize-anchor")).toBe(anchor);
       });
 
+      it("keeps the place a free-edge grip left, as the grip's own, when the fill stops", async () => {
+        const { el, fillInset } = await filling();
+        // The corner the fill leaves free: the edges it holds are the top and the left.
+        await pull(el, "bottom-right", -300, -200);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(fillInset);
+        stop(el);
+        await resize(DESKTOP);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(fillInset);
+        expect(el.getBoundingClientRect().left).toBeCloseTo(0, 0);
+        expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
+        // A grip's inset is still the grip's: a phone takes the panel full-bleed
+        // and widening gives the place back.
+        await resize(PHONE);
+        expectFullBleed(el);
+        await resize(DESKTOP);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(fillInset);
+      });
+
+      it("measures the edges again once a grip is let go, whatever the layout became meanwhile", async () => {
+        const el = chat({ "data-start-open": "" });
+        await frames();
+        expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+        // A host's own rule moves the panel to the other corner. Nothing re-reads
+        // the edges for that, so the stamp is stale until a grip is let go.
+        el.style.setProperty("--ag-ui-inset", "24px auto auto 24px");
+        await frames();
+        expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+        await pull(el, "top-left", 20, 20);
+        expect(el.getAttribute("data-resize-anchor")).toBe("top-left");
+      });
+
       it("takes an inset the host then writes, spelled as the fill's was, to be the host's", async () => {
         const { el, fillInset } = await filling();
         stop(el);
@@ -880,6 +911,35 @@ describe("a corner panel placed on a wide window (real browser)", () => {
       await resize({ width: 1200, height: 760 });
       expectAtRest(el, { width: 1200, height: 760 });
       expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+    });
+
+    it("rests on the edges the host's CSS holds, not the corner it was moved to", async () => {
+      const el = chat({ "data-start-open": "" });
+      await frames();
+      const home = el.getBoundingClientRect();
+      // Close to the left edge, where the panel opens rightward from its launcher.
+      await drag(part(el, ".header"), 100 - home.left, 200 - home.top);
+      expect(el.getAttribute("data-expand-corner")).toBe("bottom-left");
+      expect(el.getAttribute("data-resize-anchor")).toBe("bottom-left");
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      await resize({ width: 1200, height: 760 });
+      expectAtRest(el, { width: 1200, height: 760 });
+      expect(el.getAttribute("data-expand-corner")).toBeNull();
+      expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+    });
+
+    it("rests at the host's corner, with no place a grip gave it before the move left over", async () => {
+      const el = chat({ "data-start-open": "" });
+      await frames();
+      await pull(el, "bottom-right", -40, -30);
+      const box = el.getBoundingClientRect();
+      await drag(part(el, ".header"), 376 - box.left, 96 - box.top);
+      expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      await resize({ width: 1200, height: 760 });
+      expectAtRest(el, { width: 1200, height: 760 });
     });
 
     it("stays where it is while the reader types, and rests at the next resize", async () => {
@@ -1335,6 +1395,121 @@ describe("a corner panel placed on a wide window (real browser)", () => {
       }
     });
 
+    it("rests on the bar, with no grip's place left over, once the reader's move is handed back", async () => {
+      const el = dockedChat();
+      await frames();
+      await dragTo(el, SPOT);
+      await pull(el, "bottom-right", -40, -30);
+      const gripped = el.style.getPropertyValue("--ag-ui-inset");
+      expect(gripped).not.toBe("");
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      // The window now leaves the spot off its edge, which is what hands it back.
+      await resize({ width: 700, height: 800 });
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(el.getBoundingClientRect().right).toBeCloseTo(700 - 24, 0);
+    });
+
+    it("forgets the spot in memory when a dock changes under a panel the host fixed", async () => {
+      // With the store refusing, memory is the only copy: a spot kept there after
+      // the hand-back comes back the moment the attribute does.
+      const refuse = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new Error("denied");
+      });
+      try {
+        const el = dockedChat();
+        await frames();
+        await dragTo(el, SPOT);
+        el.setAttribute("data-launcher-drag", "false");
+        el.setAttribute("collapse-to", "none");
+        await frames();
+        el.removeAttribute("data-launcher-drag");
+        await resize({ width: 1200, height: 760 });
+        const box = el.getBoundingClientRect();
+        expect(box.right).toBeCloseTo(1200 - 24, 0);
+        expect(box.bottom).toBeCloseTo(760 - 24, 0);
+      } finally {
+        refuse.mockRestore();
+      }
+    });
+
+    it("refuses a header drag on a docked panel the host has fixed in place", async () => {
+      const el = dockedChat({ "data-launcher-drag": "false" });
+      await frames();
+      const home = el.getBoundingClientRect();
+      await drag(part(el, ".header"), -300, -200);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(el.getBoundingClientRect().left).toBeCloseTo(home.left, 0);
+      expect(el.getBoundingClientRect().top).toBeCloseTo(home.top, 0);
+      expect(localStorage.getItem(DOCK_KEY)).toBeNull();
+    });
+
+    it("hands a dragged spot back, inset and all, when the dock gives way to a corner", async () => {
+      const el = dockedChat();
+      await frames();
+      await dragTo(el, SPOT);
+      el.removeAttribute("collapse-to");
+      await frames();
+      const box = el.getBoundingClientRect();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(box.right).toBeCloseTo(DESKTOP.width - 24, 0);
+      expect(box.bottom).toBeCloseTo(DESKTOP.height - 24, 0);
+    });
+
+    it("hands it back from a dock whose panel the host has fixed, when the dock changes", async () => {
+      const el = dockedChat();
+      await frames();
+      await dragTo(el, SPOT);
+      el.setAttribute("data-launcher-drag", "false");
+      el.setAttribute("collapse-to", "none");
+      await frames();
+      const box = el.getBoundingClientRect();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(box.right).toBeCloseTo(DESKTOP.width - 24, 0);
+      expect(box.bottom).toBeCloseTo(DESKTOP.height - 24, 0);
+    });
+
+    it("keeps the bar clear of a panel still being dragged when the bar grows", async () => {
+      const el = dockedChat();
+      await frames();
+      const bar = part(el, ".dock-bar");
+      const header = part(el, ".header").getBoundingClientRect();
+      const x = header.left + header.width / 2;
+      const y = header.top + header.height / 2;
+      part(el, ".header").dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+      );
+      window.dispatchEvent(new PointerEvent("pointermove", { clientX: x - 100, clientY: y + 300 }));
+      await frames();
+      const low = el.getBoundingClientRect();
+      expect(low.bottom).toBeLessThanOrEqual(bar.getBoundingClientRect().top);
+
+      bar.style.height = `${bar.offsetHeight + 120}px`;
+      await frames();
+      // The pointer owns the position until it lets go: the bar growing is not a
+      // reason to put the panel anywhere else under it.
+      expect(el.getBoundingClientRect().bottom).toBeCloseTo(low.bottom, 0);
+      expect(el.getBoundingClientRect().bottom).toBeGreaterThan(bar.getBoundingClientRect().top);
+
+      window.dispatchEvent(new PointerEvent("pointerup", { clientX: x - 100, clientY: y + 300 }));
+      await frames();
+      expect(el.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        bar.getBoundingClientRect().top,
+      );
+    });
+
+    it("holds a docked panel inside a window that narrowed while it was collapsed, once it opens", async () => {
+      const el = dockedChat();
+      await frames();
+      await dragTo(el, SPOT);
+      el.setCollapsed(true);
+      await frames();
+      await resize({ width: 700, height: 800 });
+      el.setCollapsed(false);
+      await frames();
+      expect(el.getBoundingClientRect().right).toBeLessThanOrEqual(700);
+    });
+
     it("does not stand a corner panel at the spot a dock stored", async () => {
       const first = dockedChat();
       await frames();
@@ -1390,6 +1565,126 @@ describe("a corner panel placed on a wide window (real browser)", () => {
         [resized.left, resized.top, resized.width, resized.height].map(Math.round),
       );
     });
+  });
+
+  /** A grip pulled by a distance; the edges it names end where the pointer does. */
+  async function pull(
+    el: AgUiChat,
+    grip: string,
+    dx: number,
+    dy: number,
+  ): Promise<{ x: number; y: number }> {
+    const handle = part(el, `.resize-handle--${grip}`);
+    const at = handle.getBoundingClientRect();
+    await drag(handle, dx, dy);
+    return { x: at.left + at.width / 2 + dx, y: at.top + at.height / 2 + dy };
+  }
+
+  describe("a grip pulled on a docked panel", () => {
+    const DOCK_KEY = `ag-ui-chat:dock:${ID}`;
+    const SPOT = { left: 376, top: 96 };
+
+    /** Open on the bar, and dragged off it to the spot when asked to be. */
+    async function onBar(moved: boolean): Promise<AgUiChat> {
+      const el = chat({ "collapse-to": "bar", "data-start-open": "" });
+      await frames();
+      if (moved) {
+        const box = el.getBoundingClientRect();
+        await drag(part(el, ".header"), SPOT.left - box.left, SPOT.top - box.top);
+      }
+      return el;
+    }
+
+    function storedSpot(): { left: number; top: number } {
+      return JSON.parse(localStorage.getItem(DOCK_KEY) ?? "null") as { left: number; top: number };
+    }
+
+    it("keeps the edges the panel stands on, and lets only the free ones follow", async () => {
+      const el = await onBar(false);
+      const home = el.getBoundingClientRect();
+      // The corner the dock holds still is the one thing a grip there cannot move.
+      await pull(el, "bottom-right", -40, -30);
+      const held = el.getBoundingClientRect();
+      expect(held.width).toBeCloseTo(home.width, 0);
+      expect(held.height).toBeCloseTo(home.height, 0);
+      expect(held.right).toBeCloseTo(home.right, 0);
+      expect(held.bottom).toBeCloseTo(home.bottom, 0);
+      const to = await pull(el, "top-left", -40, -30);
+      const grown = el.getBoundingClientRect();
+      expect(grown.left).toBeCloseTo(to.x, 0);
+      expect(grown.top).toBeCloseTo(to.y, 0);
+      expect(grown.right).toBeCloseTo(home.right, 0);
+      expect(grown.bottom).toBeCloseTo(home.bottom, 0);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+    });
+
+    it("resizes a panel dragged off its dock from the corner it pulled, as a corner panel is", async () => {
+      const el = await onBar(true);
+      const before = el.getBoundingClientRect();
+      const to = await pull(el, "bottom-right", -40, -30);
+      const after = el.getBoundingClientRect();
+      expect(after.right).toBeCloseTo(to.x, 0);
+      expect(after.bottom).toBeCloseTo(to.y, 0);
+      expect(after.left).toBeCloseTo(before.left, 0);
+      expect(after.top).toBeCloseTo(before.top, 0);
+    });
+
+    it("keeps where a free-edge grip left a panel dragged off its dock, in memory and in storage", async () => {
+      const el = await onBar(true);
+      const to = await pull(el, "top-left", -40, -30);
+      const grown = el.getBoundingClientRect();
+      expect(grown.left).toBeCloseTo(to.x, 0);
+      expect(grown.top).toBeCloseTo(to.y, 0);
+      expect(storedSpot().left).toBeCloseTo(grown.left, 0);
+      expect(storedSpot().top).toBeCloseTo(grown.top, 0);
+      // The memory, not only the store: a window resize puts the panel back from it.
+      await resize({ width: 1200, height: 760 });
+      expect(el.getBoundingClientRect().left).toBeCloseTo(grown.left, 0);
+      expect(el.getBoundingClientRect().top).toBeCloseTo(grown.top, 0);
+    });
+  });
+
+  describe("a grip pulled on a corner panel", () => {
+    it("takes the launcher along with the corner it moved, in the record as well as on screen", async () => {
+      const el = await placed();
+      const corner = el.getAttribute("data-resize-anchor") as string;
+      const [vertical, horizontal] = corner.split("-");
+      await pull(el, corner, horizontal === "left" ? 40 : -40, vertical === "top" ? 30 : -30);
+      const box = el.getBoundingClientRect();
+      const size = part(el, ".launcher").offsetWidth;
+      const stored = JSON.parse(localStorage.getItem(LAUNCHER_KEY) as string) as {
+        left: number;
+        top: number;
+      };
+      expect(stored.left).toBeCloseTo(horizontal === "left" ? box.left : box.right - size, 0);
+      expect(stored.top).toBeCloseTo(vertical === "top" ? box.top : box.bottom - size, 0);
+    });
+
+    it.each([
+      ["top-right", "the side it stands on", -40, -30],
+      ["bottom-left", "the end it stands on", -40, -30],
+    ])(
+      "writes the position for a pull at the %s, which shares %s with the pinned corner",
+      async (grip, _shared, dx, dy) => {
+        const el = chat({ "data-start-open": "" });
+        await frames();
+        expect(el.getAttribute("data-resize-anchor")).toBe("bottom-right");
+        const home = el.getBoundingClientRect();
+        const to = await pull(el, grip, dx, dy);
+        const after = el.getBoundingClientRect();
+        expect(el.style.getPropertyValue("--ag-ui-inset")).not.toBe("");
+        if (grip === "top-right") {
+          // Its right edge is the pinned one, so it is the edge that moves.
+          expect(after.right).toBeCloseTo(to.x, 0);
+          expect(after.left).toBeCloseTo(home.left, 0);
+          expect(after.top).toBeCloseTo(to.y, 0);
+        } else {
+          expect(after.bottom).toBeCloseTo(to.y, 0);
+          expect(after.top).toBeCloseTo(home.top, 0);
+          expect(after.left).toBeCloseTo(to.x, 0);
+        }
+      },
+    );
   });
 
   it("holds a launcher moved by a key through an expand before the key comes up", async () => {
