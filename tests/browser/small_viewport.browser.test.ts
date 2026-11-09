@@ -840,6 +840,18 @@ describe("a corner panel placed on a wide window (real browser)", () => {
         expect(el.getAttribute("data-resize-anchor")).toBe("top-left");
       });
 
+      it("forgets the fill when a placement takes the position, so a host's inset spelled like it stays the host's", async () => {
+        const { el, fillInset } = await filling();
+        el.setAttribute("placement", "sidebar");
+        await frames();
+        stop(el);
+        await frames();
+        el.style.setProperty("--ag-ui-inset", fillInset);
+        el.removeAttribute("placement");
+        await resize(PHONE);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(fillInset);
+      });
+
       it("takes an inset the host then writes, spelled as the fill's was, to be the host's", async () => {
         const { el, fillInset } = await filling();
         stop(el);
