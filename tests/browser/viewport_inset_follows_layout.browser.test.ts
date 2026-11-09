@@ -565,3 +565,153 @@ describe("a viewport inset token that changes after the window resize (real brow
     expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
   });
 });
+
+/**
+ * What is still wired to the page, counted from the calls rather than from the
+ * element's own bookkeeping: an observer is live from its observe until its
+ * disconnect, and a listener from its add until its remove or its signal aborting.
+ */
+function trackLive(): {
+  observed: () => Element[];
+  listeners: () => { target: EventTarget; type: string }[];
+  stop: () => void;
+} {
+  const NativeObserver = window.ResizeObserver;
+  const observers: { targets: Set<Element> }[] = [];
+  class Tracked extends NativeObserver {
+    readonly targets = new Set<Element>();
+    constructor(callback: ResizeObserverCallback) {
+      super(callback);
+      observers.push(this);
+    }
+    override observe(target: Element, options?: ResizeObserverOptions): void {
+      this.targets.add(target);
+      super.observe(target, options);
+    }
+    override unobserve(target: Element): void {
+      this.targets.delete(target);
+      super.unobserve(target);
+    }
+    override disconnect(): void {
+      this.targets.clear();
+      super.disconnect();
+    }
+  }
+  window.ResizeObserver = Tracked;
+
+  const added: {
+    target: EventTarget;
+    type: string;
+    listener: unknown;
+    capture: boolean;
+    signal: AbortSignal | undefined;
+  }[] = [];
+  const captured = (options: unknown): boolean =>
+    options === true ||
+    (typeof options === "object" && options !== null && "capture" in options && !!options.capture);
+  // The window carries its own copies of these two, as every global object does,
+  // so patching the shared prototype alone would miss the listeners that matter.
+  const hosts: {
+    addEventListener: EventTarget["addEventListener"];
+    removeEventListener: EventTarget["removeEventListener"];
+  }[] = [EventTarget.prototype, window];
+  const natives = hosts.map((host) => ({
+    host,
+    add: host.addEventListener,
+    remove: host.removeEventListener,
+  }));
+  for (const { host, add, remove } of natives) {
+    host.addEventListener = function (
+      this: EventTarget,
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ): void {
+      added.push({
+        target: this,
+        type,
+        listener,
+        capture: captured(options),
+        signal: typeof options === "object" ? options.signal : undefined,
+      });
+      add.call(this, type, listener, options);
+    };
+    host.removeEventListener = function (
+      this: EventTarget,
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ): void {
+      const at = added.findIndex(
+        (entry) =>
+          entry.target === this &&
+          entry.type === type &&
+          entry.listener === listener &&
+          entry.capture === captured(options),
+      );
+      if (at !== -1) {
+        added.splice(at, 1);
+      }
+      remove.call(this, type, listener, options);
+    };
+  }
+
+  return {
+    observed: () => observers.flatMap((observer) => [...observer.targets]),
+    listeners: () =>
+      added
+        .filter((entry) => entry.signal?.aborted !== true)
+        .map((entry) => ({ target: entry.target, type: entry.type })),
+    stop: () => {
+      window.ResizeObserver = NativeObserver;
+      for (const { host, add, remove } of natives) {
+        host.addEventListener = add;
+        host.removeEventListener = remove;
+      }
+    },
+  };
+}
+
+describe("what a detached element leaves wired to the page (real browser)", () => {
+  it("leaves no observer and no listener live after four reconnects", async () => {
+    const live = trackLive();
+    try {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      // The count means something only if it sees what a connected element wires up.
+      expect(live.observed()).toContain(part(el, ".messages"));
+      expect(live.observed()).toContain(part(el, ".dock-bar"));
+      expect(
+        live
+          .listeners()
+          .filter((entry) => entry.target === window)
+          .map((e) => e.type),
+      ).toContain("resize");
+      for (let round = 0; round < 4; round += 1) {
+        el.remove();
+        document.body.appendChild(el);
+        await frames();
+      }
+      el.remove();
+      await frames();
+
+      const inside = (target: unknown): boolean => {
+        const root = el.shadowRoot;
+        return root !== null && target instanceof Node && (root.contains(target) || target === el);
+      };
+      expect(
+        live
+          .observed()
+          .filter(inside)
+          .map((t) => t.className),
+      ).toEqual([]);
+      const wired = live
+        .listeners()
+        .filter((entry) => entry.target === window || entry.target === window.visualViewport)
+        .map((entry) => `${entry.target === window ? "window" : "visualViewport"}:${entry.type}`);
+      expect(wired).toEqual([]);
+    } finally {
+      live.stop();
+    }
+  });
+});

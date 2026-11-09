@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
@@ -572,6 +572,93 @@ describe("a corner panel placed on a wide window (real browser)", () => {
     });
   });
 
+  describe("a host that fills the room it left free beside chrome it reserved", () => {
+    const WIDE = { width: 1200, height: 760 };
+    type Sides = { left?: number; top?: number; right?: number; bottom?: number };
+
+    /** The panel as large as the usable box the tokens leave, and nothing else. */
+    function fillUsable(el: AgUiChat, sides: Sides): void {
+      const { left = 0, top = 0, right = 0, bottom = 0 } = sides;
+      for (const [side, value] of Object.entries({ left, top, right, bottom })) {
+        el.style.setProperty(`--ag-ui-viewport-inset-${side}`, `${value}px`);
+      }
+      const width = `calc(100vw - ${left + right}px)`;
+      const height = `calc(100vh - ${top + bottom}px)`;
+      el.style.setProperty("--ag-ui-width", width);
+      el.style.setProperty("--ag-ui-max-width", width);
+      el.style.setProperty("--ag-ui-height", height);
+      el.style.setProperty("--ag-ui-max-height", height);
+    }
+
+    function restAt(inset: string): void {
+      const rule = document.createElement("style");
+      rule.textContent = `#${ID} { --ag-ui-inset: ${inset}; }`;
+      document.body.appendChild(rule);
+    }
+
+    // The usable box begins and ends where the tokens say, and the screen where the
+    // window does. A box past the usable box's near edge hangs off it; one past its
+    // far edge but inside the screen does not, because a keyboard shortens the first
+    // and pans the panel down inside the second.
+    it.each([
+      ["left", { left: 100 }, "0 24px auto auto", [100, 0, 1100, 760], "0px auto auto 100px"],
+      ["top", { top: 56 }, "32px 0 auto auto", [0, 56, 1200, 704], "56px auto auto 0px"],
+    ] as const)(
+      "stands at the start of the usable box when the %s edge hangs off it",
+      async (_edge, sides, rest, box, inset) => {
+        restAt(rest);
+        const el = chat({ "data-start-open": "" });
+        await frames();
+        fillUsable(el, sides);
+        await resize(WIDE);
+        const at = el.getBoundingClientRect();
+        expect([at.left, at.top, at.width, at.height]).toEqual(box);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(inset);
+      },
+    );
+
+    it.each([
+      ["right", { right: 100 }, "0 0 auto auto", [100, 0, 1100, 760]],
+      ["bottom", { bottom: 100 }, "100px 0 auto auto", [0, 100, 1200, 660]],
+    ] as const)(
+      "leaves a box that stands past the usable %s edge but inside the screen",
+      async (_edge, sides, rest, box) => {
+        restAt(rest);
+        const el = chat({ "data-start-open": "" });
+        await frames();
+        fillUsable(el, sides);
+        await resize(WIDE);
+        const at = el.getBoundingClientRect();
+        expect([at.left, at.top, at.width, at.height]).toEqual(box);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      },
+    );
+
+    it("stands a spot kept from the far corner at the start of the usable box", async () => {
+      const el = chat({ "data-start-open": "" });
+      await frames();
+      const box = el.getBoundingClientRect();
+      await drag(part(el, ".header"), 700 - box.left, 400 - box.top);
+      expect(el.getBoundingClientRect().left).toBeCloseTo(700, 0);
+      fillUsable(el, { left: 100, top: 56 });
+      await resize(WIDE);
+      const at = el.getBoundingClientRect();
+      expect([at.left, at.top, at.width, at.height]).toEqual([100, 56, 1100, 704]);
+    });
+
+    it("counts a box a fraction of a pixel past the screen as on it", async () => {
+      restAt("0 auto auto 0");
+      const el = chat({ "data-start-open": "" });
+      await frames();
+      el.style.setProperty("--ag-ui-width", "calc(100vw + 0.3px)");
+      el.style.setProperty("--ag-ui-max-width", "calc(100vw + 0.3px)");
+      el.style.setProperty("--ag-ui-height", "100vh");
+      el.style.setProperty("--ag-ui-max-height", "100vh");
+      await resize(WIDE);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+    });
+  });
+
   describe("a corner panel with no spot", () => {
     /** Motion off and open, with a grip pulled on an edge the layout holds. */
     async function gripped(attrs: Record<string, string> = {}): Promise<AgUiChat> {
@@ -679,6 +766,69 @@ describe("a corner panel placed on a wide window (real browser)", () => {
       expect(el.getBoundingClientRect().right).toBeCloseTo(reset.right, 0);
       expect(el.getBoundingClientRect().bottom).toBeCloseTo(grown.bottom, 0);
     });
+
+    describe("a fill that has stopped", () => {
+      const WIDE = { width: 1200, height: 760 };
+      const SIZED = {
+        "--ag-ui-width": "100vw",
+        "--ag-ui-height": "100vh",
+        "--ag-ui-max-width": "100vw",
+        "--ag-ui-max-height": "100vh",
+      };
+
+      /** Filling a wide window, and the inset that stood the panel at the start of it. */
+      async function filling(): Promise<{
+        el: AgUiChat;
+        fillInset: string;
+        anchor: string | null;
+      }> {
+        const el = chat({ "data-start-open": "" });
+        await frames();
+        const anchor = el.getAttribute("data-resize-anchor");
+        for (const [token, value] of Object.entries(SIZED)) {
+          el.style.setProperty(token, value);
+        }
+        await resize(WIDE);
+        const fillInset = el.style.getPropertyValue("--ag-ui-inset");
+        expect(fillInset).not.toBe("");
+        return { el, fillInset, anchor };
+      }
+
+      function stop(el: AgUiChat): void {
+        for (const token of Object.keys(SIZED)) {
+          el.style.removeProperty(token);
+        }
+      }
+
+      it("measures the edges the layout holds again once the panel rests", async () => {
+        const { el, anchor } = await filling();
+        expect(el.getAttribute("data-resize-anchor")).not.toBe(anchor);
+        stop(el);
+        await resize(DESKTOP);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+        expect(el.getAttribute("data-resize-anchor")).toBe(anchor);
+      });
+
+      it("takes an inset the host then writes, spelled as the fill's was, to be the host's", async () => {
+        const { el, fillInset } = await filling();
+        stop(el);
+        await resize(DESKTOP);
+        el.style.setProperty("--ag-ui-inset", fillInset);
+        await resize(PHONE);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(fillInset);
+      });
+
+      it("forgets the fill when the host states an inset of its own as the fill stops", async () => {
+        const { el, fillInset } = await filling();
+        stop(el);
+        el.style.setProperty("--ag-ui-inset", "40px 40px auto auto");
+        await resize(DESKTOP);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("40px 40px auto auto");
+        el.style.setProperty("--ag-ui-inset", fillInset);
+        await resize(PHONE);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(fillInset);
+      });
+    });
   });
 
   describe("data-launcher-drag turned to false on a moved panel", () => {
@@ -690,6 +840,33 @@ describe("a corner panel placed on a wide window (real browser)", () => {
       expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
       expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe("");
     }
+
+    it("leaves an inset the host wrote inline where it is, with nothing of the element's own", async () => {
+      const el = chat({ "data-start-open": "", "data-launcher-drag": "false" });
+      el.style.setProperty("--ag-ui-inset", "56px 0 0 0");
+      await frames();
+      await resize({ width: 1200, height: 760 });
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("56px 0 0 0");
+      expect(el.getBoundingClientRect().top).toBeCloseTo(56, 0);
+    });
+
+    it("records nothing for a header drag the attribute stopped half way", async () => {
+      const el = chat({ "data-start-open": "" });
+      await frames();
+      const header = part(el, ".header").getBoundingClientRect();
+      const x = header.left + header.width / 2;
+      const y = header.top + header.height / 2;
+      part(el, ".header").dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+      );
+      el.setAttribute("data-launcher-drag", "false");
+      window.dispatchEvent(new PointerEvent("pointermove", { clientX: x - 200, clientY: y - 150 }));
+      window.dispatchEvent(new PointerEvent("pointerup", { clientX: x - 200, clientY: y - 150 }));
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe("");
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+    });
 
     it("does nothing until the next restore, which hands the panel to the host's CSS", async () => {
       const el = await placed();
@@ -1094,6 +1271,124 @@ describe("a corner panel placed on a wide window (real browser)", () => {
       fill(el);
       await resize(PHONE);
       expectFullBleed(el);
+    });
+  });
+
+  describe("a panel the reader cannot move", () => {
+    it.each(["sidebar", "side", "page"])(
+      "stays put under a header drag as a %s",
+      async (placement) => {
+        const el = chat({ "data-start-open": "", placement });
+        await frames();
+        const before = el.getBoundingClientRect();
+        await drag(part(el, ".header"), -200, 100);
+        expect(el.getBoundingClientRect().left).toBeCloseTo(before.left, 0);
+        expect(el.getBoundingClientRect().top).toBeCloseTo(before.top, 0);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+        expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+      },
+    );
+
+    it("is left to its own layout when a host's size reaches past the room it reserved", async () => {
+      // The panel owns its place, so a size that hangs it off the usable box is the
+      // host's to answer for, and nothing stands it at the start of that box.
+      const el = chat({ "data-start-open": "", placement: "sidebar" });
+      el.style.setProperty("--ag-ui-viewport-inset-left", "100px");
+      el.style.setProperty("--ag-ui-width", "100vw");
+      el.style.setProperty("--ag-ui-max-width", "none");
+      await resize({ width: 1200, height: 760 });
+      expect(el.getBoundingClientRect().left).toBeCloseTo(0, 0);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+    });
+  });
+
+  describe("a docked panel's spot, kept by the element and by the store", () => {
+    const DOCK_KEY = `ag-ui-chat:dock:${ID}`;
+    const SPOT = { left: 376, top: 96 };
+
+    function dockedChat(attrs: Record<string, string> = {}): AgUiChat {
+      return chat({ "collapse-to": "bar", "data-start-open": "", ...attrs });
+    }
+
+    async function dragTo(el: AgUiChat, to: { left: number; top: number }): Promise<void> {
+      const box = el.getBoundingClientRect();
+      await drag(part(el, ".header"), to.left - box.left, to.top - box.top);
+    }
+
+    it("keeps a spot the store refused, and holds it inside a narrower window", async () => {
+      const refuse = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new Error("denied");
+      });
+      try {
+        const el = dockedChat();
+        await frames();
+        await dragTo(el, SPOT);
+        expect(localStorage.getItem(DOCK_KEY)).toBeNull();
+        await resize({ width: 700, height: 800 });
+        const box = el.getBoundingClientRect();
+        expect(box.right).toBeLessThanOrEqual(700);
+        // Held where it was put rather than put back on the bar, whose place is the
+        // bottom of the window.
+        expect(box.top).toBeCloseTo(SPOT.top, 0);
+      } finally {
+        refuse.mockRestore();
+      }
+    });
+
+    it("does not stand a corner panel at the spot a dock stored", async () => {
+      const first = dockedChat();
+      await frames();
+      await dragTo(first, SPOT);
+      expect(localStorage.getItem(DOCK_KEY)).not.toBeNull();
+      first.remove();
+
+      const el = chat({ "data-start-open": "" });
+      await frames();
+      const box = el.getBoundingClientRect();
+      expect(box.right).toBeCloseTo(DESKTOP.width - 24, 0);
+      expect(box.bottom).toBeCloseTo(DESKTOP.height - 24, 0);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+    });
+
+    it("holds a stored spot above the bar it was stored under", async () => {
+      localStorage.setItem(DOCK_KEY, JSON.stringify({ left: 700, top: 760 }));
+      const el = dockedChat();
+      await frames();
+      const box = el.getBoundingClientRect();
+      expect(box.left).toBeCloseTo(700, 0);
+      expect(box.bottom).toBeLessThanOrEqual(part(el, ".dock-bar").getBoundingClientRect().top);
+    });
+
+    it("writes a restored spot from the corner the dock holds still", async () => {
+      localStorage.setItem(DOCK_KEY, JSON.stringify(SPOT));
+      const el = dockedChat({ placement: "bottom-left" });
+      await frames();
+      expect(el.getAttribute("data-resize-anchor")).toBe("bottom-left");
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toMatch(/^auto auto \d+px \d+px$/);
+      expect(el.getBoundingClientRect().left).toBeCloseTo(SPOT.left, 0);
+    });
+
+    it("resizes a spot restored from the store as it does one dragged in this session", async () => {
+      const first = dockedChat();
+      await frames();
+      await dragTo(first, SPOT);
+      const stored = localStorage.getItem(DOCK_KEY) as string;
+      await drag(part(first, ".resize-handle--bottom-right"), -40, -30);
+      const resized = first.getBoundingClientRect();
+      first.remove();
+
+      // The size the pull stored is the first panel's; this one starts from its own.
+      localStorage.removeItem(`ag-ui-chat:size:${ID}`);
+      sessionStorage.removeItem(`ag-ui-chat:size:${ID}`);
+      localStorage.setItem(DOCK_KEY, stored);
+      const el = dockedChat();
+      await frames();
+      expect(el.getBoundingClientRect().left).toBeCloseTo(SPOT.left, 0);
+      await drag(part(el, ".resize-handle--bottom-right"), -40, -30);
+      const again = el.getBoundingClientRect();
+      expect([again.left, again.top, again.width, again.height].map(Math.round)).toEqual(
+        [resized.left, resized.top, resized.width, resized.height].map(Math.round),
+      );
     });
   });
 
