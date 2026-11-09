@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.1] — 2026-11-09
+
+### Fixed
+
+- **A corner panel a grip placed goes full-bleed on a phone after a move is
+  undone.** Under `collapse-to="auto"`, with no spot stated, the sequence of a grip
+  on an edge the layout holds, `moveTo` with its announcement, another such grip and
+  the undo left an inline `--ag-ui-inset` that read as a host's own, so a phone kept
+  it, and the panel stood off the screen by as much as the grip had moved it. It now
+  fills the screen with no inline inset, and widening gives the grip's place back.
+  An undo also keeps the inset that stands a panel at the start of a window a host
+  fills, so the panel rests again once that fill has gone. **A host has nothing to
+  do.**
+- **A moved panel under `data-launcher-drag="false"` gives way when a host's size
+  stands it off the screen.** Since 0.50.0 such a panel stays where it was moved
+  until the next window resize or reopen, and it still does while the reader types.
+  A host that then filled the window left it at -524,-144 at 1280x800, its header
+  out of reach, until one of those came. Any size that stands it off an edge of the
+  screen now hands it to the host's CSS at once, and a host that fills the window
+  gets it at 0,0. The stored spot stays for the day the attribute comes off. A size
+  that still fits moves nothing. **A host has nothing to do.**
+- **A docked panel a host fills stands at 0,0.** Under `collapse-to="bar"` and
+  `"none"`, a panel a host sized to the whole window stood past the top of the window
+  by what the resting inset spends: at 1200x760, -24,-65 under the bar, where
+  the whole header was out of reach, and -24,-24 under a host's own control. It now
+  stands at the start of the room the host left free, moved or not, as a corner panel
+  has since 0.50.0, and under `data-launcher-drag="false"` too. While it does the bar
+  and the grips go, as they do on a phone, with `ag-ui-bar-height` saying 0 and the
+  header's minimise control as the way back, because the strip would draw over the
+  composer's foot. The bar comes back when the panel is collapsed, and both when the
+  size stops filling. A host that writes that height into its own
+  `--ag-ui-viewport-inset-bottom` settles with the bar gone: the panel stays judged
+  against the box it filled while the box has only grown by the bar's height on the same
+  window, where it would otherwise flip the bar and jump the header every frame. The
+  dock's stored spot stays unchanged, and the panel goes back
+  to its spot or its dock when the size stops filling. A host's own inline `--ag-ui-inset` stays
+  where the host wrote it, and a placement that owns its position is left alone. **A
+  host has nothing to do.**
+- **A viewport inset token wider than the card holding an embedded chat adds no
+  scroll.** The box the component reads the four `--ag-ui-viewport-inset-*`
+  tokens from took its size from them, so a 200px card under a 240px left token
+  scrolled by 40px, and the same on the other axis. The tokens read back as
+  before, a percentage against the same box. **A host has nothing to do.**
+- **A hidden panel stays where it was moved.** Hiding the element, or anything
+  holding it, had it place itself from a box of nothing and write that as its
+  inset, so a script reading the panel straight after showing it again found it
+  off the screen, until a few frames later it stood at its spot. A window resize
+  while hidden, connecting hidden and expanding hidden did the same. None of those
+  writes an inset now, and showing the element places it against the window as it
+  then is. The stored spot was never touched, and `ag-ui-bar-height` still says 0
+  while hidden. **A host has nothing to do.**
+
 ## [0.50.0] — 2026-11-08
 
 ### Changed
@@ -5168,7 +5220,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.1...HEAD
+[0.50.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.0...v0.50.1
 [0.50.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.47.0...v0.48.0

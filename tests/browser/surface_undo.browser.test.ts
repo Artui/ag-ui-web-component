@@ -14,6 +14,7 @@ import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
  */
 
 const DESKTOP = { width: 1280, height: 800 };
+const PHONE = { width: 390, height: 844 };
 const ID = "undo";
 const LAUNCHER_KEY = `ag-ui-chat:launcher:${ID}`;
 const DOCK_KEY = `ag-ui-chat:dock:${ID}`;
@@ -53,6 +54,33 @@ async function dragHeaderTo(el: AgUiChat, to: { left: number; top: number }): Pr
   const dx = to.left - box.left;
   const dy = to.top - box.top;
   part(el, ".header").dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+  );
+  window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
+  window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + dx, clientY: y + dy }));
+  await frames();
+}
+
+/** A grip pulled by a pointer: press, travel, release. */
+async function pullGrip(el: AgUiChat, grip: string, dx: number, dy: number): Promise<void> {
+  const handle = part(el, `.resize-handle--${grip}`);
+  const rect = handle.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }));
+  window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
+  window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + dx, clientY: y + dy }));
+  await frames();
+}
+
+/** The launcher dragged by a pointer while the panel is collapsed, by its centre. */
+async function dragLauncherTo(el: AgUiChat, to: { left: number; top: number }): Promise<void> {
+  const rect = part(el, ".launcher").getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  const dx = to.left - x;
+  const dy = to.top - y;
+  part(el, ".launcher").dispatchEvent(
     new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
   );
   window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
@@ -189,6 +217,404 @@ describe("undoing a move across a surface change (real browser)", () => {
       el.setCollapsed(false);
       await frames();
       expectAt(el, home);
+    });
+  });
+
+  describe("a first move undone on the surface it was made on", () => {
+    it("puts back no place at all: no inset, no corner, the anchor the layout had", async () => {
+      const el = chat();
+      await frames();
+      const home = el.getBoundingClientRect();
+      const anchor = el.getAttribute("data-resize-anchor");
+      expect(el.hasAttribute("data-expand-corner")).toBe(false);
+
+      expect(el.moveTo("top-left", { announce: true })).toBe(true);
+      await frames();
+      expect(el.getAttribute("data-resize-anchor")).not.toBe(anchor);
+      expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).not.toBe("");
+
+      part(el, ".run-notice-undo").click();
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe("");
+      expect(el.hasAttribute("data-expand-corner")).toBe(false);
+      expect(el.getAttribute("data-resize-anchor")).toBe(anchor);
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+      expectAt(el, home);
+    });
+
+    it("leaves a grip to say what it wrote, so a phone still takes the panel full-bleed", async () => {
+      const el = chat();
+      await frames();
+      el.moveTo("top-left", { announce: true });
+      await frames();
+      part(el, ".run-notice-undo").click();
+      await frames();
+
+      // The memory is what a grip reads: it states an inset only for a panel with no
+      // position of its own, and a move left undone in memory would make it a claim.
+      await pullGrip(el, "bottom-right", -40, -30);
+      const pulled = el.style.getPropertyValue("--ag-ui-inset");
+      expect(pulled).not.toBe("");
+      const place = el.getBoundingClientRect();
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+
+      await page.viewport(PHONE.width, PHONE.height);
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      await page.viewport(DESKTOP.width, DESKTOP.height);
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(pulled);
+      expectAt(el, place);
+    });
+
+    it("puts back the corner and both insets a launcher dragged elsewhere had", async () => {
+      const el = chat();
+      await frames();
+      await dragHeaderTo(el, { left: 700, top: 400 });
+      const dragged = el.getBoundingClientRect();
+      const corner = el.getAttribute("data-expand-corner");
+      const anchor = el.getAttribute("data-resize-anchor");
+      const inset = el.style.getPropertyValue("--ag-ui-inset");
+      const launcherInset = el.style.getPropertyValue("--ag-ui-launcher-inset");
+      expect(corner).not.toBeNull();
+      const stored = localStorage.getItem(LAUNCHER_KEY);
+
+      el.moveTo("top-left", { announce: true });
+      await frames();
+      expect(el.getAttribute("data-expand-corner")).not.toBe(corner);
+      part(el, ".run-notice-undo").click();
+      await frames();
+
+      expect(el.getAttribute("data-expand-corner")).toBe(corner);
+      expect(el.getAttribute("data-resize-anchor")).toBe(anchor);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(inset);
+      expect(el.style.getPropertyValue("--ag-ui-launcher-inset")).toBe(launcherInset);
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+      expectAt(el, dragged);
+    });
+
+    it("keeps a launcher dragged on its own from taking the move's panel half", async () => {
+      const el = chat();
+      await frames();
+      el.setCollapsed(true);
+      await frames();
+      await dragLauncherTo(el, { left: 600, top: 300 });
+      const stored = localStorage.getItem(LAUNCHER_KEY);
+      expect(JSON.parse(stored as string)).not.toHaveProperty("panel");
+      el.setCollapsed(false);
+      await frames();
+
+      el.moveTo("top-left", { announce: true });
+      await frames();
+      expect(JSON.parse(localStorage.getItem(LAUNCHER_KEY) as string)).toHaveProperty("panel");
+      part(el, ".run-notice-undo").click();
+      await frames();
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+
+      // A grip commits the record again, from what the memory holds.
+      await pullGrip(el, el.getAttribute("data-resize-anchor") as string, 10, 10);
+      expect(JSON.parse(localStorage.getItem(LAUNCHER_KEY) as string)).not.toHaveProperty("panel");
+    });
+  });
+
+  describe("a corner panel with no spot, undone back to what a grip or a fill left", () => {
+    it("keeps a grip's inset the grip's, so a phone still takes the panel full-bleed", async () => {
+      const el = chat();
+      await frames();
+      await pullGrip(el, "bottom-right", -40, -30);
+      const left = el.style.getPropertyValue("--ag-ui-inset");
+      expect(left).not.toBe("");
+
+      expect(el.moveTo("top-left", { announce: true })).toBe(true);
+      await frames();
+      // The edge the move left pinned: a grip on a free one writes no inset, and
+      // this path is the one where a grip on a moved panel forgets the first.
+      const moved = el.style.getPropertyValue("--ag-ui-inset");
+      await pullGrip(el, el.getAttribute("data-resize-anchor") as string, 10, 10);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).not.toBe(moved);
+
+      part(el, ".run-notice-undo").click();
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(left);
+      const place = el.getBoundingClientRect();
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+
+      await page.viewport(PHONE.width, PHONE.height);
+      await frames();
+      const full = el.getBoundingClientRect();
+      expect([full.left, full.top, full.width, full.height]).toEqual([
+        0,
+        0,
+        PHONE.width,
+        PHONE.height,
+      ]);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+
+      await page.viewport(DESKTOP.width, DESKTOP.height);
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(left);
+      expectAt(el, place);
+    });
+
+    it("keeps a fill's inset the fill's, so the panel rests once the fill has gone", async () => {
+      const el = chat();
+      await frames();
+      const home = el.getBoundingClientRect();
+      const fill = {
+        "--ag-ui-width": "100vw",
+        "--ag-ui-height": "100vh",
+        "--ag-ui-max-width": "100vw",
+        "--ag-ui-max-height": "100vh",
+      };
+      for (const [token, value] of Object.entries(fill)) {
+        el.style.setProperty(token, value);
+      }
+      await frames();
+      expectAt(el, { left: 0, top: 0 });
+      const standing = el.style.getPropertyValue("--ag-ui-inset");
+      expect(standing).not.toBe("");
+
+      // In one task, so the move is made before anything has seen the fill go.
+      for (const token of Object.keys(fill)) {
+        el.style.removeProperty(token);
+      }
+      expect(el.moveTo("top-left", { announce: true })).toBe(true);
+      await frames();
+
+      // Handing the position back is what forgets the fill while the move stands.
+      el.setAttribute("data-launcher-drag", "false");
+      await page.viewport(DESKTOP.width - 10, DESKTOP.height);
+      await frames();
+      el.removeAttribute("data-launcher-drag");
+      await page.viewport(DESKTOP.width, DESKTOP.height);
+      await frames();
+
+      part(el, ".run-notice-undo").click();
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expectAt(el, home);
+    });
+  });
+
+  describe("a docked panel moved, then undone on the dock it was moved on", () => {
+    it("puts the spot it had back in memory as well as in storage", async () => {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      await dragHeaderTo(el, SPOT);
+      const stored = localStorage.getItem(DOCK_KEY);
+      el.moveTo("top-left", { announce: true });
+      await frames();
+      expect(el.getBoundingClientRect().left).not.toBeCloseTo(SPOT.left, 0);
+
+      part(el, ".run-notice-undo").click();
+      await frames();
+      expect(localStorage.getItem(DOCK_KEY)).toBe(stored);
+      expectAt(el, SPOT);
+    });
+
+    it("stands a panel that had no spot back on its bar", async () => {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      const dock = el.getBoundingClientRect();
+      el.moveTo("top-left", { announce: true });
+      await frames();
+      part(el, ".run-notice-undo").click();
+      await frames();
+      expect(localStorage.getItem(DOCK_KEY)).toBeNull();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expectAt(el, dock);
+    });
+  });
+
+  describe("a docked panel moved, then given a placement that owns its place", () => {
+    it("leaves a sidebar where its own layout puts it, and keeps the dock's spot", async () => {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      await dragHeaderTo(el, SPOT);
+      const stored = localStorage.getItem(DOCK_KEY);
+      el.moveTo("top-left", { announce: true });
+      await frames();
+
+      el.removeAttribute("collapse-to");
+      el.setAttribute("placement", "sidebar");
+      await frames();
+      const side = el.getBoundingClientRect();
+      part(el, ".run-notice-undo").click();
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expectAt(el, side);
+      expect(localStorage.getItem(DOCK_KEY)).toBe(stored);
+    });
+  });
+
+  describe("moveTo on a docked panel", () => {
+    it("stands the panel at the corner before it returns, above its bar", async () => {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      const before = el.getBoundingClientRect();
+      expect(el.moveTo("top-left")).toBe(true);
+      const top = el.getBoundingClientRect();
+      expect(top.left).toBeLessThan(before.left);
+      expect(top.top).toBeLessThan(before.top);
+
+      expect(el.moveTo("bottom-left")).toBe(true);
+      const bottom = el.getBoundingClientRect();
+      expect(bottom.left).toBeCloseTo(top.left, 0);
+      expect(bottom.bottom).toBeLessThanOrEqual(part(el, ".dock-bar").getBoundingClientRect().top);
+      await frames();
+      expect(el.getBoundingClientRect().top).toBeCloseTo(bottom.top, 0);
+    });
+  });
+
+  describe("moveTo where the panel is not the reader's to move", () => {
+    it.each([
+      ["a sidebar", { placement: "sidebar" }],
+      ["a side panel", { placement: "side" }],
+      ["a page", { placement: "page" }],
+      ["a panel the host pinned", { "data-launcher-drag": "false" }],
+      ["a docked panel the host pinned", { "collapse-to": "bar", "data-launcher-drag": "false" }],
+    ])("refuses %s and writes nothing", async (_name, attrs) => {
+      const el = chat(attrs);
+      await frames();
+      const before = el.getBoundingClientRect();
+      expect(el.moveTo("top-left", { announce: true })).toBe(false);
+      await frames();
+      expectAt(el, before);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+      expect(localStorage.getItem(DOCK_KEY)).toBeNull();
+    });
+  });
+
+  describe("what an undo puts back that nothing reads until later", () => {
+    const undoMove = async (el: AgUiChat): Promise<void> => {
+      part(el, ".run-notice-undo").click();
+      await frames();
+    };
+    const box = (el: AgUiChat): number[] => {
+      const { left, top, width, height } = el.getBoundingClientRect();
+      return [left, top, width, height].map(Math.round);
+    };
+    /** The corner a grip moves freely from, away from the edges the panel stands on. */
+    const freeGrip = (el: AgUiChat): string => {
+      const [y, x] = (el.getAttribute("data-resize-anchor") as string).split("-");
+      return `${y === "top" ? "bottom" : "top"}-${x === "left" ? "right" : "left"}`;
+    };
+    /** Mounted on a stored spot, and the store emptied behind it, as another tab may do. */
+    const mountedOnSpotNoLongerStored = async (): Promise<AgUiChat> => {
+      localStorage.setItem(LAUNCHER_KEY, JSON.stringify(SPOT));
+      const el = chat();
+      await frames();
+      localStorage.removeItem(LAUNCHER_KEY);
+      sessionStorage.clear();
+      return el;
+    };
+
+    it("stands a docked panel full-bleed when the window became a phone first", async () => {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      el.moveTo("top-left");
+      await frames();
+      el.moveTo("top-right", { announce: true });
+      await frames();
+      await page.viewport(PHONE.width, PHONE.height);
+      await frames();
+      await undoMove(el);
+      expect(box(el)).toEqual([0, 0, PHONE.width, PHONE.height]);
+    });
+
+    it("keeps a docked panel's header on a window too short for where it was", async () => {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      el.moveTo("top-right");
+      await frames();
+      el.moveTo("top-left", { announce: true });
+      await frames();
+      await page.viewport(700, 500);
+      await frames();
+      await undoMove(el);
+      expect(el.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+    });
+
+    it("hands the corner back when the move it undoes was the dock's", async () => {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      el.moveTo("top-left", { announce: true });
+      await frames();
+      el.removeAttribute("collapse-to");
+      await frames();
+      el.moveTo("top-left");
+      await frames();
+      expect(box(el).slice(0, 2)).toEqual([24, 24]);
+
+      await undoMove(el);
+      // The corner's own resting place: nothing a move left, on the corner or the dock.
+      expect(box(el)).toEqual([876, 216, 380, 560]);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+    });
+
+    it("measures the edges again, so the next grip pins the ones it stands on", async () => {
+      const el = chat();
+      await frames();
+      await pullGrip(el, "right", -40, 0);
+      const anchor = el.getAttribute("data-resize-anchor");
+      el.moveTo("top-left", { announce: true });
+      await frames();
+      expect(el.getAttribute("data-resize-anchor")).not.toBe(anchor);
+
+      await undoMove(el);
+      expect(el.getAttribute("data-resize-anchor")).toBe(anchor);
+      const right = el.getBoundingClientRect().right;
+      await pullGrip(el, "left", -30, 0);
+      expect(el.getBoundingClientRect().right).toBeCloseTo(right, 0);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("auto 68px 24px auto");
+    });
+
+    it("puts back the corner a spot gave the panel, for the way it opens", async () => {
+      const el = await mountedOnSpotNoLongerStored();
+      const corner = el.getAttribute("data-expand-corner");
+      const origin = getComputedStyle(part(el, ".chat")).transformOrigin;
+      expect(corner).not.toBeNull();
+      el.moveTo("bottom-right", { announce: true });
+      await frames();
+      expect(el.getAttribute("data-expand-corner")).not.toBe(corner);
+
+      await undoMove(el);
+      expect(el.getAttribute("data-expand-corner")).toBe(corner);
+      expect(getComputedStyle(part(el, ".chat")).transformOrigin).toBe(origin);
+    });
+
+    it("leaves no panel half from the undone move in the next grip's record", async () => {
+      const el = await mountedOnSpotNoLongerStored();
+      el.moveTo("bottom-right", { announce: true });
+      await frames();
+      await undoMove(el);
+      await pullGrip(el, freeGrip(el), -20, -20);
+      const stored = JSON.parse(localStorage.getItem(LAUNCHER_KEY) as string);
+      expect(stored.panel).toBeUndefined();
+      expect(Object.keys(stored).sort()).toEqual(["left", "top"]);
+    });
+
+    it("records where a drag the attribute stopped left the panel, for the next grip", async () => {
+      const el = chat();
+      await frames();
+      const header = part(el, ".header");
+      const { left, top, width, height } = header.getBoundingClientRect();
+      const [x, y] = [left + width / 2, top + height / 2];
+      header.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+      );
+      window.dispatchEvent(new PointerEvent("pointermove", { clientX: x - 200, clientY: y - 100 }));
+      el.setAttribute("data-launcher-drag", "false");
+      window.dispatchEvent(new PointerEvent("pointerup", { clientX: x - 200, clientY: y - 100 }));
+      await frames();
+      await pullGrip(el, freeGrip(el), -20, -20);
+      const stored = JSON.parse(localStorage.getItem(LAUNCHER_KEY) as string);
+      const at = el.getBoundingClientRect();
+      expect(stored.panel.left).toBeCloseTo(at.left, 0);
+      expect(stored.panel.top).toBeCloseTo(at.top, 0);
     });
   });
 

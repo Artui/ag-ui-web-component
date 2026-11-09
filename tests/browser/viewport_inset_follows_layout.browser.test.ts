@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
-import { ELEMENT_TAG } from "../../src/constants.js";
+import { BAR_HEIGHT_EVENT, ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
 
@@ -33,7 +33,7 @@ const frames = async (): Promise<void> => {
   }
 };
 
-function chat(attrs: Record<string, string> = {}): AgUiChat {
+function chat(attrs: Record<string, string> = {}, parent: HTMLElement = document.body): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.id = ID;
   el.setAttribute("data-start-open", "");
@@ -41,7 +41,7 @@ function chat(attrs: Record<string, string> = {}): AgUiChat {
     el.setAttribute(name, value);
   }
   el.style.setProperty("--ag-ui-motion", "0s");
-  document.body.appendChild(el);
+  parent.appendChild(el);
   return el;
 }
 
@@ -63,8 +63,11 @@ async function drag(handle: HTMLElement, dx: number, dy: number): Promise<void> 
   await frames();
 }
 
-async function placed(attrs: Record<string, string> = {}): Promise<AgUiChat> {
-  const el = chat(attrs);
+async function placed(
+  attrs: Record<string, string> = {},
+  parent: HTMLElement = document.body,
+): Promise<AgUiChat> {
+  const el = chat(attrs, parent);
   await frames();
   const box = el.getBoundingClientRect();
   await drag(part(el, ".header"), SPOT.left - box.left, SPOT.top - box.top);
@@ -279,6 +282,9 @@ describe("a viewport inset token that changes after the window resize (real brow
       [320, 400],
       [400, 400],
       [700, 100],
+      [200, 400],
+      [700, 40],
+      [200, 40],
     ])("adds no scroll to a %ipx by %ipx card holding an embedded chat", async (width, height) => {
       const holder = embeddedIn({ width, height });
       await frames();
@@ -294,6 +300,250 @@ describe("a viewport inset token that changes after the window resize (real brow
       await frames();
       expect(document.documentElement.scrollWidth).toBe(document.documentElement.clientWidth);
       expect(document.documentElement.scrollHeight).toBe(document.documentElement.clientHeight);
+    });
+
+    it("adds no scroll to the page, with tokens wider than the window", async () => {
+      const el = chat({ placement: "embedded" });
+      el.style.setProperty("--ag-ui-viewport-inset-top", `${WIDE.height + 100}px`);
+      el.style.setProperty("--ag-ui-viewport-inset-left", `${WIDE.width + 100}px`);
+      el.style.setProperty("--ag-ui-height", "100px");
+      await frames();
+      expect(document.documentElement.scrollWidth).toBe(document.documentElement.clientWidth);
+      expect(document.documentElement.scrollHeight).toBe(document.documentElement.clientHeight);
+    });
+
+    it("adds no scroll with opposite tokens that together outrun the card twice", async () => {
+      const holder = embeddedIn({ width: 200, height: 100 });
+      const el = holder.firstElementChild as AgUiChat;
+      el.style.setProperty("--ag-ui-viewport-inset-right", "240px");
+      el.style.setProperty("--ag-ui-viewport-inset-bottom", "200px");
+      el.style.setProperty("--ag-ui-viewport-inset-top", "100px");
+      await frames();
+      expect(holder.scrollWidth).toBe(holder.clientWidth);
+      expect(holder.scrollHeight).toBe(holder.clientHeight);
+    });
+
+    it("adds no scroll to a card that reads right to left", async () => {
+      const holder = embeddedIn({ width: 200, height: 100 });
+      holder.dir = "rtl";
+      await frames();
+      expect(holder.scrollWidth).toBe(holder.clientWidth);
+      expect(holder.scrollHeight).toBe(holder.clientHeight);
+    });
+
+    it("reads all four tokens back in px from a card narrower than one of them", async () => {
+      const holder = embeddedIn({ width: 200, height: 100 });
+      const el = holder.firstElementChild as AgUiChat;
+      el.style.setProperty("--ag-ui-viewport-inset-top", "calc(4rem + 2px)");
+      el.style.setProperty("--ag-ui-viewport-inset-right", "16rem");
+      el.style.setProperty("--ag-ui-viewport-inset-bottom", "calc(10px + 20px)");
+      await frames();
+      const style = getComputedStyle(part(el, ".viewport-probe"));
+      expect(style.paddingTop).toBe("66px");
+      expect(style.paddingRight).toBe("256px");
+      expect(style.paddingBottom).toBe("30px");
+      expect(style.paddingLeft).toBe("240px");
+    });
+
+    it("resolves a percentage token against the same box as ever", async () => {
+      // Padding resolves a percentage against its containing block, so a fix that took
+      // the probe out of the host's box would change what such a token reserves.
+      const el = chat();
+      el.style.setProperty("--ag-ui-viewport-inset-left", "10%");
+      await frames();
+      const probe = part(el, ".viewport-probe");
+      expect(Number.parseFloat(getComputedStyle(probe).paddingLeft)).toBeCloseTo(
+        el.getBoundingClientRect().width * 0.1,
+        1,
+      );
+    });
+
+    it("still resolves a token in a card with a transform of its own", async () => {
+      const holder = embeddedIn({ width: 200, height: 100 });
+      holder.style.transform = "translateX(10px)";
+      await frames();
+      expect(holder.scrollWidth).toBe(holder.clientWidth);
+      const el = holder.firstElementChild as AgUiChat;
+      expect(getComputedStyle(part(el, ".viewport-probe")).paddingLeft).toBe("240px");
+    });
+  });
+
+  describe("a panel whose host has no box", () => {
+    const INSET = "--ag-ui-inset";
+
+    /** The inset a style attribute holds, by way of an element nothing else sees. */
+    function insetIn(attribute: string | null): string {
+      const scratch = document.createElement("div");
+      scratch.setAttribute("style", attribute ?? "");
+      return scratch.style.getPropertyValue(INSET);
+    }
+
+    /**
+     * Every inset the element has held from now on. From the old values of each write
+     * as well as the last, so a wrong one corrected within the same task is still seen.
+     */
+    function watchInset(el: AgUiChat): () => string[] {
+      const watcher = new MutationObserver(() => undefined);
+      watcher.observe(el, {
+        attributes: true,
+        attributeFilter: ["style"],
+        attributeOldValue: true,
+      });
+      return () => {
+        const records = watcher.takeRecords();
+        watcher.disconnect();
+        return [
+          ...records.map((record) => insetIn(record.oldValue)),
+          el.style.getPropertyValue(INSET),
+        ];
+      };
+    }
+
+    it.each([
+      ["a floating panel", {}],
+      ["a panel docked to its bar", { "collapse-to": "bar" }],
+    ])("gives %s back at its spot, hidden on the host", async (_what, attrs) => {
+      const el = await placed(attrs);
+      const inset = el.style.getPropertyValue(INSET);
+      const stored = localStorage.getItem(KEYS[0] as string);
+      const dock = localStorage.getItem(KEYS[1] as string);
+      const held = watchInset(el);
+
+      el.style.display = "none";
+      await frames();
+      expect(el.style.getPropertyValue(INSET)).toBe(inset);
+
+      el.style.display = "";
+      // Synchronous: nothing has had a frame to correct it.
+      expectAt(el, SPOT);
+      expect(new Set(held())).toEqual(new Set([inset]));
+      await frames();
+      expectAt(el, SPOT);
+      expect(localStorage.getItem(KEYS[0] as string)).toBe(stored);
+      expect(localStorage.getItem(KEYS[1] as string)).toBe(dock);
+    });
+
+    it("gives a panel back at its spot, hidden by an ancestor", async () => {
+      const holder = document.createElement("div");
+      document.body.appendChild(holder);
+      const el = await placed({}, holder);
+      const inset = el.style.getPropertyValue(INSET);
+      const held = watchInset(el);
+
+      holder.hidden = true;
+      await frames();
+      holder.hidden = false;
+      expectAt(el, SPOT);
+      expect(new Set(held())).toEqual(new Set([inset]));
+    });
+
+    it("writes no inset when the window resizes while it is hidden", async () => {
+      const el = await placed();
+      const inset = el.style.getPropertyValue(INSET);
+      el.style.display = "none";
+      await frames();
+      const held = watchInset(el);
+      await page.viewport(NARROW.width, NARROW.height);
+      await frames();
+      expect(new Set(held())).toEqual(new Set([inset]));
+    });
+
+    it("places the panel against a window that changed while it was hidden", async () => {
+      const el = await placed();
+      el.style.display = "none";
+      await frames();
+      await page.viewport(NARROW.width, NARROW.height);
+      await frames();
+      el.style.display = "";
+      await frames();
+      const box = el.getBoundingClientRect();
+      expect(box.right).toBeLessThanOrEqual(NARROW.width);
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      await page.viewport(WIDE.width, WIDE.height);
+      await frames();
+      expectAt(el, SPOT);
+    });
+
+    it("writes no inset from nothing when it connects hidden", async () => {
+      const first = await placed();
+      const spot = first.style.getPropertyValue(INSET);
+      first.remove();
+      await frames();
+
+      const holder = document.createElement("div");
+      holder.hidden = true;
+      document.body.appendChild(holder);
+      const el = chat({}, holder);
+      const held = watchInset(el);
+      await frames();
+      for (const written of held()) {
+        expect(["", spot]).toContain(written);
+      }
+
+      holder.hidden = false;
+      await frames();
+      expectAt(el, SPOT);
+    });
+
+    it("writes no inset from nothing when it expands hidden", async () => {
+      const el = await placed();
+      const spot = el.style.getPropertyValue(INSET);
+      el.setCollapsed(true);
+      await frames();
+      el.style.display = "none";
+      await frames();
+      const held = watchInset(el);
+
+      el.setCollapsed(false);
+      await frames();
+      for (const written of held()) {
+        expect(["", spot]).toContain(written);
+      }
+
+      el.style.display = "";
+      await frames();
+      expectAt(el, SPOT);
+    });
+
+    it("keeps placing a launcher on a host a page has sized to nothing", async () => {
+      // It has a box, of no size. That is not the same as having none: the launcher
+      // hangs off it and is the only way back to the conversation.
+      const el = chat();
+      await frames();
+      el.setCollapsed(true);
+      await frames();
+      const launcher = part(el, ".launcher");
+      const rect = launcher.getBoundingClientRect();
+      await drag(launcher, 600 - rect.left, 100 - rect.top);
+      el.style.width = "0";
+      el.style.height = "0";
+      await frames();
+      expect(el.getBoundingClientRect().width).toBe(0);
+
+      // Past the window that follows, so only placing it again brings it back.
+      await page.viewport(PHONE.width, PHONE.height);
+      await frames();
+      expect(launcher.getBoundingClientRect().right).toBeLessThanOrEqual(PHONE.width);
+    });
+
+    it("still tells the host its bar is gone, and back", async () => {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      el.setCollapsed(true);
+      await frames();
+      const heights: number[] = [];
+      el.addEventListener(BAR_HEIGHT_EVENT, (event) => {
+        heights.push((event as CustomEvent<{ height: number }>).detail.height);
+      });
+      const drawn = part(el, ".dock-bar").offsetHeight;
+      expect(drawn).toBeGreaterThan(0);
+
+      el.style.display = "none";
+      await frames();
+      expect(heights).toEqual([0]);
+      el.style.display = "";
+      await frames();
+      expect(heights).toEqual([0, drawn]);
     });
   });
 
@@ -313,5 +563,200 @@ describe("a viewport inset token that changes after the window resize (real brow
     document.documentElement.style.setProperty("--bar-h", "0px");
     await frames();
     expect(el.getBoundingClientRect().top).toBeCloseTo(0, 0);
+  });
+});
+
+/**
+ * What is still wired to the page, counted from the calls rather than from the
+ * element's own bookkeeping: an observer is live from its observe until its
+ * disconnect, and a listener from its add until its remove or its signal aborting.
+ */
+function trackLive(): {
+  observed: () => Element[];
+  listeners: () => { target: EventTarget; type: string }[];
+  stop: () => void;
+} {
+  const NativeObserver = window.ResizeObserver;
+  const observers: { targets: Set<Element> }[] = [];
+  class Tracked extends NativeObserver {
+    readonly targets = new Set<Element>();
+    constructor(callback: ResizeObserverCallback) {
+      super(callback);
+      observers.push(this);
+    }
+    override observe(target: Element, options?: ResizeObserverOptions): void {
+      this.targets.add(target);
+      super.observe(target, options);
+    }
+    override unobserve(target: Element): void {
+      this.targets.delete(target);
+      super.unobserve(target);
+    }
+    override disconnect(): void {
+      this.targets.clear();
+      super.disconnect();
+    }
+  }
+  window.ResizeObserver = Tracked;
+
+  const added: {
+    target: EventTarget;
+    type: string;
+    listener: unknown;
+    capture: boolean;
+    signal: AbortSignal | undefined;
+  }[] = [];
+  const captured = (options: unknown): boolean =>
+    options === true ||
+    (typeof options === "object" && options !== null && "capture" in options && !!options.capture);
+  // The window carries its own copies of these two, as every global object does,
+  // so patching the shared prototype alone would miss the listeners that matter.
+  const hosts: {
+    addEventListener: EventTarget["addEventListener"];
+    removeEventListener: EventTarget["removeEventListener"];
+  }[] = [EventTarget.prototype, window];
+  const natives = hosts.map((host) => ({
+    host,
+    add: host.addEventListener,
+    remove: host.removeEventListener,
+  }));
+  for (const { host, add, remove } of natives) {
+    host.addEventListener = function (
+      this: EventTarget,
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ): void {
+      added.push({
+        target: this,
+        type,
+        listener,
+        capture: captured(options),
+        signal: typeof options === "object" ? options.signal : undefined,
+      });
+      add.call(this, type, listener, options);
+    };
+    host.removeEventListener = function (
+      this: EventTarget,
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ): void {
+      const at = added.findIndex(
+        (entry) =>
+          entry.target === this &&
+          entry.type === type &&
+          entry.listener === listener &&
+          entry.capture === captured(options),
+      );
+      if (at !== -1) {
+        added.splice(at, 1);
+      }
+      remove.call(this, type, listener, options);
+    };
+  }
+
+  return {
+    observed: () => observers.flatMap((observer) => [...observer.targets]),
+    listeners: () =>
+      added
+        .filter((entry) => entry.signal?.aborted !== true)
+        .map((entry) => ({ target: entry.target, type: entry.type })),
+    stop: () => {
+      window.ResizeObserver = NativeObserver;
+      for (const { host, add, remove } of natives) {
+        host.addEventListener = add;
+        host.removeEventListener = remove;
+      }
+    },
+  };
+}
+
+describe("a host's size that fills the window under the bar (real browser)", () => {
+  const TOKENS = {
+    "--ag-ui-width": "100vw",
+    "--ag-ui-height": "100vh",
+    "--ag-ui-max-width": "none",
+    "--ag-ui-max-height": "none",
+  };
+
+  it.each([
+    ["unmoved", false],
+    ["moved", true],
+  ])("reports no loop as the fill comes and goes, %s", async (_name, moved) => {
+    const el = chat({ "collapse-to": "bar", "data-start-open": "" });
+    await frames();
+    if (moved) {
+      await drag(el.shadowRoot?.querySelector(".header") as HTMLElement, -80, -40);
+      await frames();
+    }
+    const bar = el.shadowRoot?.querySelector(".dock-bar") as HTMLElement;
+    for (let round = 0; round < 2; round += 1) {
+      for (const [token, value] of Object.entries(TOKENS)) {
+        el.style.setProperty(token, value);
+      }
+      await frames();
+      expect(getComputedStyle(bar).display).toBe("none");
+      expect(loopReports).toBe(0);
+
+      el.setCollapsed(true);
+      await frames();
+      expect(getComputedStyle(bar).display).toBe("flex");
+      el.setCollapsed(false);
+      await frames();
+      expect(getComputedStyle(bar).display).toBe("none");
+      expect(loopReports).toBe(0);
+
+      for (const token of Object.keys(TOKENS)) {
+        el.style.removeProperty(token);
+      }
+      await frames();
+      expect(getComputedStyle(bar).display).toBe("flex");
+      expect(loopReports).toBe(0);
+    }
+  });
+});
+
+describe("what a detached element leaves wired to the page (real browser)", () => {
+  it("leaves no observer and no listener live after four reconnects", async () => {
+    const live = trackLive();
+    try {
+      const el = chat({ "collapse-to": "bar" });
+      await frames();
+      // The count means something only if it sees what a connected element wires up.
+      expect(live.observed()).toContain(part(el, ".messages"));
+      expect(live.observed()).toContain(part(el, ".dock-bar"));
+      expect(
+        live
+          .listeners()
+          .filter((entry) => entry.target === window)
+          .map((e) => e.type),
+      ).toContain("resize");
+      for (let round = 0; round < 4; round += 1) {
+        el.remove();
+        document.body.appendChild(el);
+        await frames();
+      }
+      el.remove();
+      await frames();
+
+      const inside = (target: unknown): boolean => {
+        const root = el.shadowRoot;
+        return root !== null && target instanceof Node && (root.contains(target) || target === el);
+      };
+      expect(
+        live
+          .observed()
+          .filter(inside)
+          .map((t) => t.className),
+      ).toEqual([]);
+      const wired = live
+        .listeners()
+        .filter((entry) => entry.target === window || entry.target === window.visualViewport)
+        .map((entry) => `${entry.target === window ? "window" : "visualViewport"}:${entry.type}`);
+      expect(wired).toEqual([]);
+    } finally {
+      live.stop();
+    }
   });
 });

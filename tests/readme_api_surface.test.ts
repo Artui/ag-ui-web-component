@@ -98,6 +98,8 @@ const LIFECYCLE_CALLBACKS = new Set([
  * here, which makes a new internal read a decision rather than a silence.
  */
 const INTERNAL_ATTRIBUTES = new Set([
+  // The element's own stamp for its stylesheet, read to skip a frame that changes nothing.
+  "data-fills-window",
   // Stamped on a tool-call card by the card itself, read back to find it again.
   "data-tool-name",
   // A card's and a delegation row's own disclosure state, read back on toggle.

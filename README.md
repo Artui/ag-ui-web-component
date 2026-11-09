@@ -1467,7 +1467,11 @@ the bar's height. The component never writes your CSS, and a custom property can
 height up to your page (it inherits down, never up), so it hands you a number:
 `barHeight` (CSS px, read-only) and an `ag-ui-bar-height` event (the `BAR_HEIGHT_EVENT`
 constant, detail `{ height }`) on every change, including a font-size change. Both read `0`
-where no bar is drawn: under `auto` and `none`, and on a phone while the panel is open.
+where no bar is drawn: under `auto` and `none`, on a phone while the panel is open, and while your
+size fills the window with the panel open. If you write the height into
+`--ag-ui-viewport-inset-bottom`, a panel that fills the box that leaves stays judged against that
+box once the bar goes and the box grows by the bar's height: it settles with the bar gone and room
+at its foot. Writing some other share of the height does not settle; publish it to your page as below.
 
 ```js
 const chat = document.querySelector("ag-ui-chat");
@@ -1509,6 +1513,13 @@ launcher to drag: the bar and your own control stay where they are.
   forgetting the stored spot, so a reload opens it there too.
 - **Keeping it fixed.** `data-launcher-drag="false"` turns the header drag and `moveTo` off here as
   everywhere else, and the panel stays on its dock.
+- **A host's size that fills the window.** Set `--ag-ui-width` and `--ag-ui-height` to the whole
+  window, with `--ag-ui-max-width` and `--ag-ui-max-height` out of the way (the defaults stop short
+  of it), and the panel stands at the start of the room you left free, whether it was moved or not.
+  The bar and the grips go while it does, as on a phone, with `barHeight` at 0 and the header's
+  minimise control as the way back. The bar comes back when the panel is collapsed, and both when
+  your size stops filling. The stored spot stays, and the panel goes back to it, or to its dock,
+  once your size stops filling. An inline `--ag-ui-inset` of your own stays where you wrote it.
 
 Placements that own their position (`side` and `full` under `bar`, `sidebar` and `embedded`
 under `none`) do not move, as without `collapse-to`.

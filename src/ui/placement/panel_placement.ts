@@ -288,6 +288,9 @@ export class PanelPlacement {
       }
       this.#dockPos = null;
       this.#storeDockPosition(null);
+      // A size the host holds does not change here, so no observer is coming to
+      // stand a panel that fills the window back on the screen.
+      this.#placeDocked();
     } else {
       this.#carrySpotWithSize(sized);
     }
@@ -387,9 +390,10 @@ export class PanelPlacement {
   #gripInset: string | null = null;
 
   /**
-   * The inset standing a panel with no spot at the start of a window a host's
-   * size fills, or null. Told apart from a host's own for the same reason, and it
-   * lasts only as long as that size does.
+   * The inset standing a panel at the start of a window a host's size fills, or
+   * null: a corner panel with no spot, or a docked one with or without one. Told
+   * apart from a host's own for the same reason, and it lasts only as long as that
+   * size does.
    */
   #fillInset: string | null = null;
 
@@ -411,6 +415,13 @@ export class PanelPlacement {
    * syncDock, which runs on every change either can make.
    */
   #dockTop = Number.POSITIVE_INFINITY;
+  /** The bar's height, as last measured: what a fill takes away when it stamps. */
+  #barHeight = 0;
+  /**
+   * What the usable box and the window measured when a fill took the bar away, and what
+   * the bar was. Null while no fill holds it. See {@link #fillRoom}.
+   */
+  #barTaken: { readonly room: number; readonly window: number; readonly bar: number } | null = null;
 
   /**
    * The corner the panel opens away from, once this element is placing itself.
@@ -490,7 +501,7 @@ export class PanelPlacement {
   describeSurface(): ChatSurfaceReport {
     const box = this.#host.element.getBoundingClientRect();
     const viewport = this.#viewport();
-    const fullBleed = coversViewport(box, viewport);
+    const fullBleed = coversViewport(box, this.#fillRoom());
     return {
       placement: this.#host.element.getAttribute("placement"),
       collapseTo: this.#surface().collapseTo,
@@ -527,7 +538,7 @@ export class PanelPlacement {
     const restore = options.announce === true ? this.#captureGeometry() : null;
     const viewport = this.#viewport();
     const box = this.#host.element.getBoundingClientRect();
-    if (coversViewport(box, viewport)) {
+    if (coversViewport(box, this.#fillRoom())) {
       return false;
     }
     const [edgeY, edgeX] = corner.split("-");
@@ -581,7 +592,9 @@ export class PanelPlacement {
    * corner is what the panel grows from, so restoring a position without it
    * puts the box back and animates it out of the wrong side. Absent values are
    * captured as absent and removed on the way back, rather than written as
-   * empty strings that would outrank the placement.
+   * empty strings that would outrank the placement. And what the inset is, because
+   * one put back with no record of having come from a grip or a fill reads as a
+   * host's own, and a phone would leave it holding the panel off the screen.
    *
    * The surface may have changed by the time of the undo, so the two halves are
    * put back apart. Both records are, always, each to its own store, so the
@@ -598,6 +611,8 @@ export class PanelPlacement {
     const panelPos = this.#panelPos;
     const dockPos = this.#dockPos ?? this.#readDockPosition();
     const expandCorner = this.#expandCorner;
+    const gripInset = this.#gripInset;
+    const fillInset = this.#fillInset;
     const cornerSpot = this.#cornerSpot ?? this.#readLauncherPosition();
     const owner = this.#positionOwner();
     return () => {
@@ -624,6 +639,8 @@ export class PanelPlacement {
         this.#launcherPos = launcherPos;
         this.#panelPos = panelPos;
         this.#expandCorner = expandCorner;
+        this.#gripInset = gripInset;
+        this.#fillInset = fillInset;
       } else {
         this.#forgetCornerPosition();
       }
@@ -746,6 +763,31 @@ export class PanelPlacement {
    */
   #stampHeader(): void {
     this.#header?.toggleAttribute("data-fills-screen", this.#fillsScreen());
+    // And for the bar and the grips, which go while it does. The next frame, because
+    // this runs inside the transcript's observer, and the bar it takes away sits
+    // above that in the tree: its own observer would be left undelivered, which the
+    // browser reports on the window, where a host's error tracking counts it.
+    const element = this.#host.element;
+    if (this.#fillsWindow() !== element.hasAttribute("data-fills-window")) {
+      requestAnimationFrame(() => {
+        const fills = this.#fillsWindow();
+        if (fills !== element.hasAttribute("data-fills-window")) {
+          this.#barTaken = fills
+            ? { room: this.#viewport().height, window: this.#screen().height, bar: this.#barHeight }
+            : null;
+          element.toggleAttribute("data-fills-window", fills);
+        }
+      });
+    }
+  }
+
+  /**
+   * Whether the panel fills the window in a placement it can move in. Not one that owns
+   * its position: full stops at the bar, so taking the bar away would make it fill the
+   * window, and that would take the bar away for good.
+   */
+  #fillsWindow(): boolean {
+    return this.#fillsScreen() && this.#surface().panelMovable;
   }
 
   /** Put a custom property back to a previous value, or remove it if there was none. */
@@ -848,6 +890,10 @@ export class PanelPlacement {
       element.style.removeProperty(DOCK_RIGHT);
     }
     element.toggleAttribute("data-dock-anchored", target === "none" && anchor !== null);
+    this.#barHeight = height;
+    if (target !== "bar") {
+      this.#barTaken = null;
+    }
     this.#dockTop =
       target === "bar" && height > 0
         ? bar.getBoundingClientRect().top
@@ -881,19 +927,43 @@ export class PanelPlacement {
    * block reads the host's inset before its own, so a dragged spot written
    * there would hold the panel off the screen's edges. The spot itself stays,
    * for the next time there is room for it.
+   *
+   * A host's size that makes the panel the window hangs it off the resting inset's
+   * far side, past the top of the window with the header on it under the bar, so
+   * it stands at the start of the room instead, moved or not, as a corner panel
+   * does, and the stylesheet takes the bar away for as long as it does. A placement
+   * that owns its position keeps it, whatever the host's size.
+   *
+   * Under data-launcher-drag="false" a spot from before the attribute is left alone
+   * while the panel is on the screen, as a corner panel's is, and the record stays
+   * for the day the attribute comes off.
    */
   #placeDocked(): void {
-    if (!this.#docked() || !this.#panelMovable() || this.dragging()) {
+    if (!this.#docked() || !this.#surface().panelMovable || this.dragging()) {
       return;
     }
-    const at = this.#dockPos ?? this.#readDockPosition();
+    const element = this.#host.element;
+    const at = this.#panelMovable() ? (this.#dockPos ?? this.#readDockPosition()) : null;
     if (at === null) {
+      if (this.#dockPos !== null) {
+        const filling = element.style.getPropertyValue("--ag-ui-inset") === this.#fillInset;
+        if (!filling && !this.#offScreen()) {
+          return;
+        }
+        this.#dockPos = null;
+        element.style.removeProperty("--ag-ui-inset");
+      }
+      this.#placeUnstated();
       return;
     }
     this.#dockPos = at;
-    this.#host.element.style.removeProperty("--ag-ui-inset");
-    const rest = this.#host.element.getBoundingClientRect();
-    if (coversViewport(rest, this.#viewport())) {
+    element.style.removeProperty("--ag-ui-inset");
+    const rest = element.getBoundingClientRect();
+    const viewport = this.#viewport();
+    if (coversViewport(rest, this.#fillRoom())) {
+      if (hangsOff(rest, viewport, this.#screen())) {
+        this.#standAtStart(rest);
+      }
       return;
     }
     // Measured at the dock, so the inset below is written from the corner the
@@ -960,7 +1030,49 @@ export class PanelPlacement {
 
   /** Whether the panel covers the usable viewport, as it stands now. */
   #fillsScreen(): boolean {
-    return coversViewport(this.#host.element.getBoundingClientRect(), this.#viewport());
+    return coversViewport(this.#host.element.getBoundingClientRect(), this.#fillRoom());
+  }
+
+  /**
+   * The box a fill is judged against: the usable one, unless taking the bar away is
+   * what grew it.
+   *
+   * A host can write the bar's height into the inset it reserves. The panel fills the
+   * box that leaves, so the bar goes, the height says 0, the host writes that, the box
+   * grows by what the bar took, and the panel no longer fills it. Judged against that,
+   * the bar comes back and it all goes round again every frame without end. So on the
+   * same window, a box grown by the bar's height is the box it was, and the panel
+   * stands where it stood with the bar gone. Grown by anything else, or on a window of
+   * another size, it is a change of the host's or the reader's and is judged as one.
+   * The slack is the pixel a host rounding the height up can add.
+   */
+  #fillRoom(): ViewportBox {
+    const viewport = this.#viewport();
+    const taken = this.#barTaken;
+    if (
+      taken !== null &&
+      taken.window === this.#screen().height &&
+      Math.abs(viewport.height - taken.room - taken.bar) <= 1
+    ) {
+      return { ...viewport, height: taken.room };
+    }
+    return viewport;
+  }
+
+  /**
+   * Whether the panel stands off an edge of the screen, as it stands now.
+   *
+   * The screen rather than the usable box: a panel under chrome the host reserved
+   * has its controls where the host can still bring them back, and is not what a
+   * position kept under data-launcher-drag="false" has to give way to.
+   */
+  #offScreen(): boolean {
+    const screen = this.#screen();
+    return hangsOff(
+      this.#host.element.getBoundingClientRect(),
+      { left: 0, top: 0, ...screen },
+      screen,
+    );
   }
 
   /**
@@ -1392,6 +1504,8 @@ export class PanelPlacement {
    * reopen to happen: a line typed in the composer is one. A position waiting to
    * be handed back under data-launcher-drag="false" waits on, because a panel that leaves for the
    * host's corner as the reader starts typing is a jump with no cause they can see.
+   * It waits no longer than the panel stays on the screen: a host's size can stand
+   * it off an edge, where its header is out of reach until something else happens.
    */
   settleLauncherPosition(): void {
     this.#placeFromRecord(false);
@@ -1417,7 +1531,7 @@ export class PanelPlacement {
     // interaction, like every other answer here.
     const draggable = this.#launcherDraggable();
     if (!draggable && this.#launcherPos !== null) {
-      if (!handBack) {
+      if (!handBack && !this.#offScreen()) {
         return;
       }
       this.releaseLauncherPosition();
@@ -1485,8 +1599,9 @@ export class PanelPlacement {
   }
 
   /**
-   * Place a corner panel that has no spot, the half of {@link #standFullBleed}
-   * with nothing stated to keep and no launcher of its own to measure.
+   * Place a panel that has no spot, a corner one or a docked one, the half of
+   * {@link #standFullBleed} with nothing stated to keep and no launcher of its own
+   * to measure.
    *
    * Only an inset this element wrote comes off or goes back. One the host wrote
    * inline is a token a host may state on a phone as anywhere else, and with no
@@ -1496,7 +1611,7 @@ export class PanelPlacement {
     const element = this.#host.element;
     const inline = element.style.getPropertyValue("--ag-ui-inset");
     const viewport = this.#viewport();
-    if (!coversViewport(element.getBoundingClientRect(), viewport)) {
+    if (!coversViewport(element.getBoundingClientRect(), this.#fillRoom())) {
       if (inline === "" || inline === this.#fillInset) {
         this.#restoreProperty("--ag-ui-inset", this.#gripInset ?? "");
         this.syncResizeAnchor();
@@ -1513,10 +1628,19 @@ export class PanelPlacement {
       element.style.getPropertyValue("--ag-ui-inset") === "" &&
       hangsOff(rest, viewport, screen)
     ) {
-      this.#fillInset = insetFrom({ x: "left", y: "top" }, atStartOf(viewport, rest), screen);
-      element.style.setProperty("--ag-ui-inset", this.#fillInset);
-      this.syncResizeAnchor();
+      this.#standAtStart(rest);
     }
+  }
+
+  /** Stand a box a host's size fills at the start of the room the host left free. */
+  #standAtStart(rest: PanelRect): void {
+    this.#fillInset = insetFrom(
+      { x: "left", y: "top" },
+      atStartOf(this.#viewport(), rest),
+      this.#screen(),
+    );
+    this.#host.element.style.setProperty("--ag-ui-inset", this.#fillInset);
+    this.syncResizeAnchor();
   }
 
   /** The persisted position for this instance, or null. */

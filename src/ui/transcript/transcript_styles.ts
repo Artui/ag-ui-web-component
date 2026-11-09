@@ -97,7 +97,18 @@ export const TRANSCRIPT_STYLES: string = `
 
    visibility rather than display: none, because a box that generates no
    layout has no used values to read. Zero-sized, absolutely positioned and
-   inert, so it costs nothing but the read. */
+   inert, so it costs nothing but the read.
+
+   The padding gives that box the size of the tokens, which a card narrower than
+   one of them would scroll to reach. Scrollable overflow counts a box as its
+   transform draws it, so a scale of nothing takes it out of that count on every
+   side and in either direction, and leaves what is read: the padding's used values,
+   and the containing block a percentage resolves against. Position fixed would add
+   no scroll either, and would change that block.
+
+   From its own corner, which is inside whatever holds it where the centre of the
+   padding need not be: kept for an engine that counts a point with no area. Chromium
+   does not, so the suite cannot pin the origin. */
 .viewport-probe {
   position: absolute;
   top: 0;
@@ -106,6 +117,8 @@ export const TRANSCRIPT_STYLES: string = `
   height: 0;
   visibility: hidden;
   pointer-events: none;
+  transform: scale(0);
+  transform-origin: 0 0;
   padding: var(--_viewport-inset-top) var(--_viewport-inset-right)
     var(--_viewport-inset-bottom) var(--_viewport-inset-left);
 }

@@ -665,7 +665,27 @@ export class AgUiChat extends HTMLElement {
     // sent me looking -- that was an inset measured from the wrong box -- so it
     // is a guard against a fight that had not been observed rather than a fix
     // for one that had.
-    return !this.#placement.dragging();
+    //
+    // Nor while this element has no box, which is what hiding it reports to the
+    // transcript's observer: placing measures a rect of nothing and writes an inset
+    // from it. Showing it reports again, so nothing waits on this.
+    return !this.#placement.dragging() && this.#hasBox();
+  }
+
+  /**
+   * Whether this element generates a box at all. Hidden on itself or on any ancestor
+   * it does not; a host collapsed to its launcher does, whatever its size, and that
+   * launcher still has to be placed, which is why this is not a test of the size.
+   */
+  #hasBox(): boolean {
+    return this.getClientRects().length > 0;
+  }
+
+  /** Restore for a moment that is not a viewport's, which showing this reports anyway. */
+  #restoreIfBoxed(): void {
+    if (this.#hasBox()) {
+      this.#placement.restoreLauncherPosition();
+    }
   }
 
   /** Mic button mount point (input row); the control mounts on connect when enabled. */
@@ -1567,7 +1587,7 @@ export class AgUiChat extends HTMLElement {
     requestAnimationFrame(() => {
       // Before the anchor, which the placement stamps itself once a dragged
       // position exists.
-      this.#placement.restoreLauncherPosition();
+      this.#restoreIfBoxed();
       this.#placement.syncResizeAnchor();
     });
     // Resolve the string table before rendering any chrome (defaults are the
@@ -1924,7 +1944,7 @@ export class AgUiChat extends HTMLElement {
       // Re-decide which way to open before opening: the viewport may have
       // changed since the launcher was dropped, and this corner is what the
       // panel grows from.
-      this.#placement.restoreLauncherPosition();
+      this.#restoreIfBoxed();
     }
     if (collapsed) {
       this.setAttribute("collapsed", "");
@@ -2036,7 +2056,12 @@ export class AgUiChat extends HTMLElement {
     if (!this.isConnected) {
       return;
     }
-    const height = this.#placement.syncDock(this.#dockBar, this.#resolveAnchor());
+    // With no box there is no bar drawn, which the host still hears of, and nothing to
+    // measure: syncing would place a dragged panel from a rect of nothing. Showing this
+    // element resizes the bar or the transcript, and their observers sync it then.
+    const height = this.#hasBox()
+      ? this.#placement.syncDock(this.#dockBar, this.#resolveAnchor())
+      : 0;
     if (height === this.#barHeight) {
       return;
     }
