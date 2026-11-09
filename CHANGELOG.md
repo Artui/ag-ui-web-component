@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A corner panel a grip placed goes full-bleed on a phone after a move is
+  undone.** Under `collapse-to="auto"`, with no spot stated, the sequence of a grip
+  on an edge the layout holds, `moveTo` with its announcement, another such grip and
+  the undo left an inline `--ag-ui-inset` that read as a host's own, so a phone kept
+  it, and the panel stood off the screen by as much as the grip had moved it. It now
+  fills the screen with no inline inset, and widening gives the grip's place back.
+  An undo also keeps the inset that stands a panel at the start of a window a host
+  fills, so the panel rests again once that fill has gone. **A host has nothing to
+  do.**
+
 ## [0.50.0] — 2026-11-08
 
 ### Changed

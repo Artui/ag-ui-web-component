@@ -14,6 +14,7 @@ import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
  */
 
 const DESKTOP = { width: 1280, height: 800 };
+const PHONE = { width: 390, height: 844 };
 const ID = "undo";
 const LAUNCHER_KEY = `ag-ui-chat:launcher:${ID}`;
 const DOCK_KEY = `ag-ui-chat:dock:${ID}`;
@@ -55,6 +56,18 @@ async function dragHeaderTo(el: AgUiChat, to: { left: number; top: number }): Pr
   part(el, ".header").dispatchEvent(
     new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
   );
+  window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
+  window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + dx, clientY: y + dy }));
+  await frames();
+}
+
+/** A grip pulled by a pointer: press, travel, release. */
+async function pullGrip(el: AgUiChat, grip: string, dx: number, dy: number): Promise<void> {
+  const handle = part(el, `.resize-handle--${grip}`);
+  const rect = handle.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }));
   window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
   window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + dx, clientY: y + dy }));
   await frames();
@@ -188,6 +201,85 @@ describe("undoing a move across a surface change (real browser)", () => {
       await frames();
       el.setCollapsed(false);
       await frames();
+      expectAt(el, home);
+    });
+  });
+
+  describe("a corner panel with no spot, undone back to what a grip or a fill left", () => {
+    it("keeps a grip's inset the grip's, so a phone still takes the panel full-bleed", async () => {
+      const el = chat();
+      await frames();
+      await pullGrip(el, "bottom-right", -40, -30);
+      const left = el.style.getPropertyValue("--ag-ui-inset");
+      expect(left).not.toBe("");
+
+      expect(el.moveTo("top-left", { announce: true })).toBe(true);
+      await frames();
+      // The edge the move left pinned: a grip on a free one writes no inset, and
+      // this path is the one where a grip on a moved panel forgets the first.
+      const moved = el.style.getPropertyValue("--ag-ui-inset");
+      await pullGrip(el, el.getAttribute("data-resize-anchor") as string, 10, 10);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).not.toBe(moved);
+
+      part(el, ".run-notice-undo").click();
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(left);
+      const place = el.getBoundingClientRect();
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBeNull();
+
+      await page.viewport(PHONE.width, PHONE.height);
+      await frames();
+      const full = el.getBoundingClientRect();
+      expect([full.left, full.top, full.width, full.height]).toEqual([
+        0,
+        0,
+        PHONE.width,
+        PHONE.height,
+      ]);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+
+      await page.viewport(DESKTOP.width, DESKTOP.height);
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe(left);
+      expectAt(el, place);
+    });
+
+    it("keeps a fill's inset the fill's, so the panel rests once the fill has gone", async () => {
+      const el = chat();
+      await frames();
+      const home = el.getBoundingClientRect();
+      const fill = {
+        "--ag-ui-width": "100vw",
+        "--ag-ui-height": "100vh",
+        "--ag-ui-max-width": "100vw",
+        "--ag-ui-max-height": "100vh",
+      };
+      for (const [token, value] of Object.entries(fill)) {
+        el.style.setProperty(token, value);
+      }
+      await frames();
+      expectAt(el, { left: 0, top: 0 });
+      const standing = el.style.getPropertyValue("--ag-ui-inset");
+      expect(standing).not.toBe("");
+
+      // In one task, so the move is made before anything has seen the fill go.
+      for (const token of Object.keys(fill)) {
+        el.style.removeProperty(token);
+      }
+      expect(el.moveTo("top-left", { announce: true })).toBe(true);
+      await frames();
+
+      // Handing the position back is what forgets the fill while the move stands.
+      el.setAttribute("data-launcher-drag", "false");
+      await page.viewport(DESKTOP.width - 10, DESKTOP.height);
+      await frames();
+      el.removeAttribute("data-launcher-drag");
+      await page.viewport(DESKTOP.width, DESKTOP.height);
+      await frames();
+
+      part(el, ".run-notice-undo").click();
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
       expectAt(el, home);
     });
   });

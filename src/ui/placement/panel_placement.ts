@@ -581,7 +581,9 @@ export class PanelPlacement {
    * corner is what the panel grows from, so restoring a position without it
    * puts the box back and animates it out of the wrong side. Absent values are
    * captured as absent and removed on the way back, rather than written as
-   * empty strings that would outrank the placement.
+   * empty strings that would outrank the placement. And what the inset is, because
+   * one put back with no record of having come from a grip or a fill reads as a
+   * host's own, and a phone would leave it holding the panel off the screen.
    *
    * The surface may have changed by the time of the undo, so the two halves are
    * put back apart. Both records are, always, each to its own store, so the
@@ -598,6 +600,8 @@ export class PanelPlacement {
     const panelPos = this.#panelPos;
     const dockPos = this.#dockPos ?? this.#readDockPosition();
     const expandCorner = this.#expandCorner;
+    const gripInset = this.#gripInset;
+    const fillInset = this.#fillInset;
     const cornerSpot = this.#cornerSpot ?? this.#readLauncherPosition();
     const owner = this.#positionOwner();
     return () => {
@@ -624,6 +628,8 @@ export class PanelPlacement {
         this.#launcherPos = launcherPos;
         this.#panelPos = panelPos;
         this.#expandCorner = expandCorner;
+        this.#gripInset = gripInset;
+        this.#fillInset = fillInset;
       } else {
         this.#forgetCornerPosition();
       }
