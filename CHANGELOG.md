@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   An undo also keeps the inset that stands a panel at the start of a window a host
   fills, so the panel rests again once that fill has gone. **A host has nothing to
   do.**
+- **A moved panel under `data-launcher-drag="false"` gives way when a host's size
+  stands it off the screen.** Since 0.50.0 such a panel stays where it was moved
+  until the next window resize or reopen, and it still does while the reader types.
+  A host that then filled the window left it at -524,-144 at 1280x800, its header
+  out of reach, until one of those came. Any size that stands it off an edge of the
+  screen now hands it to the host's CSS at once, and a host that fills the window
+  gets it at 0,0. The stored spot stays for the day the attribute comes off. A size
+  that still fits moves nothing. **A host has nothing to do.**
 
 ## [0.50.0] — 2026-11-08
 

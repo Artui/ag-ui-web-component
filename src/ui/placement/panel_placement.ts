@@ -970,6 +970,22 @@ export class PanelPlacement {
   }
 
   /**
+   * Whether the panel stands off an edge of the screen, as it stands now.
+   *
+   * The screen rather than the usable box: a panel under chrome the host reserved
+   * has its controls where the host can still bring them back, and is not what a
+   * position kept under data-launcher-drag="false" has to give way to.
+   */
+  #offScreen(): boolean {
+    const screen = this.#screen();
+    return hangsOff(
+      this.#host.element.getBoundingClientRect(),
+      { left: 0, top: 0, ...screen },
+      screen,
+    );
+  }
+
+  /**
    * Whether this placement lets the launcher be dragged, read per interaction
    * because `placement` is a live attribute. `data-launcher-drag="false"` opts
    * a host out without giving up the launcher itself.
@@ -1398,6 +1414,8 @@ export class PanelPlacement {
    * reopen to happen: a line typed in the composer is one. A position waiting to
    * be handed back under data-launcher-drag="false" waits on, because a panel that leaves for the
    * host's corner as the reader starts typing is a jump with no cause they can see.
+   * It waits no longer than the panel stays on the screen: a host's size can stand
+   * it off an edge, where its header is out of reach until something else happens.
    */
   settleLauncherPosition(): void {
     this.#placeFromRecord(false);
@@ -1423,7 +1441,7 @@ export class PanelPlacement {
     // interaction, like every other answer here.
     const draggable = this.#launcherDraggable();
     if (!draggable && this.#launcherPos !== null) {
-      if (!handBack) {
+      if (!handBack && !this.#offScreen()) {
         return;
       }
       this.releaseLauncherPosition();

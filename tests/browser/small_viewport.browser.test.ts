@@ -740,6 +740,75 @@ describe("a corner panel placed on a wide window (real browser)", () => {
       expectFullBleed(el);
     });
 
+    it("stands at 0,0 when a host then fills the window, with no resize", async () => {
+      const el = await placed();
+      const stored = localStorage.getItem(LAUNCHER_KEY);
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      for (const token of ["--ag-ui-width", "--ag-ui-max-width"]) {
+        el.style.setProperty(token, "100vw");
+      }
+      for (const token of ["--ag-ui-height", "--ag-ui-max-height"]) {
+        el.style.setProperty(token, "100vh");
+      }
+      await frames();
+      const box = el.getBoundingClientRect();
+      expect([box.left, box.top, box.width, box.height]).toEqual([
+        0,
+        0,
+        DESKTOP.width,
+        DESKTOP.height,
+      ]);
+      expect(localStorage.getItem(LAUNCHER_KEY)).toBe(stored);
+
+      // The fill going is a layout change too, and there is nothing left to wait for.
+      for (const token of [
+        "--ag-ui-width",
+        "--ag-ui-max-width",
+        "--ag-ui-height",
+        "--ag-ui-max-height",
+      ]) {
+        el.style.removeProperty(token);
+      }
+      await frames();
+      expectAtRest(el, DESKTOP);
+    });
+
+    it("hands back when a host's width alone pushes the panel off an edge", async () => {
+      // A panel a host only widened covers nothing, and its header is still cut off.
+      const el = await placed();
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      el.style.setProperty("--ag-ui-width", "900px");
+      el.style.setProperty("--ag-ui-max-width", "900px");
+      await frames();
+      expect(el.getBoundingClientRect().width).toBe(900);
+      expectAtRest(el, DESKTOP);
+    });
+
+    it("stays where it is when a host's size still fits the window", async () => {
+      const el = await placed();
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      const right = el.getBoundingClientRect().right;
+      el.style.setProperty("--ag-ui-width", "500px");
+      await frames();
+      expect(el.getBoundingClientRect().width).toBe(500);
+      expect(el.getBoundingClientRect().right).toBeCloseTo(right, 0);
+    });
+
+    it("stays where it is under a viewport inset token that reaches past its top", async () => {
+      // Under chrome the host reserved is not off the screen: it is what this
+      // attribute has always left to the next resize or reopen.
+      const el = await placed();
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      el.style.setProperty("--ag-ui-viewport-inset-top", "120px");
+      await frames();
+      expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+      expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+    });
+
     it("takes the spot back when the attribute comes off, from the stored record", async () => {
       const el = await placed();
       el.setAttribute("data-launcher-drag", "false");
