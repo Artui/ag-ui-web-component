@@ -16,6 +16,8 @@ export interface AnswerActionsHost {
   readonly retry: () => void;
   /** The element's current conversation thread. */
   readonly threadId: () => string;
+  /** Follow the transcript's foot, as every site that adds to it does. */
+  readonly follow: () => void;
 }
 
 /** A finished bubble that is not an answer, and so carries no rating. */
@@ -124,6 +126,10 @@ export class AnswerActions {
     if (enabled.has(MESSAGE_ACTIONS.RETRY)) {
       this.#moveRetryTo(messageActionBar(bubble, this.#host.strings()));
     }
+    // The row is insertion too. Every caller followed the bubble before the
+    // row went under it, so a pinned transcript came to rest one row short of
+    // its foot, with the last answer's Retry and Copy under the composer.
+    this.#host.follow();
   }
 
   /** Move the Retry button onto `bar`, taking it off whoever held it. */

@@ -492,6 +492,7 @@ export class AgUiChat extends HTMLElement {
     },
     // Late-bound: the history is built in the constructor, after this field.
     threadId: () => this.#history.threadId,
+    follow: () => this.#transcript.follow(),
   });
 
   readonly #root: ShadowRoot;
