@@ -37,7 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the grips go, as they do on a phone, with `ag-ui-bar-height` saying 0 and the
   header's minimise control as the way back, because the strip would draw over the
   composer's foot. The bar comes back when the panel is collapsed, and both when the
-  size stops filling. The dock's stored spot stays unchanged, and the panel goes back
+  size stops filling. A host that writes that height into its own
+  `--ag-ui-viewport-inset-bottom` settles with the bar gone: the panel stays judged
+  against the box it filled while the box has only grown by the bar's height on the same
+  window, where it would otherwise flip the bar and jump the header every frame. The
+  dock's stored spot stays unchanged, and the panel goes back
   to its spot or its dock when the size stops filling. A host's own inline `--ag-ui-inset` stays
   where the host wrote it, and a placement that owns its position is left alone. **A
   host has nothing to do.**

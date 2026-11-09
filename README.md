@@ -1468,7 +1468,10 @@ height up to your page (it inherits down, never up), so it hands you a number:
 `barHeight` (CSS px, read-only) and an `ag-ui-bar-height` event (the `BAR_HEIGHT_EVENT`
 constant, detail `{ height }`) on every change, including a font-size change. Both read `0`
 where no bar is drawn: under `auto` and `none`, on a phone while the panel is open, and while your
-size fills the window with the panel open.
+size fills the window with the panel open. If you write the height into
+`--ag-ui-viewport-inset-bottom`, a panel that fills the box that leaves stays judged against that
+box once the bar goes and the box grows by the bar's height: it settles with the bar gone and room
+at its foot. Writing some other share of the height does not settle; publish it to your page as below.
 
 ```js
 const chat = document.querySelector("ag-ui-chat");

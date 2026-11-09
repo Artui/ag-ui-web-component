@@ -415,6 +415,13 @@ export class PanelPlacement {
    * syncDock, which runs on every change either can make.
    */
   #dockTop = Number.POSITIVE_INFINITY;
+  /** The bar's height, as last measured: what a fill takes away when it stamps. */
+  #barHeight = 0;
+  /**
+   * What the usable box and the window measured when a fill took the bar away, and what
+   * the bar was. Null while no fill holds it. See {@link #fillRoom}.
+   */
+  #barTaken: { readonly room: number; readonly window: number; readonly bar: number } | null = null;
 
   /**
    * The corner the panel opens away from, once this element is placing itself.
@@ -494,7 +501,7 @@ export class PanelPlacement {
   describeSurface(): ChatSurfaceReport {
     const box = this.#host.element.getBoundingClientRect();
     const viewport = this.#viewport();
-    const fullBleed = coversViewport(box, viewport);
+    const fullBleed = coversViewport(box, this.#fillRoom());
     return {
       placement: this.#host.element.getAttribute("placement"),
       collapseTo: this.#surface().collapseTo,
@@ -531,7 +538,7 @@ export class PanelPlacement {
     const restore = options.announce === true ? this.#captureGeometry() : null;
     const viewport = this.#viewport();
     const box = this.#host.element.getBoundingClientRect();
-    if (coversViewport(box, viewport)) {
+    if (coversViewport(box, this.#fillRoom())) {
       return false;
     }
     const [edgeY, edgeX] = corner.split("-");
@@ -763,7 +770,13 @@ export class PanelPlacement {
     const element = this.#host.element;
     if (this.#fillsWindow() !== element.hasAttribute("data-fills-window")) {
       requestAnimationFrame(() => {
-        element.toggleAttribute("data-fills-window", this.#fillsWindow());
+        const fills = this.#fillsWindow();
+        if (fills !== element.hasAttribute("data-fills-window")) {
+          this.#barTaken = fills
+            ? { room: this.#viewport().height, window: this.#screen().height, bar: this.#barHeight }
+            : null;
+          element.toggleAttribute("data-fills-window", fills);
+        }
       });
     }
   }
@@ -877,6 +890,10 @@ export class PanelPlacement {
       element.style.removeProperty(DOCK_RIGHT);
     }
     element.toggleAttribute("data-dock-anchored", target === "none" && anchor !== null);
+    this.#barHeight = height;
+    if (target !== "bar") {
+      this.#barTaken = null;
+    }
     this.#dockTop =
       target === "bar" && height > 0
         ? bar.getBoundingClientRect().top
@@ -943,7 +960,7 @@ export class PanelPlacement {
     element.style.removeProperty("--ag-ui-inset");
     const rest = element.getBoundingClientRect();
     const viewport = this.#viewport();
-    if (coversViewport(rest, viewport)) {
+    if (coversViewport(rest, this.#fillRoom())) {
       if (hangsOff(rest, viewport, this.#screen())) {
         this.#standAtStart(rest);
       }
@@ -1013,7 +1030,33 @@ export class PanelPlacement {
 
   /** Whether the panel covers the usable viewport, as it stands now. */
   #fillsScreen(): boolean {
-    return coversViewport(this.#host.element.getBoundingClientRect(), this.#viewport());
+    return coversViewport(this.#host.element.getBoundingClientRect(), this.#fillRoom());
+  }
+
+  /**
+   * The box a fill is judged against: the usable one, unless taking the bar away is
+   * what grew it.
+   *
+   * A host can write the bar's height into the inset it reserves. The panel fills the
+   * box that leaves, so the bar goes, the height says 0, the host writes that, the box
+   * grows by what the bar took, and the panel no longer fills it. Judged against that,
+   * the bar comes back and it all goes round again every frame without end. So on the
+   * same window, a box grown by the bar's height is the box it was, and the panel
+   * stands where it stood with the bar gone. Grown by anything else, or on a window of
+   * another size, it is a change of the host's or the reader's and is judged as one.
+   * The slack is the pixel a host rounding the height up can add.
+   */
+  #fillRoom(): ViewportBox {
+    const viewport = this.#viewport();
+    const taken = this.#barTaken;
+    if (
+      taken !== null &&
+      taken.window === this.#screen().height &&
+      Math.abs(viewport.height - taken.room - taken.bar) <= 1
+    ) {
+      return { ...viewport, height: taken.room };
+    }
+    return viewport;
   }
 
   /**
@@ -1568,7 +1611,7 @@ export class PanelPlacement {
     const element = this.#host.element;
     const inline = element.style.getPropertyValue("--ag-ui-inset");
     const viewport = this.#viewport();
-    if (!coversViewport(element.getBoundingClientRect(), viewport)) {
+    if (!coversViewport(element.getBoundingClientRect(), this.#fillRoom())) {
       if (inline === "" || inline === this.#fillInset) {
         this.#restoreProperty("--ag-ui-inset", this.#gripInset ?? "");
         this.syncResizeAnchor();
