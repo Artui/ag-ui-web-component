@@ -984,18 +984,51 @@ describe("a corner panel placed on a wide window (real browser)", () => {
       expect(el.getBoundingClientRect().right).toBeCloseTo(DESKTOP.width - 24, 0);
     });
 
-    it("keeps the bar on the screen while the panel fills, for the way back", async () => {
-      const el = await docked("bar", false);
+    it.each([
+      ["unmoved", false],
+      ["moved", true],
+    ])("takes the bar away while the panel fills, %s, as a phone does", async (_name, moved) => {
+      const el = await docked("bar", moved);
+      const bar = part(el, ".dock-bar");
+      const height = el.barHeight;
+      expect(height).toBeGreaterThan(0);
       fill(el);
       await frames();
+      expectFills(el, DESKTOP);
+      expect(getComputedStyle(bar).display).toBe("none");
+      expect(el.barHeight).toBe(0);
+      // What the strip took: a press on the composer's foot landed on the bar.
+      const send = part(el, ".send");
+      const at = send.getBoundingClientRect();
+      const hit = el.shadowRoot?.elementFromPoint(at.left + at.width / 2, at.top + at.height / 2);
+      expect(hit === send || send.contains(hit as Node)).toBe(true);
+
+      // Collapsed, it is the way back, with the panel's size still the host's.
       el.setCollapsed(true);
       await frames();
-      const bar = part(el, ".dock-bar").getBoundingClientRect();
-      expect(bar.height).toBeGreaterThan(0);
-      expect(bar.bottom).toBeCloseTo(DESKTOP.height, 0);
+      expect(getComputedStyle(bar).display).toBe("flex");
+      expect(bar.getBoundingClientRect().bottom).toBeCloseTo(DESKTOP.height, 0);
+      expect(el.barHeight).toBe(height);
       el.setCollapsed(false);
       await frames();
+      expect(getComputedStyle(bar).display).toBe("none");
       expectFills(el, DESKTOP);
+
+      unfill(el);
+      await frames();
+      expect(getComputedStyle(bar).display).toBe("flex");
+      expect(el.barHeight).toBe(height);
+      expect(el.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        bar.getBoundingClientRect().top,
+      );
+    });
+
+    it("keeps the bar while the panel does not fill the window", async () => {
+      const el = await docked("bar", false);
+      el.style.setProperty("--ag-ui-width", "100vw");
+      el.style.setProperty("--ag-ui-max-width", "none");
+      await frames();
+      expect(getComputedStyle(part(el, ".dock-bar")).display).toBe("flex");
     });
 
     it("rests where the corner does once a live switch has taken the dock away", async () => {
@@ -1053,6 +1086,7 @@ describe("a corner panel placed on a wide window (real browser)", () => {
       await resize(WIDE);
       expect(el.getBoundingClientRect().left).toBeCloseTo(-24, 0);
       expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(getComputedStyle(part(el, ".dock-bar")).display).toBe("flex");
     });
 
     it("stays the screen on a phone, with nothing inline", async () => {

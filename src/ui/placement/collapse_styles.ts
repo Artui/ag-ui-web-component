@@ -300,6 +300,14 @@ export const COLLAPSE_STYLES: string = `
   display: none;
 }
 
+/* A panel a host sized to the whole window stands on the strip, whose fixed box would
+   draw over the composer's foot. So it goes as it does on a phone, by display, so the
+   bar measures 0 and the host's padding goes with it, and the header's minimise
+   control is the way back. Collapsed, the strip is the way back, so it stays. */
+:host([data-collapsed-to="bar"][data-fills-window]:not([collapsed])) .dock-bar {
+  display: none;
+}
+
 /* History from the bar: the panel's own drawer, moved beside the bar while
    the panel is away, drawn as a popover standing on the bar's end. There is
    no backdrop; a press outside the bar closes it, as Escape does.

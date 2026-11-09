@@ -752,7 +752,12 @@ export class PanelPlacement {
    * refusing, in the cursor, a drag the header would take.
    */
   #stampHeader(): void {
-    this.#header?.toggleAttribute("data-fills-screen", this.#fillsScreen());
+    const fills = this.#fillsScreen();
+    this.#header?.toggleAttribute("data-fills-screen", fills);
+    // And for the bar, which would draw over a panel standing on it. Not for a
+    // placement that owns its position: full stops at the bar, so taking the bar away
+    // would make it fill the window, and that would take the bar away for good.
+    this.#host.element.toggleAttribute("data-fills-window", fills && this.#surface().panelMovable);
   }
 
   /** Put a custom property back to a previous value, or remove it if there was none. */
@@ -892,7 +897,8 @@ export class PanelPlacement {
    * A host's size that makes the panel the window hangs it off the resting inset's
    * far side, past the top of the window with the header on it under the bar, so
    * it stands at the start of the room instead, moved or not, as a corner panel
-   * does. A placement that owns its position keeps it, whatever the host's size.
+   * does, and the stylesheet takes the bar away for as long as it does. A placement
+   * that owns its position keeps it, whatever the host's size.
    *
    * Under data-launcher-drag="false" a spot from before the attribute is left alone
    * while the panel is on the screen, as a corner panel's is, and the record stays
