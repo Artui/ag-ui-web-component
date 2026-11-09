@@ -823,6 +823,246 @@ describe("a corner panel placed on a wide window (real browser)", () => {
     });
   });
 
+  describe("a docked panel a host fills", () => {
+    const WIDE = { width: 1200, height: 760 };
+    const DOCK_KEY = `ag-ui-chat:dock:${ID}`;
+    const TOKENS = ["--ag-ui-width", "--ag-ui-height", "--ag-ui-max-width", "--ag-ui-max-height"];
+
+    function fill(el: AgUiChat): void {
+      el.style.setProperty("--ag-ui-width", "100vw");
+      el.style.setProperty("--ag-ui-height", "100vh");
+      el.style.setProperty("--ag-ui-max-width", "none");
+      el.style.setProperty("--ag-ui-max-height", "none");
+    }
+
+    function unfill(el: AgUiChat): void {
+      for (const token of TOKENS) {
+        el.style.removeProperty(token);
+      }
+    }
+
+    function expectFills(el: AgUiChat, size: { width: number; height: number }): void {
+      const box = el.getBoundingClientRect();
+      expect([box.left, box.top, box.width, box.height]).toEqual([0, 0, size.width, size.height]);
+      // The controls a panel standing above the window took out of reach.
+      expect(part(el, ".header").getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+    }
+
+    /** Open on its dock, and dragged off it to [376, 96] when asked to be. */
+    async function docked(
+      collapseTo: string,
+      moved: boolean,
+      attrs: Record<string, string> = {},
+    ): Promise<AgUiChat> {
+      const el = chat({ "collapse-to": collapseTo, "data-start-open": "", ...attrs });
+      await frames();
+      if (moved) {
+        const box = el.getBoundingClientRect();
+        await drag(part(el, ".header"), 376 - box.left, 96 - box.top);
+        expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+        expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+      }
+      return el;
+    }
+
+    describe.each(["bar", "none"])('under collapse-to="%s"', (collapseTo) => {
+      it("stands at 0,0 unmoved, and goes back on its dock when the fill stops", async () => {
+        const el = await docked(collapseTo, false);
+        const home = el.getBoundingClientRect();
+        fill(el);
+        await resize(WIDE);
+        expectFills(el, WIDE);
+        expect(el.describeSurface().box).toEqual({ left: 0, top: 0, ...WIDE });
+        expect(el.describeSurface().movable).toBe(false);
+        expect(localStorage.getItem(DOCK_KEY)).toBeNull();
+
+        unfill(el);
+        await resize(DESKTOP);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+        expect(el.getBoundingClientRect().left).toBeCloseTo(home.left, 0);
+        expect(el.getBoundingClientRect().top).toBeCloseTo(home.top, 0);
+        expect(localStorage.getItem(DOCK_KEY)).toBeNull();
+      });
+
+      it("stands at 0,0 moved, keeps the stored spot, and takes it back", async () => {
+        const el = await docked(collapseTo, true);
+        const stored = localStorage.getItem(DOCK_KEY);
+        expect(stored).not.toBeNull();
+        fill(el);
+        await resize(WIDE);
+        expectFills(el, WIDE);
+        expect(localStorage.getItem(DOCK_KEY)).toBe(stored);
+
+        unfill(el);
+        await resize(DESKTOP);
+        expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+        expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+        expect(localStorage.getItem(DOCK_KEY)).toBe(stored);
+      });
+
+      it("follows a fill that comes and goes with no resize", async () => {
+        const el = await docked(collapseTo, false);
+        const home = el.getBoundingClientRect();
+        fill(el);
+        await frames();
+        expectFills(el, DESKTOP);
+        unfill(el);
+        await frames();
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+        expect(el.getBoundingClientRect().left).toBeCloseTo(home.left, 0);
+        expect(el.getBoundingClientRect().top).toBeCloseTo(home.top, 0);
+      });
+
+      it.each([
+        ["moved", true],
+        ["unmoved", false],
+      ])("stands at 0,0 %s under data-launcher-drag=false", async (_name, moved) => {
+        const el = await docked(collapseTo, moved);
+        const stored = localStorage.getItem(DOCK_KEY);
+        el.setAttribute("data-launcher-drag", "false");
+        await frames();
+        fill(el);
+        await frames();
+        expectFills(el, DESKTOP);
+        expect(localStorage.getItem(DOCK_KEY)).toBe(stored);
+      });
+    });
+
+    it("keeps a moved panel where it is under the attribute until it would hang off", async () => {
+      const el = await docked("bar", true);
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      const right = el.getBoundingClientRect().right;
+      el.style.setProperty("--ag-ui-width", "500px");
+      await frames();
+      expect(el.getBoundingClientRect().width).toBe(500);
+      expect(el.getBoundingClientRect().right).toBeCloseTo(right, 0);
+    });
+
+    it("takes its spot back from the record once the attribute comes off", async () => {
+      const el = await docked("bar", true);
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      fill(el);
+      await frames();
+      expectFills(el, DESKTOP);
+      unfill(el);
+      await frames();
+      // Handed back, so it rests on its dock until then.
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      el.removeAttribute("data-launcher-drag");
+      await resize(WIDE);
+      expect(el.getBoundingClientRect().left).toBeCloseTo(376, 0);
+      expect(el.getBoundingClientRect().top).toBeCloseTo(96, 0);
+    });
+
+    it("stands on its dock through a grip once it has been handed back", async () => {
+      const el = await docked("bar", true);
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      fill(el);
+      await frames();
+      unfill(el);
+      await frames();
+      const home = el.getBoundingClientRect();
+      await drag(part(el, ".resize-handle--bottom-right"), -40, -30);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(el.getBoundingClientRect().right).toBeCloseTo(home.right, 0);
+      expect(el.getBoundingClientRect().bottom).toBeCloseTo(home.bottom, 0);
+    });
+
+    it("rests on its dock when the attribute went on while it filled the window", async () => {
+      const el = await docked("bar", true);
+      fill(el);
+      await frames();
+      expectFills(el, DESKTOP);
+      el.setAttribute("data-launcher-drag", "false");
+      await frames();
+      unfill(el);
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      expect(el.getBoundingClientRect().right).toBeCloseTo(DESKTOP.width - 24, 0);
+    });
+
+    it("keeps the bar on the screen while the panel fills, for the way back", async () => {
+      const el = await docked("bar", false);
+      fill(el);
+      await frames();
+      el.setCollapsed(true);
+      await frames();
+      const bar = part(el, ".dock-bar").getBoundingClientRect();
+      expect(bar.height).toBeGreaterThan(0);
+      expect(bar.bottom).toBeCloseTo(DESKTOP.height, 0);
+      el.setCollapsed(false);
+      await frames();
+      expectFills(el, DESKTOP);
+    });
+
+    it("rests where the corner does once a live switch has taken the dock away", async () => {
+      const el = await docked("bar", false);
+      fill(el);
+      await frames();
+      expectFills(el, DESKTOP);
+      el.removeAttribute("collapse-to");
+      await frames();
+      expectFills(el, DESKTOP);
+      unfill(el);
+      await frames();
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      const box = el.getBoundingClientRect();
+      expect(box.right).toBeCloseTo(DESKTOP.width - 24, 0);
+      expect(box.bottom).toBeCloseTo(DESKTOP.height - 24, 0);
+    });
+
+    it("leaves an inset the host wrote inline where the host wrote it", async () => {
+      const el = await docked("bar", false);
+      el.style.setProperty("--ag-ui-inset", "56px 0 0 0");
+      fill(el);
+      await resize(WIDE);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("56px 0 0 0");
+      unfill(el);
+      await resize(DESKTOP);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("56px 0 0 0");
+    });
+
+    it.each([
+      ["moved", true],
+      ["unmoved", false],
+    ])(
+      "leaves a host's own rule alone when it stands the box on the screen, %s",
+      async (_name, moved) => {
+        const rule = document.createElement("style");
+        rule.textContent = `#${ID} { --ag-ui-inset: 0 auto auto 0; }`;
+        document.body.appendChild(rule);
+        const el = await docked("bar", moved);
+        fill(el);
+        await resize(WIDE);
+        expectFills(el, WIDE);
+        expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+      },
+    );
+
+    it("leaves a placement that owns its position to the host's own rule", async () => {
+      // A side panel under the bar is docked and does not move, so the host's rule
+      // that hangs it is the host's to answer for, as it is with no dock at all.
+      const rule = document.createElement("style");
+      rule.textContent = `#${ID} { --ag-ui-inset: 0 24px 0 auto; }`;
+      document.body.appendChild(rule);
+      const el = await docked("bar", false, { placement: "side" });
+      fill(el);
+      await resize(WIDE);
+      expect(el.getBoundingClientRect().left).toBeCloseTo(-24, 0);
+      expect(el.style.getPropertyValue("--ag-ui-inset")).toBe("");
+    });
+
+    it("stays the screen on a phone, with nothing inline", async () => {
+      const el = await docked("bar", false);
+      fill(el);
+      await resize(PHONE);
+      expectFullBleed(el);
+    });
+  });
+
   it("holds a launcher moved by a key through an expand before the key comes up", async () => {
     const el = chat();
     await frames();

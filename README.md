@@ -1509,6 +1509,10 @@ launcher to drag: the bar and your own control stay where they are.
   forgetting the stored spot, so a reload opens it there too.
 - **Keeping it fixed.** `data-launcher-drag="false"` turns the header drag and `moveTo` off here as
   everywhere else, and the panel stays on its dock.
+- **A host's size that fills the window.** Set `--ag-ui-width` and `--ag-ui-height` to the whole
+  window and the panel stands at the start of the room you left free, over the bar or the anchor,
+  whether it was moved or not. The stored spot stays, and the panel goes back to it, or to its dock,
+  when your size stops filling. An inline `--ag-ui-inset` of your own stays where you wrote it.
 
 Placements that own their position (`side` and `full` under `bar`, `sidebar` and `embedded`
 under `none`) do not move, as without `collapse-to`.

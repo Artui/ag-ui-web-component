@@ -387,9 +387,10 @@ export class PanelPlacement {
   #gripInset: string | null = null;
 
   /**
-   * The inset standing a panel with no spot at the start of a window a host's
-   * size fills, or null. Told apart from a host's own for the same reason, and it
-   * lasts only as long as that size does.
+   * The inset standing a panel at the start of a window a host's size fills, or
+   * null: a corner panel with no spot, or a docked one with or without one. Told
+   * apart from a host's own for the same reason, and it lasts only as long as that
+   * size does.
    */
   #fillInset: string | null = null;
 
@@ -887,19 +888,42 @@ export class PanelPlacement {
    * block reads the host's inset before its own, so a dragged spot written
    * there would hold the panel off the screen's edges. The spot itself stays,
    * for the next time there is room for it.
+   *
+   * A host's size that makes the panel the window hangs it off the resting inset's
+   * far side, past the top of the window with the header on it under the bar, so
+   * it stands at the start of the room instead, moved or not, as a corner panel
+   * does. A placement that owns its position keeps it, whatever the host's size.
+   *
+   * Under data-launcher-drag="false" a spot from before the attribute is left alone
+   * while the panel is on the screen, as a corner panel's is, and the record stays
+   * for the day the attribute comes off.
    */
   #placeDocked(): void {
-    if (!this.#docked() || !this.#panelMovable() || this.dragging()) {
+    if (!this.#docked() || !this.#surface().panelMovable || this.dragging()) {
       return;
     }
-    const at = this.#dockPos ?? this.#readDockPosition();
+    const element = this.#host.element;
+    const at = this.#panelMovable() ? (this.#dockPos ?? this.#readDockPosition()) : null;
     if (at === null) {
+      if (this.#dockPos !== null) {
+        const filling = element.style.getPropertyValue("--ag-ui-inset") === this.#fillInset;
+        if (!filling && !this.#offScreen()) {
+          return;
+        }
+        this.#dockPos = null;
+        element.style.removeProperty("--ag-ui-inset");
+      }
+      this.#placeUnstated();
       return;
     }
     this.#dockPos = at;
-    this.#host.element.style.removeProperty("--ag-ui-inset");
-    const rest = this.#host.element.getBoundingClientRect();
-    if (coversViewport(rest, this.#viewport())) {
+    element.style.removeProperty("--ag-ui-inset");
+    const rest = element.getBoundingClientRect();
+    const viewport = this.#viewport();
+    if (coversViewport(rest, viewport)) {
+      if (hangsOff(rest, viewport, this.#screen())) {
+        this.#standAtStart(rest);
+      }
       return;
     }
     // Measured at the dock, so the inset below is written from the corner the
@@ -1509,8 +1533,9 @@ export class PanelPlacement {
   }
 
   /**
-   * Place a corner panel that has no spot, the half of {@link #standFullBleed}
-   * with nothing stated to keep and no launcher of its own to measure.
+   * Place a panel that has no spot, a corner one or a docked one, the half of
+   * {@link #standFullBleed} with nothing stated to keep and no launcher of its own
+   * to measure.
    *
    * Only an inset this element wrote comes off or goes back. One the host wrote
    * inline is a token a host may state on a phone as anywhere else, and with no
@@ -1537,10 +1562,19 @@ export class PanelPlacement {
       element.style.getPropertyValue("--ag-ui-inset") === "" &&
       hangsOff(rest, viewport, screen)
     ) {
-      this.#fillInset = insetFrom({ x: "left", y: "top" }, atStartOf(viewport, rest), screen);
-      element.style.setProperty("--ag-ui-inset", this.#fillInset);
-      this.syncResizeAnchor();
+      this.#standAtStart(rest);
     }
+  }
+
+  /** Stand a box a host's size fills at the start of the room the host left free. */
+  #standAtStart(rest: PanelRect): void {
+    this.#fillInset = insetFrom(
+      { x: "left", y: "top" },
+      atStartOf(this.#viewport(), rest),
+      this.#screen(),
+    );
+    this.#host.element.style.setProperty("--ag-ui-inset", this.#fillInset);
+    this.syncResizeAnchor();
   }
 
   /** The persisted position for this instance, or null. */

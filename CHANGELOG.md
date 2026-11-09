@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   screen now hands it to the host's CSS at once, and a host that fills the window
   gets it at 0,0. The stored spot stays for the day the attribute comes off. A size
   that still fits moves nothing. **A host has nothing to do.**
+- **A docked panel a host fills stands at 0,0.** Under `collapse-to="bar"` and
+  `"none"`, a corner panel a host sized to the whole window stood past the top of the
+  window by what the resting inset spends: at 1200x760, -24,-65 under the bar, where
+  the whole header was out of reach, and -24,-24 under a host's own control. It now
+  stands at the start of the room the host left free, moved or not, as a corner panel
+  has since 0.50.0, and under `data-launcher-drag="false"` too. It covers the bar while
+  it does. The dock's stored spot stays unchanged, and the panel goes back to its spot
+  or its dock when the size stops filling. A host's own inline `--ag-ui-inset` stays
+  where the host wrote it, and a placement that owns its position is left alone. **A
+  host has nothing to do.**
 
 ## [0.50.0] — 2026-11-08
 
