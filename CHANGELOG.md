@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ag-ui-run-finished` says how the run ended.** `detail.outcome` is `"completed"`,
+  `"stopped"` (Stop, a new chat or a thread switch) or `"failed"` (the agent reported an
+  error). A run a switch cancelled still reports, as before, and now says `"stopped"`, so a
+  host that marks attention or counts completions can tell its late event from a finished
+  run's, which `threadId` could not when the thread was switched back to. The detail's
+  other fields keep their meaning. **A host has nothing to do**; one that defers a switch
+  should key on `running` / `data-running` (the README has the recipe).
+
 ## [0.50.2] — 2026-11-09
 
 ### Fixed
