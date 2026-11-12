@@ -137,6 +137,21 @@ describe("SessionStorageStore", () => {
     expect(meta?.preview).toBe("");
   });
 
+  it("titles a thread opened by a bare skill token with the token in words", async () => {
+    const store = new SessionStorageStore();
+    store.saveMessages("t1", [{ role: "user", content: "/summarize_draw" }] as never);
+    store.saveMessages("t2", [{ role: "user", content: " /fix-it-now " }] as never);
+    store.saveMessages("t3", [{ role: "user", content: "/summarize_draw this page" }] as never);
+    const titles = Object.fromEntries(
+      (await store.listThreads()).map((meta) => [meta.threadId, meta.title]),
+    );
+    expect(titles).toEqual({
+      t1: "Summarize draw",
+      t2: "Fix it now",
+      t3: "/summarize_draw this page",
+    });
+  });
+
   it("truncates long titles and previews with an ellipsis", async () => {
     const store = new SessionStorageStore();
     store.saveMessages("t1", [{ role: "user", content: "x".repeat(150) }] as never);

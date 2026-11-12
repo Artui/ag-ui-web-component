@@ -46,6 +46,7 @@ export class SkillCatalog {
   #backendSkills: readonly Skill[] = [];
   #embedSkills: readonly Skill[] = [];
   #clientSkills: readonly Skill[] = [];
+  readonly #merged = new Map<string, Skill>();
 
   constructor(host: SkillCatalogHost) {
     this.#host = host;
@@ -141,13 +142,18 @@ export class SkillCatalog {
     return parseSkills(this.#host.readJsonAttribute("data-skills"));
   }
 
+  /** The title of the skill named `name` in the merged catalog, if it has one. */
+  title(name: string): string | undefined {
+    return this.#merged.get(name)?.title;
+  }
+
   /** Merge the three sources (backend → embed → client; later wins by name). */
   #recompute(): void {
-    const merged = new Map<string, Skill>();
+    this.#merged.clear();
     for (const skill of [...this.#backendSkills, ...this.#embedSkills, ...this.#clientSkills]) {
-      merged.set(skill.name, skill);
+      this.#merged.set(skill.name, skill);
     }
-    this.#host.menu.setSkills([...merged.values()]);
+    this.#host.menu.setSkills([...this.#merged.values()]);
   }
 
   /**

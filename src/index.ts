@@ -20,6 +20,7 @@ export {
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
   THREAD_EVENT,
+  THREAD_TITLE_EVENT,
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
@@ -71,6 +72,7 @@ export type { RunFinishedDetail } from "./core/events/run_finished_detail.js";
 export type { StateDetail } from "./core/events/state_detail.js";
 export type { SubmitDetail } from "./core/events/submit_detail.js";
 export type { ThreadDetail } from "./core/events/thread_detail.js";
+export type { ThreadTitleDetail } from "./core/events/thread_title_detail.js";
 export type { ToggleDetail } from "./core/events/toggle_detail.js";
 export type { ToolRun } from "./core/events/tool_run.js";
 export type { UnreadDetail } from "./core/events/unread_detail.js";

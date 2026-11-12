@@ -87,6 +87,14 @@ export const RUN_FINISHED_EVENT = "ag-ui-run-finished";
 export const THREAD_EVENT = "ag-ui-thread";
 
 /**
+ * The title of the thread on screen changed: its first send, a rename, a
+ * switch, a new chat or a delete, or a title the conversation list brought in.
+ * `detail` is {@link ThreadTitleDetail}. `title-text="auto"` draws it in the
+ * header without a listener; a host drawing its own chrome listens.
+ */
+export const THREAD_TITLE_EVENT = "ag-ui-thread-title";
+
+/**
  * The agent sent an AG-UI `CUSTOM` event. `detail` is {@link CustomAgentDetail}.
  *
  * `CUSTOM` is one of exactly two carriers whose payload name the protocol leaves

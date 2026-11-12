@@ -1,4 +1,4 @@
-import type { Context, Tool } from "@ag-ui/core";
+import type { Context, Message, Tool } from "@ag-ui/core";
 import {
   ATTACHMENT_EVENT,
   BAR_HEIGHT_EVENT,
@@ -14,6 +14,7 @@ import {
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
   THREAD_EVENT,
+  THREAD_TITLE_EVENT,
   TOGGLE_EVENT,
   TOOL_DISPLAY,
   TOOL_GROUP_DISPLAY,
@@ -91,6 +92,8 @@ import {
   type ClientConversationStore,
   type NavigationCheckpoint,
   SessionStorageStore,
+  type ThreadMeta,
+  threadTitleFrom,
   writeStoredItem,
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
@@ -99,6 +102,7 @@ import type { DockWidthDetail } from "./events/dock_width_detail.js";
 import type { StateDetail } from "./events/state_detail.js";
 import type { SubmitDetail } from "./events/submit_detail.js";
 import type { ThreadDetail } from "./events/thread_detail.js";
+import type { ThreadTitleDetail } from "./events/thread_title_detail.js";
 import type { ToggleDetail } from "./events/toggle_detail.js";
 import type { UnreadDetail } from "./events/unread_detail.js";
 import type { MessageRole } from "./message_role.js";
@@ -157,6 +161,8 @@ function isCredentialsMode(value: string): value is RequestCredentials {
 
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 /** The anchored conversation list's widest, and its distance from its button and the window. */
+// The `title-text` value that makes the header follow the thread on screen.
+const TITLE_TEXT_AUTO = "auto";
 const THREADS_POPOVER_WIDTH = 320;
 const THREADS_POPOVER_GAP = 8;
 
@@ -871,6 +877,12 @@ export class AgUiChat extends HTMLElement {
    * names as the thread it replaced; `null` before the first.
    */
   #shownThread: string | null = null;
+  /** The thread on screen's messages as last saved or restored, which name it. */
+  #titleMessages: readonly Message[] = [];
+  /** Titles renamed here or listed that its messages do not derive, by thread. */
+  readonly #givenTitles = new Map<string, string>();
+  /** The thread and title {@link threadTitle} last reported. */
+  #titled = { threadId: "", title: "" };
   /** The decision a run is suspended on, which a Stop abandons. */
   readonly #decision = new PendingDecision();
   /** The place chip, kept across connections like the composer it sits in. */
@@ -1089,6 +1101,8 @@ export class AgUiChat extends HTMLElement {
         void this.#history.refreshDrawer();
       },
       onRename: (threadId, title) => {
+        this.#givenTitles.set(threadId, title);
+        this.#retitle();
         this.#history.renameThread(threadId, title);
       },
       onDelete: (threadId) => {
@@ -1171,6 +1185,7 @@ export class AgUiChat extends HTMLElement {
       resetState: () => this.#resetState(),
       setRunning: (running) => this.#setRunning(running),
       threadChanged: (threadId, reason) => this.#dispatchThread(threadId, reason),
+      threadsListed: (threads) => this.#takeListedTitle(threads),
     });
   }
 
@@ -1252,10 +1267,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     if (name === "title-text") {
-      // `#strings` is the resolved table once connected, the English defaults
-      // before then.
-      this.#title.textContent = value ?? this.#strings.title;
-      this.#railLabel.textContent = this.#title.textContent;
+      this.#paintTitle();
       return;
     }
     if (name === "user-name") {
@@ -2088,6 +2100,20 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * The title of the thread on screen; `""` while nothing has been sent in it,
+   * and before the element connects.
+   *
+   * A title renamed here, or one the conversation list shows that the thread's
+   * messages do not derive (a server's own), wins. Otherwise it is the first
+   * user message, and a bare skill `/token` reads as the catalog's title for
+   * that skill, else as the token in words. `title-text="auto"` draws it in the
+   * header; {@link THREAD_TITLE_EVENT} says when it changes.
+   */
+  get threadTitle(): string {
+    return this.#titled.title;
+  }
+
+  /**
    * Whether an interaction is in flight: the composer's own state, the one that
    * shows Stop. It spans every tool round, a retry and a checkpoint
    * continuation as well as a send, which {@link SUBMIT_EVENT} alone does not.
@@ -2875,7 +2901,7 @@ export class AgUiChat extends HTMLElement {
     this.#chat.className = "chat";
     this.#chat.setAttribute("part", "panel");
 
-    const titleText = this.getAttribute("title-text") ?? this.#strings.title;
+    const titleText = this.#titleText();
     const themed = this.getAttribute("data-theme-toggle") !== null;
     const { header, checkpoints } = buildHeader({
       host: this,
@@ -3288,9 +3314,92 @@ export class AgUiChat extends HTMLElement {
     this.#shownThread = threadId;
     // The chip always names the live page, whichever conversation is on screen.
     this.refreshPlace();
+    this.#titleMessages = this.#history.restored;
+    // Settled before the thread event so its listeners read the new title,
+    // and announced after it, as the change that follows from the switch.
+    const retitled = this.#settleTitle();
     this.dispatchEvent(
       new CustomEvent<ThreadDetail>(THREAD_EVENT, { detail, bubbles: true, composed: true }),
     );
+    if (retitled) {
+      this.#announceTitle();
+    }
+  }
+
+  /** The header and rail text: the fixed `title-text`, or the thread's under `"auto"`. */
+  #titleText(): string {
+    // `#strings` is the resolved table once connected, the English defaults before then.
+    const fixed = this.getAttribute("title-text");
+    if (fixed !== TITLE_TEXT_AUTO) {
+      return fixed ?? this.#strings.title;
+    }
+    return this.#titled.title === "" ? this.#strings.title : this.#titled.title;
+  }
+
+  #paintTitle(): void {
+    this.#title.textContent = this.#titleText();
+    this.#railLabel.textContent = this.#title.textContent;
+  }
+
+  /**
+   * Recompute {@link threadTitle} and repaint; `true` when it changed. A new
+   * thread counts as a change unless both titles are empty, so a switch
+   * between two same-named threads is still reported.
+   */
+  #settleTitle(): boolean {
+    const threadId = this.#history.threadId;
+    const title =
+      this.#givenTitles.get(threadId) ??
+      threadTitleFrom(this.#titleMessages, (name) => this.#skills.title(name));
+    const previous = this.#titled;
+    if (title === previous.title && (threadId === previous.threadId || title === "")) {
+      return false;
+    }
+    this.#titled = { threadId, title };
+    this.#paintTitle();
+    return true;
+  }
+
+  #announceTitle(): void {
+    this.dispatchEvent(
+      new CustomEvent<ThreadTitleDetail>(THREAD_TITLE_EVENT, {
+        detail: { ...this.#titled },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /** {@link #settleTitle}, announcing the change if there was one. */
+  #retitle(): void {
+    if (this.#settleTitle()) {
+      this.#announceTitle();
+    }
+  }
+
+  /**
+   * Keep the list's title for the thread on screen when its messages do not
+   * derive it: a rename made elsewhere, or a title the server chose. A title
+   * that is the first message cut at another length is the server's derivation
+   * of the same words, and the element's own (which names skills) stays.
+   */
+  #takeListedTitle(threads: readonly ThreadMeta[]): void {
+    const threadId = this.#history.threadId;
+    const row = threads.find((thread) => thread.threadId === threadId);
+    if (row === undefined || this.#titleMessages.length === 0) {
+      return;
+    }
+    const stem = (text: string): string => text.replace(/…$/, "").trimEnd();
+    const listed = stem(row.title);
+    const derived = [
+      threadTitleFrom(this.#titleMessages),
+      threadTitleFrom(this.#titleMessages, (name) => `/${name}`),
+    ].map(stem);
+    if (derived.some((own) => own.startsWith(listed) || listed.startsWith(own))) {
+      return;
+    }
+    this.#givenTitles.set(threadId, row.title);
+    this.#retitle();
   }
 
   /**
@@ -3735,6 +3844,10 @@ export class AgUiChat extends HTMLElement {
         }
         const conversation = [...seed.follows, ...messages];
         this.conversationStore.saveMessages(threadId, conversation);
+        if (threadId === this.#history.threadId) {
+          this.#titleMessages = conversation;
+          this.#retitle();
+        }
         seed.onSaved?.(conversation);
       },
       // Shared state is the next principal's first `RunAgentInput.state`, and

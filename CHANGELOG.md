@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The thread on screen has a title from its first send, and `title-text="auto"` shows it.**
+  The read-only `threadTitle` and the `ag-ui-thread-title` event (`THREAD_TITLE_EVENT`,
+  detail `ThreadTitleDetail`: `{ threadId, title }`) report it on the first send, a rename,
+  a switch, a new chat and a delete. `title-text="auto"` draws it in the header, the rail
+  and the bar label, and falls back to the strings table's `title` while the thread has
+  none. A first message that is exactly a skill's `/token` is titled with the catalog's
+  `title` for that skill, else with the token in words (`/summarize_draw` reads
+  "Summarize draw"), and the default store titles its list rows the same way from their
+  next save. With `data-threads-url`, the thread on screen is listed with its own title
+  before the server has indexed it, and the server's row replaces it once it does, with
+  `cacheMessages: false` too. A host opts in to the header by setting `title-text="auto"`.
+  The event, the property and the list row need no opt-in. The humanised skill titles and
+  the extra list row change what an existing host sees.
+
 - **A docked sidebar reports the width it covers.** The read-only `dockWidth` property and
   the `ag-ui-dock-width` event (`DOCK_WIDTH_EVENT`, detail `DockWidthDetail`:
   `{ width, side }`) give a host that keeps `placement="sidebar"` fixed the number to push

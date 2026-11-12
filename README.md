@@ -178,7 +178,7 @@ another origin, add `credentials="include"` too; see
 | --- | --- | --- |
 | `endpoint` | `endpoint` | The AG-UI endpoint URL. Required to send: without it a send is refused with a `console.error` naming the missing attribute and a `not-connected` run notice in the transcript. Reflecting getter + setter. |
 | `credentials` | `credentials` | Cookie policy for every request the element makes: `omit` / `same-origin` / `include`. Unset means the browser default (`same-origin`), which sends no cookies cross-origin. See [Authenticating requests](#authenticating-requests). |
-| `title-text` | — | Header label; defaults to `"Assistant"`. Live: writing it after the element connects re-labels the header. See [When each attribute is read](#when-each-attribute-is-read). |
+| `title-text` | — | Header label; defaults to `"Assistant"`. `"auto"` makes the header, the rail and the bar label follow the thread on screen (`threadTitle`), falling back to the strings table's `title` while it has none. Live: writing it after the element connects re-labels the header. See [When each attribute is read](#when-each-attribute-is-read). |
 | `data-tool-display` | `toolDisplay` | How tool calls are drawn: `grouped` (the default: a run's consecutive calls fold into one row) / `inline` / `minimal` / `compact` / `full` (per-call cards; `full` was the default before `grouped`). An unknown value reads as `grouped`. See [Tool-call display modes](#tool-call-display-modes). |
 | `data-tool-group-display` | `toolGroupDisplay` | How an opened step group draws its calls under `grouped`: `full` (the default) / `compact` / `minimal` / `inline`. Ignored under the four card modes. An absent or unknown value reads as `full`. See [Choosing how a group draws its calls](#choosing-how-a-group-draws-its-calls). |
 | `data-text-animation` | — | Incoming-text reveal: `none` (default) / `fade` / `word`. |
@@ -272,7 +272,7 @@ element after the fact.
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
 `autoInjectPageMap`, `getPlace`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
-`resolvePageTarget`, `sharedState`, `anchor` (an element, which wins over the attribute's selector), `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `running`, `barHeight` and `dockWidth`, and
+`resolvePageTarget`, `sharedState`, `anchor` (an element, which wins over the attribute's selector), `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `threadTitle`, `running`, `barHeight` and `dockWidth`, and
 the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `toolGroupDisplay` / `collapsed` /
 `credentials`.
 
@@ -1226,6 +1226,14 @@ one on screen with the drawer's own paths:
 - `threadId` *(read-only)* — the thread on screen, `null` before the element first connects.
   It only reads. `conversationStore.threadId()` mints and stores a thread when the store points
   at none, so asking it which conversation is showing can start one.
+- `threadTitle` *(read-only)* — the title of the thread on screen, `""` while nothing has been
+  sent in it. A title renamed here, or one the conversation list shows that the messages do not
+  derive (a server's own), wins; otherwise it is the first user message, and a first message that
+  is exactly a skill's `/token` reads as that skill's catalog `title`, else as the token in words
+  (`/summarize_draw` reads "Summarize draw"). It is set on the first send, before the server lists
+  the thread. Every change fires one **`ag-ui-thread-title`** event (`THREAD_TITLE_EVENT`, detail
+  `{ threadId, title }`, typed `ThreadTitleDetail`), after the `ag-ui-thread` event of the change
+  that caused it. `title-text="auto"` draws it without a listener.
 - `running` *(read-only)* — whether an interaction is in flight: the composer's own state, the
   one it shows Stop for, across every tool round, a Retry and a checkpoint continuation as well
   as a send. Reflected on the element as the `data-running` attribute, written by the element
@@ -3154,6 +3162,7 @@ re-export point. Internal modules import from leaf paths.
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
 | `BarHeightDetail` | type | `detail` shape of the `ag-ui-bar-height` event (`{ height }`). |
 | `DockWidthDetail` | type | `detail` shape of the `ag-ui-dock-width` event (`{ width, side }`). |
+| `ThreadTitleDetail` | type | `detail` shape of the `ag-ui-thread-title` event (`{ threadId, title }`). |
 | `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
 | `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
 | `StateDetail` | type | `detail` shape of the `ag-ui-state` event (`{ state }`). |
@@ -3305,6 +3314,7 @@ re-export point. Internal modules import from leaf paths.
 | `ELEMENT_TAG` | The registered tag name (`ag-ui-chat`). |
 | `SUBMIT_EVENT` | The submit CustomEvent name. |
 | `THREAD_EVENT` | The conversation-changed CustomEvent name (`ag-ui-thread`). |
+| `THREAD_TITLE_EVENT` | The thread-title CustomEvent name (`ag-ui-thread-title`). |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
 | `BAR_HEIGHT_EVENT` | The bottom bar's height CustomEvent name (`ag-ui-bar-height`). |
 | `DOCK_WIDTH_EVENT` | The docked panel's width CustomEvent name (`ag-ui-dock-width`). |
