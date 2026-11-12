@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **The README says that desktop size tokens also size the phone.** Small viewports now
+  shows a `--ag-ui-inset` / `--ag-ui-width` / `--ag-ui-height` rule set at every width keeping
+  its shape at 600px and below, and the fix: scope it in `@media (min-width: 601px)`. It also
+  shows how to hide single header controls by their parts, and lists `placement="full"`.
+  **A host has nothing to do.**
+
 ## [0.50.2] — 2026-11-09
 
 ### Fixed

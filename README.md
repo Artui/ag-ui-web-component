@@ -221,7 +221,7 @@ another origin, add `credentials="include"` too; see
 | `data-start-open` | — | Mount the panel open on a first visit. The corner placements otherwise rest at their launcher, the way every corner chat does; a stored choice wins over both. The placements that place themselves are unaffected. |
 | `theme` | — | CSS-only: an optional theme name (`quiet` (default) / `soft` / `ledger` / `classic`, or a word of your own) and an optional scheme (`light` (default) / `dark` / `auto`), in any order, e.g. `soft dark`. See [Themes](#themes). |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
-| `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded`. |
+| `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded` / `full`. `full` fills the viewport at every width, inside the safe-area insets; the `--ag-ui-inset`, size and `--ag-ui-panel-radius` tokens still apply. |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
 `icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
@@ -3468,6 +3468,36 @@ That exists because the *trigger* is the one part of this you cannot reach: ever
 value the override sets is a `--ag-ui-*` token you can re-state, but a media
 query cannot read a custom property, so the breakpoint itself is a literal.
 
+**A size or inset token set at every width restates the phone shape too.** The phone
+block reads `--ag-ui-inset`, `--ag-ui-width`, `--ag-ui-height` and `--ag-ui-max-height`
+before it falls back to the full-bleed values, so a host rule such as the one below keeps
+its 420x640 panel with a 24px margin on a phone, and the panel runs off the screen's left
+edge. Put the desktop sizes above the breakpoint and the phone shape needs nothing:
+
+```css
+/* Wrong on a phone: the tokens apply at every width. */
+ag-ui-chat {
+  --ag-ui-inset: auto 24px 24px auto;
+  --ag-ui-width: 420px;
+  --ag-ui-height: 640px;
+  --ag-ui-max-height: 80vh;
+}
+
+/* Right: desktop only. At 600px and below the panel is full-bleed with no reset. */
+@media (min-width: 601px) {
+  ag-ui-chat {
+    --ag-ui-inset: auto 24px 24px auto;
+    --ag-ui-width: 420px;
+    --ag-ui-height: 640px;
+    --ag-ui-max-height: 80vh;
+  }
+}
+```
+
+Setting the tokens at every width stays right for a host that wants a non-full-bleed phone
+panel, a bottom sheet for example. The size a user dragged is a separate matter; see
+[Sizes, keyboard, and parts](#sizes-keyboard-and-parts) for its precedence.
+
 The breakpoint is a width rather than a pointer test, and that is on purpose: a
 touch laptop is coarse-pointered and wide, a narrow desktop window is
 fine-pointered and small. Width decides the layout; the pointer decides which
@@ -3720,6 +3750,10 @@ component sets, so a new one cannot ship undocumented.
 >
 > The built-in buttons call exactly these methods, so the two routes cannot drift. If you only want
 > to restyle the header, prefer `::part(header)` styling or the `header-actions` slot over hiding it.
+>
+> To drop single controls instead, hide their parts:
+> `ag-ui-chat::part(history-button), ag-ui-chat::part(new-button) { display: none }`.
+> `display: none` removes them from the accessibility tree and the tab order as well.
 
 Coarse **slots** let you replace whole regions with your own markup (project light-DOM children
 with a matching `slot=`):
