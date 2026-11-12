@@ -3324,6 +3324,11 @@ export class AgUiChat extends HTMLElement {
     if (retitled) {
       this.#announceTitle();
     }
+    // A picked thread may carry a title its messages do not derive (renamed
+    // elsewhere, or named by a server). Not on restore: a GET per page load.
+    if (reason === "switch") {
+      void this.#history.refreshDrawer();
+    }
   }
 
   /** The header and rail text: the fixed `title-text`, or the thread's under `"auto"`. */

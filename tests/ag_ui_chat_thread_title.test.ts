@@ -217,7 +217,7 @@ describe("threadTitle and the thread-title event", () => {
     ]);
   });
 
-  it("takes a title the conversation list shows that the store did not derive", async () => {
+  it("takes a stored title its messages do not derive, once the list answers", async () => {
     const { el, seen } = mount();
     await flush();
     el.conversationStore.saveMessages("t1", [
@@ -225,9 +225,6 @@ describe("threadTitle and the thread-title event", () => {
     ] as never);
     el.conversationStore.renameThread("t1", "From elsewhere");
     await el.switchThread("t1");
-    expect(threadTitle(el)).toBe("Summarize draw");
-
-    el.openThreads();
     await flush();
 
     expect(threadTitle(el)).toBe("From elsewhere");
