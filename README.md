@@ -1530,9 +1530,18 @@ minimise control is the way back; the bar shows only while collapsed, so no seco
 at the bottom edge while the keyboard is up. The panel does not move there, and a spot dragged on
 a wide viewport does not apply: it comes back when the window is wide again.
 
-The bar is styled through the parts `bar` (the strip's wrapper, holding the launcher and the
-history button) and `bar-history`, and the launcher's own parts (`launcher`, `rail-label`,
+The bar is styled through the parts `bar` (the strip's wrapper, holding the launcher, the place and
+the history button) and `bar-history`, and the launcher's own parts (`launcher`, `rail-label`,
 `launcher-badge`) inside it.
+
+**The place in the bar.** When [`getPlace`](#where-the-user-is-the-place-chip) (or the route map
+standing in for it) names a place, the strip shows it beside the title as quiet secondary text: the
+`bar-place` part holding `place-label` and `place-detail`, the parts the chip uses. It comes from
+the chip's one read, so `refreshPlace()`, `popstate` and a withheld place update it as they update
+the chip. A long place truncates with an ellipsis before the history button leaves the strip, and
+no place draws nothing. A place the user withheld stays in the strip dashed and struck through
+(`data-excluded` on `bar-place`), because the bar must not claim the page is sent. The phone strip,
+shown while collapsed, carries it too.
 
 
 ---
@@ -3799,7 +3808,7 @@ component sets, so a new one cannot ship undocumented.
 | --- | --- |
 | Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `greeting`, `pending`, `stopped`, `jump-latest`, and one per resize grip: `resize-handle` plus `resize-handle-top`, `resize-handle-bottom`, `resize-handle-left`, `resize-handle-right`, `resize-handle-top-left`, `resize-handle-top-right`, `resize-handle-bottom-left`, `resize-handle-bottom-right` |
 | Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `collapse-button`, `theme-toggle` |
-| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label`, `bar` (the [bottom bar](#collapsing-to-a-bottom-bar)'s wrapper, around the launcher), `bar-history` |
+| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label`, `bar` (the [bottom bar](#collapsing-to-a-bottom-bar)'s wrapper, around the launcher), `bar-place` (the place beside the bar's title; its text carries `place-label` and `place-detail`), `bar-history` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
 | Follow-up suggestions | `suggestions`, `suggestion-chip` |

@@ -157,7 +157,8 @@ export const COLLAPSE_STYLES: string = `
   display: contents;
 }
 
-.bar-history {
+.bar-history,
+.bar-place {
   display: none;
 }
 
@@ -241,6 +242,37 @@ export const COLLAPSE_STYLES: string = `
   font-weight: 600;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The place beside the title, secondary text that truncates first so the
+   history button never leaves the strip. Withheld places keep the chip's
+   dashed, struck-through look: the bar must not claim the page is sent. */
+:host([data-collapsed-to="bar"]) .bar-place {
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 0;
+  border-bottom: 1px solid transparent;
+  color: var(--_muted);
+  font-size: 0.85em;
+  line-height: 1.2;
+}
+
+:host([data-collapsed-to="bar"]) .bar-place[hidden],
+:host([data-collapsed-to="bar"]) .bar-place .place-detail[hidden] {
+  display: none;
+}
+
+:host([data-collapsed-to="bar"]) .bar-place[data-excluded] {
+  border-bottom-style: dashed;
+  border-bottom-color: var(--_border);
+}
+
+:host([data-collapsed-to="bar"]) .bar-place[data-excluded] .place-label,
+:host([data-collapsed-to="bar"]) .bar-place[data-excluded] .place-detail {
+  text-decoration: line-through;
 }
 
 :host([data-collapsed-to="bar"]) .launcher-badge {

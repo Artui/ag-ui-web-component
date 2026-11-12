@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The collapsed bottom bar shows the place beside its title.** Under
+  `collapse-to="bar"`, the strip now draws the place from `getPlace` (or the route map)
+  as quiet secondary text, in a new `bar-place` part holding the chip's own
+  `place-label` and `place-detail` parts. It is the chip's single read, so
+  `refreshPlace()` and `popstate` update both, and no place draws nothing. A long place
+  truncates before the history button leaves the strip. A withheld place stays, dashed
+  and struck through (`data-excluded`), so the bar never claims the page is sent. The
+  phone strip shows it too. No opt-in beyond the chip's: a host with no place sees the
+  bar unchanged.
 - **A place chip says where the user is, and the agent is told the same.** The
   composer's tool row, between the attach and voice controls and Send, can show the
   page, tab or record the user is on. The same read is sent as one `place` context

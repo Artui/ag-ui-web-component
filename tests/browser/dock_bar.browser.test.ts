@@ -833,3 +833,82 @@ describe("resetSize on a dragged docked panel", () => {
     expect(second.getBoundingClientRect().top).toBeCloseTo(grown.top, 0);
   });
 });
+
+describe("the place beside the bar title (real browser)", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(async () => {
+    document.body.innerHTML = "";
+    await page.viewport(DESKTOP.width, DESKTOP.height);
+  });
+
+  const LONG = `${"A very long page name ".repeat(20)}end`;
+  const barPlace = (el: AgUiChat): HTMLElement => part(el, ".dock-bar .bar-place");
+
+  it("shows the label and detail through the place parts, and nothing without a place", async () => {
+    const el = mount();
+    await settle();
+    expect(barPlace(el).hidden).toBe(true);
+    expect(barPlace(el).getBoundingClientRect().width).toBe(0);
+    el.getPlace = () => ({ label: "Order #4821", detail: "Billing" });
+    el.refreshPlace();
+    await settle();
+    expect(barPlace(el).hidden).toBe(false);
+    expect(part(el, ".dock-bar .place-label").textContent).toBe("Order #4821");
+    expect(part(el, ".dock-bar .place-detail").textContent).toBe("Billing");
+    expect(part(el, ".dock-bar .place-label").getAttribute("part")).toBe("place-label");
+    el.getPlace = () => null;
+    el.refreshPlace();
+    await settle();
+    expect(barPlace(el).hidden).toBe(true);
+  });
+
+  it("truncates a long label and keeps the history button inside the bar", async () => {
+    for (const size of [DESKTOP, PHONE]) {
+      await page.viewport(size.width, size.height);
+      const el = mount();
+      el.getPlace = () => ({ label: LONG, detail: LONG });
+      await settle();
+      el.refreshPlace();
+      await settle();
+      const bar = part(el, ".dock-bar").getBoundingClientRect();
+      const place = barPlace(el).getBoundingClientRect();
+      const history = part(el, ".bar-history").getBoundingClientRect();
+      expect(place.width).toBeGreaterThan(0);
+      expect(place.right).toBeLessThanOrEqual(history.left + 0.5);
+      expect(history.right).toBeLessThanOrEqual(bar.right + 0.5);
+      expect(history.left).toBeGreaterThanOrEqual(bar.left);
+      expect(bar.height).toBeLessThan(60);
+      el.remove();
+    }
+  });
+
+  it("draws an excluded place dashed and struck through, as the chip does", async () => {
+    const el = mount({ "data-start-open": "" });
+    el.getPlace = () => ({ label: "Order #4821" });
+    await settle();
+    el.refreshPlace();
+    part(el, ".place-toggle").click();
+    await settle();
+    const label = part(el, ".dock-bar .place-label");
+    expect(getComputedStyle(label).textDecorationLine).toBe("line-through");
+    expect(getComputedStyle(barPlace(el)).borderBottomStyle).toBe("dashed");
+    part(el, ".place-toggle").click();
+    await settle();
+    expect(getComputedStyle(label).textDecorationLine).toBe("none");
+  });
+
+  it("follows popstate as the chip does", async () => {
+    let label = "One";
+    const el = mount();
+    el.getPlace = () => ({ label });
+    await settle();
+    el.refreshPlace();
+    label = "Two";
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await settle();
+    expect(part(el, ".dock-bar .place-label").textContent).toBe("Two");
+  });
+});

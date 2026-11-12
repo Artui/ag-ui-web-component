@@ -2882,6 +2882,7 @@ export class AgUiChat extends HTMLElement {
       railLabel: this.#railLabel,
       bar: this.#dockBar,
       barHistory: this.#barHistory,
+      barPlace: this.#place.barElement,
       titleText,
       iconUrl: readLauncherIconUrl(this),
       strings: this.#strings,

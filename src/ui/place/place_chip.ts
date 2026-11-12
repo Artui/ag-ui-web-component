@@ -27,6 +27,10 @@ function keyOf(place: Place): string {
  */
 export class PlaceChip {
   readonly element: HTMLElement = document.createElement("div");
+  /** The same place for the collapsed bar, drawn by the same render. */
+  readonly barElement: HTMLElement = document.createElement("span");
+  readonly #barLabel: HTMLElement = document.createElement("span");
+  readonly #barDetail: HTMLElement = document.createElement("span");
   readonly #icon: HTMLElement = document.createElement("span");
   readonly #label: HTMLElement = document.createElement("span");
   readonly #detail: HTMLElement = document.createElement("span");
@@ -52,6 +56,14 @@ export class PlaceChip {
     text.className = "place-text";
     text.append(this.#label, this.#detail);
     this.element.append(this.#icon, text, this.#toggle);
+    this.barElement.className = "bar-place";
+    this.barElement.setAttribute("part", "bar-place");
+    this.barElement.hidden = true;
+    this.#barLabel.className = "place-label";
+    this.#barLabel.setAttribute("part", "place-label");
+    this.#barDetail.className = "place-detail";
+    this.#barDetail.setAttribute("part", "place-detail");
+    this.barElement.append(this.#barLabel, this.#barDetail);
   }
 
   /** Wire the toggle for one connection, with the strings it resolved. */
@@ -101,11 +113,13 @@ export class PlaceChip {
   #render(): void {
     const place = this.#place;
     this.element.hidden = place === null;
+    this.barElement.hidden = place === null;
     if (place === null) {
       return;
     }
     const shared = this.#excluded === null;
     this.element.toggleAttribute("data-excluded", !shared);
+    this.barElement.toggleAttribute("data-excluded", !shared);
     if (place.icon === undefined) {
       this.#icon.innerHTML = ICON_PLACE;
     } else {
@@ -117,6 +131,9 @@ export class PlaceChip {
     this.#label.textContent = place.label;
     this.#detail.textContent = place.detail ?? "";
     this.#detail.hidden = place.detail === undefined;
+    this.#barLabel.textContent = place.label;
+    this.#barDetail.textContent = place.detail ?? "";
+    this.#barDetail.hidden = place.detail === undefined;
     this.element.title = fillUiString(
       shared ? this.#strings.placeShared : this.#strings.placeWithheld,
       { label: place.label },
