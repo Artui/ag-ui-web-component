@@ -475,6 +475,38 @@ $("cfg-above").addEventListener("change", (event) => {
   }
 });
 
+// The place chip. The select stands in for the host's router: changing it
+// changes what getPlace returns and calls refreshPlace(), as an app would
+// after a pushState. A page map rides too, so withholding the place can be
+// seen to withhold the page in the mock agent's answer.
+const PLACES = {
+  article: { label: "Create Article", detail: "Articles", href: "/articles/add/" },
+  billing: { label: "Billing settings", detail: "Account", href: "/settings/billing/" },
+  long: {
+    label:
+      "Purchase order #48213 for Northwind Traders International Holdings, shipping to Rotterdam",
+    detail: "Procurement, awaiting approval",
+    href: "/procurement/orders/48213/",
+  },
+  none: null,
+};
+chat.getPlace = () => PLACES[$("cfg-place").value] ?? null;
+chat.getPageMap = () => ({ form: "article", fields: ["title", "slug", "status", "featured"] });
+const syncPlaceReadout = () => {
+  const place = chat.getPlace();
+  $("cfg-place-out").textContent = place === null ? "no chip" : place.label;
+};
+$("cfg-place").addEventListener("change", () => {
+  chat.refreshPlace();
+  syncPlaceReadout();
+});
+$("cfg-place-ask").addEventListener("click", () => {
+  void chat.sendMessage("Where am I?");
+});
+// Set after the element connected, so the first read is asked for here.
+chat.refreshPlace();
+syncPlaceReadout();
+
 // The thread API. threadId and running are read off the element on every
 // event and on a short tick (running changes with no thread event), the
 // picker lists what the conversation store holds, and the log shows the last

@@ -687,6 +687,129 @@ describe("a one-step group", () => {
   });
 });
 
+describe("a one-step group's opened list", () => {
+  const INNER = [undefined, "full", "compact", "inline", "minimal"] as const;
+
+  function oneCall(emit: Emit): void {
+    emit.runStart();
+    emit.toolCall("c1", "fill_field", { field: "title" });
+    emit.toolResult("c1", "ok");
+    emit.runEnd();
+  }
+
+  function mountInner(
+    inner: string | undefined,
+    script: (emit: Emit, params: FakeRunParams) => void | Promise<void> = oneCall,
+  ): AgUiChat {
+    const el = mount(script);
+    if (inner !== undefined) {
+      el.setAttribute("data-tool-group-display", inner);
+    }
+    return el;
+  }
+
+  /** How many elements showing the call's label have a box on screen. */
+  function labelsShown(el: AgUiChat): number {
+    return all(el, ".tool-group-label, .tool-call-name").filter(
+      (node) => node.textContent?.trim() === "Fill field" && height(node) > 0,
+    ).length;
+  }
+
+  for (const inner of INNER) {
+    it(`shows the call's label once, folded and opened, inner ${inner ?? "default"}`, async () => {
+      const el = mountInner(inner);
+      await send(el, "fill the title");
+      expect(labelsShown(el)).toBe(1);
+
+      part(shadow(el), ".tool-group-head").click();
+      await settle();
+      expect(labelsShown(el)).toBe(1);
+    });
+  }
+
+  it("draws no chevron under inner minimal and keeps it under the others", async () => {
+    for (const inner of INNER) {
+      const el = mountInner(inner);
+      await send(el, "fill the title");
+      const chevron = part(shadow(el), ".tool-group-chevron");
+      expect(getComputedStyle(chevron).display === "none").toBe(inner === "minimal");
+      expect(height(chevron) > 0).toBe(inner !== "minimal");
+    }
+  });
+
+  it("keeps the Details toggle reachable when opened, but for inner minimal", async () => {
+    const el = mountInner("compact");
+    await send(el, "fill the title");
+    part(shadow(el), ".tool-group-head").click();
+    await settle();
+    expect(height(part(shadow(el), ".tool-call-toggle"))).toBeGreaterThan(0);
+  });
+
+  it("brings both card heads back when a run grows to two calls", async () => {
+    const held = gate();
+    const el = mount(async (emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "fill_field", { field: "title" });
+      emit.toolResult("c1", "ok");
+      await held.wait;
+      emit.toolCall("c2", "fill_field", { field: "slug" });
+      emit.toolResult("c2", "ok");
+      emit.runEnd();
+    });
+    await send(el, "fill");
+    const head = part(shadow(el), ".tool-group-head");
+    head.click();
+    await settle();
+    const cardHeads = all(el, ".tool-call-head");
+    expect(cardHeads.map(height)).toEqual([0]);
+
+    held.open();
+    await settle();
+    expect(part(shadow(el), ".tool-group-label").textContent).toBe("Worked through 2 steps");
+    expect(all(el, ".tool-call-head").map((node) => height(node) > 0)).toEqual([true, true]);
+  });
+
+  for (const inner of [undefined, "minimal"] as const) {
+    it(`opens for a single deferred call and focuses Approve, inner ${inner ?? "default"}`, async () => {
+      const el = mountInner(inner, (emit, params) => {
+        emit.runStart();
+        if (params.resume === undefined) {
+          emit.toolCall("e1", "create_event", { title: "Design sync" });
+          emit.interrupt([approvalFor("e1")]);
+          return;
+        }
+        emit.runEnd();
+      });
+      await send(el, "import one");
+      await settle();
+
+      const group = part(shadow(el), ".tool-group");
+      expect(group.getAttribute("data-open")).toBe("true");
+      const approve = part(shadow(el), ".approval-btn--approve");
+      expect(height(approve)).toBeGreaterThan(0);
+      expect(shadow(el).activeElement).toBe(approve);
+    });
+  }
+
+  it("shows the card's head once a card mode replaces grouping", async () => {
+    const el = mountInner(undefined);
+    await send(el, "fill the title");
+    const cardHead = part(shadow(el), ".tool-call-head");
+    expect(height(cardHead)).toBe(0);
+    for (const mode of ["inline", "minimal", "compact", "full"]) {
+      el.setAttribute("data-tool-display", mode);
+      expect(height(cardHead)).toBeGreaterThan(0);
+    }
+  });
+
+  it("holds for a restored one-call turn", async () => {
+    const el = mountInner(undefined);
+    await send(el, "fill the title");
+    el.setAttribute("data-tool-group-display", "full");
+    expect(labelsShown(el)).toBe(1);
+  });
+});
+
 describe("client tool rounds", () => {
   it("join one group across the pending dots between them", async () => {
     let round = 0;

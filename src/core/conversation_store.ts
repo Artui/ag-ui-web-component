@@ -1,5 +1,6 @@
 import { randomUUID } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
+import { prettifyToolName } from "../ui/progress/prettify_tool_name.js";
 
 /**
  * A checkpoint recorded just before a navigating tool reloads the page.
@@ -101,6 +102,8 @@ const MINTED_SUFFIX = "minted:";
 const TITLE_LIMIT = 60;
 const PREVIEW_LIMIT = 100;
 const DEFAULT_TITLE = "New conversation";
+// A message that is one skill's name and nothing else, as a server-resolved skill sends.
+const SKILL_TOKEN = /^\/([A-Za-z0-9][\w.-]*)$/;
 
 // One warning per page, not one per write. The condition is origin-wide and
 // persistent — a full quota stays full — so a message per persisted turn (or,
@@ -393,17 +396,35 @@ function isOwnedSuffix(suffix: string): boolean {
   );
 }
 
-/** The thread title: the first user message, collapsed + truncated. */
+/** The stored title: {@link threadTitleFrom}, or a placeholder for a thread with no user text. */
 function deriveTitle(messages: readonly Message[]): string {
+  const title = threadTitleFrom(messages);
+  return title === "" ? DEFAULT_TITLE : title;
+}
+
+/**
+ * A thread's title from its first user message, collapsed and truncated, or `""`
+ * when no user message has text.
+ *
+ * A first message that is exactly a skill's `/token` is named rather than
+ * quoted: `skillTitle(token)` when it knows the skill, else the token in words
+ * (`/summarize_draw` reads "Summarize draw").
+ */
+export function threadTitleFrom(
+  messages: readonly Message[],
+  skillTitle: (name: string) => string | undefined = () => undefined,
+): string {
   for (const message of messages) {
     if (message.role === "user") {
       const text = cleanText(message.content);
       if (text !== "") {
-        return truncate(text, TITLE_LIMIT);
+        const token = SKILL_TOKEN.exec(text)?.[1];
+        const named = token === undefined ? text : (skillTitle(token) ?? prettifyToolName(token));
+        return truncate(named, TITLE_LIMIT);
       }
     }
   }
-  return DEFAULT_TITLE;
+  return "";
 }
 
 /** A one-line preview: the latest message with text, collapsed + truncated. */

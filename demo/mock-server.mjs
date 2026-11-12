@@ -187,6 +187,23 @@ async function handleAgent(res, body) {
       `Added ${approved.length} of ${resume.length}`,
       approved.length === resume.length ? " — all of them." : ", and left the rest alone.",
     ]);
+  } else if (/\bwhere am i\b/i.test(prompt)) {
+    // The place chip's other half: quote the place entry this round carried,
+    // so the chip and what the agent was told can be compared side by side.
+    // Withholding the place drops the page map too, which the answer says.
+    const context = Array.isArray(input.context) ? input.context : [];
+    const entry = context.find((item) => item.description === "place");
+    const page = context.some((item) => item.description === "page_map");
+    const place = entry === undefined ? null : JSON.parse(entry.value);
+    const where =
+      place === null
+        ? "I was not told where you are"
+        : `You are on **${place.label}**${place.detail ? ` (${place.detail})` : ""}` +
+          (place.href ? `, at \`${place.href}\`` : "");
+    await streamText(res, id("msg"), [
+      `${where}. `,
+      page ? "I was given the page map too." : "I was not given the page map.",
+    ]);
   } else if (/\becho\b/i.test(prompt)) {
     // A plain answer and nothing else, which is the shape most turns have and
     // the one every other branch here dresses up. Sending, the queue behind a

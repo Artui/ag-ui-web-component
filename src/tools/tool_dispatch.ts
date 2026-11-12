@@ -20,7 +20,6 @@ import type { UiStrings } from "../ui/ui_strings.js";
 import type { ClientTool } from "./client_tool_registry.js";
 import { isDestructive } from "./is_destructive.js";
 import { isNavigates } from "./is_navigates.js";
-import type { PageMap } from "./page_map.js";
 import type { ToolCatalog } from "./tool_catalog.js";
 
 /** What tool dispatch needs from the element that owns it. */
@@ -43,8 +42,6 @@ export interface ToolDispatchHost {
   readonly confirmPredicate: () =>
     | ((toolName: string, args: Record<string, unknown>) => boolean | Promise<boolean>)
     | null;
-  /** The element's `getPageMap`. */
-  readonly getPageMap: () => (() => PageMap) | null;
   /** The element's `navigate`. */
   readonly navigate: () => ((path: string) => void) | null;
   /** The element's `approveWithEdits`. */
@@ -200,10 +197,11 @@ export class ToolDispatch {
     // Must precede the confirmation prompt, so the user is never asked to
     // approve an action about to be refused. Navigating tools are exempt, since
     // moving the page is their job, as is read_page, the documented recovery.
-    // Gated on a page-map provider: without one there is no read_page to
-    // recommend and the host's tools are not page-scoped anyway.
+    // Gated on this round having offered read_page: the refusal tells the agent
+    // to call it, and a round without it (no page-map provider, or a place the
+    // user withheld) has nothing to recommend.
     if (
-      this.#host.getPageMap() !== null &&
+      this.#host.tools.wasAdvertised(READ_PAGE_TOOL) &&
       call.name !== READ_PAGE_TOOL &&
       !isNavigates(tool.parameters) &&
       this.#pageMoved()

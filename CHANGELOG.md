@@ -7,6 +7,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0] — 2026-11-12
+
+### Added
+
+- **The thread on screen has a title from its first send, and `title-text="auto"` shows it.**
+  The read-only `threadTitle` and the `ag-ui-thread-title` event (`THREAD_TITLE_EVENT`,
+  detail `ThreadTitleDetail`: `{ threadId, title }`) report it on the first send, a rename,
+  a switch, a new chat and a delete. `title-text="auto"` draws it in the header, the rail
+  and the bar label, and falls back to the strings table's `title` while the thread has
+  none. A first message that is exactly a skill's `/token` is titled with the catalog's
+  `title` for that skill, else with the token in words (`/summarize_draw` reads
+  "Summarize draw"), and the default store titles its list rows the same way from their
+  next save. With `data-threads-url`, the thread on screen is listed with its own title
+  before the server has indexed it, and the server's row replaces it once it does, with
+  `cacheMessages: false` too. A title the list holds that the first message does not
+  derive (a rename) is taken on a switch, and on a reload from the default store; a
+  listed title that is only the server's own cut of the first message, or its "New
+  conversation" placeholder, is not a rename and the element's own title stays. A host
+  opts in to the header by setting `title-text="auto"`.
+  The event, the property and the list row need no opt-in. The humanised skill titles and
+  the extra list row change what an existing host sees.
+
+- **A docked sidebar reports the width it covers.** The read-only `dockWidth` property and
+  the `ag-ui-dock-width` event (`DOCK_WIDTH_EVENT`, detail `DockWidthDetail`:
+  `{ width, side }`) give a host that keeps `placement="sidebar"` fixed the number to push
+  its own page by, as `barHeight` does for the bar: the panel's width while open, its
+  borders included, the rail's while collapsed to it, and 0 under `collapse-to="none"`,
+  every other placement, on a phone while open and under `--ag-ui-position: static`. One
+  event per change of the resting value, never per frame of the width transition; a
+  resize drag fires once, when it ends. Additive: nothing changes for a host that does not listen.
+- **The conversation list opens beside your own button under `collapse-to="none"`.**
+  Collapsed there, the panel is hidden and the list with it, so `openThreads()` used to
+  open a list nobody could see. It now opens as a popover beside the `anchor`, or beside
+  the element passed as `openThreads({ anchor })`: below a button in the top half of the
+  viewport, above one in the bottom half, right-aligned and held inside the window. A
+  pick switches the conversation and leaves the panel collapsed. Escape, a press outside,
+  `closeThreads()` and expanding close it; a press on the button does not. A host opts
+  in by passing an anchor: the `anchor` attribute or property, or
+  `openThreads({ anchor })`. Without one it warns and draws nothing, and under
+  `placement="embedded"`, whose collapsed chat is not drawn at all, there is no popover
+  and it warns whatever the anchor. The bar's popover and the in-panel list are
+  unchanged.
+- **The conversation list groups its rows by age.** Today, Previous 7 days and Older,
+  from local midnight, in every drawer, on by default. Empty groups and a lone group
+  draw no heading. The headings are `::part(drawer-group-label)`, out of the Tab order,
+  with the new `threadsToday`, `threadsPreviousWeek` and `threadsOlder` strings. The new
+  `data-threads-search` attribute (`auto`, `always`, `never`) chooses when the search
+  box shows; absent keeps the eight-conversation threshold. A host snapshotting the
+  drawer's DOM sees the new heading nodes.
+- **The collapsed bottom bar shows the place beside its title.** Under
+  `collapse-to="bar"`, the strip now draws the place from `getPlace` (or the route map)
+  as quiet secondary text, in a new `bar-place` part holding the chip's own
+  `place-label` and `place-detail` parts. It is the chip's single read, so
+  `refreshPlace()` and `popstate` update both, and no place draws nothing. A long place
+  truncates before the history button leaves the strip. A withheld place stays, dashed
+  and struck through (`data-excluded`), so the bar never claims the page is sent. The
+  phone strip shows it too. No opt-in beyond the chip's: a host with no place sees the
+  bar unchanged.
+- **A place chip says where the user is, and the agent is told the same.** The
+  composer's tool row, between the attach and voice controls and Send, can show the
+  page, tab or record the user is on. The same read is sent as one `place` context
+  entry with the label, detail and href, appended after whatever `getContext` returns,
+  so a host that replaces `getContext` still sends it. It comes from the new
+  `getPlace` property, which returns a `Place` (`{ label, detail?, icon?, href? }`,
+  exported) or `null`. It is read before every tool round, on connect, on expand, on
+  composer focus, on `popstate` and `hashchange` and when the conversation on screen
+  changes, and on the new `refreshPlace()`, which a single-page app's router calls
+  after a `pushState`. An eye toggle on the chip withholds the place. The chip stays,
+  dashed and struck through (`data-excluded`), and the round then sends no `place`
+  entry, no `page_map` entry and no `read_page` tool. The choice holds for the same
+  place, lapses when the place changes, and is not persisted. New parts: `place`,
+  `place-icon`, `place-label`, `place-detail` and `place-toggle`. New strings:
+  `placeShared`, `placeWithheld`, `placeStopSharing` and `placeShareAgain`. The
+  `above-composer` slot is unchanged. **Hosts opt in by setting `getPlace`. A host
+  that sets a `routeMap` gets the chip without opting in:** the route matching the
+  current path stands in for the place, with its title as the label and its group as
+  the detail. To keep such a host without a chip, set `getPlace = () => null`.
+- **`ag-ui-run-finished` says how the run ended.** `detail.outcome` is `"completed"`,
+  `"stopped"` (Stop, a new chat or a thread switch) or `"failed"` (the agent reported an
+  error). A run a switch cancelled still reports, as before, and now says `"stopped"`, so a
+  host that marks attention or counts completions can tell its late event from a finished
+  run's, which `threadId` could not when the thread was switched back to. The detail's
+  other fields keep their meaning. **A host has nothing to do**; one that defers a switch
+  should key on `running` / `data-running` (the README has the recipe).
+
+### Changed
+
+- **The page-moved refusal only names `read_page` in a round that offered it.** A
+  tool call landing after the page moved mid-round is refused with a result telling
+  the agent to call `read_page`. That guard used to run whenever `getPageMap` was set.
+  It now runs when the round offered `read_page`, so a round with the place withheld,
+  or a host `getTools` that leaves `read_page` out, never sends the agent to a tool it
+  does not have. The other direction is new too: a host that registers a `read_page`
+  tool of its own, with no `getPageMap`, now has its other tool calls refused when the
+  page moves mid-round, as a host with `getPageMap` always had. **A host has nothing to
+  do**, unless it registers its own `read_page` and wants no guard; it then renames
+  the tool.
+- **The `routeMap` documentation says what is sent.** It claimed a compact summary of
+  the map rides in each run's context. None does. The route matching the current path
+  is now sent as the `place` entry while `getPlace` is unset.
+- **A one-step tool group names its call once.** With `data-tool-display="grouped"` and a
+  turn of exactly one tool call, the opened group repeated the call's name: the row read the
+  label and the card's own head read it again. The card's head is now not drawn inside a
+  one-step group, and under `data-tool-group-display="minimal"` the row draws no chevron, since
+  a minimal card is only its head. Two or more calls, and every card display mode, are
+  unchanged. A host styling `::part(tool-card-head)` sees no head inside a one-step group.
+  **A host has nothing to do.**
+
+### Documentation
+
+- **The README says that desktop size tokens also size the phone.** Small viewports now
+  shows a `--ag-ui-inset` / `--ag-ui-width` / `--ag-ui-height` rule set at every width keeping
+  its shape at 600px and below, and the fix: scope it in `@media (min-width: 601px)`. It also
+  shows how to hide single header controls by their parts, and lists `placement="full"`.
+  **A host has nothing to do.**
+
 ## [0.50.2] — 2026-11-09
 
 ### Fixed
@@ -5232,7 +5348,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.2...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.51.0...HEAD
+[0.51.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.2...v0.51.0
 [0.50.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.1...v0.50.2
 [0.50.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.0...v0.50.1
 [0.50.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.49.0...v0.50.0

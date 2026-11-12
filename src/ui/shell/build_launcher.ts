@@ -11,6 +11,8 @@ export interface LauncherOptions {
   readonly bar: HTMLElement;
   /** The bottom bar's history button, a sibling of the launcher in the bar. */
   readonly barHistory: HTMLButtonElement;
+  /** The place beside the title, which its owner shows and hides. */
+  readonly barPlace: HTMLElement;
   readonly titleText: string;
   readonly iconUrl: string | null;
   readonly strings: UiStrings;
@@ -32,7 +34,7 @@ export interface LauncherOptions {
  * drawn, so the launcher lays out against the host exactly as it did alone.
  */
 export function buildLauncher(options: LauncherOptions): void {
-  const { launcher, badge, railLabel, bar, barHistory } = options;
+  const { launcher, badge, railLabel, bar, barHistory, barPlace } = options;
   launcher.className = "launcher";
   launcher.type = "button";
   launcher.setAttribute("part", "launcher");
@@ -73,5 +75,5 @@ export function buildLauncher(options: LauncherOptions): void {
   glyph.textContent = "\u2630";
   barHistory.replaceChildren(glyph);
   barHistory.addEventListener("click", options.onHistory, { signal: options.signal });
-  bar.replaceChildren(launcher, barHistory);
+  bar.replaceChildren(launcher, barPlace, barHistory);
 }

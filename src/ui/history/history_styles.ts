@@ -339,6 +339,15 @@ export const HISTORY_STYLES: string = `
   color: var(--_muted);
 }
 
+/* An age group's heading: quieter than the rows it heads, and not a stop for Tab. */
+.drawer-group-label {
+  padding: 0.75rem var(--_pad) 0.25rem;
+  border-bottom: 1px solid var(--_border);
+  font-size: 0.75em;
+  font-weight: 600;
+  color: var(--_muted);
+}
+
 .drawer-row {
   display: flex;
   align-items: stretch;

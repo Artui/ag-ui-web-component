@@ -1,17 +1,20 @@
-import type { Context, Tool } from "@ag-ui/core";
+import type { Context, Message, Tool } from "@ag-ui/core";
 import {
   ATTACHMENT_EVENT,
   BAR_HEIGHT_EVENT,
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
+  DOCK_WIDTH_EVENT,
   ICON_MOON,
   ICON_SUN,
   MESSAGE_ROLE,
+  PAGE_MAP_CONTEXT,
   STATE_EVENT,
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
   THREAD_EVENT,
+  THREAD_TITLE_EVENT,
   TOGGLE_EVENT,
   TOOL_DISPLAY,
   TOOL_GROUP_DISPLAY,
@@ -52,6 +55,10 @@ import { type ApprovalRenderer } from "../ui/interrupts/approval_card.js";
 import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type Place } from "../ui/place/place.js";
+import { PlaceChip } from "../ui/place/place_chip.js";
+import { placeFromRoute } from "../ui/place/place_from_route.js";
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
 import { type Surface, surfaceFor } from "../ui/placement/surface_for.js";
 import { RunAnnouncer } from "../ui/progress/run_announcer.js";
@@ -85,13 +92,17 @@ import {
   type ClientConversationStore,
   type NavigationCheckpoint,
   SessionStorageStore,
+  type ThreadMeta,
+  threadTitleFrom,
   writeStoredItem,
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import type { BarHeightDetail } from "./events/bar_height_detail.js";
+import type { DockWidthDetail } from "./events/dock_width_detail.js";
 import type { StateDetail } from "./events/state_detail.js";
 import type { SubmitDetail } from "./events/submit_detail.js";
 import type { ThreadDetail } from "./events/thread_detail.js";
+import type { ThreadTitleDetail } from "./events/thread_title_detail.js";
 import type { ToggleDetail } from "./events/toggle_detail.js";
 import type { UnreadDetail } from "./events/unread_detail.js";
 import type { MessageRole } from "./message_role.js";
@@ -143,10 +154,32 @@ const CONNECT_TIME_ATTRIBUTES = [
  */
 const CREDENTIALS_MODES: readonly string[] = ["omit", "same-origin", "include"];
 
+const SERVER_PLACEHOLDER_TITLE = "New conversation";
+
+/** What a server derives as a thread's title: the first user text, 60 code points at most. */
+function serverTitleFrom(messages: readonly Message[]): string {
+  for (const message of messages) {
+    const text =
+      typeof message.content === "string" ? message.content.split(/\s+/).join(" ").trim() : "";
+    if (message.role === "user" && text !== "") {
+      const points = Array.from(text);
+      return points.length <= 60 ? text : `${points.slice(0, 59).join("").trimEnd()}\u2026`;
+    }
+  }
+  return "";
+}
+
 /** Whether `value` is one of the three modes `fetch` understands. */
 function isCredentialsMode(value: string): value is RequestCredentials {
   return CREDENTIALS_MODES.includes(value);
 }
+
+/** The `title-text` value that makes the header follow the thread on screen. */
+const TITLE_TEXT_AUTO = "auto";
+
+/** The anchored conversation list's widest, and its distance from its button and the window. */
+const THREADS_POPOVER_WIDTH = 320;
+const THREADS_POPOVER_GAP = 8;
 
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
@@ -350,7 +383,9 @@ export class AgUiChat extends HTMLElement {
 
   /**
    * Navigable routes the agent can jump to via the built-in `route.*` tools.
-   * A compact summary also rides in each run's context.
+   * While {@link getPlace} is unset, the route matching the current path also
+   * stands in as the place: the chip names it and the place entry carries it.
+   * No summary of the map itself is sent.
    */
   routeMap: RouteMap = [];
 
@@ -366,6 +401,26 @@ export class AgUiChat extends HTMLElement {
 
   /** Whether to auto-inject the page map into context each run. */
   autoInjectPageMap = true;
+
+  /**
+   * Where in the app the user is. The chip in the composer's tool row draws it,
+   * and every tool round sends it as one `place` context entry from the same
+   * read, after whatever {@link getContext} returns, so a host that replaces
+   * that keeps it. Read before every round, on connect, on expand, when the
+   * composer gains focus, on `popstate` and `hashchange`, when the conversation
+   * changes, and on {@link refreshPlace}.
+   *
+   * When unset, the {@link routeMap} route matching `location.pathname` stands
+   * in: its title (else its id) as the label, its group as the detail, the
+   * path as the href. With neither, no chip is drawn and nothing is sent; a
+   * host with a route map that wants no chip sets `() => null`.
+   *
+   * The chip's eye toggle withholds the place, and with it the page: a round
+   * whose place is withheld sends no `page_map` entry, whatever
+   * {@link getContext} returns, and offers no `read_page`. It holds for the
+   * same place, lapses when a different place is read, and is not persisted.
+   */
+  getPlace: (() => Place | null) | null = null;
 
   /**
    * Persistence for the conversation + navigation checkpoint. Defaults to
@@ -567,8 +622,18 @@ export class AgUiChat extends HTMLElement {
   readonly #dockBar: HTMLDivElement = document.createElement("div");
   /** The bottom bar's history button, which opens the drawer as a popover. */
   readonly #barHistory: HTMLButtonElement = document.createElement("button");
+  /**
+   * The conversation list's home while collapsed under collapse-to="none": outside
+   * the hidden panel, placed beside the host's button. No box of its own.
+   */
+  readonly #threadsPopover: HTMLDivElement = document.createElement("div");
+  /** The button the popover was opened from, whose presses are not outside it. */
+  #threadsAnchor: Element | null = null;
   /** The bar height last reported, so the event fires on a change only. */
   #barHeight = 0;
+  /** The docked width and edge last reported, so the event fires on a change only. */
+  #dockWidth = 0;
+  #dockSide: DockWidthDetail["side"] = "right";
   /** The element the panel rises from under collapse-to="none", set as a property. */
   #anchor: Element | null = null;
   /** Whether a missing anchor has been reported; once per anchor given. */
@@ -828,8 +893,16 @@ export class AgUiChat extends HTMLElement {
    * names as the thread it replaced; `null` before the first.
    */
   #shownThread: string | null = null;
+  /** The thread on screen's messages as last saved or restored, which name it. */
+  #titleMessages: readonly Message[] = [];
+  /** Titles renamed here or listed that its messages do not derive, by thread. */
+  readonly #givenTitles = new Map<string, string>();
+  /** The thread and title {@link threadTitle} last reported. */
+  #titled = { threadId: "", title: "" };
   /** The decision a run is suspended on, which a Stop abandons. */
   readonly #decision = new PendingDecision();
+  /** The place chip, kept across connections like the composer it sits in. */
+  readonly #place = new PlaceChip();
   /**
    * The frontend tools the agent is offered, what the current round advertised,
    * and the server's labels for its own tools. A field, because the tool
@@ -840,6 +913,7 @@ export class AgUiChat extends HTMLElement {
     routeMap: () => this.routeMap,
     navigate: () => this.navigate,
     getPageMap: () => this.getPageMap,
+    pageWithheld: () => this.#place.withheld,
     resolvePageTarget: (target) => this.resolvePageTarget(target),
     getTools: () => this.getTools(),
     askUser: () => this.askUser,
@@ -916,11 +990,10 @@ export class AgUiChat extends HTMLElement {
       announce: (message) => this.#announcer.announce(message),
       autoConfirm: () => this.autoConfirm,
       confirmPredicate: () => this.confirmPredicate,
-      getPageMap: () => this.getPageMap,
       navigate: () => this.navigate,
       approveWithEdits: () => this.approveWithEdits,
       approvalRenderer: () => this.approvalRenderer,
-      getContext: () => this.getContext(),
+      getContext: () => this.#roundContext(),
       conversationStore: () => this.conversationStore,
       threadId: () => this.#history.threadId,
       // Read live and compared, the way each client compares the one it was
@@ -1044,6 +1117,8 @@ export class AgUiChat extends HTMLElement {
         void this.#history.refreshDrawer();
       },
       onRename: (threadId, title) => {
+        this.#givenTitles.set(threadId, title);
+        this.#retitle();
         this.#history.renameThread(threadId, title);
       },
       onDelete: (threadId) => {
@@ -1126,6 +1201,7 @@ export class AgUiChat extends HTMLElement {
       resetState: () => this.#resetState(),
       setRunning: (running) => this.#setRunning(running),
       threadChanged: (threadId, reason) => this.#dispatchThread(threadId, reason),
+      threadsListed: (threads) => this.#takeListedTitle(threads),
     });
   }
 
@@ -1136,6 +1212,9 @@ export class AgUiChat extends HTMLElement {
       "placement",
       "collapse-to",
       "anchor",
+      "data-side",
+      "data-small-viewport",
+      "data-threads-search",
       "credentials",
       "user-key",
       "user-name",
@@ -1158,8 +1237,17 @@ export class AgUiChat extends HTMLElement {
       }
       return;
     }
+    if (name === "data-threads-search") {
+      const mode = this.getAttribute("data-threads-search");
+      this.#drawer.setSearchMode(mode === "always" || mode === "never" ? mode : "auto");
+      return;
+    }
     if (name === "anchor") {
       this.#anchorWarned = false;
+      this.#syncDock();
+      return;
+    }
+    if (name === "data-side" || name === "data-small-viewport") {
       this.#syncDock();
       return;
     }
@@ -1186,9 +1274,7 @@ export class AgUiChat extends HTMLElement {
         // The strip's label and the popover's home both depend on the target,
         // and neither is re-derived by the dock sync.
         this.#syncLauncher();
-        if (this.#surface().collapseTo !== "bar") {
-          this.#homeDrawer();
-        }
+        this.#homeDrawer(this.#surface().collapseTo === "bar" ? this.#dockBar : null);
       }
       this.#syncDock();
       // Placement also moves the panel, so the edges its layout holds still
@@ -1197,10 +1283,7 @@ export class AgUiChat extends HTMLElement {
       return;
     }
     if (name === "title-text") {
-      // `#strings` is the resolved table once connected, the English defaults
-      // before then.
-      this.#title.textContent = value ?? this.#strings.title;
-      this.#railLabel.textContent = this.#title.textContent;
+      this.#paintTitle();
       return;
     }
     if (name === "user-name") {
@@ -1641,6 +1724,11 @@ export class AgUiChat extends HTMLElement {
     this.#placement.probe.addEventListener("transitionrun", this.#onLayoutChange, {
       signal: this.#connection.signal,
     });
+    // A resize drag is reported when it ends, and the last frame may change nothing
+    // the observer sees.
+    const endDrag = (): void => void requestAnimationFrame(() => this.#syncDock());
+    window.addEventListener("pointerup", endDrag, { signal: this.#connection.signal });
+    window.addEventListener("keyup", endDrag, { signal: this.#connection.signal });
     this.#syncDock();
     // Under collapse-to="none" the host draws the collapsed state itself, so
     // it has to learn the state the element mounted in -- restored from
@@ -1916,6 +2004,35 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * Read {@link getPlace} (or the route map standing in) again and redraw the
+   * chip. A single-page app calls this after its router moves, since a
+   * `pushState` fires no event; history traversal and hash changes are caught
+   * without it. Does nothing before the element connects.
+   */
+  refreshPlace(): void {
+    if (!this.isConnected) {
+      return;
+    }
+    this.#place.update(
+      this.getPlace === null
+        ? placeFromRoute(this.routeMap, window.location.pathname)
+        : this.getPlace(),
+    );
+  }
+
+  /**
+   * A round's context: the host's, then the place. A withheld place withholds
+   * the page map too, so it is filtered out of whatever the host returned.
+   */
+  #roundContext(): Context[] {
+    const context = this.getContext();
+    const kept = this.#place.withheld
+      ? context.filter((entry) => entry.description !== PAGE_MAP_CONTEXT)
+      : context;
+    return [...kept, ...this.#place.context()];
+  }
+
+  /**
    * Set the collapsed state: reflect the `collapsed` attribute, persist it
    * per-tab, and emit a {@link TOGGLE_EVENT} so a host can mirror the state in
    * its own chrome.
@@ -1942,6 +2059,7 @@ export class AgUiChat extends HTMLElement {
       this.#announceSurfaceChange(this.#strings.chatMinimised, null);
     }
     if (!collapsed) {
+      this.refreshPlace();
       // Re-decide which way to open before opening: the viewport may have
       // changed since the launcher was dropped, and this corner is what the
       // panel grows from.
@@ -1993,6 +2111,20 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * The title of the thread on screen; `""` while nothing has been sent in it,
+   * and before the element connects.
+   *
+   * A title renamed here, or one the conversation list shows that the thread's
+   * messages do not derive (a server's own), wins. Otherwise it is the first
+   * user message, and a bare skill `/token` reads as the catalog's title for
+   * that skill, else as the token in words. `title-text="auto"` draws it in the
+   * header; {@link THREAD_TITLE_EVENT} says when it changes.
+   */
+  get threadTitle(): string {
+    return this.#titled.title;
+  }
+
+  /**
    * Whether an interaction is in flight: the composer's own state, the one that
    * shows Stop. It spans every tool round, a retry and a checkpoint
    * continuation as well as a send, which {@link SUBMIT_EVENT} alone does not.
@@ -2010,6 +2142,19 @@ export class AgUiChat extends HTMLElement {
    */
   get barHeight(): number {
     return this.#barHeight;
+  }
+
+  /**
+   * The width in CSS px a docked panel covers at rest, and 0 when it covers
+   * none of the page: the rail while collapsed to it, the panel while open, 0
+   * under every other placement, under collapse-to="none" or a launcher while
+   * collapsed, on a phone while open (the panel is the screen) and under
+   * --ag-ui-position: static, where the host's layout already makes room. The
+   * panel is fixed over the page, so a host pads its own by this much;
+   * {@link DOCK_WIDTH_EVENT} says when it changes, never per animation frame.
+   */
+  get dockWidth(): number {
+    return this.#dockWidth;
   }
 
   /**
@@ -2050,6 +2195,47 @@ export class AgUiChat extends HTMLElement {
     }
   }
 
+  /** What the panel covers of the page at rest, from state and the panel's own box. */
+  #restingDockWidth(): number {
+    const placement = this.getAttribute("placement");
+    if (
+      (placement !== "sidebar" && placement !== "side") ||
+      !this.#hasBox() ||
+      getComputedStyle(this).position === "static"
+    ) {
+      return 0;
+    }
+    if (this.collapsed) {
+      return this.#surface().collapseTo === "rail" ? this.#launcher.offsetWidth : 0;
+    }
+    const phone =
+      this.getAttribute("data-small-viewport") !== "off" &&
+      window.matchMedia("(max-width: 600px)").matches;
+    return phone ? 0 : this.#chat.offsetWidth;
+  }
+
+  /** Tell the host when the docked width, or the edge it docks against, changed. */
+  #syncDockWidth(): void {
+    // A drag-resize reports once, when it ends.
+    if (this.#placement.dragging()) {
+      return;
+    }
+    const width = this.#restingDockWidth();
+    const side = this.getAttribute("data-side") === "left" ? "left" : "right";
+    if (width === this.#dockWidth && (width === 0 || side === this.#dockSide)) {
+      return;
+    }
+    this.#dockWidth = width;
+    this.#dockSide = side;
+    this.dispatchEvent(
+      new CustomEvent<DockWidthDetail>(DOCK_WIDTH_EVENT, {
+        detail: { width, side },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   /** Re-measure the bar or the anchor, and tell the host when the bar's height changed. */
   #syncDock(): void {
     // isConnected rather than the connected flag, which connectedCallback
@@ -2063,6 +2249,7 @@ export class AgUiChat extends HTMLElement {
     const height = this.#hasBox()
       ? this.#placement.syncDock(this.#dockBar, this.#resolveAnchor())
       : 0;
+    this.#syncDockWidth();
     if (height === this.#barHeight) {
       return;
     }
@@ -2170,6 +2357,7 @@ export class AgUiChat extends HTMLElement {
    */
   resetSize(): void {
     this.#placement.resetSize();
+    this.#syncDock();
   }
 
   /** Flip the collapsed state. Bound to the built-in header toggle. */
@@ -2357,16 +2545,65 @@ export class AgUiChat extends HTMLElement {
    * be rebuilt: this one, {@link openCheckpoints}, {@link newChat},
    * {@link toggleCollapsed} and {@link toggleTheme}.
    */
-  openThreads(): void {
+  openThreads(options: { readonly anchor?: Element } = {}): void {
     // Collapsed into the bar, the list opens as a popover over the bar rather
     // than expanding the panel: the same drawer, moved beside the bar, since
-    // nothing inside the hidden panel can be drawn.
-    if (this.collapsed && this.#surface().collapseTo === "bar") {
+    // nothing inside the hidden panel can be drawn. Under the host's own bar it
+    // opens beside the host's button, and a pick leaves the panel to the host.
+    const target = this.#surface().collapseTo;
+    const anchor = options.anchor ?? this.#resolveAnchor();
+    // An embedded chat collapsed under none is not drawn at all, popover included.
+    const drawn = this.getAttribute("placement") !== "embedded";
+    if (this.collapsed && target === "bar") {
       this.#dockBar.append(this.#drawer.element);
+    } else if (this.collapsed && target === "none" && anchor !== null && drawn) {
+      this.#threadsAnchor = anchor;
+      this.#threadsPopover.append(this.#drawer.element);
+      this.#placeThreadsPopover();
     } else {
+      if (this.collapsed && target === "none") {
+        console.warn(
+          drawn
+            ? '<ag-ui-chat>: openThreads() under collapse-to="none" needs an anchor to open ' +
+                "beside; pass openThreads({ anchor }) or set the anchor attribute."
+            : '<ag-ui-chat>: openThreads() under placement="embedded" and collapse-to="none" ' +
+                "has no popover: the collapsed chat is not drawn. Expand it first.",
+        );
+      }
       this.#homeDrawer();
     }
     this.#history.openThreads();
+  }
+
+  /**
+   * Stand the popover on its button: below one in the top half of the viewport,
+   * above one in the bottom half, right-aligned to it and held inside the window.
+   */
+  #placeThreadsPopover(): void {
+    const anchor = this.#threadsAnchor;
+    if (anchor === null || this.#drawer.element.parentNode !== this.#threadsPopover) {
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    const width = document.documentElement.clientWidth;
+    const height = document.documentElement.clientHeight;
+    const below = rect.top + rect.height / 2 < height / 2;
+    const list = Math.min(THREADS_POPOVER_WIDTH, width - 2 * THREADS_POPOVER_GAP);
+    const right = Math.min(
+      Math.max(THREADS_POPOVER_GAP, width - rect.right),
+      width - THREADS_POPOVER_GAP - list,
+    );
+    const room = (below ? height - rect.bottom : rect.top) - 2 * THREADS_POPOVER_GAP;
+    this.style.setProperty(
+      "--_threads-top",
+      below ? `${rect.bottom + THREADS_POPOVER_GAP}px` : "auto",
+    );
+    this.style.setProperty(
+      "--_threads-bottom",
+      below ? "auto" : `${height - rect.top + THREADS_POPOVER_GAP}px`,
+    );
+    this.style.setProperty("--_threads-right", `${Math.max(THREADS_POPOVER_GAP, right)}px`);
+    this.style.setProperty("--_threads-room", `${Math.max(0, room)}px`);
   }
 
   /**
@@ -2375,10 +2612,15 @@ export class AgUiChat extends HTMLElement {
    * opened over the bar, and carried into the panel it would cover the
    * conversation the user asked to see.
    */
-  #homeDrawer(): void {
-    if (this.#drawer.element.parentNode === this.#dockBar) {
+  #homeDrawer(keep: Node | null = null): void {
+    const away = this.#drawer.element.parentNode;
+    if (away !== keep && (away === this.#dockBar || away === this.#threadsPopover)) {
       this.#drawer.close();
       this.#chat.insertBefore(this.#drawer.element, this.#checkpoints.element);
+      this.#threadsAnchor = null;
+      for (const name of ["top", "bottom", "right", "room"]) {
+        this.style.removeProperty(`--_threads-${name}`);
+      }
     }
   }
 
@@ -2675,7 +2917,7 @@ export class AgUiChat extends HTMLElement {
     this.#chat.className = "chat";
     this.#chat.setAttribute("part", "panel");
 
-    const titleText = this.getAttribute("title-text") ?? this.#strings.title;
+    const titleText = this.#titleText();
     const themed = this.getAttribute("data-theme-toggle") !== null;
     const { header, checkpoints } = buildHeader({
       host: this,
@@ -2734,6 +2976,7 @@ export class AgUiChat extends HTMLElement {
       attachButton: this.#attachButton,
       fileInput: this.#fileInput,
       voiceSlot: this.#voiceSlot,
+      place: this.#place.element,
       hint: this.#composerHint,
       queuedRow: this.#queuedRow,
       attachSlot: this.#attachSlot,
@@ -2752,6 +2995,12 @@ export class AgUiChat extends HTMLElement {
       },
       onFilesPicked: () => this.#attachments.onFilesPicked(),
     });
+
+    this.#place.mount(signal, this.#strings);
+    this.#input.addEventListener("focus", () => this.refreshPlace(), { signal });
+    window.addEventListener("popstate", () => this.refreshPlace(), { signal });
+    window.addEventListener("hashchange", () => this.refreshPlace(), { signal });
+    this.refreshPlace();
 
     // Host content against the input, after everything of the turn being
     // written. A bare slot, whose own box is none, so an empty one takes no
@@ -2816,6 +3065,7 @@ export class AgUiChat extends HTMLElement {
       railLabel: this.#railLabel,
       bar: this.#dockBar,
       barHistory: this.#barHistory,
+      barPlace: this.#place.barElement,
       titleText,
       iconUrl: readLauncherIconUrl(this),
       strings: this.#strings,
@@ -2835,19 +3085,26 @@ export class AgUiChat extends HTMLElement {
         }
       },
     });
-    // The popover has no backdrop to catch a click away, so a press outside
-    // the bar closes it, as Escape already does.
+    // Neither popover has a backdrop to catch a click away, so a press outside
+    // closes it, as Escape already does. The bar, or the list and the host's
+    // button, are not outside: that button toggles the list itself.
     document.addEventListener(
       "pointerdown",
       (event) => {
-        if (this.#drawer.element.parentNode === this.#dockBar && this.#drawer.isOpen()) {
-          if (!event.composedPath().includes(this.#dockBar)) {
-            this.#drawer.close();
-          }
+        const away = this.#drawer.element.parentNode;
+        if (!this.#drawer.isOpen() || (away !== this.#dockBar && away !== this.#threadsPopover)) {
+          return;
+        }
+        const path = event.composedPath();
+        const own: readonly (Node | null)[] =
+          away === this.#dockBar ? [away] : [away, this.#threadsAnchor];
+        if (!path.some((node) => own.includes(node as Node))) {
+          this.#drawer.close();
         }
       },
       { signal },
     );
+    window.addEventListener("resize", () => this.#placeThreadsPopover(), { signal });
     this.#placement.enableLauncherDrag(signal);
 
     this.#placement.mountResizeGrips(this.#chat);
@@ -2862,7 +3119,14 @@ export class AgUiChat extends HTMLElement {
     probe.style.borderRadius =
       "var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)";
     probe.style.transition = "border-radius 1ms";
-    this.#root.replaceChildren(probe, this.#announcer.region, this.#chat, this.#dockBar);
+    this.#threadsPopover.className = "threads-popover";
+    this.#root.replaceChildren(
+      probe,
+      this.#announcer.region,
+      this.#chat,
+      this.#dockBar,
+      this.#threadsPopover,
+    );
   }
 
   /**
@@ -3064,9 +3328,101 @@ export class AgUiChat extends HTMLElement {
   #dispatchThread(threadId: string, reason: ThreadDetail["reason"]): void {
     const detail: ThreadDetail = { threadId, previousThreadId: this.#shownThread, reason };
     this.#shownThread = threadId;
+    // The chip always names the live page, whichever conversation is on screen.
+    this.refreshPlace();
+    this.#titleMessages = this.#history.restored;
+    // Settled before the thread event so its listeners read the new title,
+    // and announced after it, as the change that follows from the switch.
+    const retitled = this.#settleTitle();
     this.dispatchEvent(
       new CustomEvent<ThreadDetail>(THREAD_EVENT, { detail, bubbles: true, composed: true }),
     );
+    if (retitled) {
+      this.#announceTitle();
+    }
+    // A picked thread may carry a title its messages do not derive (renamed
+    // elsewhere, or named by a server). On restore only from the element's own
+    // sessionStorage store, where the read is local: a remote one is a GET per page load.
+    if (
+      reason === "switch" ||
+      (reason === "restore" && this.conversationStore instanceof SessionStorageStore)
+    ) {
+      void this.#history.refreshDrawer();
+    }
+  }
+
+  /** The header and rail text: the fixed `title-text`, or the thread's under `"auto"`. */
+  #titleText(): string {
+    // `#strings` is the resolved table once connected, the English defaults before then.
+    const fixed = this.getAttribute("title-text");
+    if (fixed !== TITLE_TEXT_AUTO) {
+      return fixed ?? this.#strings.title;
+    }
+    return this.#titled.title === "" ? this.#strings.title : this.#titled.title;
+  }
+
+  #paintTitle(): void {
+    this.#title.textContent = this.#titleText();
+    this.#railLabel.textContent = this.#title.textContent;
+  }
+
+  /**
+   * Recompute {@link threadTitle} and repaint; `true` when it changed. A new
+   * thread counts as a change unless both titles are empty, so a switch
+   * between two same-named threads is still reported.
+   */
+  #settleTitle(): boolean {
+    const threadId = this.#history.threadId;
+    const title =
+      this.#givenTitles.get(threadId) ??
+      threadTitleFrom(this.#titleMessages, (name) => this.#skills.title(name));
+    const previous = this.#titled;
+    if (title === previous.title && (threadId === previous.threadId || title === "")) {
+      return false;
+    }
+    this.#titled = { threadId, title };
+    this.#paintTitle();
+    return true;
+  }
+
+  #announceTitle(): void {
+    this.dispatchEvent(
+      new CustomEvent<ThreadTitleDetail>(THREAD_TITLE_EVENT, {
+        detail: { ...this.#titled },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /** {@link #settleTitle}, announcing the change if there was one. */
+  #retitle(): void {
+    if (this.#settleTitle()) {
+      this.#announceTitle();
+    }
+  }
+
+  /**
+   * Keep the list's title for the thread on screen when it is a rename or a title
+   * the server chose. A server's own derivation of the first message (cut at 60
+   * code points) or its placeholder is not one: the element's own title stays.
+   */
+  #takeListedTitle(threads: readonly ThreadMeta[]): void {
+    const threadId = this.#history.threadId;
+    const row = threads.find((thread) => thread.threadId === threadId);
+    if (row === undefined || this.#titleMessages.length === 0) {
+      return;
+    }
+    const derived = [
+      threadTitleFrom(this.#titleMessages),
+      serverTitleFrom(this.#titleMessages),
+      SERVER_PLACEHOLDER_TITLE,
+    ];
+    if (derived.includes(row.title)) {
+      return;
+    }
+    this.#givenTitles.set(threadId, row.title);
+    this.#retitle();
   }
 
   /**
@@ -3484,7 +3840,12 @@ export class AgUiChat extends HTMLElement {
     return new AgUiClient({
       agent,
       handlers: this.#runHandlers.forClient(threadId),
-      getTools: () => this.#tools.advertise(),
+      // The place is read here because the client asks for the tools first,
+      // so the round's tools and context answer from the same read.
+      getTools: () => {
+        this.refreshPlace();
+        return this.#tools.advertise();
+      },
       getContext: () => this.#dispatch.buildContext(),
       executeTool: (call) => this.#dispatch.execute(call),
       resolveInterrupts: (interrupts) => this.#dispatch.resolveInterrupts(interrupts),
@@ -3506,6 +3867,10 @@ export class AgUiChat extends HTMLElement {
         }
         const conversation = [...seed.follows, ...messages];
         this.conversationStore.saveMessages(threadId, conversation);
+        if (threadId === this.#history.threadId) {
+          this.#titleMessages = conversation;
+          this.#retitle();
+        }
         seed.onSaved?.(conversation);
       },
       // Shared state is the next principal's first `RunAgentInput.state`, and

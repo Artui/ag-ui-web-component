@@ -25,6 +25,12 @@ export interface UiStrings {
   removeQueued: string;
   /** Shown when a filter matches nothing, unlike having no conversations. */
   noMatches: string;
+  /** Heading over the conversations last active today. */
+  threadsToday: string;
+  /** Heading over the conversations last active in the seven days before today. */
+  threadsPreviousWeek: string;
+  /** Heading over every older conversation, and any with no readable date. */
+  threadsOlder: string;
   /** Notice text when the agent moved its own panel out of the way. */
   chatMoved: string;
   /** Notice text when the agent collapsed its own panel. */
@@ -151,6 +157,14 @@ export interface UiStrings {
    * reporting a loss. Token: `{n}` (the cap, in minutes).
    */
   recordingLimit: string;
+  /** The place chip's tooltip while the place is sent. Token: `{label}`. */
+  placeShared: string;
+  /** The place chip's tooltip while the user withholds it. Token: `{label}`. */
+  placeWithheld: string;
+  /** The place toggle while the place is sent: pressing it withholds it. */
+  placeStopSharing: string;
+  /** The place toggle while the place is withheld: pressing it sends it again. */
+  placeShareAgain: string;
 
   // ── Tool-call card ──────────────────────────────────────────────────────────
   /** Status pill while the call runs. */
@@ -366,6 +380,9 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   queued: "Waiting to send",
   removeQueued: 'Do not send "{text}"',
   noMatches: "No conversations match that.",
+  threadsToday: "Today",
+  threadsPreviousWeek: "Previous 7 days",
+  threadsOlder: "Older",
   chatMoved: "Moved this panel out of the way",
   chatMinimised: "Minimised this panel",
   undo: "Undo",
@@ -429,6 +446,10 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   transcribing: "Transcribing…",
   transcriptionFailed: "Transcription failed",
   recordingLimit: "Stopped at the {n}-minute limit — transcribing what was recorded.",
+  placeShared: "The agent is told you are on {label}",
+  placeWithheld: "{label} is not sent with your next message",
+  placeStopSharing: "Stop sharing this page",
+  placeShareAgain: "Share this page again",
 
   toolRunning: "running…",
   toolDeferred: "waiting for you",

@@ -228,6 +228,33 @@ describe("stale-page tool guard", () => {
     expect(cardStatus(el)).toBe("done");
   });
 
+  it("guards when the round offered a read_page of the host's own", async () => {
+    // The refusal sends the agent to read_page, so what decides it is whether
+    // the round offered one, not whether the element has a page-map provider.
+    let ran = false;
+    const el = mountLive(moveThenCall("fill_field"));
+    el.registerTool({
+      name: "read_page",
+      description: "the host's own page reader",
+      parameters: { type: "object" },
+      handler: () => ({ route: "/moved/" }),
+    });
+    el.registerTool({
+      name: "fill_field",
+      description: "fill",
+      parameters: { type: "object" },
+      handler: () => {
+        ran = true;
+        return "filled";
+      },
+    });
+
+    await send(el, "fill the name");
+
+    expect(ran).toBe(false);
+    expect(cardStatus(el)).toBe("error");
+  });
+
   it("runs normally while the page stays put", async () => {
     let ran = false;
     let round = 0;

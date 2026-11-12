@@ -702,6 +702,32 @@
           </div>
         </section>
 
+        <section id="add-place">
+          <h3>The place chip</h3>
+          <p>
+            <code>getPlace</code> names where the user is; the chip in the composer's tool
+            row draws it and the next round sends it as a <code>place</code> context entry.
+            Pick a place, then <em>Where am I?</em>: the mock agent quotes the entry it
+            received. The eye on the chip withholds it (dashed, struck through), which
+            also withholds the page map. <em>A long one</em> shows the label truncating
+            before Send; <em>None</em> shows the chip taking no space.
+          </p>
+          <div class="row">
+            <label
+              >getPlace(
+              <select id="cfg-place">
+                <option value="article" selected>Create Article</option>
+                <option value="billing">Billing settings</option>
+                <option value="long">A long one</option>
+                <option value="none">None (null)</option>
+              </select>
+              )</label
+            >
+            <button type="button" id="cfg-place-ask">Where am I?</button>
+            <output id="cfg-place-out">-</output>
+          </div>
+        </section>
+
         <section id="add-thread">
           <h3>The thread API</h3>
           <p>

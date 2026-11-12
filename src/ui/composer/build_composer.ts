@@ -9,6 +9,8 @@ export interface ComposerOptions {
   readonly attachButton: HTMLButtonElement;
   readonly fileInput: HTMLInputElement;
   readonly voiceSlot: HTMLElement;
+  /** The place chip; sits in the tool row between the voice slot and Send. */
+  readonly place: HTMLElement;
   /** The line saying what the composer still needs; sits above the input. */
   readonly hint: HTMLElement;
   /** The queued-message row; sits above the input beside the tray. */
@@ -26,7 +28,7 @@ export interface ComposerOptions {
 
 /**
  * Build the composer row -- the field, and the tool row under it with the
- * attach, voice and send controls -- and ready the composer surfaces the
+ * attach and voice controls, the place chip and Send -- and ready the composer surfaces the
  * element mounts above it: the hint, the queued row and the attachment slot.
  * Returns the row; the element places it and the surfaces.
  */
@@ -105,7 +107,7 @@ export function buildComposer(options: ComposerOptions): HTMLElement {
   // Mic button mount point (kept empty until ComposerVoice mounts the control).
   options.voiceSlot.className = "voice-slot";
 
-  tools.append(attachButton, options.voiceSlot, send);
+  tools.append(attachButton, options.voiceSlot, options.place, send);
   composer.append(input, tools);
   inputRow.append(composer, fileInput);
   return inputRow;

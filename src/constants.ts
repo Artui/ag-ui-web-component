@@ -28,6 +28,13 @@ export const TOGGLE_EVENT = "ag-ui-toggle";
 export const BAR_HEIGHT_EVENT = "ag-ui-bar-height";
 
 /**
+ * The width a docked panel covers at rest changed (`placement="sidebar"` or
+ * `"side"`): the host pushes its page by it. `detail` is {@link DockWidthDetail};
+ * 0 when the panel covers none of the page.
+ */
+export const DOCK_WIDTH_EVENT = "ag-ui-dock-width";
+
+/**
  * The count of answers that arrived while collapsed changed. `detail` is
  * {@link UnreadDetail}. The built-in launcher badge renders exactly this; a
  * host driving its own chrome sets `data-unread-badge="false"` and listens.
@@ -78,6 +85,14 @@ export const RUN_FINISHED_EVENT = "ag-ui-run-finished";
  * own chrome marks the active one from here rather than watching attributes.
  */
 export const THREAD_EVENT = "ag-ui-thread";
+
+/**
+ * The title of the thread on screen changed: its first send, a rename, a
+ * switch, a new chat or a delete, or a title the conversation list brought in.
+ * `detail` is {@link ThreadTitleDetail}. `title-text="auto"` draws it in the
+ * header without a listener; a host drawing its own chrome listens.
+ */
+export const THREAD_TITLE_EVENT = "ag-ui-thread-title";
 
 /**
  * The agent sent an AG-UI `CUSTOM` event. `detail` is {@link CustomAgentDetail}.
@@ -248,6 +263,15 @@ export const X_NAVIGATES_KEY = "x-navigates";
  * it: refusing the one call that would refresh the agent's view deadlocks.
  */
 export const READ_PAGE_TOOL = "read_page";
+
+/** The description of the context entry carrying the page map. */
+export const PAGE_MAP_CONTEXT = "page_map";
+
+/**
+ * The description of the context entry carrying the place the chip shows. Its
+ * value is the place as JSON: the label, and the detail and href when set.
+ */
+export const PLACE_CONTEXT = "place";
 
 /**
  * Default upper bound on frontend tool-call → re-run rounds within one send.
@@ -432,6 +456,15 @@ export const ICON_ATTACH = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="
 
 /** The voice-input glyph (a microphone on its stand). */
 export const ICON_VOICE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3z"/><path d="M5 11v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v3"/></svg>`;
+
+/** The place chip's mark when the place brings no icon of its own (a map pin). */
+export const ICON_PLACE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>`;
+
+/** The place toggle while the place is sent (an open eye). */
+export const ICON_PLACE_SHARED = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg>`;
+
+/** The place toggle while the place is withheld (the eye struck through). */
+export const ICON_PLACE_WITHHELD = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6.5 9.5-6.5c2 0 3.7.7 5.1 1.7M21.5 12s-3.5 6.5-9.5 6.5c-2 0-3.7-.7-5.1-1.7"/><path d="M4 20 20 4"/></svg>`;
 
 /**
  * The theme toggle's two marks, drawn rather than typed.
