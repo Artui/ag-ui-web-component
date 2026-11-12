@@ -212,6 +212,22 @@ describe("data-threads-search", () => {
     return el;
   }
 
+  it("hides the search under never however many threads there are", async () => {
+    const el = mount(null);
+    for (let i = 0; i < 9; i += 1) {
+      el.conversationStore.saveMessages(`t${i}`, [
+        { id: `u${i}`, role: "user", content: `thread ${i}` },
+      ] as never);
+    }
+    const root = el.shadowRoot as ShadowRoot;
+    root.querySelector<HTMLButtonElement>(".header-btn--history")?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(root.querySelectorAll(".drawer-row").length).toBeGreaterThanOrEqual(9);
+    expect(filterShown(root)).toBe(true);
+    el.setAttribute("data-threads-search", "never");
+    expect(filterShown(root)).toBe(false);
+  });
+
   it("shows the search over an empty list under always", () => {
     const el = mount("always");
     expect(filterShown(el.shadowRoot as ShadowRoot)).toBe(true);

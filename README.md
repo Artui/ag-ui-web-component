@@ -206,7 +206,7 @@ another origin, add `credentials="include"` too; see
 | `data-message-actions` | — | **Copy and retry by default; feedback is opt-in.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry,feedback"` to add the rating pair, which needs an `ag-ui-feedback` listener). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
 | `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` / `chat` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
-| `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
+| `data-side` | — | For `placement="sidebar"`: which edge it docks to, `right` (default) / `left`. Styling, and read by script for the side `dockWidth` and `ag-ui-dock-width` report. Live. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
 | `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Under either, a corner panel still moves by its header and `moveTo` on a wide viewport, and remembers where it was dragged. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
@@ -217,7 +217,7 @@ another origin, add `credentials="include"` too; see
 | `data-empty` | — | **Written by the element, not by you.** Present while the conversation has nothing in it, which is when the greeting shows. Public as a styling hook, so the chrome around a full-page chat can react to the same state, e.g. `ag-ui-chat[data-empty] ~ .page-footer { display: none }`. |
 | `data-running` | — | **Written by the element, not by you.** Present while an interaction is in flight, the same state that shows the Stop button (see the `running` property). Public as a styling hook, as `data-empty` is, so the chrome around the chat can react to it, e.g. `ag-ui-chat[data-running] ~ .toolbar button { pointer-events: none }`. |
 | `data-threads-search` | — | When the conversation list shows its search box: `auto` (absent, or any other value) from eight conversations, `always` over any list, `never` not at all. Live. See [The conversation list](#the-conversation-list). |
-| `data-small-viewport` | — | CSS-only: `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
+| `data-small-viewport` | — | `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Styling, and read by script for the width `dockWidth` reports on a phone. Live. Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
 | `data-paste-attach` | — | When to turn a long text paste into an attachment instead of composer text: absent for the 5000-character default, `off` to never, or a positive number of characters. Only acts where `data-attachments-url` (or a custom `uploadHandler`) gives it somewhere to go. |
 | `data-starters` | — | JSON array of prompts offered on an empty transcript, e.g. `'["Summarise this page"]'`. Fallback content for `slot="empty"`, so slotting your own replaces them. Shares the four-prompt and 120-character limits with the suggestion chips a run pushes. Read once at connect. |
 | `data-start-open` | — | Mount the panel open on a first visit. The corner placements otherwise rest at their launcher, the way every corner chat does; a stored choice wins over both. The placements that place themselves are unaffected. |
@@ -239,7 +239,7 @@ same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 #### When each attribute is read
 
 The element observes two groups of attributes, and they behave differently once it is in the DOM.
-Nothing outside those groups is observed: a CSS-only attribute (`theme`, `density`, `data-side`,
+Nothing outside those groups is observed: a CSS-only attribute (`theme`, `density`,
 `data-answer-well`, `data-tool-group-display`) is read by the stylesheet rather than by script, and `endpoint`,
 `data-tool-display`, `data-text-animation`, `data-runs-url`, `data-page-actions`,
 `data-message-actions`, `data-max-tool-rounds`, `data-unread-badge`, `data-launcher-drag` and

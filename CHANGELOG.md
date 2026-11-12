@@ -21,14 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Summarize draw"), and the default store titles its list rows the same way from their
   next save. With `data-threads-url`, the thread on screen is listed with its own title
   before the server has indexed it, and the server's row replaces it once it does, with
-  `cacheMessages: false` too. A host opts in to the header by setting `title-text="auto"`.
+  `cacheMessages: false` too. A title the list holds that the first message does not
+  derive (a rename) is taken on a switch, and on a reload from the default store; a
+  listed title that is only the server's own cut of the first message, or its "New
+  conversation" placeholder, is not a rename and the element's own title stays. A host opts in to the header by setting `title-text="auto"`.
   The event, the property and the list row need no opt-in. The humanised skill titles and
   the extra list row change what an existing host sees.
 
 - **A docked sidebar reports the width it covers.** The read-only `dockWidth` property and
   the `ag-ui-dock-width` event (`DOCK_WIDTH_EVENT`, detail `DockWidthDetail`:
   `{ width, side }`) give a host that keeps `placement="sidebar"` fixed the number to push
-  its own page by, as `barHeight` does for the bar: the panel's width while open, the
+  its own page by, as `barHeight` does for the bar: the panel's width while open, its
+  borders included, the
   rail's while collapsed to it, and 0 under `collapse-to="none"`, every other placement, on
   a phone while open and under `--ag-ui-position: static`. One event per change of the
   resting value, never per frame of the width transition; a resize drag fires once, when
@@ -39,8 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the element passed as `openThreads({ anchor })`: below a button in the top half of the
   viewport, above one in the bottom half, right-aligned and held inside the window. A
   pick switches the conversation and leaves the panel collapsed. Escape, a press outside,
-  `closeThreads()` and expanding close it; a press on the button does not. Without any
-  anchor it warns and draws nothing. The bar's popover and the in-panel list are
+  `closeThreads()` and expanding close it; a press on the button does not. A host opts
+  in by passing an anchor: the `anchor` attribute or property, or
+  `openThreads({ anchor })`. Without one it warns and draws nothing, and under
+  `placement="embedded"`, whose collapsed chat is not drawn at all, there is no popover
+  and it warns whatever the anchor. The bar's popover and the in-panel list are
   unchanged.
 - **The conversation list groups its rows by age.** Today, Previous 7 days and Older,
   from local midnight, in every drawer, on by default. Empty groups and a lone group

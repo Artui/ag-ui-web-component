@@ -12,6 +12,19 @@ const KEYS = [`ag-ui-chat:launcher:${ID}`, `ag-ui-chat:dock:${ID}`, `ag-ui-chat:
 const nextFrame = (): Promise<null> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
 
+const panelOf = (el: AgUiChat): HTMLElement => {
+  const panel = el.shadowRoot?.querySelector<HTMLElement>(".chat");
+  if (panel === null || panel === undefined) {
+    throw new Error("no panel");
+  }
+  return panel;
+};
+
+const covered = (el: AgUiChat): number => {
+  const rect = panelOf(el).getBoundingClientRect();
+  return Math.round(el.getAttribute("data-side") === "left" ? rect.right : innerWidth - rect.left);
+};
+
 const frames = async (count: number): Promise<void> => {
   for (let frame = 0; frame < count; frame += 1) {
     await nextFrame();
@@ -62,15 +75,39 @@ describe("dockWidth and ag-ui-dock-width", () => {
   it("reports the open panel, the rail, and nothing once hidden", async () => {
     const host = mount();
     await frames(3);
-    expect(host.el.dockWidth).toBe(420);
+    const open = covered(host.el);
+    expect(host.el.dockWidth).toBe(open);
     host.el.setCollapsed(true);
     await frames(3);
     expect(host.el.dockWidth).toBe(52);
     host.el.setAttribute("collapse-to", "none");
     await frames(3);
     expect(host.el.dockWidth).toBe(0);
-    expect(host.seen.map((detail) => detail.width)).toEqual([420, 52, 0]);
+    expect(host.seen.map((detail) => detail.width)).toEqual([open, 52, 0]);
     expect(host.seen[0]?.side).toBe("right");
+  });
+
+  it("reports what the panel covers, borders included, on either side", async () => {
+    const host = mount({ "data-side": "left" });
+    await frames(3);
+    expect(host.el.dockWidth).toBe(covered(host.el));
+    host.el.setAttribute("data-side", "right");
+    await frames(3);
+    expect(host.el.dockWidth).toBe(covered(host.el));
+  });
+
+  it("reports the open panel under the side placement, and on a phone only when told to", async () => {
+    const side = mount({ placement: "side" });
+    await frames(3);
+    expect(side.el.dockWidth).toBe(covered(side.el));
+    expect(side.el.dockWidth).toBeGreaterThan(0);
+    side.el.remove();
+
+    await page.viewport(500, 800);
+    const phone = mount({ "data-small-viewport": "off" });
+    await frames(3);
+    expect(phone.el.dockWidth).toBe(covered(phone.el));
+    expect(phone.el.dockWidth).toBeGreaterThan(0);
   });
 
   it("is 0 on a phone while open, and the rail is still the rail", async () => {
@@ -99,10 +136,11 @@ describe("dockWidth and ag-ui-dock-width", () => {
   it("follows data-side and the side placement's launcher", async () => {
     const host = mount({ "data-side": "left" });
     await frames(3);
-    expect(host.seen[0]).toEqual({ width: 420, side: "left" });
+    const open = covered(host.el);
+    expect(host.seen[0]).toEqual({ width: open, side: "left" });
     host.el.setAttribute("data-side", "right");
     await frames(3);
-    expect(host.seen.at(-1)).toEqual({ width: 420, side: "right" });
+    expect(host.seen.at(-1)).toEqual({ width: open, side: "right" });
     host.el.setAttribute("placement", "side");
     host.el.setCollapsed(true);
     await frames(3);
@@ -114,13 +152,15 @@ describe("dockWidth and ag-ui-dock-width", () => {
     await frames(3);
     host.el.style.setProperty("--ag-ui-width", "500px");
     await frames(3);
-    expect(host.el.dockWidth).toBe(500);
-    expect(host.seen.map((detail) => detail.width)).toEqual([420, 500]);
+    expect(host.el.dockWidth).toBe(covered(host.el));
+    expect(host.el.dockWidth).toBeGreaterThanOrEqual(500);
+    expect(host.seen).toHaveLength(2);
   });
 
   it("announces a resize drag once, at its end, and a reset", async () => {
     const host = mount();
     await frames(3);
+    const open = host.el.dockWidth;
     const grip = host.el.shadowRoot?.querySelector<HTMLElement>(".resize-handle--left");
     const box = grip?.getBoundingClientRect();
     if (grip === null || grip === undefined || box === undefined) {
@@ -142,8 +182,8 @@ describe("dockWidth and ag-ui-dock-width", () => {
     expect(host.seen).toHaveLength(2);
     expect(host.seen[1]?.width).toBe(host.el.dockWidth);
     expect(host.el.dockWidth).toBeGreaterThan(460);
-    expect(host.el.dockWidth).toBe(Math.round(host.el.getBoundingClientRect().width));
+    expect(host.el.dockWidth).toBe(covered(host.el));
     host.el.resetSize();
-    expect(host.el.dockWidth).toBe(420);
+    expect(host.el.dockWidth).toBe(open);
   });
 });

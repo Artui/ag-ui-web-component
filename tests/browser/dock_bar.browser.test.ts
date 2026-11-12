@@ -885,6 +885,22 @@ describe("the place beside the bar title (real browser)", () => {
     }
   });
 
+  it("gives way before a long title does, on a phone", async () => {
+    await page.viewport(PHONE.width, PHONE.height);
+    const el = mount({ "title-text": LONG });
+    el.getPlace = () => ({ label: LONG, detail: LONG });
+    await settle();
+    el.refreshPlace();
+    await settle();
+    const bar = part(el, ".dock-bar").getBoundingClientRect();
+    const title = part(el, ".dock-bar .rail-label").getBoundingClientRect();
+    const place = barPlace(el).getBoundingClientRect();
+    const history = part(el, ".bar-history").getBoundingClientRect();
+    expect(title.width).toBeGreaterThan(place.width);
+    expect(history.left).toBeGreaterThanOrEqual(bar.left);
+    expect(history.right).toBeLessThanOrEqual(bar.right + 0.5);
+  });
+
   it("draws an excluded place dashed and struck through, as the chip does", async () => {
     const el = mount({ "data-start-open": "" });
     el.getPlace = () => ({ label: "Order #4821" });

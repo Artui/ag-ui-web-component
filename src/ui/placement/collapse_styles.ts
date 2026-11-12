@@ -246,11 +246,13 @@ export const COLLAPSE_STYLES: string = `
 }
 
 /* The place beside the title, secondary text that truncates first so the
-   history button never leaves the strip. Withheld places keep the chip's
+   history button never leaves the strip. Its shrink factor is large so that
+   it gives way before the title does, which is the strip's first word.
+   Withheld places keep the chip's
    dashed, struck-through look: the bar must not claim the page is sent. */
 :host([data-collapsed-to="bar"]) .bar-place {
   display: inline-flex;
-  flex: 0 1 auto;
+  flex: 0 100 auto;
   gap: 6px;
   min-width: 0;
   overflow: hidden;

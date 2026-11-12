@@ -266,6 +266,22 @@ describe("the conversation list from a host's button (real browser)", () => {
     expect(list.top).toBeGreaterThanOrEqual(chat.top);
   });
 
+  it("under placement=embedded, where the collapsed chat is not drawn, says so once", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const button = hostButton("top");
+    const el = mount(3, { placement: "embedded" });
+    el.setCollapsed(true);
+    await settle();
+    el.openThreads({ anchor: button });
+    await settle();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(String(warn.mock.calls[0]?.[0])).toContain("embedded");
+    expect(el.shadowRoot?.querySelector(".threads-popover")?.contains(part(el, ".drawer"))).toBe(
+      false,
+    );
+    warn.mockRestore();
+  });
+
   it("with no anchor, says so and draws nothing", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const el = mount();

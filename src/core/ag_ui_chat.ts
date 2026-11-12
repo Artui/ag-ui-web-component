@@ -154,18 +154,34 @@ const CONNECT_TIME_ATTRIBUTES = [
  */
 const CREDENTIALS_MODES: readonly string[] = ["omit", "same-origin", "include"];
 
+const SERVER_PLACEHOLDER_TITLE = "New conversation";
+
+/** What a server derives as a thread's title: the first user text, 60 code points at most. */
+function serverTitleFrom(messages: readonly Message[]): string {
+  for (const message of messages) {
+    const text =
+      typeof message.content === "string" ? message.content.split(/\s+/).join(" ").trim() : "";
+    if (message.role === "user" && text !== "") {
+      const points = Array.from(text);
+      return points.length <= 60 ? text : `${points.slice(0, 59).join("").trimEnd()}\u2026`;
+    }
+  }
+  return "";
+}
+
 /** Whether `value` is one of the three modes `fetch` understands. */
 function isCredentialsMode(value: string): value is RequestCredentials {
   return CREDENTIALS_MODES.includes(value);
 }
 
-/** Per-tab persistence key for the collapsed state (survives MPA reloads). */
-/** The anchored conversation list's widest, and its distance from its button and the window. */
-// The `title-text` value that makes the header follow the thread on screen.
+/** The `title-text` value that makes the header follow the thread on screen. */
 const TITLE_TEXT_AUTO = "auto";
+
+/** The anchored conversation list's widest, and its distance from its button and the window. */
 const THREADS_POPOVER_WIDTH = 320;
 const THREADS_POPOVER_GAP = 8;
 
+/** Per-tab persistence key for the collapsed state (survives MPA reloads). */
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
 
 /**
@@ -1708,11 +1724,6 @@ export class AgUiChat extends HTMLElement {
     this.#placement.probe.addEventListener("transitionrun", this.#onLayoutChange, {
       signal: this.#connection.signal,
     });
-    // The open width is the panel's, which does not animate; a host writing
-    // --ag-ui-width at runtime moves it with no attribute or event.
-    const widthObserver = new ResizeObserver(() => this.#syncDock());
-    widthObserver.observe(this.#chat);
-    this.#connection.signal.addEventListener("abort", () => widthObserver.disconnect());
     // A resize drag is reported when it ends, and the last frame may change nothing
     // the observer sees.
     const endDrag = (): void => void requestAnimationFrame(() => this.#syncDock());
@@ -2200,7 +2211,7 @@ export class AgUiChat extends HTMLElement {
     const phone =
       this.getAttribute("data-small-viewport") !== "off" &&
       window.matchMedia("(max-width: 600px)").matches;
-    return phone ? 0 : this.#chat.clientWidth;
+    return phone ? 0 : this.#chat.offsetWidth;
   }
 
   /** Tell the host when the docked width, or the edge it docks against, changed. */
@@ -2541,17 +2552,22 @@ export class AgUiChat extends HTMLElement {
     // opens beside the host's button, and a pick leaves the panel to the host.
     const target = this.#surface().collapseTo;
     const anchor = options.anchor ?? this.#resolveAnchor();
+    // An embedded chat collapsed under none is not drawn at all, popover included.
+    const drawn = this.getAttribute("placement") !== "embedded";
     if (this.collapsed && target === "bar") {
       this.#dockBar.append(this.#drawer.element);
-    } else if (this.collapsed && target === "none" && anchor !== null) {
+    } else if (this.collapsed && target === "none" && anchor !== null && drawn) {
       this.#threadsAnchor = anchor;
       this.#threadsPopover.append(this.#drawer.element);
       this.#placeThreadsPopover();
     } else {
       if (this.collapsed && target === "none") {
         console.warn(
-          '<ag-ui-chat>: openThreads() under collapse-to="none" needs an anchor to open ' +
-            "beside; pass openThreads({ anchor }) or set the anchor attribute.",
+          drawn
+            ? '<ag-ui-chat>: openThreads() under collapse-to="none" needs an anchor to open ' +
+                "beside; pass openThreads({ anchor }) or set the anchor attribute."
+            : '<ag-ui-chat>: openThreads() under placement="embedded" and collapse-to="none" ' +
+                "has no popover: the collapsed chat is not drawn. Expand it first.",
         );
       }
       this.#homeDrawer();
@@ -3325,8 +3341,12 @@ export class AgUiChat extends HTMLElement {
       this.#announceTitle();
     }
     // A picked thread may carry a title its messages do not derive (renamed
-    // elsewhere, or named by a server). Not on restore: a GET per page load.
-    if (reason === "switch") {
+    // elsewhere, or named by a server). On restore only from the element's own
+    // sessionStorage store, where the read is local: a remote one is a GET per page load.
+    if (
+      reason === "switch" ||
+      (reason === "restore" && this.conversationStore instanceof SessionStorageStore)
+    ) {
       void this.#history.refreshDrawer();
     }
   }
@@ -3383,10 +3403,9 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Keep the list's title for the thread on screen when its messages do not
-   * derive it: a rename made elsewhere, or a title the server chose. A title
-   * that is the first message cut at another length is the server's derivation
-   * of the same words, and the element's own (which names skills) stays.
+   * Keep the list's title for the thread on screen when it is a rename or a title
+   * the server chose. A server's own derivation of the first message (cut at 60
+   * code points) or its placeholder is not one: the element's own title stays.
    */
   #takeListedTitle(threads: readonly ThreadMeta[]): void {
     const threadId = this.#history.threadId;
@@ -3394,13 +3413,12 @@ export class AgUiChat extends HTMLElement {
     if (row === undefined || this.#titleMessages.length === 0) {
       return;
     }
-    const stem = (text: string): string => text.replace(/…$/, "").trimEnd();
-    const listed = stem(row.title);
     const derived = [
       threadTitleFrom(this.#titleMessages),
-      threadTitleFrom(this.#titleMessages, (name) => `/${name}`),
-    ].map(stem);
-    if (derived.some((own) => own.startsWith(listed) || listed.startsWith(own))) {
+      serverTitleFrom(this.#titleMessages),
+      SERVER_PLACEHOLDER_TITLE,
+    ];
+    if (derived.includes(row.title)) {
       return;
     }
     this.#givenTitles.set(threadId, row.title);
