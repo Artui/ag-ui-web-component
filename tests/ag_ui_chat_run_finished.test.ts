@@ -166,7 +166,9 @@ describe("run-finished event", () => {
 
     // Exact equality on the whole detail, deliberately: the shape is public
     // API, so a field appearing unannounced should fail here.
-    expect(seen).toEqual([{ threadId: el.threadId, tools: [], invalidated: [] }]);
+    expect(seen).toEqual([
+      { threadId: el.threadId, tools: [], invalidated: [], outcome: "completed" },
+    ]);
   });
 
   it("fires after an error, because a partial write is still a write", async () => {
@@ -287,7 +289,12 @@ describe("a run the conversation left behind", () => {
 
     // Named for the conversation it ran in, which is no longer on screen.
     expect(seen).toEqual([
-      { threadId: left, tools: [{ name: "create_event", side: "server" }], invalidated: [] },
+      {
+        threadId: left,
+        tools: [{ name: "create_event", side: "server" }],
+        invalidated: [],
+        outcome: "stopped",
+      },
     ]);
   });
 
@@ -340,11 +347,13 @@ describe("a run the conversation left behind", () => {
           threadId: expect.any(String),
           tools: [{ name: "scroll_to", side: "client" }],
           invalidated: [],
+          outcome: "stopped",
         },
         {
           threadId: expect.any(String),
           tools: [{ name: "create_event", side: "server" }],
           invalidated: [],
+          outcome: "completed",
         },
       ]);
       expect(seen[0]?.threadId).not.toBe(seen[1]?.threadId);
@@ -364,6 +373,139 @@ describe("a run the conversation left behind", () => {
       expect(shadow(el).querySelector(".stopped-note")).toBeNull();
       settleNew();
       await flush();
+    });
+  });
+});
+
+describe("how the run ended", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("reports failed for a run that ended in RUN_ERROR", async () => {
+    const { el, seen } = mountWithAgent((emit) => {
+      emit.error("upstream exploded");
+    });
+
+    await el.sendMessage("book it");
+    await flush();
+
+    expect(seen[0]?.outcome).toBe("failed");
+  });
+
+  it("reports stopped for a run Stop cut off", async () => {
+    let open: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const { el, seen } = mountWithAgent(async (emit) => {
+      emit.runStart();
+      await held;
+    });
+
+    void el.sendMessage("book it");
+    await flush();
+    (shadow(el).querySelector(".send") as HTMLButtonElement).click();
+    open();
+    await flush();
+
+    expect(seen.map((detail) => detail.outcome)).toEqual(["stopped"]);
+  });
+
+  it("starts the next interaction from completed after a failed one", async () => {
+    let round = 0;
+    const { el, seen } = mountWithAgent((emit) => {
+      if (round === 0) {
+        emit.error("boom");
+      } else {
+        emit.runEnd();
+      }
+      round += 1;
+    });
+
+    await el.sendMessage("one");
+    await flush();
+    await el.sendMessage("two");
+    await flush();
+
+    expect(seen.map((detail) => detail.outcome)).toEqual(["failed", "completed"]);
+  });
+
+  describe("a switch away and back with a client tool pending", () => {
+    async function mountSwitched(resend: boolean): Promise<{
+      el: AgUiChat;
+      seen: RunFinishedDetail[];
+      settleOld: () => void;
+      settleLive: () => void;
+    }> {
+      let releaseHandler: (value: string) => void = () => {};
+      const handler = new Promise<string>((resolve) => {
+        releaseHandler = resolve;
+      });
+      let releaseLive: () => void = () => {};
+      const live = new Promise<void>((resolve) => {
+        releaseLive = resolve;
+      });
+      let built = 0;
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      el.agentFactory = () => {
+        built += 1;
+        const first = built === 1;
+        return makeFakeAgent({
+          script: async (emit) => {
+            emit.runStart();
+            if (first) {
+              emit.toolCall("old-1", "scroll_to", {});
+              return;
+            }
+            await live;
+            emit.textEnd("done");
+            emit.runEnd();
+          },
+        }).agent;
+      };
+      el.registerTool({
+        name: "scroll_to",
+        description: "Scroll a target into view.",
+        parameters: { type: "object" },
+        handler: () => handler,
+      });
+      const seen: RunFinishedDetail[] = [];
+      el.addEventListener(RUN_FINISHED_EVENT, (event) => {
+        seen.push((event as CustomEvent<RunFinishedDetail>).detail);
+      });
+      document.body.appendChild(el);
+      const a = el.threadId as string;
+      void el.sendMessage("scroll");
+      await flush();
+      el.newChat();
+      await el.switchThread(a);
+      if (resend) {
+        void el.sendMessage("again");
+        await flush();
+      }
+      return { el, seen, settleOld: () => releaseHandler("ok"), settleLive: releaseLive };
+    }
+
+    it("marks the stale event stopped, with no new send", async () => {
+      const { seen, settleOld } = await mountSwitched(false);
+
+      settleOld();
+      await flush();
+
+      expect(seen.map((detail) => detail.outcome)).toEqual(["stopped"]);
+    });
+
+    it("marks the stale event stopped and the live run completed, with a new send", async () => {
+      const { seen, settleOld, settleLive } = await mountSwitched(true);
+
+      settleOld();
+      await flush();
+      settleLive();
+      await flush();
+
+      expect(seen.map((detail) => detail.outcome)).toEqual(["stopped", "completed"]);
     });
   });
 });

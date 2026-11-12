@@ -222,7 +222,7 @@ another origin, add `credentials="include"` too; see
 | `data-start-open` | — | Mount the panel open on a first visit. The corner placements otherwise rest at their launcher, the way every corner chat does; a stored choice wins over both. The placements that place themselves are unaffected. |
 | `theme` | — | CSS-only: an optional theme name (`quiet` (default) / `soft` / `ledger` / `classic`, or a word of your own) and an optional scheme (`light` (default) / `dark` / `auto`), in any order, e.g. `soft dark`. See [Themes](#themes). |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
-| `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded`. |
+| `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded` / `full`. `full` fills the viewport at every width, inside the safe-area insets; the `--ag-ui-inset`, size and `--ag-ui-panel-radius` tokens still apply. |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
 `icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
@@ -1785,6 +1785,12 @@ steps and `data-open` whether the cards are showing; the head is a button with `
   a card, so they are in view without it opening; the row still reads `waiting` ("1 waiting for
   you") while one is open, as the card carries a `data-asking` flag for the group to read, and its
   `data-status` stays `pending`.
+- **A one-step group is named after its call, and the card's head is not repeated inside.** A turn
+  with exactly one call reads as that call's label ("Fill field"), and the opened list shows the
+  card without its own `tool-card-head` (the row's state mark and notes carry the status). The
+  Details toggle and arguments stay, except under `data-tool-group-display="minimal"`, where the
+  card is only its head: there the row draws no chevron, though it still opens for an approval. A
+  card display mode keeps the head. A run that grows to two calls brings both heads back.
 - **A running sub-agent does not open it.** The row keeps its spinner and names the delegation
   instead, "Delegated to researcher" (the `subAgentDelegatedTo` string).
 - **Repeated labels are told apart.** Two "Fill field" steps read "Fill field" and "Fill field
@@ -2731,10 +2737,12 @@ chat.navigate = (path) => router.push(path); // SPA: in-page, no reload
 Route map + `navigate()` and the reload model are the same feature seen from two ends.
 
 **`ag-ui-run-finished`** *(event)* — an interaction has ended, and here is what ran in it.
-`detail: { threadId, tools: readonly ToolRun[], invalidated }` (typed `RunFinishedDetail`), where
-each `ToolRun` is `{ name, side: "server" | "client" }` in settle order. `threadId` is the thread
-the run belonged to, which is not always the one on screen: a run that a new chat or a thread
-switch stopped still reports once its request closes.
+`detail: { threadId, tools: readonly ToolRun[], invalidated, outcome }` (typed `RunFinishedDetail`),
+where each `ToolRun` is `{ name, side: "server" | "client" }` in settle order. `threadId` is the
+thread the run belonged to, which is not always the one on screen: a run that a new chat or a
+thread switch stopped still reports once its request closes. `outcome` is how the interaction
+ended: `"completed"`, `"stopped"` (Stop, a new chat or a thread switch cut it off) or `"failed"`
+(the agent reported an error). Ignore an `outcome` you do not know: more may be added.
 
 **This is the seam for a host that renders data the agent can change.** A server-side tool writes
 without your page's knowledge: nothing else the element dispatches implies "something may have moved
@@ -2754,6 +2762,34 @@ chat.addEventListener("ag-ui-run-finished", (e) => {
 It fires **once per interaction**, not once per tool round, and it fires on completion, error and
 cancellation alike — a partial write is still a write. A capability load (an agent skill activating)
 is not counted: it moves nothing a host renders.
+
+A run a switch stopped reports `outcome: "stopped"` whichever thread is on screen when it does,
+so a listener that marks attention or counts completions tells a cancelled run's late event from a
+finished one by `outcome`, not by `threadId`.
+
+**Deferring a switch until the run is over** keys on `running` and `data-running`, never on this
+event: it fires for a stopped run too, late, and a stale one can arrive while the next run is live.
+`data-running` toggles only for the live run, and there is no running-change event, so watch the
+attribute:
+
+```js
+let queued = null;
+const release = () => {
+  if (!chat.running && queued !== null) {
+    const id = queued;
+    queued = null;
+    void chat.switchThread(id);
+  }
+};
+new MutationObserver(release).observe(chat, { attributes: true, attributeFilter: ["data-running"] });
+myBar.onPick = (id) => {
+  if (chat.running) {
+    queued = id;
+  } else {
+    void chat.switchThread(id);
+  }
+};
+```
 
 `sharedState` above is the richer channel and this is not a replacement for it — but it is not a
 substitute the other way round either, because shared state requires the *agent* to emit
@@ -3122,7 +3158,7 @@ re-export point. Internal modules import from leaf paths.
 | `createPageStateTools(binding)` | function | Build `read_<name>` / `set_<name>` tools. |
 | `PageState` | type | A page-state binding declaration. |
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
-| `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
+| `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, which side ran them, and how it ended. |
 | `CustomAgentDetail` | type | `ag-ui-custom` detail: an AG-UI `CUSTOM` event's `name` and `value`, verbatim. |
 | `InvalidateDetail` | type | `ag-ui-invalidate` detail: the resource `keys` that moved, and the `reason`. |
 | `FeedbackDetail` | type | `ag-ui-feedback` detail: the rated message's `messageId`, its `threadId`, the `runId` that streamed it (live only), its `content` and the `rating`. See [Storing a rating](#storing-a-rating). |
@@ -3520,6 +3556,36 @@ That exists because the *trigger* is the one part of this you cannot reach: ever
 value the override sets is a `--ag-ui-*` token you can re-state, but a media
 query cannot read a custom property, so the breakpoint itself is a literal.
 
+**A size or inset token set at every width restates the phone shape too.** The phone
+block reads `--ag-ui-inset`, `--ag-ui-width`, `--ag-ui-height` and `--ag-ui-max-height`
+before it falls back to the full-bleed values, so a host rule such as the one below keeps
+its 420x640 panel with a 24px margin on a phone, and the panel runs off the screen's left
+edge. Put the desktop sizes above the breakpoint and the phone shape needs nothing:
+
+```css
+/* Wrong on a phone: the tokens apply at every width. */
+ag-ui-chat {
+  --ag-ui-inset: auto 24px 24px auto;
+  --ag-ui-width: 420px;
+  --ag-ui-height: 640px;
+  --ag-ui-max-height: 80vh;
+}
+
+/* Right: desktop only. At 600px and below the panel is full-bleed with no reset. */
+@media (min-width: 601px) {
+  ag-ui-chat {
+    --ag-ui-inset: auto 24px 24px auto;
+    --ag-ui-width: 420px;
+    --ag-ui-height: 640px;
+    --ag-ui-max-height: 80vh;
+  }
+}
+```
+
+Setting the tokens at every width stays right for a host that wants a non-full-bleed phone
+panel, a bottom sheet for example. The size a user dragged is a separate matter; see
+[Sizes, keyboard, and parts](#sizes-keyboard-and-parts) for its precedence.
+
 The breakpoint is a width rather than a pointer test, and that is on purpose: a
 touch laptop is coarse-pointered and wide, a narrow desktop window is
 fine-pointered and small. Width decides the layout; the pointer decides which
@@ -3773,6 +3839,10 @@ component sets, so a new one cannot ship undocumented.
 >
 > The built-in buttons call exactly these methods, so the two routes cannot drift. If you only want
 > to restyle the header, prefer `::part(header)` styling or the `header-actions` slot over hiding it.
+>
+> To drop single controls instead, hide their parts:
+> `ag-ui-chat::part(history-button), ag-ui-chat::part(new-button) { display: none }`.
+> `display: none` removes them from the accessibility tree and the tab order as well.
 
 Coarse **slots** let you replace whole regions with your own markup (project light-DOM children
 with a matching `slot=`):

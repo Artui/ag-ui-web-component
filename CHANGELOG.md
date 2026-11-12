@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that sets a `routeMap` gets the chip without opting in:** the route matching the
   current path stands in for the place, with its title as the label and its group as
   the detail. To keep such a host without a chip, set `getPlace = () => null`.
+- **`ag-ui-run-finished` says how the run ended.** `detail.outcome` is `"completed"`,
+  `"stopped"` (Stop, a new chat or a thread switch) or `"failed"` (the agent reported an
+  error). A run a switch cancelled still reports, as before, and now says `"stopped"`, so a
+  host that marks attention or counts completions can tell its late event from a finished
+  run's, which `threadId` could not when the thread was switched back to. The detail's
+  other fields keep their meaning. **A host has nothing to do**; one that defers a switch
+  should key on `running` / `data-running` (the README has the recipe).
 
 ### Changed
 
@@ -44,6 +51,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The `routeMap` documentation says what is sent.** It claimed a compact summary of
   the map rides in each run's context. None does. The route matching the current path
   is now sent as the `place` entry while `getPlace` is unset.
+- **A one-step tool group names its call once.** With `data-tool-display="grouped"` and a
+  turn of exactly one tool call, the opened group repeated the call's name: the row read the
+  label and the card's own head read it again. The card's head is now not drawn inside a
+  one-step group, and under `data-tool-group-display="minimal"` the row draws no chevron, since
+  a minimal card is only its head. Two or more calls, and every card display mode, are
+  unchanged. A host styling `::part(tool-card-head)` sees no head inside a one-step group.
+  **A host has nothing to do.**
+
+### Documentation
+
+- **The README says that desktop size tokens also size the phone.** Small viewports now
+  shows a `--ag-ui-inset` / `--ag-ui-width` / `--ag-ui-height` rule set at every width keeping
+  its shape at 600px and below, and the fix: scope it in `@media (min-width: 601px)`. It also
+  shows how to hide single header controls by their parts, and lists `placement="full"`.
+  **A host has nothing to do.**
 
 ## [0.50.2] — 2026-11-09
 
