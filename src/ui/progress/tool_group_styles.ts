@@ -255,6 +255,18 @@ ${inner("inline")}[data-status="deferred"] .tool-call-section--args:not([hidden]
   display: flex;
 }
 
+/* A one-step group already names its call in the row, so the card's own head
+   is not drawn inside it. Under the minimal inner mode a card is only its head,
+   so the row has nothing to open onto and draws no chevron. Grouped-only, so a
+   card mode keeps the head. data-count is rewritten live as a run grows. */
+${GROUPED} .tool-group[data-count="1"] .tool-call-head {
+  display: none;
+}
+
+:host(:where(:not(${CARD_MODES}))[data-tool-group-display="minimal"]) .tool-group[data-count="1"] .tool-group-chevron {
+  display: none;
+}
+
 /* Grouping is decided as each card is built, so a card mode set afterwards
    finds groups already drawn. It flattens them: the group and its list stop
    generating boxes, the row and the repeat ordinals go, and every card lays

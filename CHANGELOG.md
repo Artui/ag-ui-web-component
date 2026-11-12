@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A one-step tool group names its call once.** With `data-tool-display="grouped"` and a
+  turn of exactly one tool call, the opened group repeated the call's name: the row read the
+  label and the card's own head read it again. The card's head is now not drawn inside a
+  one-step group, and under `data-tool-group-display="minimal"` the row draws no chevron, since
+  a minimal card is only its head. Two or more calls, and every card display mode, are
+  unchanged. A host styling `::part(tool-card-head)` sees no head inside a one-step group.
+
 ### Added
 
 - **`ag-ui-run-finished` says how the run ended.** `detail.outcome` is `"completed"`,
