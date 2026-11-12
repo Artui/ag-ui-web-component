@@ -10,6 +10,14 @@ import { type RelativeTimeFormatter, relativeTime } from "./relative_time.js";
  */
 export const FILTER_FROM = 8;
 
+/**
+ * When the search box shows: from {@link FILTER_FROM} conversations (`auto`),
+ * over any list (`always`), or not at all (`never`).
+ */
+export type ThreadsSearch = "auto" | "always" | "never";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /** Actions the host ({@link AgUiChat}) wires to the drawer's rows. */
 export interface ThreadDrawerCallbacks {
   /** A row was picked — load that thread and make it active. */
@@ -53,6 +61,7 @@ export class ThreadDrawer {
   #filter: HTMLInputElement;
   /** The current filter text, lowercased once rather than per row. */
   #query = "";
+  #search: ThreadsSearch = "auto";
 
   /** The element focused before the drawer opened, restored on close. */
   #lastFocused: HTMLElement | null = null;
@@ -228,6 +237,12 @@ export class ThreadDrawer {
     }
   }
 
+  /** Choose when the search box shows; the host's `data-threads-search`. */
+  setSearchMode(mode: ThreadsSearch): void {
+    this.#search = mode;
+    this.#renderList();
+  }
+
   /** Render the rows (or the empty state), highlighting the active thread. */
   setThreads(threads: readonly ThreadMeta[], activeId: string): void {
     this.#threads = threads;
@@ -237,7 +252,8 @@ export class ThreadDrawer {
 
   #renderList(): void {
     this.#list.replaceChildren();
-    const hideFilter = this.#threads.length < FILTER_FROM;
+    const hideFilter =
+      this.#search === "auto" ? this.#threads.length < FILTER_FROM : this.#search === "never";
     this.#filter.hidden = hideFilter;
     // Cleared as it goes, or the query outlives the control that set it: a
     // list that drops below the threshold while a query matches nothing shows
@@ -261,9 +277,44 @@ export class ThreadDrawer {
       this.#list.appendChild(empty);
       return;
     }
-    for (const meta of shown) {
-      this.#list.appendChild(this.#renderRow(meta));
+    const groups = this.#groups(shown);
+    for (const [label, metas] of groups) {
+      // One group would label the whole list, which says nothing the rows do not.
+      if (groups.length > 1) {
+        const heading = document.createElement("div");
+        heading.className = "drawer-group-label";
+        heading.setAttribute("part", "drawer-group-label");
+        heading.setAttribute("role", "heading");
+        heading.setAttribute("aria-level", "3");
+        heading.textContent = label;
+        this.#list.appendChild(heading);
+      }
+      for (const meta of metas) {
+        this.#list.appendChild(this.#renderRow(meta));
+      }
     }
+  }
+
+  /**
+   * The rows by age from local midnight, in list order within each group, empty
+   * groups dropped. A date that does not parse is never today, so it lands in Older.
+   */
+  #groups(shown: readonly ThreadMeta[]): [string, ThreadMeta[]][] {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const recent: ThreadMeta[] = [];
+    const week: ThreadMeta[] = [];
+    const older: ThreadMeta[] = [];
+    for (const meta of shown) {
+      const at = meta.updatedAt;
+      (at >= today ? recent : at >= today - 7 * DAY_MS ? week : older).push(meta);
+    }
+    const groups: [string, ThreadMeta[]][] = [
+      [this.#strings.threadsToday, recent],
+      [this.#strings.threadsPreviousWeek, week],
+      [this.#strings.threadsOlder, older],
+    ];
+    return groups.filter(([, metas]) => metas.length > 0);
   }
 
   /**

@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The conversation list opens beside your own button under `collapse-to="none"`.**
+  Collapsed there, the panel is hidden and the list with it, so `openThreads()` used to
+  open a list nobody could see. It now opens as a popover beside the `anchor`, or beside
+  the element passed as `openThreads({ anchor })`: below a button in the top half of the
+  viewport, above one in the bottom half, right-aligned and held inside the window. A
+  pick switches the conversation and leaves the panel collapsed. Escape, a press outside,
+  `closeThreads()` and expanding close it; a press on the button does not. Without any
+  anchor it warns and draws nothing. The bar's popover and the in-panel list are
+  unchanged.
+- **The conversation list groups its rows by age.** Today, Previous 7 days and Older,
+  from local midnight, in every drawer, on by default. Empty groups and a lone group
+  draw no heading. The headings are `::part(drawer-group-label)`, out of the Tab order,
+  with the new `threadsToday`, `threadsPreviousWeek` and `threadsOlder` strings. The new
+  `data-threads-search` attribute (`auto`, `always`, `never`) chooses when the search
+  box shows; absent keeps the eight-conversation threshold. A host snapshotting the
+  drawer's DOM sees the new heading nodes.
 - **The collapsed bottom bar shows the place beside its title.** Under
   `collapse-to="bar"`, the strip now draws the place from `getPlace` (or the route map)
   as quiet secondary text, in a new `bar-place` part holding the chip's own

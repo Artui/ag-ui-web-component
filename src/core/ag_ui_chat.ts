@@ -154,6 +154,10 @@ function isCredentialsMode(value: string): value is RequestCredentials {
 }
 
 /** Per-tab persistence key for the collapsed state (survives MPA reloads). */
+/** The anchored conversation list's widest, and its distance from its button and the window. */
+const THREADS_POPOVER_WIDTH = 320;
+const THREADS_POPOVER_GAP = 8;
+
 const COLLAPSED_KEY = "ag-ui-chat:collapsed";
 
 /**
@@ -594,6 +598,13 @@ export class AgUiChat extends HTMLElement {
   readonly #dockBar: HTMLDivElement = document.createElement("div");
   /** The bottom bar's history button, which opens the drawer as a popover. */
   readonly #barHistory: HTMLButtonElement = document.createElement("button");
+  /**
+   * The conversation list's home while collapsed under collapse-to="none": outside
+   * the hidden panel, placed beside the host's button. No box of its own.
+   */
+  readonly #threadsPopover: HTMLDivElement = document.createElement("div");
+  /** The button the popover was opened from, whose presses are not outside it. */
+  #threadsAnchor: Element | null = null;
   /** The bar height last reported, so the event fires on a change only. */
   #barHeight = 0;
   /** The element the panel rises from under collapse-to="none", set as a property. */
@@ -1165,6 +1176,7 @@ export class AgUiChat extends HTMLElement {
       "placement",
       "collapse-to",
       "anchor",
+      "data-threads-search",
       "credentials",
       "user-key",
       "user-name",
@@ -1185,6 +1197,11 @@ export class AgUiChat extends HTMLElement {
             "the browser default and cross-origin cookies will not be sent.",
         );
       }
+      return;
+    }
+    if (name === "data-threads-search") {
+      const mode = this.getAttribute("data-threads-search");
+      this.#drawer.setSearchMode(mode === "always" || mode === "never" ? mode : "auto");
       return;
     }
     if (name === "anchor") {
@@ -1215,9 +1232,7 @@ export class AgUiChat extends HTMLElement {
         // The strip's label and the popover's home both depend on the target,
         // and neither is re-derived by the dock sync.
         this.#syncLauncher();
-        if (this.#surface().collapseTo !== "bar") {
-          this.#homeDrawer();
-        }
+        this.#homeDrawer(this.#surface().collapseTo === "bar" ? this.#dockBar : null);
       }
       this.#syncDock();
       // Placement also moves the panel, so the edges its layout holds still
@@ -2416,16 +2431,60 @@ export class AgUiChat extends HTMLElement {
    * be rebuilt: this one, {@link openCheckpoints}, {@link newChat},
    * {@link toggleCollapsed} and {@link toggleTheme}.
    */
-  openThreads(): void {
+  openThreads(options: { readonly anchor?: Element } = {}): void {
     // Collapsed into the bar, the list opens as a popover over the bar rather
     // than expanding the panel: the same drawer, moved beside the bar, since
-    // nothing inside the hidden panel can be drawn.
-    if (this.collapsed && this.#surface().collapseTo === "bar") {
+    // nothing inside the hidden panel can be drawn. Under the host's own bar it
+    // opens beside the host's button, and a pick leaves the panel to the host.
+    const target = this.#surface().collapseTo;
+    const anchor = options.anchor ?? this.#resolveAnchor();
+    if (this.collapsed && target === "bar") {
       this.#dockBar.append(this.#drawer.element);
+    } else if (this.collapsed && target === "none" && anchor !== null) {
+      this.#threadsAnchor = anchor;
+      this.#threadsPopover.append(this.#drawer.element);
+      this.#placeThreadsPopover();
     } else {
+      if (this.collapsed && target === "none") {
+        console.warn(
+          '<ag-ui-chat>: openThreads() under collapse-to="none" needs an anchor to open ' +
+            "beside; pass openThreads({ anchor }) or set the anchor attribute.",
+        );
+      }
       this.#homeDrawer();
     }
     this.#history.openThreads();
+  }
+
+  /**
+   * Stand the popover on its button: below one in the top half of the viewport,
+   * above one in the bottom half, right-aligned to it and held inside the window.
+   */
+  #placeThreadsPopover(): void {
+    const anchor = this.#threadsAnchor;
+    if (anchor === null || this.#drawer.element.parentNode !== this.#threadsPopover) {
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    const width = document.documentElement.clientWidth;
+    const height = document.documentElement.clientHeight;
+    const below = rect.top + rect.height / 2 < height / 2;
+    const list = Math.min(THREADS_POPOVER_WIDTH, width - 2 * THREADS_POPOVER_GAP);
+    const right = Math.min(
+      Math.max(THREADS_POPOVER_GAP, width - rect.right),
+      width - THREADS_POPOVER_GAP - list,
+    );
+    const room = (below ? height - rect.bottom : rect.top) - 2 * THREADS_POPOVER_GAP;
+    this.style.setProperty(
+      "--_threads-top",
+      below ? `${rect.bottom + THREADS_POPOVER_GAP}px` : "auto",
+    );
+    this.style.setProperty(
+      "--_threads-bottom",
+      below ? "auto" : `${height - rect.top + THREADS_POPOVER_GAP}px`,
+    );
+    this.style.setProperty("--_threads-right", `${Math.max(THREADS_POPOVER_GAP, right)}px`);
+    this.style.setProperty("--_threads-room", `${Math.max(0, room)}px`);
   }
 
   /**
@@ -2434,10 +2493,15 @@ export class AgUiChat extends HTMLElement {
    * opened over the bar, and carried into the panel it would cover the
    * conversation the user asked to see.
    */
-  #homeDrawer(): void {
-    if (this.#drawer.element.parentNode === this.#dockBar) {
+  #homeDrawer(keep: Node | null = null): void {
+    const away = this.#drawer.element.parentNode;
+    if (away !== keep && (away === this.#dockBar || away === this.#threadsPopover)) {
       this.#drawer.close();
       this.#chat.insertBefore(this.#drawer.element, this.#checkpoints.element);
+      this.#threadsAnchor = null;
+      for (const name of ["top", "bottom", "right", "room"]) {
+        this.style.removeProperty(`--_threads-${name}`);
+      }
     }
   }
 
@@ -2902,19 +2966,26 @@ export class AgUiChat extends HTMLElement {
         }
       },
     });
-    // The popover has no backdrop to catch a click away, so a press outside
-    // the bar closes it, as Escape already does.
+    // Neither popover has a backdrop to catch a click away, so a press outside
+    // closes it, as Escape already does. The bar, or the list and the host's
+    // button, are not outside: that button toggles the list itself.
     document.addEventListener(
       "pointerdown",
       (event) => {
-        if (this.#drawer.element.parentNode === this.#dockBar && this.#drawer.isOpen()) {
-          if (!event.composedPath().includes(this.#dockBar)) {
-            this.#drawer.close();
-          }
+        const away = this.#drawer.element.parentNode;
+        if (!this.#drawer.isOpen() || (away !== this.#dockBar && away !== this.#threadsPopover)) {
+          return;
+        }
+        const path = event.composedPath();
+        const own: readonly (Node | null)[] =
+          away === this.#dockBar ? [away] : [away, this.#threadsAnchor];
+        if (!path.some((node) => own.includes(node as Node))) {
+          this.#drawer.close();
         }
       },
       { signal },
     );
+    window.addEventListener("resize", () => this.#placeThreadsPopover(), { signal });
     this.#placement.enableLauncherDrag(signal);
 
     this.#placement.mountResizeGrips(this.#chat);
@@ -2929,7 +3000,14 @@ export class AgUiChat extends HTMLElement {
     probe.style.borderRadius =
       "var(--_viewport-inset-top) var(--_viewport-inset-right) var(--_viewport-inset-bottom) var(--_viewport-inset-left)";
     probe.style.transition = "border-radius 1ms";
-    this.#root.replaceChildren(probe, this.#announcer.region, this.#chat, this.#dockBar);
+    this.#threadsPopover.className = "threads-popover";
+    this.#root.replaceChildren(
+      probe,
+      this.#announcer.region,
+      this.#chat,
+      this.#dockBar,
+      this.#threadsPopover,
+    );
   }
 
   /**

@@ -1,6 +1,7 @@
 // Collapsing and expanding: the animation toward the launcher, the in-flow
 // and page placements that collapse differently or not at all, and the two
-// collapse-to targets: the bottom bar, and the host's own (hidden here).
+// collapse-to targets: the bottom bar, and the host's own (hidden here, with
+// the conversation list beside the host's button).
 export const COLLAPSE_STYLES: string = `
 /* ── Collapse ───────────────────────────────────────────────────────────────
    Collapsing shrinks the widget to the round floating launcher: the panel
@@ -419,5 +420,51 @@ export const COLLAPSE_STYLES: string = `
 
 :host([data-collapsed-to="none"][collapsed][placement="embedded"]) {
   display: none;
+}
+
+/* The conversation list from the host's button: the panel's own drawer, moved
+   out of the hidden panel and stood beside the button, below one in the top half
+   of the viewport and above one in the bottom half. The element writes where,
+   from the button's box. No backdrop: a press outside closes it, as Escape does.
+   The wrapper draws no box; the host stops taking presses while collapsed, so
+   the list takes its own back. A phone keeps a narrow margin on both sides. */
+.threads-popover {
+  display: contents;
+}
+
+:host([data-collapsed-to="none"]) .threads-popover > .drawer {
+  position: fixed;
+  inset: var(--_threads-top, auto) var(--_threads-right, 8px) var(--_threads-bottom, auto) auto;
+  width: min(320px, calc(var(--_viewport-width) - 16px));
+  height: min(440px, var(--_threads-room, 440px));
+  border-radius: var(--_panel-radius);
+  box-shadow: var(--_shadow);
+  overflow: hidden;
+  pointer-events: auto;
+  transition: none;
+}
+
+:host([data-collapsed-to="none"]) .threads-popover > .drawer[hidden] {
+  pointer-events: none;
+}
+
+@media (max-width: 600px) {
+  :host([data-collapsed-to="none"]:not([data-small-viewport="off"])) .threads-popover > .drawer {
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+}
+
+:host([data-collapsed-to="none"]) .threads-popover > .drawer .drawer-backdrop {
+  display: none;
+}
+
+:host([data-collapsed-to="none"]) .threads-popover > .drawer .drawer-panel {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--_border);
+  border-radius: inherit;
+  box-shadow: none;
 }
 `;

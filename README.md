@@ -216,6 +216,7 @@ another origin, add `credentials="include"` too; see
 | `data-greeting` | — | CSS-only: `off` turns the [greeting layout](#the-greeting-on-an-empty-page) off under `placement="page"`, where it is on by default. Any other value turns it on under `placement="embedded"`. No other placement has it. |
 | `data-empty` | — | **Written by the element, not by you.** Present while the conversation has nothing in it, which is when the greeting shows. Public as a styling hook, so the chrome around a full-page chat can react to the same state, e.g. `ag-ui-chat[data-empty] ~ .page-footer { display: none }`. |
 | `data-running` | — | **Written by the element, not by you.** Present while an interaction is in flight, the same state that shows the Stop button (see the `running` property). Public as a styling hook, as `data-empty` is, so the chrome around the chat can react to it, e.g. `ag-ui-chat[data-running] ~ .toolbar button { pointer-events: none }`. |
+| `data-threads-search` | — | When the conversation list shows its search box: `auto` (absent, or any other value) from eight conversations, `always` over any list, `never` not at all. Live. See [The conversation list](#the-conversation-list). |
 | `data-small-viewport` | — | CSS-only: `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
 | `data-paste-attach` | — | When to turn a long text paste into an attachment instead of composer text: absent for the 5000-character default, `off` to never, or a positive number of characters. Only acts where `data-attachments-url` (or a custom `uploadHandler`) gives it somewhere to go. |
 | `data-starters` | — | JSON array of prompts offered on an empty transcript, e.g. `'["Summarise this page"]'`. Fallback content for `slot="empty"`, so slotting your own replaces them. Shares the four-prompt and 120-character limits with the suggestion chips a run pushes. Read once at connect. |
@@ -247,7 +248,8 @@ neither camp is `data-launcher-icon-url`: it is read while the element connects,
 below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
-either way: `title-text`, `placement`, `collapse-to`, `anchor`, `credentials`, `user-key`, `user-name`.
+either way: `title-text`, `placement`, `collapse-to`, `anchor`, `data-threads-search`, `credentials`, `user-key`,
+`user-name`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
 all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;
@@ -1425,6 +1427,16 @@ sections above describe. It is live, like `placement`.
   API](#driving-the-conversation-from-your-own-chrome) (`collapsed`, `toggleCollapsed()`), and
   `anchor` names the element the panel rises from, right-aligned to it. An anchor that resolves
   to nothing opens the panel from the placement's own corner, with one console warning.
+  While collapsed, `openThreads()` opens the conversation list as a popover beside the anchor,
+  or beside the element you pass as `openThreads({ anchor })`, which wins over the attribute and
+  property for that call. It opens below a button in the top half of the viewport and above one
+  in the bottom half, right-aligned to it and held inside the window (full width less 8px on a
+  phone). Picking a conversation switches to it and closes the list, and leaves the panel
+  collapsed: you get `ag-ui-thread` and decide whether to expand. Escape, a press outside,
+  `closeThreads()` and expanding the panel close it; a press on the button itself does not, so
+  your button can toggle the list. With no anchor at all, `openThreads()` warns once per call
+  and draws nothing. `embedded` hides the whole element while collapsed under `none`, so it has
+  no popover.
 
 ```html
 <nav class="toolbar">
@@ -3616,7 +3628,17 @@ used on a list you can already read in one glance. It matches the title **and**
 the preview, because the title is often the model's one-line summary and the
 phrase you remember is as likely to be inside the conversation as on it, and it
 filters what the drawer already holds rather than going back to the server for a
-list that is already in memory.
+list that is already in memory. `data-threads-search="always"` shows it over any
+list and `"never"` hides it, for a host whose lists are always short or always long.
+
+The rows are grouped by when they were last active: **Today**, **Previous 7 days**
+and **Older**, counted from local midnight. A group with no rows is not drawn,
+and a list that falls in one group draws no heading at all. A conversation with no
+readable date goes under Older. A filtered list keeps its groups. The headings
+are not in the Tab order, are styled as `::part(drawer-group-label)`, and take
+their text from the `threadsToday`, `threadsPreviousWeek` and `threadsOlder`
+strings. Every drawer has them: the slide-over, the bar's popover and the popover
+beside your own button.
 
 ### Reserving the space your own chrome occupies
 
@@ -3825,7 +3847,7 @@ component sets, so a new one cannot ship undocumented.
 | Place chip | `place` (carries `data-excluded` while the user withholds the place), `place-icon`, `place-label`, `place-detail`, `place-toggle` |
 | Attachments | `attachment-tray`, `attachment-chips` (the read-only chips on sent bubbles), and the shared chip parts `attachment-chip`, `attachment-chip-icon`, `attachment-chip-name`, `attachment-chip-size`, `attachment-chip-bar`, `attachment-chip-bar-fill`, `attachment-chip-retry`, `attachment-chip-remove` |
 | Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the composer hint: a skill’s missing placeholders, and a run continuation picked with nothing typed or while a run is in flight) |
-| Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-close`, `drawer-filter`, `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
+| Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-close`, `drawer-filter`, `drawer-list`, `drawer-empty`, `drawer-group-label`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
 | Charts | `chart-block`, `chart-title`, `chart-legend` |
 | Checkpoints panel | `checkpoints`, `checkpoints-header`, `checkpoints-title`, `checkpoints-list`, `checkpoints-empty`, `checkpoint-row`, `checkpoint-label`, `checkpoint-time`, `checkpoint-id`, `checkpoint-branch`, `checkpoint-action` (plus `checkpoint-resume`, `checkpoint-fork`) |
 

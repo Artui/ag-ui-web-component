@@ -340,6 +340,13 @@ export const TOKEN_STYLES: string = `
      fallback; declared initial so it never inherits either. */
   --_dock-bottom: initial;
   --_dock-right: initial;
+  /* Where the conversation list stands beside the host's button under
+     collapse-to="none", written inline by the element from the button's box.
+     Declared initial for the same reason. */
+  --_threads-top: initial;
+  --_threads-bottom: initial;
+  --_threads-right: initial;
+  --_threads-room: initial;
   /* The gap between a panel and the host's own button it rises from under
      collapse-to="none". The button usually sits inside a taller toolbar, so a
      host sets this to the button's distance from the toolbar's top plus the
