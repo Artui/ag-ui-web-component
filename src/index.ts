@@ -198,6 +198,7 @@ export {
   type QuestionRequest,
   requestQuestion,
 } from "./ui/interrupts/question_card.js";
+export type { Place } from "./ui/place/place.js";
 export { prettifyToolName } from "./ui/progress/prettify_tool_name.js";
 export {
   type SettledStatus,

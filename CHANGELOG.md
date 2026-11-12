@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A place chip says where the user is, and the agent is told the same.** The
+  composer's tool row, between the attach and voice controls and Send, can show the
+  page, tab or record the user is on. The same read is sent as one `place` context
+  entry with the label, detail and href, appended after whatever `getContext` returns,
+  so a host that replaces `getContext` still sends it. It comes from the new
+  `getPlace` property, which returns a `Place` (`{ label, detail?, icon?, href? }`,
+  exported) or `null`. It is read before every tool round, on connect, on expand, on
+  composer focus, on `popstate` and `hashchange` and when the conversation on screen
+  changes, and on the new `refreshPlace()`, which a single-page app's router calls
+  after a `pushState`. An eye toggle on the chip withholds the place. The chip stays,
+  dashed and struck through (`data-excluded`), and the round then sends no `place`
+  entry, no `page_map` entry and no `read_page` tool. The choice holds for the same
+  place, lapses when the place changes, and is not persisted. New parts: `place`,
+  `place-icon`, `place-label`, `place-detail` and `place-toggle`. New strings:
+  `placeShared`, `placeWithheld`, `placeStopSharing` and `placeShareAgain`. The
+  `above-composer` slot is unchanged. **Hosts opt in by setting `getPlace`. A host
+  that sets a `routeMap` gets the chip without opting in:** the route matching the
+  current path stands in for the place, with its title as the label and its group as
+  the detail. To keep such a host without a chip, set `getPlace = () => null`.
+
+### Changed
+
+- **The page-moved refusal only names `read_page` in a round that offered it.** A
+  tool call landing after the page moved mid-round is refused with a result telling
+  the agent to call `read_page`. That guard used to run whenever `getPageMap` was set.
+  It now runs when the round offered `read_page`, so a round with the place withheld,
+  or a host `getTools` that leaves `read_page` out, never sends the agent to a tool it
+  does not have. **A host has nothing to do.**
+- **The `routeMap` documentation says what is sent.** It claimed a compact summary of
+  the map rides in each run's context. None does. The route matching the current path
+  is now sent as the `place` entry while `getPlace` is unset.
+
 ## [0.50.2] — 2026-11-09
 
 ### Fixed

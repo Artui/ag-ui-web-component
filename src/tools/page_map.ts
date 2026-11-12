@@ -1,4 +1,5 @@
 import type { Context } from "@ag-ui/core";
+import { PAGE_MAP_CONTEXT } from "../constants.js";
 
 /**
  * A compact snapshot of the current page's actionable surface (field
@@ -21,5 +22,5 @@ export function createPageMapContext(
   if (!autoInject || getPageMap === null) {
     return [];
   }
-  return [{ description: "page_map", value: JSON.stringify(getPageMap()) }];
+  return [{ description: PAGE_MAP_CONTEXT, value: JSON.stringify(getPageMap()) }];
 }

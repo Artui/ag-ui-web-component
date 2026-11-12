@@ -22,6 +22,7 @@ import { HISTORY_STYLES } from "./history/history_styles.js";
 import { APPROVAL_STYLES } from "./interrupts/approval_styles.js";
 import { CONFIRMATION_STYLES } from "./interrupts/confirmation_styles.js";
 import { QUESTION_STYLES } from "./interrupts/question_styles.js";
+import { PLACE_STYLES } from "./place/place_styles.js";
 import { COLLAPSE_STYLES } from "./placement/collapse_styles.js";
 import { DOCK_STYLES } from "./placement/dock_styles.js";
 import { EMBEDDED_STYLES } from "./placement/embedded_styles.js";
@@ -82,6 +83,7 @@ export const STYLES: string = [
   TOOL_STEP_STYLES,
   RESIZE_STYLES,
   COMPOSER_STYLES,
+  PLACE_STYLES,
   ATTACHMENT_STYLES,
   CHART_STYLES,
   RUN_NOTICE_STYLES,

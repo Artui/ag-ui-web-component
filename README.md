@@ -63,6 +63,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
   - [Who the stored conversation belongs to (`user-key`)](#who-the-stored-conversation-belongs-to-user-key)
   - [Mounting more than one chat on a page](#mounting-more-than-one-chat-on-a-page)
 - [Host seams: the SPA story](#host-seams-the-spa-story)
+  - [Where the user is: the place chip](#where-the-user-is-the-place-chip)
 - [Public API surface](#public-api-surface)
 - [Theming, density, and placement](#theming-density-and-placement)
   - [Themes](#themes)
@@ -267,7 +268,7 @@ element after the fact.
 **Properties** (JS only, not attributes): `headers`, `getHeaders`, `trustedOrigins`, `allowImages`,
 `autoConfirm`, `confirmPredicate`, `askUser`, `askUserRenderer`, `approvalRenderer`,
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
-`autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
+`autoInjectPageMap`, `getPlace`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
 `resolvePageTarget`, `sharedState`, `anchor` (an element, which wins over the attribute's selector), `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `running` and `barHeight`, and
 the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `toolGroupDisplay` / `collapsed` /
@@ -305,7 +306,7 @@ the `copyCode` / `copied` / `copyFailed` strings.
 `sendMessage`, `attachFile`, `appendMessage`, `retryLastTurn`, `quote`, `offerQuoteInPage`,
 `enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `describeSurface`, `moveTo`,
 `resetSize`, `toggleTheme`, `openThreads`, `closeThreads`, `switchThread`, `deleteThread`,
-`openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `reload`, and the deprecated
+`openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `refreshPlace`, `reload`, and the deprecated
 `registerStateHook` (renamed to `registerPageState`).
 
 ### Sending from your own UI
@@ -2660,7 +2661,9 @@ agent's tool call arrives — the user clicks a link, or presses back. Calls lan
 are **refused** with a result telling the agent to call `read_page` and retry. Most would have
 missed anyway; the guard exists for the case where a same-named control on the new page matches and
 the agent would otherwise act on the wrong page without either side noticing. `read_page` and tools
-marked `x-navigates` are exempt, and the guard is inert when no `getPageMap` is set.
+marked `x-navigates` are exempt, and the guard is inert in a round that did not offer `read_page`
+(no `getPageMap`, or a [place the user withheld](#where-the-user-is-the-place-chip)), since its
+result would name a tool the agent does not have.
 
 **`registerPageState({ name, read, write?, schema? })`** — ergonomic sugar over `registerTool` for
 SPA app state (Redux/Zustand/signals). It auto-generates a `read_<name>` (read-only) tool and, when
@@ -2832,6 +2835,53 @@ across repos with independent release cadences.
 
 **Note:** it reaches **the page that started the run**, during the run. There is one
 response stream per run and no channel to anybody else's browser.
+
+### Where the user is: the place chip
+
+The composer can say where in your app the user is writing from: a chip in its tool row, between the
+attach and voice controls and Send, naming the page, tab or record on screen. The same read is sent
+to the agent as one context entry, so the place the user sees is the place the agent is told.
+
+**`getPlace: () => Place | null`** returns a `Place`: `{ label, detail?, icon?, href? }`. The chip
+draws the label, the detail after a dot, and the icon (an image URL; a pin when absent). The agent
+gets a `place` context entry whose value is the JSON of the label, detail and href; the icon is
+never sent. The href identifies the place; without one, the label and detail do.
+
+```js
+chat.getPlace = () => ({
+  label: `Order #${order.number}`,
+  detail: "Orders",
+  href: location.pathname,
+});
+```
+
+- **With no `getPlace`, a route map stands in.** The `routeMap` route whose path matches
+  `location.pathname` names the place: its `title` (else its `id`) as the label, its `group` as the
+  detail, and the path as the href. A host with a route map gets the chip without writing anything.
+  With neither, no chip is drawn and nothing is sent; set `getPlace = () => null` to opt a
+  route-mapped host out.
+- **When it is read.** Before every tool round, so an agent that navigates mid-run is told the new
+  page on its next round; and on connect, on expand, when the composer gains focus, on `popstate`
+  and `hashchange`, and when the conversation on screen changes (`switchThread`, the drawer,
+  `newChat`): the chip always names the live page, never the page a thread started on. Between runs
+  it shows the last read. A single-page app calls **`refreshPlace()`** after its router moves,
+  since `pushState` fires no event.
+- **The entry rides after your `getContext`.** It is appended to whatever `getContext` returns, so a
+  host that replaces `getContext` still sends it.
+- **The eye toggle withholds it.** Pressing it leaves the chip in place, dashed and struck through
+  (`data-excluded` on the `place` part), and the next round sends no `place` entry. It withholds the
+  page too: that round also drops the `page_map` entry, whatever `getContext` returned, and does not
+  offer `read_page`. Tools you register yourself, such as `registerPageState`'s, stay as you
+  registered them. The choice holds while the same place is read, lapses when a different place is
+  read, is not persisted, and cannot be lifted by the host.
+- **Placement.** The same position in every placement, on a phone and in the greeting layout; the
+  label truncates with an ellipsis before it can push Send off the row, and the chip's title
+  carries it in full. Nothing shows while the panel is collapsed. The chip is separate from the
+  `above-composer` slot, and filling the slot never hides it.
+- **Styling and words.** Parts `place`, `place-icon`, `place-label`, `place-detail` and
+  `place-toggle`; the colours come from the existing tokens. The tooltip and the toggle's labels are
+  the `placeShared` and `placeWithheld` (token `{label}`), `placeStopSharing` and `placeShareAgain`
+  strings.
 
 ## Resuming a run
 
@@ -3067,6 +3117,7 @@ re-export point. Internal modules import from leaf paths.
 | `RouteWithParams` | type | A route resolved with `:param` path segments + leftover query params. |
 | `createPageMapContext(...)` | function | Build the per-run `page_map` context entry. |
 | `PageMap` | type | The compact page-surface shape. |
+| `Place` | type | Where the user is: what `getPlace` returns and the chip draws. |
 | `createPageStateTools(binding)` | function | Build `read_<name>` / `set_<name>` tools. |
 | `PageState` | type | A page-state binding declaration. |
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
@@ -3695,6 +3746,7 @@ component sets, so a new one cannot ship undocumented.
 | Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`), `approval-edit`, `approval-args`, `approval-error` |
 | Typed question | `question`, `question-body`, `question-options`, `question-choice`, `question-choice-text`, `question-radio`, `question-input`, `question-actions`, `question-button` |
 | Composer | `composer`, `composer-surface`, `composer-tools`, `input`, `send`, `attach-button`, `voice-button` |
+| Place chip | `place` (carries `data-excluded` while the user withholds the place), `place-icon`, `place-label`, `place-detail`, `place-toggle` |
 | Attachments | `attachment-tray`, `attachment-chips` (the read-only chips on sent bubbles), and the shared chip parts `attachment-chip`, `attachment-chip-icon`, `attachment-chip-name`, `attachment-chip-size`, `attachment-chip-bar`, `attachment-chip-bar-fill`, `attachment-chip-retry`, `attachment-chip-remove` |
 | Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the composer hint: a skill’s missing placeholders, and a run continuation picked with nothing typed or while a run is in flight) |
 | Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-close`, `drawer-filter`, `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |

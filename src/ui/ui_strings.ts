@@ -151,6 +151,14 @@ export interface UiStrings {
    * reporting a loss. Token: `{n}` (the cap, in minutes).
    */
   recordingLimit: string;
+  /** The place chip's tooltip while the place is sent. Token: `{label}`. */
+  placeShared: string;
+  /** The place chip's tooltip while the user withholds it. Token: `{label}`. */
+  placeWithheld: string;
+  /** The place toggle while the place is sent: pressing it withholds it. */
+  placeStopSharing: string;
+  /** The place toggle while the place is withheld: pressing it sends it again. */
+  placeShareAgain: string;
 
   // ── Tool-call card ──────────────────────────────────────────────────────────
   /** Status pill while the call runs. */
@@ -429,6 +437,10 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   transcribing: "Transcribing…",
   transcriptionFailed: "Transcription failed",
   recordingLimit: "Stopped at the {n}-minute limit — transcribing what was recorded.",
+  placeShared: "The agent is told you are on {label}",
+  placeWithheld: "{label} is not sent with your next message",
+  placeStopSharing: "Stop sharing this page",
+  placeShareAgain: "Share this page again",
 
   toolRunning: "running…",
   toolDeferred: "waiting for you",

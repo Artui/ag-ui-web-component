@@ -8,6 +8,7 @@ import {
   ICON_MOON,
   ICON_SUN,
   MESSAGE_ROLE,
+  PAGE_MAP_CONTEXT,
   STATE_EVENT,
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
@@ -52,6 +53,10 @@ import { type ApprovalRenderer } from "../ui/interrupts/approval_card.js";
 import { PendingDecision } from "../ui/interrupts/pending_decision.js";
 // biome-ignore lint/style/useImportType: the emitted declaration file copies this form
 import { type QuestionRenderer } from "../ui/interrupts/question_card.js";
+// biome-ignore lint/style/useImportType: the emitted declaration file copies this form
+import { type Place } from "../ui/place/place.js";
+import { PlaceChip } from "../ui/place/place_chip.js";
+import { placeFromRoute } from "../ui/place/place_from_route.js";
 import { PanelPlacement } from "../ui/placement/panel_placement.js";
 import { type Surface, surfaceFor } from "../ui/placement/surface_for.js";
 import { RunAnnouncer } from "../ui/progress/run_announcer.js";
@@ -350,7 +355,9 @@ export class AgUiChat extends HTMLElement {
 
   /**
    * Navigable routes the agent can jump to via the built-in `route.*` tools.
-   * A compact summary also rides in each run's context.
+   * While {@link getPlace} is unset, the route matching the current path also
+   * stands in as the place: the chip names it and the place entry carries it.
+   * No summary of the map itself is sent.
    */
   routeMap: RouteMap = [];
 
@@ -366,6 +373,26 @@ export class AgUiChat extends HTMLElement {
 
   /** Whether to auto-inject the page map into context each run. */
   autoInjectPageMap = true;
+
+  /**
+   * Where in the app the user is. The chip in the composer's tool row draws it,
+   * and every tool round sends it as one `place` context entry from the same
+   * read, after whatever {@link getContext} returns, so a host that replaces
+   * that keeps it. Read before every round, on connect, on expand, when the
+   * composer gains focus, on `popstate` and `hashchange`, when the conversation
+   * changes, and on {@link refreshPlace}.
+   *
+   * When unset, the {@link routeMap} route matching `location.pathname` stands
+   * in: its title (else its id) as the label, its group as the detail, the
+   * path as the href. With neither, no chip is drawn and nothing is sent; a
+   * host with a route map that wants no chip sets `() => null`.
+   *
+   * The chip's eye toggle withholds the place, and with it the page: a round
+   * whose place is withheld sends no `page_map` entry, whatever
+   * {@link getContext} returns, and offers no `read_page`. It holds for the
+   * same place, lapses when a different place is read, and is not persisted.
+   */
+  getPlace: (() => Place | null) | null = null;
 
   /**
    * Persistence for the conversation + navigation checkpoint. Defaults to
@@ -830,6 +857,8 @@ export class AgUiChat extends HTMLElement {
   #shownThread: string | null = null;
   /** The decision a run is suspended on, which a Stop abandons. */
   readonly #decision = new PendingDecision();
+  /** The place chip, kept across connections like the composer it sits in. */
+  readonly #place = new PlaceChip();
   /**
    * The frontend tools the agent is offered, what the current round advertised,
    * and the server's labels for its own tools. A field, because the tool
@@ -840,6 +869,7 @@ export class AgUiChat extends HTMLElement {
     routeMap: () => this.routeMap,
     navigate: () => this.navigate,
     getPageMap: () => this.getPageMap,
+    pageWithheld: () => this.#place.withheld,
     resolvePageTarget: (target) => this.resolvePageTarget(target),
     getTools: () => this.getTools(),
     askUser: () => this.askUser,
@@ -916,11 +946,10 @@ export class AgUiChat extends HTMLElement {
       announce: (message) => this.#announcer.announce(message),
       autoConfirm: () => this.autoConfirm,
       confirmPredicate: () => this.confirmPredicate,
-      getPageMap: () => this.getPageMap,
       navigate: () => this.navigate,
       approveWithEdits: () => this.approveWithEdits,
       approvalRenderer: () => this.approvalRenderer,
-      getContext: () => this.getContext(),
+      getContext: () => this.#roundContext(),
       conversationStore: () => this.conversationStore,
       threadId: () => this.#history.threadId,
       // Read live and compared, the way each client compares the one it was
@@ -1916,6 +1945,35 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * Read {@link getPlace} (or the route map standing in) again and redraw the
+   * chip. A single-page app calls this after its router moves, since a
+   * `pushState` fires no event; history traversal and hash changes are caught
+   * without it. Does nothing before the element connects.
+   */
+  refreshPlace(): void {
+    if (!this.isConnected) {
+      return;
+    }
+    this.#place.update(
+      this.getPlace === null
+        ? placeFromRoute(this.routeMap, window.location.pathname)
+        : this.getPlace(),
+    );
+  }
+
+  /**
+   * A round's context: the host's, then the place. A withheld place withholds
+   * the page map too, so it is filtered out of whatever the host returned.
+   */
+  #roundContext(): Context[] {
+    const context = this.getContext();
+    const kept = this.#place.withheld
+      ? context.filter((entry) => entry.description !== PAGE_MAP_CONTEXT)
+      : context;
+    return [...kept, ...this.#place.context()];
+  }
+
+  /**
    * Set the collapsed state: reflect the `collapsed` attribute, persist it
    * per-tab, and emit a {@link TOGGLE_EVENT} so a host can mirror the state in
    * its own chrome.
@@ -1942,6 +2000,7 @@ export class AgUiChat extends HTMLElement {
       this.#announceSurfaceChange(this.#strings.chatMinimised, null);
     }
     if (!collapsed) {
+      this.refreshPlace();
       // Re-decide which way to open before opening: the viewport may have
       // changed since the launcher was dropped, and this corner is what the
       // panel grows from.
@@ -2734,6 +2793,7 @@ export class AgUiChat extends HTMLElement {
       attachButton: this.#attachButton,
       fileInput: this.#fileInput,
       voiceSlot: this.#voiceSlot,
+      place: this.#place.element,
       hint: this.#composerHint,
       queuedRow: this.#queuedRow,
       attachSlot: this.#attachSlot,
@@ -2752,6 +2812,12 @@ export class AgUiChat extends HTMLElement {
       },
       onFilesPicked: () => this.#attachments.onFilesPicked(),
     });
+
+    this.#place.mount(signal, this.#strings);
+    this.#input.addEventListener("focus", () => this.refreshPlace(), { signal });
+    window.addEventListener("popstate", () => this.refreshPlace(), { signal });
+    window.addEventListener("hashchange", () => this.refreshPlace(), { signal });
+    this.refreshPlace();
 
     // Host content against the input, after everything of the turn being
     // written. A bare slot, whose own box is none, so an empty one takes no
@@ -3064,6 +3130,8 @@ export class AgUiChat extends HTMLElement {
   #dispatchThread(threadId: string, reason: ThreadDetail["reason"]): void {
     const detail: ThreadDetail = { threadId, previousThreadId: this.#shownThread, reason };
     this.#shownThread = threadId;
+    // The chip always names the live page, whichever conversation is on screen.
+    this.refreshPlace();
     this.dispatchEvent(
       new CustomEvent<ThreadDetail>(THREAD_EVENT, { detail, bubbles: true, composed: true }),
     );
@@ -3484,7 +3552,12 @@ export class AgUiChat extends HTMLElement {
     return new AgUiClient({
       agent,
       handlers: this.#runHandlers.forClient(threadId),
-      getTools: () => this.#tools.advertise(),
+      // The place is read here because the client asks for the tools first,
+      // so the round's tools and context answer from the same read.
+      getTools: () => {
+        this.refreshPlace();
+        return this.#tools.advertise();
+      },
       getContext: () => this.#dispatch.buildContext(),
       executeTool: (call) => this.#dispatch.execute(call),
       resolveInterrupts: (interrupts) => this.#dispatch.resolveInterrupts(interrupts),
