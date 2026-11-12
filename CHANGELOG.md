@@ -34,9 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `{ width, side }`) give a host that keeps `placement="sidebar"` fixed the number to push
   its own page by, as `barHeight` does for the bar: the panel's width while open, its
   borders included, the rail's while collapsed to it, and 0 under `collapse-to="none"`,
-  every other placement, on a phone while open and under `--ag-ui-position: static`. One event per change of the
-  resting value, never per frame of the width transition; a resize drag fires once, when
-  it ends. Additive: nothing changes for a host that does not listen.
+  every other placement, on a phone while open and under `--ag-ui-position: static`. One
+  event per change of the resting value, never per frame of the width transition; a
+  resize drag fires once, when it ends. Additive: nothing changes for a host that does not listen.
 - **The conversation list opens beside your own button under `collapse-to="none"`.**
   Collapsed there, the panel is hidden and the list with it, so `openThreads()` used to
   open a list nobody could see. It now opens as a popover beside the `anchor`, or beside
