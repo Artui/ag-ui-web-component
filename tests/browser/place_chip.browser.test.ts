@@ -45,9 +45,11 @@ function mount(
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
   el.setAttribute("data-start-open", "");
-  // The paperclip is shown only when uploads are configured; shown here, so
-  // the row carries everything that competes with the chip for width.
+  // The paperclip and the mic are shown only when uploads and transcription
+  // are configured; both here, so the row carries everything that competes
+  // with the chip for width.
   el.setAttribute("data-attachments-url", "/upload/");
+  el.setAttribute("data-transcribe-url", "/transcribe/");
   el.style.setProperty("--ag-ui-motion", "0s");
   for (const [name, value] of Object.entries(attrs)) {
     el.setAttribute(name, value);
@@ -90,8 +92,15 @@ function expectRowHolds(el: AgUiChat): void {
   expect(send.offsetWidth).toBeGreaterThan(20);
   expectInside(send.getBoundingClientRect(), tools);
   expect(chip.right).toBeLessThanOrEqual(send.getBoundingClientRect().left + 0.5);
-  expectInside(rect(el, ".attach-btn"), tools);
-  expect(rect(el, ".attach-btn").right).toBeLessThanOrEqual(chip.left + 0.5);
+  // The icon buttons keep their size, square at rest, rather than giving up
+  // width to a long place.
+  for (const selector of [".attach-btn", ".voice-btn"]) {
+    const button = part(el, selector);
+    expect(button.offsetWidth).toBeGreaterThan(20);
+    expect(button.offsetWidth).toBe(button.offsetHeight);
+    expectInside(button.getBoundingClientRect(), tools);
+    expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(chip.left + 0.5);
+  }
   // Truncated, not wrapped: one line, its overflow clipped behind an ellipsis.
   const label = part(el, ".place-label");
   expect(label.scrollWidth).toBeGreaterThan(label.clientWidth);

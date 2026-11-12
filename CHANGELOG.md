@@ -36,7 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the agent to call `read_page`. That guard used to run whenever `getPageMap` was set.
   It now runs when the round offered `read_page`, so a round with the place withheld,
   or a host `getTools` that leaves `read_page` out, never sends the agent to a tool it
-  does not have. **A host has nothing to do.**
+  does not have. The other direction is new too: a host that registers a `read_page`
+  tool of its own, with no `getPageMap`, now has its other tool calls refused when the
+  page moves mid-round, as a host with `getPageMap` always had. **A host has nothing to
+  do**, unless it registers its own `read_page` and wants no guard; it then renames
+  the tool.
 - **The `routeMap` documentation says what is sent.** It claimed a compact summary of
   the map rides in each run's context. None does. The route matching the current path
   is now sent as the `place` entry while `getPlace` is unset.

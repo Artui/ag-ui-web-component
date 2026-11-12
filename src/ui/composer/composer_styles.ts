@@ -53,12 +53,15 @@ export const COMPOSER_STYLES: string = `
   gap: 2px;
 }
 
-/* Icon buttons: quiet at rest, so the field is what the eye lands on. */
+/* Icon buttons: quiet at rest, so the field is what the eye lands on. They
+   keep their size when the row is short of width: the place chip beside them
+   is what gives way. */
 .attach-btn,
 .voice-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: var(--_tool-btn-size);
   height: var(--_tool-btn-size);
   padding: 0;

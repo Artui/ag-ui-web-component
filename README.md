@@ -2661,9 +2661,10 @@ agent's tool call arrives — the user clicks a link, or presses back. Calls lan
 are **refused** with a result telling the agent to call `read_page` and retry. Most would have
 missed anyway; the guard exists for the case where a same-named control on the new page matches and
 the agent would otherwise act on the wrong page without either side noticing. `read_page` and tools
-marked `x-navigates` are exempt, and the guard is inert in a round that did not offer `read_page`
-(no `getPageMap`, or a [place the user withheld](#where-the-user-is-the-place-chip)), since its
-result would name a tool the agent does not have.
+marked `x-navigates` are exempt. The guard runs in any round that offered `read_page`, including
+one you registered yourself, and is inert in a round that did not (no `getPageMap`, or a
+[place the user withheld](#where-the-user-is-the-place-chip)), since its result would name a tool
+the agent does not have.
 
 **`registerPageState({ name, read, write?, schema? })`** — ergonomic sugar over `registerTool` for
 SPA app state (Redux/Zustand/signals). It auto-generates a `read_<name>` (read-only) tool and, when

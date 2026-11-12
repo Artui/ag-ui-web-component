@@ -504,6 +504,13 @@ describe("when the place is read", () => {
     expect(reads()).toBe(before);
   });
 
+  it("reads a getPlace a framework sets just after inserting the element", async () => {
+    const { el } = mount();
+    el.getPlace = () => ORDER;
+    await flush();
+    expect(text(el, ".place-label")).toBe("Order #4821");
+  });
+
   it("does nothing on refreshPlace before the element connects", () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
     const getPlace = vi.fn(() => ORDER);
