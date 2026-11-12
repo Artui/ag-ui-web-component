@@ -5,6 +5,7 @@ import {
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
+  DOCK_WIDTH_EVENT,
   ICON_MOON,
   ICON_SUN,
   MESSAGE_ROLE,
@@ -94,6 +95,7 @@ import {
 } from "./conversation_store.js";
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import type { BarHeightDetail } from "./events/bar_height_detail.js";
+import type { DockWidthDetail } from "./events/dock_width_detail.js";
 import type { StateDetail } from "./events/state_detail.js";
 import type { SubmitDetail } from "./events/submit_detail.js";
 import type { ThreadDetail } from "./events/thread_detail.js";
@@ -607,6 +609,9 @@ export class AgUiChat extends HTMLElement {
   #threadsAnchor: Element | null = null;
   /** The bar height last reported, so the event fires on a change only. */
   #barHeight = 0;
+  /** The docked width and edge last reported, so the event fires on a change only. */
+  #dockWidth = 0;
+  #dockSide: DockWidthDetail["side"] = "right";
   /** The element the panel rises from under collapse-to="none", set as a property. */
   #anchor: Element | null = null;
   /** Whether a missing anchor has been reported; once per anchor given. */
@@ -1176,6 +1181,8 @@ export class AgUiChat extends HTMLElement {
       "placement",
       "collapse-to",
       "anchor",
+      "data-side",
+      "data-small-viewport",
       "data-threads-search",
       "credentials",
       "user-key",
@@ -1206,6 +1213,10 @@ export class AgUiChat extends HTMLElement {
     }
     if (name === "anchor") {
       this.#anchorWarned = false;
+      this.#syncDock();
+      return;
+    }
+    if (name === "data-side" || name === "data-small-viewport") {
       this.#syncDock();
       return;
     }
@@ -1685,6 +1696,16 @@ export class AgUiChat extends HTMLElement {
     this.#placement.probe.addEventListener("transitionrun", this.#onLayoutChange, {
       signal: this.#connection.signal,
     });
+    // The open width is the panel's, which does not animate; a host writing
+    // --ag-ui-width at runtime moves it with no attribute or event.
+    const widthObserver = new ResizeObserver(() => this.#syncDock());
+    widthObserver.observe(this.#chat);
+    this.#connection.signal.addEventListener("abort", () => widthObserver.disconnect());
+    // A resize drag is reported when it ends, and the last frame may change nothing
+    // the observer sees.
+    const endDrag = (): void => void requestAnimationFrame(() => this.#syncDock());
+    window.addEventListener("pointerup", endDrag, { signal: this.#connection.signal });
+    window.addEventListener("keyup", endDrag, { signal: this.#connection.signal });
     this.#syncDock();
     // Under collapse-to="none" the host draws the collapsed state itself, so
     // it has to learn the state the element mounted in -- restored from
@@ -2087,6 +2108,19 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
+   * The width in CSS px a docked panel covers at rest, and 0 when it covers
+   * none of the page: the rail while collapsed to it, the panel while open, 0
+   * under every other placement, under collapse-to="none" or a launcher while
+   * collapsed, on a phone while open (the panel is the screen) and under
+   * --ag-ui-position: static, where the host's layout already makes room. The
+   * panel is fixed over the page, so a host pads its own by this much;
+   * {@link DOCK_WIDTH_EVENT} says when it changes, never per animation frame.
+   */
+  get dockWidth(): number {
+    return this.#dockWidth;
+  }
+
+  /**
    * The element the panel rises from under collapse-to="none", right-aligned
    * to it: typically the host's own button in its own bar. Takes precedence
    * over the anchor attribute, which names one by selector. One that resolves
@@ -2124,6 +2158,47 @@ export class AgUiChat extends HTMLElement {
     }
   }
 
+  /** What the panel covers of the page at rest, from state and the panel's own box. */
+  #restingDockWidth(): number {
+    const placement = this.getAttribute("placement");
+    if (
+      (placement !== "sidebar" && placement !== "side") ||
+      !this.#hasBox() ||
+      getComputedStyle(this).position === "static"
+    ) {
+      return 0;
+    }
+    if (this.collapsed) {
+      return this.#surface().collapseTo === "rail" ? this.#launcher.offsetWidth : 0;
+    }
+    const phone =
+      this.getAttribute("data-small-viewport") !== "off" &&
+      window.matchMedia("(max-width: 600px)").matches;
+    return phone ? 0 : this.#chat.clientWidth;
+  }
+
+  /** Tell the host when the docked width, or the edge it docks against, changed. */
+  #syncDockWidth(): void {
+    // A drag-resize reports once, when it ends.
+    if (this.#placement.dragging()) {
+      return;
+    }
+    const width = this.#restingDockWidth();
+    const side = this.getAttribute("data-side") === "left" ? "left" : "right";
+    if (width === this.#dockWidth && (width === 0 || side === this.#dockSide)) {
+      return;
+    }
+    this.#dockWidth = width;
+    this.#dockSide = side;
+    this.dispatchEvent(
+      new CustomEvent<DockWidthDetail>(DOCK_WIDTH_EVENT, {
+        detail: { width, side },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   /** Re-measure the bar or the anchor, and tell the host when the bar's height changed. */
   #syncDock(): void {
     // isConnected rather than the connected flag, which connectedCallback
@@ -2137,6 +2212,7 @@ export class AgUiChat extends HTMLElement {
     const height = this.#hasBox()
       ? this.#placement.syncDock(this.#dockBar, this.#resolveAnchor())
       : 0;
+    this.#syncDockWidth();
     if (height === this.#barHeight) {
       return;
     }
@@ -2244,6 +2320,7 @@ export class AgUiChat extends HTMLElement {
    */
   resetSize(): void {
     this.#placement.resetSize();
+    this.#syncDock();
   }
 
   /** Flip the collapsed state. Bound to the built-in header toggle. */

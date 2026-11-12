@@ -248,7 +248,7 @@ neither camp is `data-launcher-icon-url`: it is read while the element connects,
 below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
-either way: `title-text`, `placement`, `collapse-to`, `anchor`, `data-threads-search`, `credentials`, `user-key`,
+either way: `title-text`, `placement`, `collapse-to`, `anchor`, `data-side`, `data-small-viewport`, `data-threads-search`, `credentials`, `user-key`,
 `user-name`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
@@ -272,7 +272,7 @@ element after the fact.
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
 `autoInjectPageMap`, `getPlace`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
-`resolvePageTarget`, `sharedState`, `anchor` (an element, which wins over the attribute's selector), `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `running` and `barHeight`, and
+`resolvePageTarget`, `sharedState`, `anchor` (an element, which wins over the attribute's selector), `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `running`, `barHeight` and `dockWidth`, and
 the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `toolGroupDisplay` / `collapsed` /
 `credentials`.
 
@@ -1498,6 +1498,35 @@ pad();
 ```css
 body {
   padding-bottom: var(--chat-bar-height, 0px);
+}
+```
+
+**A fixed sidebar pushes your page the same way.** A docked `placement="sidebar"` (or `"side"`)
+is fixed over the page, so `dockWidth` (CSS px, read-only) and an `ag-ui-dock-width` event (the
+`DOCK_WIDTH_EVENT` constant, detail `{ width, side }`, `side` being `"left"` or `"right"`, as
+`data-side` says) hand you the width it covers at rest: the panel's width while open, the rail's
+(`--ag-ui-rail-width`, 52 by default) while collapsed to it, and `0` under `collapse-to="none"` or
+a launcher, under every other placement, on a phone while the panel is open, and under
+`--ag-ui-position: static`, where your own layout already makes room. The event fires once per
+change of the resting value, never per frame of the width transition, and once at the end of a
+resize drag.
+
+```js
+const chat = document.querySelector("ag-ui-chat");
+const push = () => {
+  const { dockWidth: width } = chat;
+  const side = document.querySelector("ag-ui-chat").getAttribute("data-side") ?? "right";
+  document.documentElement.style.setProperty("--chat-dock-left", side === "left" ? `${width}px` : "0px");
+  document.documentElement.style.setProperty("--chat-dock-right", side === "left" ? "0px" : `${width}px`);
+};
+chat.addEventListener("ag-ui-dock-width", push);
+push();
+```
+
+```css
+body {
+  padding-left: var(--chat-dock-left, 0px);
+  padding-right: var(--chat-dock-right, 0px);
 }
 ```
 
@@ -3124,6 +3153,7 @@ re-export point. Internal modules import from leaf paths.
 | `ThreadDetail` | type | `detail` shape of the `ag-ui-thread` event (`{ threadId, previousThreadId, reason }`). |
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
 | `BarHeightDetail` | type | `detail` shape of the `ag-ui-bar-height` event (`{ height }`). |
+| `DockWidthDetail` | type | `detail` shape of the `ag-ui-dock-width` event (`{ width, side }`). |
 | `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
 | `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
 | `StateDetail` | type | `detail` shape of the `ag-ui-state` event (`{ state }`). |
@@ -3277,6 +3307,7 @@ re-export point. Internal modules import from leaf paths.
 | `THREAD_EVENT` | The conversation-changed CustomEvent name (`ag-ui-thread`). |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
 | `BAR_HEIGHT_EVENT` | The bottom bar's height CustomEvent name (`ag-ui-bar-height`). |
+| `DOCK_WIDTH_EVENT` | The docked panel's width CustomEvent name (`ag-ui-dock-width`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
 | `CUSTOM_AGENT_EVENT` | The agent-`CUSTOM` CustomEvent name (`ag-ui-custom`). |

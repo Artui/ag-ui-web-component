@@ -28,6 +28,13 @@ export const TOGGLE_EVENT = "ag-ui-toggle";
 export const BAR_HEIGHT_EVENT = "ag-ui-bar-height";
 
 /**
+ * The width a docked panel covers at rest changed (`placement="sidebar"` or
+ * `"side"`): the host pushes its page by it. `detail` is {@link DockWidthDetail};
+ * 0 when the panel covers none of the page.
+ */
+export const DOCK_WIDTH_EVENT = "ag-ui-dock-width";
+
+/**
  * The count of answers that arrived while collapsed changed. `detail` is
  * {@link UnreadDetail}. The built-in launcher badge renders exactly this; a
  * host driving its own chrome sets `data-unread-badge="false"` and listens.

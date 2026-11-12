@@ -6,6 +6,7 @@ export {
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
+  DOCK_WIDTH_EVENT,
   ELEMENT_TAG,
   FEEDBACK_EVENT,
   INVALIDATE_CUSTOM_NAME,
@@ -63,6 +64,7 @@ export { defineAgUiChat } from "./core/define_ag_ui_chat.js";
 export type { AttachmentsDetail } from "./core/events/attachments_detail.js";
 export type { BarHeightDetail } from "./core/events/bar_height_detail.js";
 export type { CustomAgentDetail } from "./core/events/custom_agent_detail.js";
+export type { DockWidthDetail } from "./core/events/dock_width_detail.js";
 export type { FeedbackDetail } from "./core/events/feedback_detail.js";
 export type { InvalidateDetail } from "./core/events/invalidate_detail.js";
 export type { RunFinishedDetail } from "./core/events/run_finished_detail.js";
