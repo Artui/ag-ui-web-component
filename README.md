@@ -1784,6 +1784,12 @@ steps and `data-open` whether the cards are showing; the head is a button with `
   a card, so they are in view without it opening; the row still reads `waiting` ("1 waiting for
   you") while one is open, as the card carries a `data-asking` flag for the group to read, and its
   `data-status` stays `pending`.
+- **A one-step group is named after its call, and the card's head is not repeated inside.** A turn
+  with exactly one call reads as that call's label ("Fill field"), and the opened list shows the
+  card without its own `tool-card-head` (the row's state mark and notes carry the status). The
+  Details toggle and arguments stay, except under `data-tool-group-display="minimal"`, where the
+  card is only its head: there the row draws no chevron, though it still opens for an approval. A
+  card display mode keeps the head. A run that grows to two calls brings both heads back.
 - **A running sub-agent does not open it.** The row keeps its spinner and names the delegation
   instead, "Delegated to researcher" (the `subAgentDelegatedTo` string).
 - **Repeated labels are told apart.** Two "Fill field" steps read "Fill field" and "Fill field
