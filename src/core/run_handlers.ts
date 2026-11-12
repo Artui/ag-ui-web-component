@@ -99,8 +99,6 @@ interface RunLedger {
    * than silence.
    */
   announcedOutcome: boolean;
-  /** How the interaction ended so far; read and reset when the run-finished event fires. */
-  outcome: RunFinishedDetail["outcome"];
 }
 
 /** An empty ledger, for a conversation nothing has run in yet. */
@@ -110,7 +108,6 @@ function emptyLedger(): RunLedger {
     serverSettled: new Set<string>(),
     invalidated: new Set<string>(),
     announcedOutcome: false,
-    outcome: "completed",
   };
 }
 
@@ -188,20 +185,9 @@ export class RunHandlers {
   forClient(threadId: string): AgUiClientHandlers {
     const ledger = this.#ledger;
     const attached = (): boolean => ledger === this.#ledger;
-    const { onSettled, onError, onCancelled, ...drawing } = this.#tableFor(ledger);
-    const guarded = whileAttached({ onError, onCancelled }, attached);
+    const { onSettled, ...drawing } = this.#tableFor(ledger);
     return {
       ...whileAttached(drawing, attached),
-      // Recorded outside the check, like the settle: a detached run's ending is
-      // still true, and the ledger is the only place it can be kept for the report.
-      onError: (message) => {
-        ledger.outcome = "failed";
-        guarded.onError(message);
-      },
-      onCancelled: () => {
-        ledger.outcome = "stopped";
-        guarded.onCancelled();
-      },
       onSettled: () => {
         if (attached()) {
           onSettled();
@@ -472,11 +458,9 @@ export class RunHandlers {
     ledger.tools.length = 0;
     ledger.serverSettled.clear();
     ledger.invalidated.clear();
-    const outcome = ledger.outcome;
-    ledger.outcome = "completed";
     this.#host.element.dispatchEvent(
       new CustomEvent<RunFinishedDetail>(RUN_FINISHED_EVENT, {
-        detail: { threadId, tools, invalidated, outcome },
+        detail: { threadId, tools, invalidated },
         bubbles: true,
         composed: true,
       }),

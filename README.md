@@ -2727,12 +2727,10 @@ chat.navigate = (path) => router.push(path); // SPA: in-page, no reload
 Route map + `navigate()` and the reload model are the same feature seen from two ends.
 
 **`ag-ui-run-finished`** *(event)* — an interaction has ended, and here is what ran in it.
-`detail: { threadId, tools: readonly ToolRun[], invalidated, outcome }` (typed `RunFinishedDetail`),
-where each `ToolRun` is `{ name, side: "server" | "client" }` in settle order. `threadId` is the
-thread the run belonged to, which is not always the one on screen: a run that a new chat or a
-thread switch stopped still reports once its request closes. `outcome` is how the interaction
-ended: `"completed"`, `"stopped"` (Stop, a new chat or a thread switch cut it off) or `"failed"`
-(the agent reported an error). Ignore an `outcome` you do not know: more may be added.
+`detail: { threadId, tools: readonly ToolRun[], invalidated }` (typed `RunFinishedDetail`), where
+each `ToolRun` is `{ name, side: "server" | "client" }` in settle order. `threadId` is the thread
+the run belonged to, which is not always the one on screen: a run that a new chat or a thread
+switch stopped still reports once its request closes.
 
 **This is the seam for a host that renders data the agent can change.** A server-side tool writes
 without your page's knowledge: nothing else the element dispatches implies "something may have moved
@@ -2752,34 +2750,6 @@ chat.addEventListener("ag-ui-run-finished", (e) => {
 It fires **once per interaction**, not once per tool round, and it fires on completion, error and
 cancellation alike — a partial write is still a write. A capability load (an agent skill activating)
 is not counted: it moves nothing a host renders.
-
-A run a switch stopped reports `outcome: "stopped"` whichever thread is on screen when it does,
-so a listener that marks attention or counts completions tells a cancelled run's late event from a
-finished one by `outcome`, not by `threadId`.
-
-**Deferring a switch until the run is over** keys on `running` and `data-running`, never on this
-event: it fires for a stopped run too, late, and a stale one can arrive while the next run is live.
-`data-running` toggles only for the live run, and there is no running-change event, so watch the
-attribute:
-
-```js
-let queued = null;
-const release = () => {
-  if (!chat.running && queued !== null) {
-    const id = queued;
-    queued = null;
-    void chat.switchThread(id);
-  }
-};
-new MutationObserver(release).observe(chat, { attributes: true, attributeFilter: ["data-running"] });
-myBar.onPick = (id) => {
-  if (chat.running) {
-    queued = id;
-  } else {
-    void chat.switchThread(id);
-  }
-};
-```
 
 `sharedState` above is the richer channel and this is not a replacement for it — but it is not a
 substitute the other way round either, because shared state requires the *agent* to emit
@@ -3100,7 +3070,7 @@ re-export point. Internal modules import from leaf paths.
 | `createPageStateTools(binding)` | function | Build `read_<name>` / `set_<name>` tools. |
 | `PageState` | type | A page-state binding declaration. |
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
-| `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, which side ran them, and how it ended. |
+| `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
 | `CustomAgentDetail` | type | `ag-ui-custom` detail: an AG-UI `CUSTOM` event's `name` and `value`, verbatim. |
 | `InvalidateDetail` | type | `ag-ui-invalidate` detail: the resource `keys` that moved, and the `reason`. |
 | `FeedbackDetail` | type | `ag-ui-feedback` detail: the rated message's `messageId`, its `threadId`, the `runId` that streamed it (live only), its `content` and the `rating`. See [Storing a rating](#storing-a-rating). |
