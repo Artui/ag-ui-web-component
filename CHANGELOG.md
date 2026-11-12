@@ -24,7 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cacheMessages: false` too. A title the list holds that the first message does not
   derive (a rename) is taken on a switch, and on a reload from the default store; a
   listed title that is only the server's own cut of the first message, or its "New
-  conversation" placeholder, is not a rename and the element's own title stays. A host opts in to the header by setting `title-text="auto"`.
+  conversation" placeholder, is not a rename and the element's own title stays. A host
+  opts in to the header by setting `title-text="auto"`.
   The event, the property and the list row need no opt-in. The humanised skill titles and
   the extra list row change what an existing host sees.
 
@@ -32,9 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `ag-ui-dock-width` event (`DOCK_WIDTH_EVENT`, detail `DockWidthDetail`:
   `{ width, side }`) give a host that keeps `placement="sidebar"` fixed the number to push
   its own page by, as `barHeight` does for the bar: the panel's width while open, its
-  borders included, the
-  rail's while collapsed to it, and 0 under `collapse-to="none"`, every other placement, on
-  a phone while open and under `--ag-ui-position: static`. One event per change of the
+  borders included, the rail's while collapsed to it, and 0 under `collapse-to="none"`,
+  every other placement, on a phone while open and under `--ag-ui-position: static`. One event per change of the
   resting value, never per frame of the width transition; a resize drag fires once, when
   it ends. Additive: nothing changes for a host that does not listen.
 - **The conversation list opens beside your own button under `collapse-to="none"`.**
