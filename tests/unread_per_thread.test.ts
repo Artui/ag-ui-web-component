@@ -141,6 +141,23 @@ describe("an answer finished while collapsed", () => {
     expect(el.unread).toBe(0);
   });
 
+  it("shows the badge on the collapsed launcher only, never behind an open panel", async () => {
+    const { el } = mount();
+    await flush();
+    saved(el.conversationStore, "tB");
+    el.setCollapsed(true);
+    await answer(el);
+    await el.switchThread("tB");
+    expect(badge(el).hidden).toBe(false);
+
+    el.setCollapsed(false);
+
+    expect(el.unread).toBe(1);
+    expect(badge(el).hidden).toBe(true);
+    el.setCollapsed(true);
+    expect(badge(el).hidden).toBe(false);
+  });
+
   it("is not read by being on screen in a collapsed panel", async () => {
     const { el } = mount();
     await flush();
@@ -191,6 +208,16 @@ describe("an answer finished while collapsed", () => {
     expect(events).toEqual([{ unread: 0, threadIds: [threadA] }]);
   });
 
+  it("reports a collapse toggle that clears nothing with no threads", async () => {
+    const { el, events } = mount();
+    await flush();
+    events.length = 0;
+
+    el.setCollapsed(true);
+
+    expect(events).toEqual([{ unread: 0, threadIds: [] }]);
+  });
+
   it("names the thread on the count that marks it", async () => {
     const { el, events } = mount();
     await flush();
@@ -225,6 +252,36 @@ describe("an answer finished while collapsed", () => {
   });
 });
 
+describe("a thread switched to but still loading", () => {
+  async function loading(el: AgUiChat): Promise<{ release: () => void; switching: Promise<void> }> {
+    saved(el.conversationStore, "tB");
+    const load = el.conversationStore.loadMessages.bind(el.conversationStore);
+    let release = (): void => undefined;
+    el.conversationStore.loadMessages = (id) =>
+      new Promise((resolve) => {
+        release = () => void load(id).then(resolve);
+      });
+    const switching = el.switchThread("tB");
+    return { release: () => release(), switching };
+  }
+
+  it("does not read a listed unread row for it until it is shown", async () => {
+    const { store, markRead, rows } = readingStore();
+    const { el } = mount({}, store);
+    await flush();
+    const { release, switching } = await loading(el);
+    rows.push({ threadId: "tB", title: "B", updatedAt: 0, preview: "", unread: true });
+
+    el.shadowRoot?.querySelector<HTMLButtonElement>(".header-btn--history")?.click();
+    await flush();
+
+    expect(el.unread).toBe(1);
+    expect(markRead).not.toHaveBeenCalled();
+    release();
+    await switching;
+  });
+});
+
 describe("new chat", () => {
   it("keeps the thread it leaves marked", async () => {
     const { el } = mount();
@@ -255,6 +312,17 @@ describe("a principal change", () => {
 
     expect(el.unread).toBe(0);
     expect(events[0]).toEqual({ unread: 0, threadIds: [threadA] });
+  });
+
+  it("reports a principal change that had no marks, naming no threads", async () => {
+    const { el, events } = mount({ "user-key": "alice" });
+    await flush();
+    events.length = 0;
+
+    el.setAttribute("user-key", "bob");
+    await flush();
+
+    expect(events).toEqual([{ unread: 0, threadIds: [] }]);
   });
 
   it("keeps the marks when a key arrives for the user already there", async () => {
@@ -326,6 +394,30 @@ describe("the store seam", () => {
     el.shadowRoot?.querySelector<HTMLButtonElement>(".header-btn--history")?.click();
     await flush();
     expect(el.unread).toBe(1);
+  });
+
+  it("keeps the count of a thread already counted when the store lists it unread", async () => {
+    const { store, rows } = readingStore();
+    const { el, events } = mount({}, store);
+    await flush();
+    el.setCollapsed(true);
+    await answer(el);
+    await answer(el);
+    expect(el.unread).toBe(2);
+    rows.push({
+      threadId: el.threadId as string,
+      title: "A",
+      updatedAt: 0,
+      preview: "",
+      unread: true,
+    });
+    events.length = 0;
+
+    el.openThreads();
+    await flush();
+
+    expect(el.unread).toBe(2);
+    expect(events).toEqual([]);
   });
 
   it("does not read a listed row on screen in a collapsed panel", async () => {

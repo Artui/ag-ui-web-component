@@ -1348,10 +1348,13 @@ collapsed launcher only, so an open panel whose other threads hold unseen answer
 badge. A principal change (a new `user-key`) drops the previous principal's marks, and deleting a
 thread drops its own.
 
-A store can carry read state across pages and devices, through two optional members:
+A store can carry read state across pages and devices, through two optional members. The element
+fetches the thread list when the drawer opens or a thread switches, not at page load, so a
+store's `unread` rows are counted from that fetch on: a page that never opens the drawer shows
+no badge for answers that finished elsewhere.
 
 - **`ThreadMeta.unread`** (boolean): a thread `listThreads()` reports as unread, and the page has
-  not counted, counts once.
+  not counted, counts once, when the list is fetched.
 - **`markRead(threadId)`**: called when the element reads a thread with unseen answers, and when
   an answer finishes on the thread in view. A server store maps it to its read endpoint, and
   should list the thread with `unread: false` afterwards.

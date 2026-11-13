@@ -102,6 +102,37 @@ describe("focus returns to a host's own opener (real browser)", () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  it("checkpoints: picking a run gives focus back to a light-DOM button", async () => {
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        runs: [
+          {
+            run_id: "r1",
+            thread_id: "t1",
+            parent_run_id: null,
+            started_at: new Date().toISOString(),
+            continuable: true,
+          },
+        ],
+      }),
+    })) as unknown as typeof fetch;
+    const { chat, opener } = mount();
+    await settle();
+    // A pick with an empty composer is refused and puts the caret there, so
+    // the next turn is typed first, as a person picking a run to continue has.
+    (part(chat, ".input") as HTMLTextAreaElement).value = "and then?";
+    opener.focus();
+    chat.openCheckpoints();
+    await settle();
+    await settle();
+
+    part(chat, ".checkpoint-resume").click();
+    expect(part(chat, ".checkpoints").hidden).toBe(true);
+    expect(document.activeElement).toBe(opener);
+  });
+
   it("threads: an opener inside another shadow root gets focus back", async () => {
     const { chat, opener } = mount();
     const host = document.createElement("div");
