@@ -17,6 +17,12 @@ export const RESIZE_STYLES: string = `
   touch-action: none;
 }
 
+/* No grips while maximized: the element refuses the resize, so restore always
+   lands on the size stored before it. */
+:host([maximized]) .resize-handle {
+  display: none;
+}
+
 .resize-handle:focus-visible {
   outline: 2px solid var(--_accent);
   outline-offset: -2px;

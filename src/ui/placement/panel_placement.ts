@@ -334,6 +334,33 @@ export class PanelPlacement {
   }
 
   /**
+   * Take the dragged size off for the maximized state, which the element has
+   * already stamped, and stand the larger panel back on the screen. The stored
+   * size and every stored spot are kept: restore puts them back.
+   */
+  enterMaximized(): void {
+    this.#host.element.style.removeProperty(DRAG_WIDTH);
+    this.#host.element.style.removeProperty(DRAG_HEIGHT);
+    this.#replace();
+  }
+
+  /** Put the stored size back once the element has left the maximized state. */
+  leaveMaximized(): void {
+    this.restoreSize();
+    this.#replace();
+  }
+
+  /** Re-place the panel from the record after its size changed under it. */
+  #replace(): void {
+    if (this.#docked()) {
+      this.#placeDocked();
+    } else {
+      this.restoreLauncherPosition();
+    }
+    this.syncResizeAnchor();
+  }
+
+  /**
    * Carry a stated corner spot along with a dragged size coming off.
    *
    * The size comes off toward the corner the layout holds still, so the top-left
@@ -548,6 +575,7 @@ export class PanelPlacement {
       collapseTo: this.#surface().collapseTo,
       collapsed: this.#host.collapsed(),
       collapsible: this.#host.collapsible(),
+      maximized: this.#host.element.hasAttribute("maximized"),
       movable: this.#panelMovable() && !fullBleed,
       // The page's setting alone: true for every placement unless the host set
       // `data-launcher-drag="false"`. Whether this panel moves is `movable`,
@@ -708,7 +736,8 @@ export class PanelPlacement {
    * per interaction, because `placement` is a live attribute.
    */
   #resizeAxis(): ResizeAxis {
-    return this.#surface().resizeAxis;
+    // Refused while maximized, so restore always lands on the size stored before it.
+    return this.#host.element.hasAttribute("maximized") ? "none" : this.#surface().resizeAxis;
   }
 
   /**

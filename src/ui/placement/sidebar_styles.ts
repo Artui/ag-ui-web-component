@@ -14,6 +14,31 @@ export const SIDEBAR_STYLES: string = `
   transition: width var(--_motion) var(--_ease);
 }
 
+/* Maximized grows the column's width only: the host and the panel pinned
+   inside it, which reads its own width. */
+:host([placement="sidebar"][maximized]:not([collapsed])),
+:host([placement="sidebar"][maximized]:not([collapsed])) .chat {
+  width: var(--_maximized-width);
+}
+
+/* A side column leaves --ag-ui-min-page-width of the page beside it, whatever
+   its width came from: a drag, the token or maximize. Unset, the host keeps its
+   own cap (the fallback makes the second term endless) and the panel reads no
+   cap at all. Above the phone width only, where the column is the screen. */
+@media (min-width: 601px) {
+  :host([placement="sidebar"]),
+  :host([placement="side"]) {
+    max-width: min(
+      var(--_max-width),
+      calc(var(--_viewport-width) - var(--_min-page-width-set, calc(-1px * infinity)))
+    );
+  }
+
+  :host([placement="sidebar"]) .chat {
+    max-width: calc(var(--_viewport-width) - var(--_min-page-width-set));
+  }
+}
+
 :host([placement="sidebar"][data-side="left"]) {
   --_inset: var(
     --ag-ui-inset,

@@ -22,6 +22,13 @@ export const SUBMIT_EVENT = "ag-ui-submit";
 export const TOGGLE_EVENT = "ag-ui-toggle";
 
 /**
+ * Maximized state changed, via the built-in header control, the `maximized`
+ * property or attribute, or on leaving it for a collapse, a placement without
+ * the control, or a viewport of 600px or less. `detail` is {@link MaximizeDetail}.
+ */
+export const MAXIMIZE_EVENT = "ag-ui-maximize";
+
+/**
  * The bottom bar's height changed (`collapse-to="bar"`): the host pads its
  * page by it. `detail` is {@link BarHeightDetail}; 0 when no bar is drawn.
  */

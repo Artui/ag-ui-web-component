@@ -31,6 +31,7 @@ function makeSurface(overrides: Partial<ChatSurfaceReport> = {}) {
     collapseTo: "launcher",
     collapsed: false,
     collapsible: true,
+    maximized: false,
     movable: true,
     draggable: true,
     fullBleed: false,
