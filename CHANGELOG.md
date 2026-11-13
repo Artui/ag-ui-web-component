@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0] — 2026-11-13
+
 ### Added
 
 - **`anchor-side` opens a `collapse-to="none"` panel below its anchor.** `above`, `below` or
@@ -5431,7 +5433,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.52.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.53.0...HEAD
+[0.53.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.2...v0.51.0
 [0.50.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.1...v0.50.2
