@@ -917,3 +917,95 @@ describe("a dragged size belongs to its placement (real browser)", () => {
     expect(bucket("floating")).toEqual({ width: 572 });
   });
 });
+
+describe("a stated corner spot across placement switches (real browser)", () => {
+  const frames = async (): Promise<void> => {
+    for (let frame = 0; frame < 6; frame += 1) {
+      await settle();
+    }
+  };
+  const part = (el: AgUiChat, selector: string): HTMLElement => {
+    const found = el.shadowRoot?.querySelector<HTMLElement>(selector);
+    if (found === null || found === undefined) {
+      throw new Error(`expected ${selector} in the shadow root`);
+    }
+    return found;
+  };
+  async function drag(handle: HTMLElement, dx: number, dy: number): Promise<void> {
+    const grab = handle.getBoundingClientRect();
+    const x = grab.left + grab.width / 2;
+    const y = grab.top + grab.height / 2;
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + dx, clientY: y + dy }));
+    await frames();
+  }
+  const rect = (el: AgUiChat): { left: number; top: number; width: number; height: number } => {
+    const box = el.getBoundingClientRect();
+    return {
+      left: Math.round(box.left),
+      top: Math.round(box.top),
+      width: Math.round(box.width),
+      height: Math.round(box.height),
+    };
+  };
+  const launcherOffset = (el: AgUiChat): Record<string, number> => {
+    const panel = el.getBoundingClientRect();
+    const launcher = part(el, ".launcher").getBoundingClientRect();
+    return {
+      x: Math.round(panel.right - (launcher.left + launcher.width / 2)),
+      y: Math.round(panel.bottom - (launcher.top + launcher.height / 2)),
+    };
+  };
+  async function stated(): Promise<AgUiChat> {
+    const el = mount({}, "--ag-ui-motion: 0s");
+    await frames();
+    const box = el.getBoundingClientRect();
+    await drag(part(el, ".header"), 376 - box.left, 96 - box.top);
+    await drag(part(el, ".resize-handle--top-left"), -80, -40);
+    return el;
+  }
+
+  it("keeps the launcher at the panel's corner when the next corner placement has its own size", async () => {
+    const el = await stated();
+    const before = launcherOffset(el);
+    el.setAttribute("placement", "bottom-left");
+    await frames();
+    expect(rect(el).width).toBe(380);
+    expect(launcherOffset(el)).toEqual(before);
+  });
+
+  it.each(["bottom-left", "sidebar"])("comes back to the same box and spot via %s", async (via) => {
+    const el = await stated();
+    const before = rect(el);
+    const spot = localStorage.getItem(LAUNCHER_KEY);
+    el.setAttribute("placement", via);
+    await frames();
+    el.setAttribute("placement", "floating");
+    await frames();
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBe(spot);
+    expect(rect(el)).toEqual(before);
+    el.toggleCollapsed();
+    await frames();
+    el.toggleCollapsed();
+    await frames();
+    expect(rect(el)).toEqual(before);
+    el.remove();
+    const again = mount({ placement: "floating" }, "--ag-ui-motion: 0s");
+    await frames();
+    expect(rect(again)).toEqual(before);
+  });
+
+  it("keeps the launcher at the panel's corner on a reload into the other corner placement", async () => {
+    const el = await stated();
+    el.setAttribute("placement", "bottom-left");
+    await frames();
+    const before = launcherOffset(el);
+    el.remove();
+    const again = mount({ placement: "bottom-left" }, "--ag-ui-motion: 0s");
+    await frames();
+    expect(launcherOffset(again)).toEqual(before);
+  });
+});

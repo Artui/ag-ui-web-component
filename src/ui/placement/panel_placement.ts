@@ -270,22 +270,26 @@ export class PanelPlacement {
 
   /** Restore the current placement's dragged size before the panel paints. */
   restoreSize(): void {
-    this.#host.element.style.removeProperty(DRAG_WIDTH);
-    this.#host.element.style.removeProperty(DRAG_HEIGHT);
     this.#applySize(this.#readSize());
   }
 
   /**
-   * Swap the dragged size for the one stored under the placement just set. A
-   * size belongs to the placement it was dragged in, so a floating drag never
-   * sizes a sidebar. Before connect the storage namespace is not claimed yet,
-   * and connect restores the size itself.
+   * Swap the dragged size for the one stored under the placement just set, so a
+   * floating drag never sizes a sidebar. Between two corner placements a stated
+   * spot moves with the size, as on resetSize, so the launcher keeps its corner.
+   * Before connect the namespace is unclaimed, and connect restores the size.
    */
-  switchPlacement(): void {
-    this.#host.element.style.removeProperty(DRAG_WIDTH);
-    this.#host.element.style.removeProperty(DRAG_HEIGHT);
-    if (this.#host.connected()) {
-      this.#applySize(this.#readSize());
+  switchPlacement(previous: string | null): void {
+    const element = this.#host.element;
+    const sized = element.getBoundingClientRect();
+    element.style.removeProperty(DRAG_WIDTH);
+    element.style.removeProperty(DRAG_HEIGHT);
+    if (!this.#host.connected()) {
+      return;
+    }
+    this.#applySize(this.#readSize());
+    if (surfaceFor(previous, element.getAttribute("collapse-to")).launcherDraggable) {
+      this.#carrySpotWithSize(sized);
     }
   }
 

@@ -796,6 +796,42 @@ describe("panel resize", () => {
     sessionStorage.removeItem(SIZE_KEY);
   });
 
+  it.each([
+    ["an empty placement reads floating's size", { placement: "" }, { floating: { width: 640 } }],
+    [
+      "a left and a right sidebar share one size",
+      { placement: "sidebar", "data-side": "left" },
+      { sidebar: { width: 500 } },
+    ],
+  ])("%s", (_name, attrs, placements) => {
+    const width = Object.values(placements)[0]?.width;
+    sessionStorage.setItem(SIZE_KEY, JSON.stringify({ v: 2, placements }));
+    const el = mount(attrs);
+    expect(el.style.getPropertyValue("--_drag-width")).toBe(`${width}px`);
+  });
+
+  it("reads a record with no placements as no size", () => {
+    sessionStorage.setItem(SIZE_KEY, JSON.stringify({ v: 2, placements: null }));
+    const el = mount();
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+  });
+
+  it("reads no size for a placement set before connect from another namespace", () => {
+    // Before connect the store is not scoped yet, so its unscoped key is another element's.
+    sessionStorage.setItem(
+      SIZE_KEY,
+      JSON.stringify({ v: 2, placements: { sidebar: { width: 999 } } }),
+    );
+    const scoped = `${SIZE_KEY}:scoped-size`;
+    sessionStorage.setItem(
+      scoped,
+      JSON.stringify({ v: 2, placements: { floating: { width: 640 } } }),
+    );
+    const el = mount({ id: "scoped-size", placement: "sidebar" });
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+    sessionStorage.removeItem(scoped);
+  });
+
   it("does nothing at all where the placement is full-bleed", () => {
     const el = mount({ placement: "full" });
     const handle = shadow(el).querySelector<HTMLElement>(".resize-handle");

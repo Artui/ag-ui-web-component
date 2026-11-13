@@ -1265,7 +1265,7 @@ export class AgUiChat extends HTMLElement {
       this.#placement.releaseOwnedAxes();
       // A dragged size belongs to its placement; collapse-to keeps it.
       if (name === "placement") {
-        this.#placement.switchPlacement();
+        this.#placement.switchPlacement(previous);
       }
       // Position is owned the same way a size is: a placement that places
       // itself takes back a launcher the user had dragged somewhere else.
