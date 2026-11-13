@@ -8,6 +8,7 @@ import {
   DOCK_WIDTH_EVENT,
   ICON_MOON,
   ICON_SUN,
+  MAXIMIZE_EVENT,
   MESSAGE_ROLE,
   PAGE_MAP_CONTEXT,
   STATE_EVENT,
@@ -99,6 +100,7 @@ import {
 import { type AgentFactory, createHttpAgent } from "./create_http_agent.js";
 import type { BarHeightDetail } from "./events/bar_height_detail.js";
 import type { DockWidthDetail } from "./events/dock_width_detail.js";
+import type { MaximizeDetail } from "./events/maximize_detail.js";
 import type { StateDetail } from "./events/state_detail.js";
 import type { SubmitDetail } from "./events/submit_detail.js";
 import type { ThreadDetail } from "./events/thread_detail.js";
@@ -176,6 +178,9 @@ function isCredentialsMode(value: string): value is RequestCredentials {
 
 /** The `title-text` value that makes the header follow the thread on screen. */
 const TITLE_TEXT_AUTO = "auto";
+
+/** The width at and below which every placement but two is the screen. */
+const PHONE_QUERY = "(max-width: 600px)";
 
 /** The anchored conversation list's widest, and its distance from its button and the window. */
 const THREADS_POPOVER_WIDTH = 320;
@@ -678,6 +683,11 @@ export class AgUiChat extends HTMLElement {
    * once the launcher and the shadow root it reaches into exist.
    */
   readonly #placement: PanelPlacement;
+  /** The maximized state as applied, which the reflected attribute may run ahead of. */
+  #maximized = false;
+  /** The header's maximize and collapse controls, once rendered. */
+  #maximizeControl: { readonly button: HTMLButtonElement; readonly before: HTMLElement } | null =
+    null;
   /** What the user has sent this session, newest first, for arrow-key recall. */
   readonly #sentDrafts: string[] = [];
   /** Typed while a run was in flight, oldest first; sent when it settles. */
@@ -1217,6 +1227,7 @@ export class AgUiChat extends HTMLElement {
       "collapse-to",
       "anchor",
       "anchor-side",
+      "maximized",
       "data-side",
       "data-small-viewport",
       "data-threads-search",
@@ -1252,6 +1263,10 @@ export class AgUiChat extends HTMLElement {
       this.#syncDock();
       return;
     }
+    if (name === "maximized") {
+      this.#applyMaximized(value !== null);
+      return;
+    }
     if (name === "anchor-side" || name === "data-side" || name === "data-small-viewport") {
       this.#syncDock();
       return;
@@ -1260,6 +1275,9 @@ export class AgUiChat extends HTMLElement {
     // has no launcher to drag, and keeps its own dragged spot apart from the
     // corner's, so the same handover applies -- and is live the same way.
     if (name === "placement" || name === "collapse-to") {
+      // Before the size handover, which a maximized panel refuses: a placement
+      // without the control takes its own stored size, not none.
+      this.#syncMaximizeControl();
       // A placement owns the axes it fixes, so hand those back before anything
       // else: a size dragged under the previous placement would otherwise sit
       // inline and outrank the new one.
@@ -2058,6 +2076,10 @@ export class AgUiChat extends HTMLElement {
     // is the announcement, and a notice about something visibly happening is
     // noise; there is also nothing to undo that the collapse control does not
     // already do.
+    // Collapsing leaves the maximized state, so the panel reopens at its own size.
+    if (collapsed) {
+      this.setMaximized(false);
+    }
     if (options.announce === true && collapsed && !this.collapsed) {
       // No undo beside this one. The notice is written into the transcript and
       // the transcript is then hidden by the very collapse it describes, so
@@ -2223,8 +2245,7 @@ export class AgUiChat extends HTMLElement {
       return this.#surface().collapseTo === "rail" ? this.#launcher.offsetWidth : 0;
     }
     const phone =
-      this.getAttribute("data-small-viewport") !== "off" &&
-      window.matchMedia("(max-width: 600px)").matches;
+      this.getAttribute("data-small-viewport") !== "off" && window.matchMedia(PHONE_QUERY).matches;
     return phone ? 0 : this.#chat.offsetWidth;
   }
 
@@ -2373,6 +2394,103 @@ export class AgUiChat extends HTMLElement {
   resetSize(): void {
     this.#placement.resetSize();
     this.#syncDock();
+  }
+
+  /**
+   * Whether the panel is maximized (reflected as the `maximized` attribute).
+   * Never stored: a reload opens at the placement's own size.
+   */
+  get maximized(): boolean {
+    return this.#maximized;
+  }
+
+  set maximized(value: boolean) {
+    this.setMaximized(value);
+  }
+
+  /**
+   * Grow the open panel to `--ag-ui-maximized-width` / `--ag-ui-maximized-height`,
+   * or restore it to the size it had, and emit a {@link MAXIMIZE_EVENT}. Refused
+   * where the header offers no control: `page`, `full`, `embedded`, an unknown
+   * placement, and a viewport of 600px or less.
+   */
+  setMaximized(maximized: boolean): void {
+    if (maximized) {
+      this.setAttribute("maximized", "");
+    } else {
+      this.removeAttribute("maximized");
+    }
+  }
+
+  /** Flip the maximized state. Bound to the built-in header control. */
+  toggleMaximized(): void {
+    this.setMaximized(!this.#maximized);
+  }
+
+  /** Whether the header offers the maximize control here, now. */
+  #maximizable(): boolean {
+    return this.#surface().maximizes !== null && !window.matchMedia(PHONE_QUERY).matches;
+  }
+
+  /** The one path into and out of the state: the attribute's. */
+  #applyMaximized(asked: boolean): void {
+    const maximized = asked && this.#maximizable() && !this.collapsed;
+    if (asked && !maximized) {
+      this.removeAttribute("maximized");
+      return;
+    }
+    if (maximized === this.#maximized) {
+      return;
+    }
+    this.#maximized = maximized;
+    if (this.#connected) {
+      if (maximized) {
+        this.#placement.enterMaximized();
+      } else {
+        this.#placement.leaveMaximized();
+      }
+      this.#syncDock();
+    }
+    this.#paintMaximizeControl();
+    this.dispatchEvent(
+      new CustomEvent<MaximizeDetail>(MAXIMIZE_EVENT, {
+        detail: { maximized },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /** Offer the control where a placement has one and leave the state where it has not. */
+  #syncMaximizeControl(): void {
+    const offered = this.#maximizable();
+    if (!offered) {
+      this.setMaximized(false);
+    }
+    const control = this.#maximizeControl;
+    if (control === null) {
+      return;
+    }
+    if (!offered) {
+      control.button.remove();
+    } else if (!control.button.isConnected) {
+      control.before.before(control.button);
+    }
+  }
+
+  /** Name the control for what pressing it does now. */
+  #paintMaximizeControl(): void {
+    const button = this.#maximizeControl?.button;
+    if (button === undefined) {
+      return;
+    }
+    const label = this.#maximized ? this.#strings.restore : this.#strings.maximize;
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    // The slot's fallback, so a host's own projected icon still wins.
+    for (const slot of button.querySelectorAll("slot")) {
+      slot.textContent = this.#maximized ? "❐" : "□";
+    }
   }
 
   /** Flip the collapsed state. Bound to the built-in header toggle. */
@@ -2934,7 +3052,7 @@ export class AgUiChat extends HTMLElement {
 
     const titleText = this.#titleText();
     const themed = this.getAttribute("data-theme-toggle") !== null;
-    const { header, checkpoints } = buildHeader({
+    const { header, checkpoints, maximize, collapse } = buildHeader({
       host: this,
       title: this.#title,
       titleText,
@@ -2950,6 +3068,7 @@ export class AgUiChat extends HTMLElement {
       onCheckpoints: () => this.toggleCheckpoints(),
       onNewChat: () => this.newChat(),
       onCollapse: () => this.toggleCollapsed(),
+      onMaximize: () => this.toggleMaximized(),
       onToggleTheme: () => this.toggleTheme(),
     });
     if (themed) {
@@ -2958,6 +3077,12 @@ export class AgUiChat extends HTMLElement {
 
     // A panel is a window and a header is its title bar.
     this.#placement.enablePanelDrag(header);
+    this.#maximizeControl = { button: maximize, before: collapse };
+    this.#syncMaximizeControl();
+    this.#paintMaximizeControl();
+    window
+      .matchMedia(PHONE_QUERY)
+      .addEventListener("change", () => this.#syncMaximizeControl(), { signal });
 
     buildTranscript({
       messages: this.#messages,

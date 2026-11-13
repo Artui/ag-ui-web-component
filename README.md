@@ -47,6 +47,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
   - [DOM-driver and animation primitives](#dom-driver-and-animation-primitives)
   - [Page-action tools](#page-action-tools)
 - [New chat and collapse](#new-chat-and-collapse)
+  - [Maximizing the panel](#maximizing-the-panel)
   - [Collapsing to the launcher](#collapsing-to-the-launcher)
   - [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar)
 - [Tool-call display modes](#tool-call-display-modes)
@@ -211,6 +212,7 @@ another origin, add `credentials="include"` too; see
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
 | `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Under either, a corner panel still moves by its header and `moveTo` on a wide viewport, and remembers where it was dragged. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
 | `anchor` | `anchor` | Under `collapse-to="none"`, a selector for the host's element the panel rises from, right-aligned to it. The `anchor` property takes an element instead and wins over the attribute. Live. |
+| `maximized` | `maximized` | Reflected boolean; grows the open panel to its [maximized size](#maximizing-the-panel). Refused on `page`, `full` and `embedded`, at 600px or less, and while collapsed; a collapse leaves it. Not persisted. Live. |
 | `anchor-side` | — | Under `collapse-to="none"` with an anchor, which side of it the panel opens on: `above`, `below`, or `auto` (the default, and any other value), which takes the side with more room and re-decides on a window resize, never during a drag. Live. |
 | `data-dragging` | — | **Written by the element, not by you.** Stamped on whichever handle a gesture is currently using, so the styles can react and so the element knows not to re-place the widget under a drag in progress. Cleared on `pointerup` and on `pointercancel`. |
 | `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
@@ -227,7 +229,7 @@ another origin, add `credentials="include"` too; see
 | `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded` / `full`. `full` fills the viewport at every width, inside the safe-area insets; the `--ag-ui-inset`, size and `--ag-ui-panel-radius` tokens still apply. |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
-`icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
+`icon-new`, `icon-maximize`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
 brand `<img>` or `<svg>` rather than only restyling the character. The composer's glyphs work the
 same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 
@@ -249,7 +251,7 @@ neither camp is `data-launcher-icon-url`: it is read while the element connects,
 below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
-either way: `title-text`, `placement`, `collapse-to`, `anchor`, `anchor-side`, `data-side`, `data-small-viewport`, `data-threads-search`, `credentials`, `user-key`,
+either way: `title-text`, `placement`, `collapse-to`, `anchor`, `anchor-side`, `maximized`, `data-side`, `data-small-viewport`, `data-threads-search`, `credentials`, `user-key`,
 `user-name`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
@@ -275,7 +277,7 @@ element after the fact.
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
 `resolvePageTarget`, `sharedState`, `anchor` (an element, which wins over the attribute's selector), `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `threadTitle`, `running`, `barHeight` and `dockWidth`, and
 the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `toolGroupDisplay` / `collapsed` /
-`credentials`.
+`maximized` / `credentials`.
 
 `headers` and `getHeaders` authenticate **every** request the element makes, not only the agent
 run; `getHeaders` is the one to use for a credential that rotates. See
@@ -307,8 +309,8 @@ the `copyCode` / `copied` / `copyFailed` strings.
 
 **Methods**: `registerTool`, `registerPageState`, `registerActivityRenderer`, `setSkills`,
 `sendMessage`, `attachFile`, `appendMessage`, `retryLastTurn`, `quote`, `offerQuoteInPage`,
-`enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `describeSurface`, `moveTo`,
-`resetSize`, `toggleTheme`, `openThreads`, `closeThreads`, `switchThread`, `deleteThread`,
+`enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `setMaximized`, `toggleMaximized`,
+`describeSurface`, `moveTo`, `resetSize`, `toggleTheme`, `openThreads`, `closeThreads`, `switchThread`, `deleteThread`,
 `openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `refreshPlace`, `reload`, and the deprecated
 `registerStateHook` (renamed to `registerPageState`).
 
@@ -1167,7 +1169,7 @@ handler), gate `drag_and_drop` with [`confirmPredicate`](#inline-confirmation-x-
 
 ## New chat and collapse
 
-The header carries two built-in buttons: a new-chat (✚) button and a collapse (—) toggle. The
+The header carries built-in buttons for a new chat (✚), maximize (□) and collapse (—). The
 matching JS API:
 
 - `newChat()` — clears the transcript, drops the in-memory run state, and mints a new thread id.
@@ -1182,7 +1184,7 @@ matching JS API:
   it is out of the document), it waits: `threadId` stays `null` and nothing fires until the
   element connects, which then starts the new chat, so the one `ag-ui-thread` event is a `new`.
 - `describeSurface()` — where the panel is and what can be done to it: placement, collapsed,
-  what it collapses to (`collapseTo`), whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
+  `maximized` (read-only), what it collapses to (`collapseTo`), whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
   the two reasons a move can fail into the one answer a caller needs.
 - `moveTo(corner)` — send the panel to `top-left` / `top-right` / `bottom-left` / `bottom-right`,
   returning whether it went. It takes the axes the same way a user drag does, so the launcher
@@ -1192,7 +1194,8 @@ matching JS API:
 - `resetSize()` — drop the size the user dragged in the current placement, and its stored copy,
   so the placement's own size and your `--ag-ui-width` / `--ag-ui-height` apply again; sizes
   dragged in other placements are kept. For a host that enters a sized state of its own (an
-  expanded mode): a user's drag outranks host tokens, so call this first.
+  expanded mode) instead of the built-in [maximize](#maximizing-the-panel): a user's drag
+  outranks host tokens, so call this first.
   Under `collapse-to="bar"` or `"none"` it also returns a panel the user dragged off its dock to
   the dock and forgets the stored spot; a corner panel under `auto` keeps its dragged position.
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
@@ -1208,6 +1211,50 @@ chat.newChat();
 chat.toggleCollapsed();
 chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
 ```
+
+### Maximizing the panel
+
+The maximize control (□, `maximize-button` part, `icon-maximize` slot) grows the open panel,
+and pressed again it restores it (❐). It is labelled "Maximize" and "Restore" (the `maximize`
+and `restore` strings), apart from the launcher's and the rail's "Expand", which opens the panel.
+
+- **Where it is offered.** A corner panel (`floating`, `bottom-left`, the default) and a docked
+  one (`collapse-to="bar"` or `"none"`) grow on both axes; `sidebar` and `side` grow in width
+  only. `page`, `full` and `embedded` have no control, and neither does any viewport of 600px or
+  less, `data-small-viewport="off"` included. The control is absent from the header there, not
+  hidden, and the state is refused: a panel maximized when its placement switches to one of
+  these, or when the window narrows to 600px, leaves it.
+- **What it grows to.** `--ag-ui-maximized-width` and `--ag-ui-maximized-height`, which default
+  to the panel's cap (`--ag-ui-max-width` / `--ag-ui-max-height`, the room the host left less
+  one gutter). A side column reads the width only.
+- **The drag.** Entering it takes the dragged size off without forgetting it, and the resize
+  grips are hidden while it lasts. Restoring, and collapsing (which leaves the state), put the
+  placement's own size back, or the size the user dragged in it.
+- **The API.** `chat.maximized` (reflected as the `maximized` attribute), `setMaximized(bool)`
+  and `toggleMaximized()`. Each change emits `ag-ui-maximize` (the `MAXIMIZE_EVENT` constant)
+  with `detail: { maximized }` (typed `MaximizeDetail`). It is not stored: a reload opens at the
+  placement's own size. `describeSurface()` reports it, and no agent tool changes it.
+
+```js
+chat.addEventListener("ag-ui-maximize", (e) => console.log(e.detail.maximized));
+```
+
+```css
+ag-ui-chat { --ag-ui-maximized-width: 960px; --ag-ui-maximized-height: 85vh; }
+```
+
+`--ag-ui-min-page-width` keeps that much of the page beside a `sidebar` or `side` column: it caps
+the column's width at the viewport less it, whether the width was dragged, set by
+`--ag-ui-width`, or maximized. It is unset by default, which caps nothing.
+
+```css
+ag-ui-chat[placement="sidebar"] { --ag-ui-min-page-width: 480px; }
+```
+
+A host that wants its own sized state can still build it: hide the control
+(`ag-ui-chat::part(maximize-button) { display: none }`), slot a button into `header-actions`, set
+its own `--ag-ui-width` / `--ag-ui-height` in a class, and call `resetSize()` as it enters, so a
+dragged size does not outrank its tokens.
 
 ### Driving the conversation from your own chrome
 
@@ -3208,6 +3255,7 @@ re-export point. Internal modules import from leaf paths.
 | `SubmitDetail` | type | `detail` shape of the submit event. |
 | `ThreadDetail` | type | `detail` shape of the `ag-ui-thread` event (`{ threadId, previousThreadId, reason }`). |
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
+| `MaximizeDetail` | type | `detail` shape of the `ag-ui-maximize` event (`{ maximized }`). |
 | `BarHeightDetail` | type | `detail` shape of the `ag-ui-bar-height` event (`{ height }`). |
 | `DockWidthDetail` | type | `detail` shape of the `ag-ui-dock-width` event (`{ width, side }`). |
 | `ThreadTitleDetail` | type | `detail` shape of the `ag-ui-thread-title` event (`{ threadId, title }`). |
@@ -3364,6 +3412,7 @@ re-export point. Internal modules import from leaf paths.
 | `THREAD_EVENT` | The conversation-changed CustomEvent name (`ag-ui-thread`). |
 | `THREAD_TITLE_EVENT` | The thread-title CustomEvent name (`ag-ui-thread-title`). |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
+| `MAXIMIZE_EVENT` | The maximized-state CustomEvent name (`ag-ui-maximize`). |
 | `BAR_HEIGHT_EVENT` | The bottom bar's height CustomEvent name (`ag-ui-bar-height`). |
 | `DOCK_WIDTH_EVENT` | The docked panel's width CustomEvent name (`ag-ui-dock-width`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
@@ -3918,7 +3967,7 @@ component sets, so a new one cannot ship undocumented.
 | Feature | Parts |
 | --- | --- |
 | Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `greeting`, `pending`, `stopped`, `jump-latest`, and one per resize grip: `resize-handle` plus `resize-handle-top`, `resize-handle-bottom`, `resize-handle-left`, `resize-handle-right`, `resize-handle-top-left`, `resize-handle-top-right`, `resize-handle-bottom-left`, `resize-handle-bottom-right` |
-| Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `collapse-button`, `theme-toggle` |
+| Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `maximize-button`, `collapse-button`, `theme-toggle` |
 | Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label`, `bar` (the [bottom bar](#collapsing-to-a-bottom-bar)'s wrapper, around the launcher), `bar-place` (the place beside the bar's title; its text carries `place-label` and `place-detail`), `bar-history` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
@@ -3978,7 +4027,7 @@ with a matching `slot=`):
 | `launcher` | The collapsed widget's mark — the floating launcher, or the sidebar rail. |
 | `icon-send` / `icon-stop` | The composer button's two glyphs (idle and mid-run). |
 | `icon-attach` / `icon-voice` | The paperclip and mic glyphs. |
-| `icon-history` / `icon-checkpoints` / `icon-new` / `icon-collapse` | The header controls' glyphs. |
+| `icon-history` / `icon-checkpoints` / `icon-new` / `icon-maximize` / `icon-collapse` | The header controls' glyphs. |
 
 ```html
 <ag-ui-chat endpoint="/agent/">

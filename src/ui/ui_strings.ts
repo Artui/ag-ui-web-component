@@ -43,6 +43,10 @@ export interface UiStrings {
   collapse: string;
   /** Expand affordance (the launcher, and the sidebar rail). */
   expand: string;
+  /** Header control that grows the open panel; apart from {@link expand}, which opens it. */
+  maximize: string;
+  /** The same control while the panel is maximized. */
+  restore: string;
   /**
    * The launcher's label while unread answers wait behind it. Token: `{count}`.
    * Replaces {@link expand} rather than appending to it, so a translation can
@@ -389,6 +393,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   newChat: "New chat",
   collapse: "Collapse",
   expand: "Expand",
+  maximize: "Maximize",
+  restore: "Restore",
   expandUnread: "Expand — {count} unread",
   toggleTheme: "Toggle theme",
   copyCode: "Copy",

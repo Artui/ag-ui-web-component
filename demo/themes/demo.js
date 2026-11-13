@@ -398,6 +398,17 @@ $("cfg-anchor-side").addEventListener("change", (event) => {
     chat.setAttribute("anchor-side", value);
   }
 });
+$("cfg-min-page").addEventListener("change", (event) => {
+  const value = event.target.value;
+  if (value === "") {
+    chat.style.removeProperty("--ag-ui-min-page-width");
+  } else {
+    chat.style.setProperty("--ag-ui-min-page-width", value);
+  }
+});
+chat.addEventListener("ag-ui-maximize", (event) => {
+  $("cfg-maximized").textContent = `maximized: ${event.detail.maximized}`;
+});
 hostAgent.addEventListener("click", () => {
   chat.toggleCollapsed();
 });

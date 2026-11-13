@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   top of the window than the bottom, such as a toolbar button partway down the page, now opens
   below it, and `anchor-side="above"` keeps the old side. A host with a top-header anchor that
   worked around the collapse with its own `--ag-ui-inset` and `--ag-ui-max-height` can drop both.
+- **A built-in maximize state.** The header gains a maximize control (`maximize-button` part,
+  `icon-maximize` slot, labelled by the new `maximize` and `restore` strings) beside collapse. It
+  grows a corner or docked panel on both axes and a `sidebar` or `side` column in width only, to
+  the new `--ag-ui-maximized-width` / `--ag-ui-maximized-height` (default: the panel's cap). It is
+  the `maximized` attribute and property (reflected), with `setMaximized()`, `toggleMaximized()`,
+  the `ag-ui-maximize` event (`MAXIMIZE_EVENT`, `MaximizeDetail`) and a read-only `maximized` in
+  `describeSurface()`. Entering it drops the dragged size without forgetting it and hides the
+  grips; restore and collapse leave it at the placement's own or dragged size. It is not stored.
+  `page`, `full`, `embedded` and any viewport of 600px or less have no control and refuse the
+  state. **No opt-in, and every corner, docked and column panel shows the new control**: a host
+  that built its own expand with `resetSize()` and hides nothing will show both; hide ours with
+  `::part(maximize-button) { display: none }`.
+- **`--ag-ui-min-page-width` caps a `sidebar` or `side` column** at the viewport less that
+  width, whether the width was dragged, set by `--ag-ui-width` or maximized. Opt-in: unset, it
+  caps nothing.
 
 ### Changed
 

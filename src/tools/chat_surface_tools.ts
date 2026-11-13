@@ -22,6 +22,11 @@ export interface ChatSurfaceReport {
   readonly collapsed: boolean;
   /** Whether this placement has a collapsed state at all. */
   readonly collapsible: boolean;
+  /**
+   * Whether the reader maximized the panel with its header control. Read-only:
+   * no tool changes it, and it is not kept across a reload.
+   */
+  readonly maximized: boolean;
   /** Whether the panel can be moved, or the placement owns its position. */
   readonly movable: boolean;
   /**

@@ -460,6 +460,18 @@
           <option value="below">below</option>
         </select>
       </label>
+      <!-- The page a sidebar or side column must leave beside it, dragged,
+           token or maximized; unset caps nothing. The header's maximize
+           control is the state itself; the readout shows the event. -->
+      <label
+        >Min page width
+        <select id="cfg-min-page">
+          <option value="" selected>unset</option>
+          <option value="480px">480px</option>
+          <option value="800px">800px</option>
+        </select>
+      </label>
+      <output id="cfg-maximized">maximized: false</output>
       <!-- The greeting layout is on by default for page and opt-in for embedded;
            "default" removes the attribute so the placement's own default shows. -->
       <label

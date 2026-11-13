@@ -20,6 +20,7 @@ export interface HeaderOptions {
   readonly onCheckpoints: () => void;
   readonly onNewChat: () => void;
   readonly onCollapse: () => void;
+  readonly onMaximize: () => void;
   readonly onToggleTheme: () => void;
 }
 
@@ -31,6 +32,10 @@ export interface BuiltHeader {
    * handler for the checkpoints popover has to exclude it either way.
    */
   readonly checkpoints: HTMLButtonElement;
+  /** The maximize control, built detached: the element adds it where a placement offers it. */
+  readonly maximize: HTMLButtonElement;
+  /** The collapse control, which the maximize control is placed before. */
+  readonly collapse: HTMLButtonElement;
 }
 
 /**
@@ -82,6 +87,9 @@ export function buildHeader(options: HeaderOptions): BuiltHeader {
   const collapse = headerButton("collapse", strings.collapse, "—");
   collapse.addEventListener("click", options.onCollapse);
 
+  const maximize = headerButton("maximize", strings.maximize, "□");
+  maximize.addEventListener("click", options.onMaximize);
+
   // Only offered when the server actually indexes runs — without
   // `data-runs-url` there is nothing to continue and the button would open
   // a permanently empty panel.
@@ -104,5 +112,5 @@ export function buildHeader(options: HeaderOptions): BuiltHeader {
   }
   controls.append(collapse);
   header.append(title, headerActions, controls);
-  return { header, checkpoints };
+  return { header, checkpoints, maximize, collapse };
 }
