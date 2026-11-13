@@ -47,8 +47,8 @@ export interface RunHandlersHost {
   readonly setRunning: (running: boolean) => void;
   /** The element's `appendMessage`, which a failed run's bubble opens through. */
   readonly appendMessage: (role: MessageRole, content: string) => HTMLDivElement;
-  /** Count an answer that finished while the widget was collapsed. */
-  readonly noteUnread: () => void;
+  /** Note an assistant answer finished on `threadId`, which may be unseen. */
+  readonly noteUnread: (threadId: string) => void;
 }
 
 /**
@@ -188,7 +188,7 @@ export class RunHandlers {
   forClient(threadId: string): AgUiClientHandlers {
     const ledger = this.#ledger;
     const attached = (): boolean => ledger === this.#ledger;
-    const { onSettled, onError, onCancelled, ...drawing } = this.#tableFor(ledger);
+    const { onSettled, onError, onCancelled, ...drawing } = this.#tableFor(ledger, threadId);
     const guarded = whileAttached({ onError, onCancelled }, attached);
     return {
       ...whileAttached(drawing, attached),
@@ -216,9 +216,10 @@ export class RunHandlers {
 
   /**
    * The handler table itself, recording into `ledger`. {@link forClient}
-   * decides how much of it still runs once the table is detached.
+   * decides how much of it still runs once the table is detached. An answer is
+   * attributed to `threadId`, the thread the client was built for.
    */
-  #tableFor(ledger: RunLedger): AgUiClientHandlers {
+  #tableFor(ledger: RunLedger, threadId: string): AgUiClientHandlers {
     return {
       onRunStart: () => {
         // Per *round*, so guard on the turn: a run that calls three tools fires
@@ -286,7 +287,7 @@ export class RunHandlers {
         attachCopyButtons(bubble, this.#host.strings());
         this.#host.actions.attach(bubble, message);
         this.#host.stream.end();
-        this.#host.noteUnread();
+        this.#host.noteUnread(threadId);
       },
       onToolCall: (call) => {
         this.#host.transcript.hidePending();

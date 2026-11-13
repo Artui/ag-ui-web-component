@@ -25,6 +25,12 @@ export interface ThreadMeta {
   readonly title: string;
   readonly updatedAt: number;
   readonly preview: string;
+  /**
+   * Whether the thread holds an answer the user has not seen, as a server store
+   * knows it (from a last-read timestamp). Optional: a store that cannot tell
+   * leaves it out, and the element counts only what finishes in this page.
+   */
+  readonly unread?: boolean;
 }
 
 /**
@@ -88,6 +94,21 @@ export interface ClientConversationStore {
    * still fetched.
    */
   isUnsent?(threadId: string): boolean;
+  /**
+   * Record that the user has seen `threadId`'s answers.
+   *
+   * The element calls it when a thread with unseen answers is on screen with
+   * the panel expanded, and when an answer finishes there in view. A server
+   * store maps it to its read endpoint, and should report the thread with
+   * `unread: false` from {@link listThreads} afterwards. It is called inside the
+   * element's expand and thread-change paths, so it must not throw: a store that
+   * writes to a server sends the request without awaiting it and handles its own
+   * failure, the way a failed save is handled.
+   *
+   * Optional: a store without it still has its threads counted and cleared in
+   * the page; nothing is recorded beyond it.
+   */
+  markRead?(threadId: string): void;
 }
 
 const KEY_ROOT = "ag-ui-chat";

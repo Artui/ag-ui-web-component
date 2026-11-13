@@ -804,3 +804,208 @@ describe("a grip on a dragged corner panel (real browser)", () => {
     expect(bubbleCentre(el).y).toBeCloseTo(stored.top + size / 2, 0);
   });
 });
+
+describe("a dragged size belongs to its placement (real browser)", () => {
+  const stored = (): unknown => JSON.parse(sessionStorage.getItem(SIZE_KEY) ?? "null");
+  const bucket = (placement: string): unknown =>
+    (stored() as { placements?: Record<string, unknown> } | null)?.placements?.[placement];
+
+  async function still(el: AgUiChat): Promise<number> {
+    let last = -1;
+    for (let frame = 0; frame < 120 && el.offsetWidth !== last; frame += 1) {
+      last = el.offsetWidth;
+      for (let wait = 0; wait < 4; wait += 1) {
+        await settle();
+      }
+    }
+    return el.offsetWidth;
+  }
+
+  async function dragWider(el: AgUiChat, by: number, name = "top-left"): Promise<void> {
+    const handle = el.shadowRoot?.querySelector<HTMLElement>(`.resize-handle--${name}`);
+    if (handle === null || handle === undefined) {
+      throw new Error(`expected a ${name} grip`);
+    }
+    const grab = handle.getBoundingClientRect();
+    const x = grab.left + grab.width / 2;
+    const y = grab.top + grab.height / 2;
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x - by, clientY: y }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x - by, clientY: y }));
+    await settle();
+  }
+
+  it("does not size a sidebar mounted fresh from a size stored under floating", async () => {
+    localStorage.setItem(SIZE_KEY, JSON.stringify({ width: 600, height: 400 }));
+    const el = mount({ placement: "sidebar" });
+    await settle();
+    expect(await still(el)).toBe(420);
+  });
+
+  it("migrates the unkeyed record into floating's size", async () => {
+    localStorage.setItem(SIZE_KEY, JSON.stringify({ width: 600, height: 400 }));
+    const el = mount();
+    await settle();
+    expect(await still(el)).toBe(600);
+    el.setAttribute("placement", "sidebar");
+    await still(el);
+    await dragWider(el, 30, "left");
+    expect(bucket("floating")).toEqual({ width: 600, height: 400 });
+    expect((bucket("sidebar") as { width: number }).width).toBe(await still(el));
+  });
+
+  it("gives each placement its own size across live switches", async () => {
+    const el = mount();
+    await settle();
+    await dragWider(el, 192);
+    const dragged = el.offsetWidth;
+    expect(dragged).toBeGreaterThan(500);
+    expect(bucket("floating")).toMatchObject({ width: dragged });
+
+    el.setAttribute("placement", "sidebar");
+    await settle();
+    expect(await still(el)).toBe(420);
+    expect(bucket("sidebar")).toBeUndefined();
+
+    el.setAttribute("placement", "floating");
+    await settle();
+    expect(await still(el)).toBe(dragged);
+    expect(bucket("floating")).toMatchObject({ width: dragged });
+  });
+
+  it("brings the floating size back after full, so memory and storage agree", async () => {
+    const el = mount();
+    await settle();
+    await dragWider(el, 192);
+    const dragged = el.offsetWidth;
+    el.setAttribute("placement", "full");
+    await settle();
+    el.setAttribute("placement", "floating");
+    await settle();
+    expect(await still(el)).toBe(dragged);
+    expect(bucket("floating")).toMatchObject({ width: dragged });
+  });
+
+  it("keeps the dragged size through a collapse-to change", async () => {
+    const el = mount();
+    await settle();
+    await dragWider(el, 192);
+    const dragged = el.offsetWidth;
+    expect(dragged).toBeGreaterThan(500);
+    el.setAttribute("collapse-to", "none");
+    await settle();
+    expect(await still(el)).toBe(dragged);
+    el.removeAttribute("collapse-to");
+    await settle();
+    expect(await still(el)).toBe(dragged);
+  });
+
+  it("resetSize drops the current placement's size only", async () => {
+    localStorage.setItem(
+      SIZE_KEY,
+      JSON.stringify({ v: 2, placements: { floating: { width: 572 }, sidebar: { width: 500 } } }),
+    );
+    const el = mount({ placement: "sidebar" });
+    await settle();
+    expect(await still(el)).toBe(500);
+    el.resetSize();
+    await settle();
+    expect(await still(el)).toBe(420);
+    expect(bucket("sidebar")).toBeUndefined();
+    expect(bucket("floating")).toEqual({ width: 572 });
+  });
+});
+
+describe("a stated corner spot across placement switches (real browser)", () => {
+  const frames = async (): Promise<void> => {
+    for (let frame = 0; frame < 6; frame += 1) {
+      await settle();
+    }
+  };
+  const part = (el: AgUiChat, selector: string): HTMLElement => {
+    const found = el.shadowRoot?.querySelector<HTMLElement>(selector);
+    if (found === null || found === undefined) {
+      throw new Error(`expected ${selector} in the shadow root`);
+    }
+    return found;
+  };
+  async function drag(handle: HTMLElement, dx: number, dy: number): Promise<void> {
+    const grab = handle.getBoundingClientRect();
+    const x = grab.left + grab.width / 2;
+    const y = grab.top + grab.height / 2;
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x + dx, clientY: y + dy }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x + dx, clientY: y + dy }));
+    await frames();
+  }
+  const rect = (el: AgUiChat): { left: number; top: number; width: number; height: number } => {
+    const box = el.getBoundingClientRect();
+    return {
+      left: Math.round(box.left),
+      top: Math.round(box.top),
+      width: Math.round(box.width),
+      height: Math.round(box.height),
+    };
+  };
+  const launcherOffset = (el: AgUiChat): Record<string, number> => {
+    const panel = el.getBoundingClientRect();
+    const launcher = part(el, ".launcher").getBoundingClientRect();
+    return {
+      x: Math.round(panel.right - (launcher.left + launcher.width / 2)),
+      y: Math.round(panel.bottom - (launcher.top + launcher.height / 2)),
+    };
+  };
+  async function stated(): Promise<AgUiChat> {
+    const el = mount({}, "--ag-ui-motion: 0s");
+    await frames();
+    const box = el.getBoundingClientRect();
+    await drag(part(el, ".header"), 376 - box.left, 96 - box.top);
+    await drag(part(el, ".resize-handle--top-left"), -80, -40);
+    return el;
+  }
+
+  it("keeps the launcher at the panel's corner when the next corner placement has its own size", async () => {
+    const el = await stated();
+    const before = launcherOffset(el);
+    el.setAttribute("placement", "bottom-left");
+    await frames();
+    expect(rect(el).width).toBe(380);
+    expect(launcherOffset(el)).toEqual(before);
+  });
+
+  it.each(["bottom-left", "sidebar"])("comes back to the same box and spot via %s", async (via) => {
+    const el = await stated();
+    const before = rect(el);
+    const spot = localStorage.getItem(LAUNCHER_KEY);
+    el.setAttribute("placement", via);
+    await frames();
+    el.setAttribute("placement", "floating");
+    await frames();
+    expect(localStorage.getItem(LAUNCHER_KEY)).toBe(spot);
+    expect(rect(el)).toEqual(before);
+    el.toggleCollapsed();
+    await frames();
+    el.toggleCollapsed();
+    await frames();
+    expect(rect(el)).toEqual(before);
+    el.remove();
+    const again = mount({ placement: "floating" }, "--ag-ui-motion: 0s");
+    await frames();
+    expect(rect(again)).toEqual(before);
+  });
+
+  it("keeps the launcher at the panel's corner on a reload into the other corner placement", async () => {
+    const el = await stated();
+    el.setAttribute("placement", "bottom-left");
+    await frames();
+    const before = launcherOffset(el);
+    el.remove();
+    const again = mount({ placement: "bottom-left" }, "--ag-ui-motion: 0s");
+    await frames();
+    expect(launcherOffset(again)).toEqual(before);
+  });
+});

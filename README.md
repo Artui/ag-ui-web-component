@@ -1188,9 +1188,10 @@ matching JS API:
   travels with it and switching placement hands them back. Returns `false` rather than pretending
   when the placement owns its position or the panel fills the screen. Under `collapse-to="bar"`
   or `"none"` it moves the panel within the room above the bar or the anchor.
-- `resetSize()` — drop a size the user dragged, and its stored copy, so the placement's own
-  size and your `--ag-ui-width` / `--ag-ui-height` apply again. For a host that enters a sized
-  state of its own (an expanded mode): a user's drag outranks host tokens, so call this first.
+- `resetSize()` — drop the size the user dragged in the current placement, and its stored copy,
+  so the placement's own size and your `--ag-ui-width` / `--ag-ui-height` apply again; sizes
+  dragged in other placements are kept. For a host that enters a sized state of its own (an
+  expanded mode): a user's drag outranks host tokens, so call this first.
   Under `collapse-to="bar"` or `"none"` it also returns a panel the user dragged off its dock to
   the dock and forgets the stored spot; a corner panel under `auto` keeps its dragged position.
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
@@ -1335,8 +1336,31 @@ the text colour.
 
 A collapsed widget is the one state where an answer can arrive with nothing on screen to say so,
 so the launcher carries a count of the answers that finished while it was closed (capped at `9+`).
-Expanding — or `newChat()` — marks them read. It is the only affordance here that is **on by
-default**; `data-unread-badge="false"` turns the badge off.
+It is the only affordance here that is **on by default**; `data-unread-badge="false"` turns the
+badge off.
+
+**Unseen answers are kept per thread.** Each answer counts against the thread it ran on, and a
+thread is read only when it is on screen **and** the panel is expanded. On screen in a collapsed
+panel is not read. So an answer that finished on thread A while collapsed stays unread across a
+collapsed switch to B, a `newChat()`, or an expand on B, and is read once A is on screen in the
+open panel. `unread` is the total across threads, which is what the badge shows; it shows on the
+collapsed launcher only, so an open panel whose other threads hold unseen answers shows no
+badge. A principal change (a new `user-key`) drops the previous principal's marks, and deleting a
+thread drops its own.
+
+A store can carry read state across pages and devices, through two optional members. The element
+fetches the thread list when the drawer opens or a thread switches, not at page load, so a
+store's `unread` rows are counted from that fetch on: a page that never opens the drawer shows
+no badge for answers that finished elsewhere.
+
+- **`ThreadMeta.unread`** (boolean): a thread `listThreads()` reports as unread, and the page has
+  not counted, counts once, when the list is fetched.
+- **`markRead(threadId)`**: called when the element reads a thread with unseen answers, and when
+  an answer finishes on the thread in view. A server store maps it to its read endpoint, and
+  should list the thread with `unread: false` afterwards.
+
+A store without either still has its threads counted and cleared in the page. Neither is
+implemented by the default `SessionStorageStore`.
 
 The count is also the launcher's accessible name (`Expand — 2 unread`, from the `expandUnread`
 string), because a coloured dot says nothing to a screen reader.
@@ -1401,8 +1425,9 @@ while arrow keys on the collapsed launcher already move the widget, panel includ
 chat.unread; // 2
 
 // Every change, whether or not the badge renders it — so a host that hides the
-// badge can put the count in its own chrome.
-chat.addEventListener("ag-ui-unread", (e) => setDockBadge(e.detail.unread));
+// badge can put the count in its own chrome. `threadIds` names the threads the
+// change marked or cleared, and is empty for a collapse toggle that touched none.
+chat.addEventListener("ag-ui-unread", (e) => setDockBadge(e.detail.unread, e.detail.threadIds));
 ```
 
 ```css
@@ -1559,7 +1584,7 @@ launcher to drag: the bar and your own control stay where they are.
   and comes back whole when there is room again.
 - **Resizing.** A panel standing on its dock keeps the edges on the bar or the anchor still and the
   free ones follow the grip. Once dragged off, every edge follows its grip, as on a corner panel.
-- **Back to the dock.** `resetSize()` drops the dragged size and returns the panel to its dock,
+- **Back to the dock.** `resetSize()` drops the placement's dragged size and returns the panel to its dock,
   forgetting the stored spot, so a reload opens it there too.
 - **Keeping it fixed.** `data-launcher-drag="false"` turns the header drag and `moveTo` off here as
   everywhere else, and the panel stays on its dock.
@@ -2051,10 +2076,17 @@ is:
 
 - **Above 600px**, the dragged size beats a host's `--ag-ui-width` /
   `--ag-ui-height`, `!important` included, so a user who resized the panel keeps
-  their size. A host that enters a sized state of its own (an "expanded" class,
-  a mode switch) calls `resetSize()` when it does, which drops the dragged size
-  and its stored copy and hands control back to the host tokens. A host with no
-  such state needs nothing.
+  their size. A host that enters a sized state of its own (an "expanded" class)
+  calls `resetSize()` when it does, which drops the current placement's dragged
+  size and its stored copy and hands control back to the host tokens. A host
+  with no such state needs nothing.
+- **Per placement.** A dragged size belongs to the `placement` it was dragged in
+  and is stored under it: absent and `floating` share one, and `bottom-left`,
+  `sidebar`, `side` and `embedded` each keep their own (`data-side` is not a
+  placement, so a left and a right sidebar share one). Switching `placement`
+  swaps in the new placement's size, or its default when it has none, so a
+  placement switch needs no `resetSize()`. A `collapse-to` change keeps the size.
+  A size stored by a release before this one is read as floating's.
 - **At 600px or less**, the small-viewport shape ignores the dragged size
   entirely, for the placements that block covers (`floating`, `bottom-left`,
   `sidebar`, `side` and the default): the panel is full-bleed whatever was
@@ -3163,7 +3195,7 @@ re-export point. Internal modules import from leaf paths.
 | `BarHeightDetail` | type | `detail` shape of the `ag-ui-bar-height` event (`{ height }`). |
 | `DockWidthDetail` | type | `detail` shape of the `ag-ui-dock-width` event (`{ width, side }`). |
 | `ThreadTitleDetail` | type | `detail` shape of the `ag-ui-thread-title` event (`{ threadId, title }`). |
-| `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
+| `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread, threadIds }`). |
 | `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
 | `StateDetail` | type | `detail` shape of the `ag-ui-state` event (`{ state }`). |
 
@@ -3240,7 +3272,7 @@ re-export point. Internal modules import from leaf paths.
 | `SessionStorageStore` | class | Default per-tab conversation store. |
 | `RemoteConversationStore` | class | Server-backed store over a `data-threads-url` endpoint. |
 | `ClientConversationStore` | type | The persistence seam. |
-| `ThreadMeta` | type | A thread-drawer row (`{ threadId, title, updatedAt, preview }`). |
+| `ThreadMeta` | type | A thread-drawer row (`{ threadId, title, updatedAt, preview, unread? }`). |
 | `NavigationCheckpoint` | type | The pre-reload checkpoint marker. |
 | `RunIndex` | class | Reads a `data-runs-url` run index and derives its resume / fork endpoints. |
 | `RunRow` | type | One run index row (`{ run_id, thread_id, parent_run_id, started_at, continuable, preview? }`). |

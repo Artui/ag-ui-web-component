@@ -24,8 +24,14 @@ import {
 } from "./resize_handle.js";
 import { type Surface, surfaceFor } from "./surface_for.js";
 
-/** Per-tab persistence key for a dragged panel size. */
+/** Persistence key for the dragged panel sizes, one per placement in one record. */
 const SIZE_KEY = "ag-ui-chat:size";
+
+/** The stored record: a dragged size per placement attribute value. */
+interface StoredSizes {
+  readonly v: 2;
+  readonly placements: Readonly<Record<string, ResizeSize>>;
+}
 
 /**
  * The private properties a dragged size lives in. They are not the public
@@ -262,14 +268,38 @@ export class PanelPlacement {
     this.#focusableGrip();
   }
 
-  /** Restore a dragged size before the panel paints. */
+  /** Restore the current placement's dragged size before the panel paints. */
   restoreSize(): void {
+    // A reconnect may find the stored size gone, and a size kept inline would outlive it.
+    this.#host.element.style.removeProperty(DRAG_WIDTH);
+    this.#host.element.style.removeProperty(DRAG_HEIGHT);
     this.#applySize(this.#readSize());
   }
 
   /**
-   * Drop the dragged size and its stored copy, so the placement's own size and
-   * the host's tokens apply again. For a host entering a sized state of its
+   * Swap the dragged size for the one stored under the placement just set, so a
+   * floating drag never sizes a sidebar. Between two corner placements a stated
+   * spot moves with the size, as on resetSize, so the launcher keeps its corner.
+   * Before connect the namespace is unclaimed, and connect restores the size.
+   */
+  switchPlacement(previous: string | null): void {
+    const element = this.#host.element;
+    const sized = element.getBoundingClientRect();
+    element.style.removeProperty(DRAG_WIDTH);
+    element.style.removeProperty(DRAG_HEIGHT);
+    if (!this.#host.connected()) {
+      return;
+    }
+    this.#applySize(this.#readSize());
+    if (surfaceFor(previous, element.getAttribute("collapse-to")).launcherDraggable) {
+      this.#carrySpotWithSize(sized);
+    }
+  }
+
+  /**
+   * Drop the current placement's dragged size and its stored copy, so the
+   * placement's own size and the host's tokens apply again; other placements
+   * keep theirs. For a host entering a sized state of its
    * own, which a user's drag would otherwise outrank.
    *
    * A docked panel the user dragged off its dock goes back to it as well, and
@@ -281,7 +311,7 @@ export class PanelPlacement {
     const sized = this.#host.element.getBoundingClientRect();
     this.#host.element.style.removeProperty(DRAG_WIDTH);
     this.#host.element.style.removeProperty(DRAG_HEIGHT);
-    this.#host.clearPreference(SIZE_KEY);
+    this.#writeSizes(this.#bucket(), null);
     if (this.#docked()) {
       if (this.#dockPos !== null) {
         this.#host.element.style.removeProperty("--ag-ui-inset");
@@ -1819,21 +1849,61 @@ export class PanelPlacement {
     }
   }
 
-  /** Persist a dragged size per tab, alongside the collapsed/theme preferences. */
+  /**
+   * The stored-size bucket for the live placement: its attribute value, with
+   * absent and empty read as floating, as the stylesheet treats them.
+   */
+  #bucket(): string {
+    const placement = this.#host.element.getAttribute("placement");
+    return placement === null || placement === "" ? "floating" : placement;
+  }
+
+  /** Persist a dragged size under the current placement, keeping the others. */
   #persistSize(size: ResizeSize): void {
-    const stored = { ...this.#readSize(), ...size };
+    this.#writeSizes(this.#bucket(), { ...this.#readSize(), ...size });
+  }
+
+  /** Store one placement's size, or drop it with null, clearing an emptied record. */
+  #writeSizes(bucket: string, size: ResizeSize | null): void {
+    const placements: Record<string, ResizeSize> = { ...this.#readSizes() };
+    if (size === null) {
+      delete placements[bucket];
+    } else {
+      placements[bucket] = size;
+    }
+    if (Object.keys(placements).length === 0) {
+      this.#host.clearPreference(SIZE_KEY);
+      return;
+    }
+    const stored: StoredSizes = { v: 2, placements };
     this.#host.writePreference(SIZE_KEY, JSON.stringify(stored));
   }
 
-  /** The persisted size for this instance, or an empty record. */
+  /** The persisted size for the current placement, or an empty record. */
   #readSize(): ResizeSize {
+    return this.#readSizes()[this.#bucket()] ?? {};
+  }
+
+  /**
+   * Every persisted size by placement. A record from before sizes were kept per
+   * placement is one flat size, read as floating's, which is where it was
+   * nearly always dragged.
+   */
+  #readSizes(): Readonly<Record<string, ResizeSize>> {
     const raw = this.#host.readPreference(SIZE_KEY);
     if (raw === null) {
       return {};
     }
     try {
       const parsed: unknown = JSON.parse(raw);
-      return typeof parsed === "object" && parsed !== null ? (parsed as ResizeSize) : {};
+      if (typeof parsed !== "object" || parsed === null) {
+        return {};
+      }
+      const record = parsed as Partial<StoredSizes>;
+      if (record.v === 2 && typeof record.placements === "object" && record.placements !== null) {
+        return record.placements;
+      }
+      return { floating: parsed as ResizeSize };
     } catch {
       // A corrupt entry is not worth failing a mount over; fall back to the
       // placement's own size.

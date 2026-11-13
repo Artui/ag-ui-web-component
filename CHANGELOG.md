@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.0] — 2026-11-13
+
+### Changed
+
+- **A dragged size belongs to the placement it was dragged in.** The stored size is kept per
+  `placement` value (absent reads as `floating`; `bottom-left`, `sidebar`, `side` and `embedded`
+  each have their own, and `data-side` shares one), so a size dragged while floating no longer
+  sizes a sidebar mounted later or switched to live, and switching back to floating restores the
+  floating drag in the panel and in storage alike. Between two corner placements a panel the
+  user moved keeps its launcher at its corner as the size changes. A `collapse-to` change keeps
+  the size, as before. A size stored by an earlier release is read as floating's. `resetSize()`
+  now drops only the current placement's size. No opt-in: a host that called `resetSize()` on every placement
+  switch to keep a floating drag out of a sidebar no longer needs to, and one that keeps calling it
+  now clears only the size of the placement it is in.
+- **Unseen answers are counted per thread.** An answer that finished while the panel was
+  collapsed belongs to the thread it ran on, and is read only when that thread is on screen with
+  the panel expanded: a collapsed `switchThread()`, a `newChat()` or an expand on another thread
+  no longer marks it read unseen. `unread` stays the total and the launcher badge shows it, now on
+  the collapsed launcher only. A principal change drops the previous principal's marks, and
+  deleting a thread drops its own. The `ag-ui-unread` detail gains `threadIds`, the threads the
+  change marked or cleared (empty for a collapse toggle that touched none). The store seam gains
+  two optional members: `ThreadMeta.unread`, which a server store fills so a thread unread
+  elsewhere is counted, and `markRead(threadId)`, called when the element reads a thread. No
+  opt-in: a store without either works as before. Visible to a host: a collapsed `newChat()` no
+  longer clears the count of the thread it leaves, and an expand clears only the thread on screen,
+  so a host that relied on either zeroing `unread` now sees the other threads' answers stay
+  counted.
+
+### Fixed
+
+- **Closing the conversation list or the checkpoints panel returns focus to a host's own button.**
+  A host control that called `openThreads()` or `openCheckpoints()` lost focus to the hidden
+  panel on Escape or a pick, because the opener was read from the shadow root only, which
+  holds nothing when the opener is in the page. The page's focused element, through any open
+  shadow roots, is the fallback now. The built-in header buttons behave as before.
+
 ## [0.51.0] — 2026-11-12
 
 ### Added
@@ -5348,7 +5384,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.51.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.52.0...HEAD
+[0.52.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.2...v0.51.0
 [0.50.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.1...v0.50.2
 [0.50.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.0...v0.50.1

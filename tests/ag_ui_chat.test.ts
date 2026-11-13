@@ -508,14 +508,18 @@ describe("AgUiChat", () => {
     it("emits ag-ui-unread on every change, so a host can render its own", async () => {
       const el = mountAnswering();
       const seen: number[] = [];
+      const named: (readonly string[])[] = [];
       el.addEventListener(UNREAD_EVENT, (event) => {
         seen.push((event as CustomEvent<UnreadDetail>).detail.unread);
+        named.push((event as CustomEvent<UnreadDetail>).detail.threadIds);
       });
       el.setCollapsed(true);
       await answer(el);
       el.setCollapsed(false);
 
       expect(seen).toEqual([0, 1, 0]);
+      // A toggle that cleared nothing names no thread; the others name theirs.
+      expect(named).toEqual([[], [el.threadId], [el.threadId]]);
     });
 
     it("keeps counting with the badge off, so a host chrome stays truthful", async () => {
@@ -532,15 +536,15 @@ describe("AgUiChat", () => {
       expect(shadow(el).querySelector(".launcher")?.getAttribute("aria-label")).toBe("Expand");
     });
 
-    it("clears the count when the thread is discarded", async () => {
+    it("keeps the count of the thread a collapsed new chat leaves", async () => {
       const el = mountAnswering();
       el.setCollapsed(true);
       await answer(el);
 
       el.newChat();
 
-      expect(el.unread).toBe(0);
-      expect(badge(el).hidden).toBe(true);
+      expect(el.unread).toBe(1);
+      expect(badge(el).hidden).toBe(false);
     });
   });
 
