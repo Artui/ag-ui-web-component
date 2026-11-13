@@ -44,12 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zod is a peer of `@ag-ui/core` and `@ag-ui/client` (`^3.25.18 || ^4.0.0` since their 1.0.4)
   that this package does not declare. From zod 4.2.0 every schema's constructor attaches its
   Standard JSON Schema method, so `zod/v4/classic/schemas.js` imports `core/to-json-schema.js` and
-  `core/json-schema-processors.js` as live code no build can drop: about 42 KB minified (807,345
-  bytes against 765,456 for zod 3.25.76). The published bundle is built from the lock's zod
-  3.25.76 and is unchanged, and `pnpm build` now refuses a vendored bundle that carries any of
-  that code, so a lock refresh to zod 4 fails the build instead of growing what ships. The bundle
-  test asserts what each zod line carries, so the scheduled unpinned resolve, which runs the tests
-  against the newest zod 4, passes again. No opt-in.
+  `core/json-schema-processors.js` as live code no build can drop: about 42 KB minified. The
+  published bundle is built from the lock's zod 3.25.76 and does not carry it, and `pnpm build`
+  now refuses a vendored bundle that carries any of that code, so a lock refresh to zod 4 fails
+  the build instead of growing what ships. The bundle test asserts what each zod line carries, so
+  the scheduled unpinned resolve, which runs the tests against the newest zod 4, passes again. No
+  opt-in.
 
 ## [0.52.0] — 2026-11-13
 
