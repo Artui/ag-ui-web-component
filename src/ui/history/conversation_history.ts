@@ -128,6 +128,8 @@ export interface ConversationHistoryHost {
   readonly threadChanged: (threadId: string, reason: ThreadDetail["reason"]) => void;
   /** Hear the rows the conversation list was just given, for the title on screen. */
   readonly threadsListed: (threads: readonly ThreadMeta[]) => void;
+  /** A thread was deleted, so whatever the element kept about it goes too. */
+  readonly threadDeleted: (threadId: string) => void;
 }
 
 /**
@@ -401,6 +403,7 @@ export class ConversationHistory {
       this.#host.cancelRun();
     }
     this.#host.conversationStore().clear(threadId);
+    this.#host.threadDeleted(threadId);
     if (wasActive) {
       this.#host.resetState();
       this.adoptActiveThread();

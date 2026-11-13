@@ -532,15 +532,15 @@ describe("AgUiChat", () => {
       expect(shadow(el).querySelector(".launcher")?.getAttribute("aria-label")).toBe("Expand");
     });
 
-    it("clears the count when the thread is discarded", async () => {
+    it("keeps the count of the thread a collapsed new chat leaves", async () => {
       const el = mountAnswering();
       el.setCollapsed(true);
       await answer(el);
 
       el.newChat();
 
-      expect(el.unread).toBe(0);
-      expect(badge(el).hidden).toBe(true);
+      expect(el.unread).toBe(1);
+      expect(badge(el).hidden).toBe(false);
     });
   });
 

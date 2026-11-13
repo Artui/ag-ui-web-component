@@ -18,6 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the current placement's size. No opt-in: a host that called `resetSize()` on every placement
   switch to keep a floating drag out of a sidebar no longer needs to, and one that keeps calling it
   now clears only the size of the placement it is in.
+- **Unseen answers are counted per thread.** An answer that finished while the panel was
+  collapsed belongs to the thread it ran on, and is read only when that thread is on screen with
+  the panel expanded: a collapsed `switchThread()`, a `newChat()` or an expand on another thread
+  no longer marks it read unseen. `unread` stays the total and the launcher badge shows it, now on
+  the collapsed launcher only. A principal change drops the previous principal's marks, and
+  deleting a thread drops its own. The `ag-ui-unread` detail gains `threadIds`, the threads the
+  change marked or cleared (empty for a collapse toggle that touched none). The store seam gains
+  two optional members: `ThreadMeta.unread`, which a server store fills so a thread unread
+  elsewhere is counted, and `markRead(threadId)`, called when the element reads a thread. No
+  opt-in: a store without either works as before. Visible to a host: a collapsed `newChat()` no
+  longer clears the count of the thread it leaves, and an expand clears only the thread on screen,
+  so a host that relied on either zeroing `unread` now sees the other threads' answers stay
+  counted.
 
 ### Fixed
 
