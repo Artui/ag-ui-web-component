@@ -1,6 +1,7 @@
 import type { RunRow } from "../../core/run_index.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 import { type RelativeTimeFormatter, relativeTime } from "./relative_time.js";
+import { openerElement } from "./utils.js";
 
 /** How the host continues a picked run. */
 export type CheckpointVerb = "resume" | "fork";
@@ -127,7 +128,9 @@ export class CheckpointMenu {
     // left behind it. The thread drawer already does this; a dialog that takes
     // no focus is one a keyboard user cannot reach and a screen reader does not
     // announce, however correct its role and label.
-    this.#lastFocused = this.#activeElement() as HTMLElement | null;
+    this.#lastFocused = openerElement(
+      this.element.getRootNode() as Document | ShadowRoot,
+    ) as HTMLElement | null;
     this.element.hidden = false;
     (this.#focusables()[0] ?? this.element).focus();
   }

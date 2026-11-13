@@ -1,6 +1,7 @@
 import type { ThreadMeta } from "../../core/conversation_store.js";
 import { DEFAULT_UI_STRINGS, type UiStrings } from "../ui_strings.js";
 import { type RelativeTimeFormatter, relativeTime } from "./relative_time.js";
+import { openerElement } from "./utils.js";
 
 /**
  * How many conversations there have to be before the filter appears.
@@ -185,7 +186,9 @@ export class ThreadDrawer {
     }
     // Remember what had focus so it's restored on close, then move focus into
     // the panel (its first control) so keyboard users land inside the dialog.
-    this.#lastFocused = this.#activeElement() as HTMLElement | null;
+    this.#lastFocused = openerElement(
+      this.element.getRootNode() as Document | ShadowRoot,
+    ) as HTMLElement | null;
     this.element.hidden = false;
     this.#newButton.focus();
   }

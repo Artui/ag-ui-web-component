@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   switch to keep a floating drag out of a sidebar no longer needs to, and one that keeps calling it
   now clears only the size of the placement it is in.
 
+### Fixed
+
+- **Closing the conversation list or the checkpoints panel returns focus to a host's own button.**
+  A host control that called `openThreads()` or `openCheckpoints()` lost focus to the hidden
+  panel on Escape or a pick, because the opener was read from the shadow root only, which
+  holds nothing when the opener is in the page. The page's focused element, through any open
+  shadow roots, is the fallback now. The built-in header buttons behave as before.
+
 ## [0.51.0] — 2026-11-12
 
 ### Added
