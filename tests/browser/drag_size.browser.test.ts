@@ -804,3 +804,116 @@ describe("a grip on a dragged corner panel (real browser)", () => {
     expect(bubbleCentre(el).y).toBeCloseTo(stored.top + size / 2, 0);
   });
 });
+
+describe("a dragged size belongs to its placement (real browser)", () => {
+  const stored = (): unknown => JSON.parse(sessionStorage.getItem(SIZE_KEY) ?? "null");
+  const bucket = (placement: string): unknown =>
+    (stored() as { placements?: Record<string, unknown> } | null)?.placements?.[placement];
+
+  async function still(el: AgUiChat): Promise<number> {
+    let last = -1;
+    for (let frame = 0; frame < 120 && el.offsetWidth !== last; frame += 1) {
+      last = el.offsetWidth;
+      for (let wait = 0; wait < 4; wait += 1) {
+        await settle();
+      }
+    }
+    return el.offsetWidth;
+  }
+
+  async function dragWider(el: AgUiChat, by: number, name = "top-left"): Promise<void> {
+    const handle = el.shadowRoot?.querySelector<HTMLElement>(`.resize-handle--${name}`);
+    if (handle === null || handle === undefined) {
+      throw new Error(`expected a ${name} grip`);
+    }
+    const grab = handle.getBoundingClientRect();
+    const x = grab.left + grab.width / 2;
+    const y = grab.top + grab.height / 2;
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x - by, clientY: y }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x - by, clientY: y }));
+    await settle();
+  }
+
+  it("does not size a sidebar mounted fresh from a size stored under floating", async () => {
+    localStorage.setItem(SIZE_KEY, JSON.stringify({ width: 600, height: 400 }));
+    const el = mount({ placement: "sidebar" });
+    await settle();
+    expect(await still(el)).toBe(420);
+  });
+
+  it("migrates the unkeyed record into floating's size", async () => {
+    localStorage.setItem(SIZE_KEY, JSON.stringify({ width: 600, height: 400 }));
+    const el = mount();
+    await settle();
+    expect(await still(el)).toBe(600);
+    el.setAttribute("placement", "sidebar");
+    await still(el);
+    await dragWider(el, 30, "left");
+    expect(bucket("floating")).toEqual({ width: 600, height: 400 });
+    expect((bucket("sidebar") as { width: number }).width).toBe(await still(el));
+  });
+
+  it("gives each placement its own size across live switches", async () => {
+    const el = mount();
+    await settle();
+    await dragWider(el, 192);
+    const dragged = el.offsetWidth;
+    expect(dragged).toBeGreaterThan(500);
+    expect(bucket("floating")).toMatchObject({ width: dragged });
+
+    el.setAttribute("placement", "sidebar");
+    await settle();
+    expect(await still(el)).toBe(420);
+    expect(bucket("sidebar")).toBeUndefined();
+
+    el.setAttribute("placement", "floating");
+    await settle();
+    expect(await still(el)).toBe(dragged);
+    expect(bucket("floating")).toMatchObject({ width: dragged });
+  });
+
+  it("brings the floating size back after full, so memory and storage agree", async () => {
+    const el = mount();
+    await settle();
+    await dragWider(el, 192);
+    const dragged = el.offsetWidth;
+    el.setAttribute("placement", "full");
+    await settle();
+    el.setAttribute("placement", "floating");
+    await settle();
+    expect(await still(el)).toBe(dragged);
+    expect(bucket("floating")).toMatchObject({ width: dragged });
+  });
+
+  it("keeps the dragged size through a collapse-to change", async () => {
+    const el = mount();
+    await settle();
+    await dragWider(el, 192);
+    const dragged = el.offsetWidth;
+    expect(dragged).toBeGreaterThan(500);
+    el.setAttribute("collapse-to", "none");
+    await settle();
+    expect(await still(el)).toBe(dragged);
+    el.removeAttribute("collapse-to");
+    await settle();
+    expect(await still(el)).toBe(dragged);
+  });
+
+  it("resetSize drops the current placement's size only", async () => {
+    localStorage.setItem(
+      SIZE_KEY,
+      JSON.stringify({ v: 2, placements: { floating: { width: 572 }, sidebar: { width: 500 } } }),
+    );
+    const el = mount({ placement: "sidebar" });
+    await settle();
+    expect(await still(el)).toBe(500);
+    el.resetSize();
+    await settle();
+    expect(await still(el)).toBe(420);
+    expect(bucket("sidebar")).toBeUndefined();
+    expect(bucket("floating")).toEqual({ width: 572 });
+  });
+});

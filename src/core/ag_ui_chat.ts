@@ -1259,6 +1259,10 @@ export class AgUiChat extends HTMLElement {
       // else: a size dragged under the previous placement would otherwise sit
       // inline and outrank the new one.
       this.#placement.releaseOwnedAxes();
+      // A dragged size belongs to its placement; collapse-to keeps it.
+      if (name === "placement") {
+        this.#placement.switchPlacement();
+      }
       // Position is owned the same way a size is: a placement that places
       // itself takes back a launcher the user had dragged somewhere else.
       this.#placement.releaseLauncherPosition();
@@ -2349,8 +2353,9 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Drop a size the user dragged, and its stored copy, so the placement's
-   * default and the host's `--ag-ui-width` / `--ag-ui-height` apply again.
+   * Drop the size the user dragged in the current placement, and its stored
+   * copy, so the placement's default and the host's `--ag-ui-width` /
+   * `--ag-ui-height` apply again. Other placements keep theirs.
    * Under `collapse-to="bar"` or `"none"` it also returns a panel the user
    * dragged off its dock to the dock, and forgets the stored spot; a corner
    * panel keeps a dragged position.

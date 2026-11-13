@@ -756,7 +756,11 @@ describe("panel resize", () => {
     // ⚠ The cascade cannot arbitrate this. An inline custom property outranks
     // a `:host([placement=…])` rule setting the same property, so a height
     // dragged while floating capped a docked sidebar that had asked for 100vh.
-    sessionStorage.setItem(SIZE_KEY, JSON.stringify({ width: 640, height: 700 }));
+    const size = { width: 640, height: 700 };
+    sessionStorage.setItem(
+      SIZE_KEY,
+      JSON.stringify({ v: 2, placements: { side: size, full: size } }),
+    );
 
     const docked = mount({ placement: "side" });
     expect(docked.style.getPropertyValue("--_drag-width")).toBe("640px");
@@ -767,20 +771,29 @@ describe("panel resize", () => {
     expect(bleed.style.getPropertyValue("--_drag-height")).toBe("");
   });
 
-  it("hands the owned axes back when the placement changes", () => {
-    // Otherwise a size dragged under the old placement survives the switch and
-    // silently overrides the new one.
-    sessionStorage.removeItem(SIZE_KEY);
+  it("swaps in the new placement's own size when the placement changes", () => {
+    // A size belongs to its placement: one dragged floating never sizes another.
+    sessionStorage.setItem(
+      SIZE_KEY,
+      JSON.stringify({
+        v: 2,
+        placements: { floating: { width: 640, height: 700 }, side: { width: 500, height: 600 } },
+      }),
+    );
     const el = mount();
-    el.style.setProperty("--_drag-width", "640px");
-    el.style.setProperty("--_drag-height", "700px");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("640px");
+    expect(el.style.getPropertyValue("--_drag-height")).toBe("700px");
 
     el.setAttribute("placement", "side");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("500px");
     expect(el.style.getPropertyValue("--_drag-height")).toBe("");
-    expect(el.style.getPropertyValue("--_drag-width")).toBe("640px");
 
     el.setAttribute("placement", "full");
     expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+
+    el.setAttribute("placement", "bottom-left");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+    sessionStorage.removeItem(SIZE_KEY);
   });
 
   it("does nothing at all where the placement is full-bleed", () => {

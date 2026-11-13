@@ -1188,9 +1188,10 @@ matching JS API:
   travels with it and switching placement hands them back. Returns `false` rather than pretending
   when the placement owns its position or the panel fills the screen. Under `collapse-to="bar"`
   or `"none"` it moves the panel within the room above the bar or the anchor.
-- `resetSize()` — drop a size the user dragged, and its stored copy, so the placement's own
-  size and your `--ag-ui-width` / `--ag-ui-height` apply again. For a host that enters a sized
-  state of its own (an expanded mode): a user's drag outranks host tokens, so call this first.
+- `resetSize()` — drop the size the user dragged in the current placement, and its stored copy,
+  so the placement's own size and your `--ag-ui-width` / `--ag-ui-height` apply again; sizes
+  dragged in other placements are kept. For a host that enters a sized state of its own (an
+  expanded mode): a user's drag outranks host tokens, so call this first.
   Under `collapse-to="bar"` or `"none"` it also returns a panel the user dragged off its dock to
   the dock and forgets the stored spot; a corner panel under `auto` keeps its dragged position.
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
@@ -1559,7 +1560,7 @@ launcher to drag: the bar and your own control stay where they are.
   and comes back whole when there is room again.
 - **Resizing.** A panel standing on its dock keeps the edges on the bar or the anchor still and the
   free ones follow the grip. Once dragged off, every edge follows its grip, as on a corner panel.
-- **Back to the dock.** `resetSize()` drops the dragged size and returns the panel to its dock,
+- **Back to the dock.** `resetSize()` drops the placement's dragged size and returns the panel to its dock,
   forgetting the stored spot, so a reload opens it there too.
 - **Keeping it fixed.** `data-launcher-drag="false"` turns the header drag and `moveTo` off here as
   everywhere else, and the panel stays on its dock.
@@ -2051,10 +2052,17 @@ is:
 
 - **Above 600px**, the dragged size beats a host's `--ag-ui-width` /
   `--ag-ui-height`, `!important` included, so a user who resized the panel keeps
-  their size. A host that enters a sized state of its own (an "expanded" class,
-  a mode switch) calls `resetSize()` when it does, which drops the dragged size
-  and its stored copy and hands control back to the host tokens. A host with no
-  such state needs nothing.
+  their size. A host that enters a sized state of its own (an "expanded" class)
+  calls `resetSize()` when it does, which drops the current placement's dragged
+  size and its stored copy and hands control back to the host tokens. A host
+  with no such state needs nothing.
+- **Per placement.** A dragged size belongs to the `placement` it was dragged in
+  and is stored under it: absent and `floating` share one, and `bottom-left`,
+  `sidebar`, `side` and `embedded` each keep their own (`data-side` is not a
+  placement, so a left and a right sidebar share one). Switching `placement`
+  swaps in the new placement's size, or its default when it has none, so a
+  placement switch needs no `resetSize()`. A `collapse-to` change keeps the size.
+  A size stored by a release before this one is read as floating's.
 - **At 600px or less**, the small-viewport shape ignores the dragged size
   entirely, for the placements that block covers (`floating`, `bottom-left`,
   `sidebar`, `side` and the default): the panel is full-bleed whatever was

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A dragged size belongs to the placement it was dragged in.** The stored size is kept per
+  `placement` value (absent reads as `floating`; `bottom-left`, `sidebar`, `side` and `embedded`
+  each have their own, and `data-side` shares one), so a size dragged while floating no longer
+  sizes a sidebar mounted later or switched to live, and switching back to floating restores the
+  floating drag in the panel and in storage alike. A `collapse-to` change keeps the size, as
+  before. A size stored by an earlier release is read as floating's. `resetSize()` now drops only
+  the current placement's size. No opt-in: a host that called `resetSize()` on every placement
+  switch to keep a floating drag out of a sidebar no longer needs to, and one that keeps calling it
+  now clears only the size of the placement it is in.
+
 ## [0.51.0] — 2026-11-12
 
 ### Added
