@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sizes a sidebar mounted later or switched to live, and switching back to floating restores the
   floating drag in the panel and in storage alike. Between two corner placements a panel the
   user moved keeps its launcher at its corner as the size changes. A `collapse-to` change keeps
-  the size, as before. A size stored by an earlier release is read as floating's. `resetSize()` now drops only
-  the current placement's size. No opt-in: a host that called `resetSize()` on every placement
+  the size, as before. A size stored by an earlier release is read as floating's. `resetSize()`
+  now drops only the current placement's size. No opt-in: a host that called `resetSize()` on every placement
   switch to keep a floating drag out of a sidebar no longer needs to, and one that keeps calling it
   now clears only the size of the placement it is in.
 - **Unseen answers are counted per thread.** An answer that finished while the panel was

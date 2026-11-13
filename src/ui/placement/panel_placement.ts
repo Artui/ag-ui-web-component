@@ -270,6 +270,9 @@ export class PanelPlacement {
 
   /** Restore the current placement's dragged size before the panel paints. */
   restoreSize(): void {
+    // A reconnect may find the stored size gone, and a size kept inline would outlive it.
+    this.#host.element.style.removeProperty(DRAG_WIDTH);
+    this.#host.element.style.removeProperty(DRAG_HEIGHT);
     this.#applySize(this.#readSize());
   }
 

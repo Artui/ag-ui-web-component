@@ -810,6 +810,19 @@ describe("panel resize", () => {
     expect(el.style.getPropertyValue("--_drag-width")).toBe(`${width}px`);
   });
 
+  it("drops an inline size on a reconnect that finds none stored", () => {
+    sessionStorage.setItem(
+      SIZE_KEY,
+      JSON.stringify({ v: 2, placements: { floating: { width: 640 } } }),
+    );
+    const el = mount();
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("640px");
+    el.remove();
+    sessionStorage.removeItem(SIZE_KEY);
+    document.body.appendChild(el);
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+  });
+
   it("reads a record with no placements as no size", () => {
     sessionStorage.setItem(SIZE_KEY, JSON.stringify({ v: 2, placements: null }));
     const el = mount();
