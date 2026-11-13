@@ -99,6 +99,14 @@ function coversViewport(box: Extent, viewport: Extent): boolean {
   return box.width >= viewport.width - 1 && box.height >= viewport.height - 1;
 }
 
+/** One edge the host reserved, read off the probe's padding. */
+function reservedEdge(style: CSSStyleDeclaration, name: string): number {
+  const value = Number.parseFloat(style.getPropertyValue(name));
+  // A detached or not-yet-rendered probe resolves to nothing at all, and
+  // reserving NaN is worse than reserving zero in every case.
+  return Number.isFinite(value) ? value : 0;
+}
+
 /**
  * Whether a box that covers the usable viewport stands off any edge of it.
  *
@@ -334,13 +342,12 @@ export class PanelPlacement {
   }
 
   /**
-   * Take the dragged size off for the maximized state, which the element has
-   * already stamped, and stand the larger panel back on the screen. The stored
-   * size and every stored spot are kept: restore puts them back.
+   * Stand the larger panel back on the screen once the element has stamped the
+   * maximized state, whose rules size the box outright, over any dragged size
+   * still held inline. The stored size and every stored spot are kept: restore
+   * puts them back.
    */
   enterMaximized(): void {
-    this.#host.element.style.removeProperty(DRAG_WIDTH);
-    this.#host.element.style.removeProperty(DRAG_HEIGHT);
     this.#replace();
   }
 
@@ -1020,13 +1027,15 @@ export class PanelPlacement {
 
   /**
    * The panel's distance from the right edge: on the anchor's right, unless a
-   * panel that wide would then cross the gutter on the left of the usable box.
+   * panel that wide would then cross the gutter on the left of the usable box,
+   * and never inside the gutter on the right of it.
    */
   #dockRight(rect: DOMRect): number {
     const screen = this.#screen();
     const fits =
       screen.width - this.#viewport().left - EDGE_MARGIN - this.#host.element.offsetWidth;
-    return Math.max(0, Math.min(screen.width - rect.right, fits));
+    const floor = EDGE_MARGIN + reservedEdge(getComputedStyle(this.probe), "padding-right");
+    return Math.max(floor, Math.min(screen.width - rect.right, fits));
   }
 
   /**
@@ -1226,19 +1235,13 @@ export class PanelPlacement {
     // of what the token's own documentation recommends -- parses as NaN and
     // takes the panel's whole inset down with it.
     const style = getComputedStyle(this.probe);
-    const edge = (name: string): number => {
-      const value = Number.parseFloat(style.getPropertyValue(name));
-      // A detached or not-yet-rendered probe resolves to nothing at all, and
-      // reserving NaN is worse than reserving zero in every case.
-      return Number.isFinite(value) ? value : 0;
-    };
-    const left = edge("padding-left");
-    const top = edge("padding-top");
+    const left = reservedEdge(style, "padding-left");
+    const top = reservedEdge(style, "padding-top");
     return {
       left,
       top,
-      width: Math.max(0, width - left - edge("padding-right")),
-      height: Math.max(0, height - top - edge("padding-bottom")),
+      width: Math.max(0, width - left - reservedEdge(style, "padding-right")),
+      height: Math.max(0, height - top - reservedEdge(style, "padding-bottom")),
     };
   }
 

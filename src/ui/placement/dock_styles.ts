@@ -85,9 +85,14 @@ export const DOCK_STYLES: string = `
    The cap spends the larger of the gap and the gutter. The gutter alone is
    what this always spent, so the default is unchanged; but a host that opens
    the gap past the gutter to clear a tall toolbar would otherwise push a
-   panel grown to the cap off the top of the window by the difference. */
+   panel grown to the cap off the top of the window by the difference.
+
+   The width cap spends a gutter on each side: the panel is held off both
+   window edges, so one gutter would leave a panel grown to the cap flush
+   against the edge the anchor holds it to. */
 :host([data-collapsed-to="none"][data-dock-anchored]) {
   --_inset: var(--ag-ui-inset, auto var(--_dock-right, 0px) calc(var(--_dock-bottom, 0px) + var(--_anchor-gap)) auto);
+  --_max-width: var(--ag-ui-max-width, calc(var(--_viewport-width) - 2 * var(--_edge-gutter)));
   --_max-height: var(
     --ag-ui-max-height,
     calc(var(--_viewport-height) - var(--_dock-bottom, 0px) - max(var(--_edge-gutter), var(--_anchor-gap)))

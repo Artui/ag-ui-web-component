@@ -685,6 +685,8 @@ export class AgUiChat extends HTMLElement {
   readonly #placement: PanelPlacement;
   /** The maximized state as applied, which the reflected attribute may run ahead of. */
   #maximized = false;
+  /** The maximized state listeners were last told, which a mount settles once. */
+  #maximizedHeard = false;
   /** The header's maximize and collapse controls, once rendered. */
   #maximizeControl: { readonly button: HTMLButtonElement; readonly before: HTMLElement } | null =
     null;
@@ -1834,6 +1836,7 @@ export class AgUiChat extends HTMLElement {
     // Last: everything above reads (and some of it sets) attributes, and none
     // of that should trip the connect-time warning.
     this.#connected = true;
+    this.#reportMaximized();
     if (this.#newChatOnConnect) {
       this.#newChatOnConnect = false;
       // After the restore above has started: starting the chat stops it, so
@@ -2456,9 +2459,18 @@ export class AgUiChat extends HTMLElement {
       this.#syncDock();
     }
     this.#paintMaximizeControl();
+    this.#reportMaximized();
+  }
+
+  /** Tell listeners the state once it differs from what they last heard; a mount defers it. */
+  #reportMaximized(): void {
+    if (!this.#connected || this.#maximized === this.#maximizedHeard) {
+      return;
+    }
+    this.#maximizedHeard = this.#maximized;
     this.dispatchEvent(
       new CustomEvent<MaximizeDetail>(MAXIMIZE_EVENT, {
-        detail: { maximized },
+        detail: { maximized: this.#maximized },
         bubbles: true,
         composed: true,
       }),

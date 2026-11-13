@@ -332,7 +332,7 @@ describe("anchor-side (real browser)", () => {
   });
 
   it("opens below a header anchor, right-aligned to it, with room to show the chat", async () => {
-    const button = hostHeader();
+    const button = hostHeader({ right: "40px" });
     const el = mount({ "anchor-side": "below", "data-start-open": "" });
     el.anchor = button;
     await settle();
@@ -501,5 +501,68 @@ describe("anchor-side (real browser)", () => {
       screenWidth(),
       screenHeight(),
     ]);
+  });
+});
+
+describe("the gutter on both window edges, under an anchor (real browser)", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(async () => {
+    document.body.innerHTML = "";
+    await page.viewport(1280, 800);
+  });
+
+  it.each<[string, "above" | "below", boolean, number]>([
+    ["a maximized panel, anchor well inside", "above", true, 120],
+    ["a maximized panel, anchor well inside", "below", true, 120],
+    ["a maximized panel, anchor at the right edge", "above", true, 4],
+    ["a resting panel, anchor at the right edge", "above", false, 4],
+    ["a resting panel, anchor at the right edge", "below", false, 4],
+  ])("holds %s (%s) off both edges", async (_name, side, maximized, inset) => {
+    const button = side === "below" ? hostHeader({ right: `${inset}px` }) : hostBar();
+    if (side === "above") {
+      button.style.right = `${inset}px`;
+    }
+    const el = mount({ "anchor-side": side, "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    if (maximized) {
+      el.setMaximized(true);
+      await settle();
+      expect(el.maximized).toBe(true);
+    }
+    const panel = el.getBoundingClientRect();
+    expect(panel.left).toBeGreaterThanOrEqual(GUTTER - 0.5);
+    expect(panel.right).toBeLessThanOrEqual(screenWidth() - GUTTER + 0.5);
+  });
+
+  it("counts an inset the host reserved on the right as part of the gutter", async () => {
+    const button = hostBar();
+    button.style.right = "4px";
+    const el = mount({ "data-start-open": "" });
+    el.style.setProperty("--ag-ui-viewport-inset-right", "60px");
+    el.anchor = button;
+    await settle();
+    el.setMaximized(true);
+    await settle();
+    const panel = el.getBoundingClientRect();
+    expect(panel.right).toBeLessThanOrEqual(screenWidth() - 60 - GUTTER + 0.5);
+    expect(panel.left).toBeGreaterThanOrEqual(GUTTER - 0.5);
+  });
+
+  it("holds a maximized panel off both edges with the anchor at the left edge", async () => {
+    const button = hostBar();
+    button.style.right = "auto";
+    button.style.left = "4px";
+    const el = mount({ "anchor-side": "above", "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    el.setMaximized(true);
+    await settle();
+    const panel = el.getBoundingClientRect();
+    expect(panel.left).toBeGreaterThanOrEqual(GUTTER - 0.5);
+    expect(panel.right).toBeLessThanOrEqual(screenWidth() - GUTTER + 0.5);
   });
 });

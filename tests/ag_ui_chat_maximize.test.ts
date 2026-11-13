@@ -75,7 +75,34 @@ describe("the maximized state", () => {
     expect(el.maximized).toBe(false);
     document.body.appendChild(el);
     expect(control(el)).toBeNull();
-    expect(seen).toEqual([true, false]);
+    expect(seen).toEqual([]);
+  });
+
+  it("reports nothing for a markup request on a panel that mounts collapsed", () => {
+    const { el, seen } = create({ maximized: "" });
+    el.removeAttribute("data-start-open");
+    document.body.appendChild(el);
+    expect(el.collapsed).toBe(true);
+    expect(el.maximized).toBe(false);
+    expect(el.hasAttribute("maximized")).toBe(false);
+    expect(seen).toEqual([]);
+    el.setCollapsed(false);
+    el.setMaximized(true);
+    expect(seen).toEqual([true]);
+  });
+
+  it("reports a request made while detached once, on the reconnect, and only if it changed", () => {
+    const { el, seen } = create();
+    document.body.appendChild(el);
+    el.remove();
+    el.setMaximized(true);
+    el.setMaximized(false);
+    document.body.appendChild(el);
+    expect(seen).toEqual([]);
+    el.remove();
+    el.setMaximized(true);
+    document.body.appendChild(el);
+    expect(seen).toEqual([true]);
   });
 
   it("follows the element across a placement switch that keeps the control", () => {

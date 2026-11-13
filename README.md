@@ -1558,8 +1558,8 @@ of your own. `anchor-side="above"` or `"below"` fixes the side; `auto`, the defa
 when the window is resized (never during a drag), so an anchor near the middle of the window can
 change sides. Below the anchor the gap is measured from the button's bottom edge, and the max
 height is the room under it less one gutter. On either side the panel lines up with the anchor's
-right edge unless that would put its left edge inside the 24px gutter on the left of the window,
-where it stops instead.
+right edge unless that would put either edge inside the 24px gutter of the window, where it stops
+instead; its width cap is the window less two gutters, maximized included.
 
 ```html
 <ag-ui-chat endpoint="/agent/" collapse-to="none" anchor="#agent-button" anchor-side="below"></ag-ui-chat>

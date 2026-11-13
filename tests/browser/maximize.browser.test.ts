@@ -136,6 +136,26 @@ describe("maximize over a dragged corner panel (real browser)", () => {
     expect(boxOf(el)).toEqual(dragged);
   });
 
+  it("keeps the maximized box through a placement switch, and restore gives the new placement's size", async () => {
+    const el = mount({}, MAXIMIZED);
+    await settle();
+    const grip = inShadow<HTMLElement>(el, ".resize-handle--top-left");
+    if (grip === null) {
+      throw new Error("expected the top-left grip");
+    }
+    await pull(grip, -80, -60);
+    expect(el.offsetWidth).toBeGreaterThan(400);
+    el.setAttribute("maximized", "");
+    await settle();
+    el.setAttribute("placement", "bottom-left");
+    await settle();
+    expect(el.offsetWidth).toBeCloseTo(900, 0);
+    expect(el.offsetHeight).toBeCloseTo(700, 0);
+    el.removeAttribute("maximized");
+    await settle();
+    expect(el.offsetWidth).toBeCloseTo(380, 0);
+  });
+
   it("refuses a resize while maximized", async () => {
     const el = mount({}, MAXIMIZED);
     await settle();
@@ -150,7 +170,7 @@ describe("maximize over a dragged corner panel (real browser)", () => {
     expect(el.style.getPropertyValue("--_drag-width")).toBe("");
   });
 
-  it("grows a docked panel on both axes and a sidebar in width only", async () => {
+  it("grows a docked panel on both axes, a sidebar and a side column in width only", async () => {
     const docked = mount({ "collapse-to": "bar" }, MAXIMIZED);
     await settle();
     docked.setAttribute("maximized", "");
@@ -166,6 +186,16 @@ describe("maximize over a dragged corner panel (real browser)", () => {
     await settle();
     expect(panelWidth(sidebar)).toBeCloseTo(900, 0);
     expect(panelHeight(sidebar)).toBe(height);
+    sidebar.remove();
+
+    const side = mount({ placement: "side" }, MAXIMIZED);
+    await settle();
+    const sideHeight = side.offsetHeight;
+    expect(side.offsetWidth).toBeCloseTo(420, 0);
+    side.setAttribute("maximized", "");
+    await settle();
+    expect(side.offsetWidth).toBeCloseTo(900, 0);
+    expect(side.offsetHeight).toBe(sideHeight);
   });
 });
 
@@ -349,5 +379,22 @@ describe("maximized and a collapse it was not told about (real browser)", () => 
     expect(el.collapsed).toBe(true);
     expect(el.maximized).toBe(false);
     expect({ width: el.offsetWidth, height: el.offsetHeight }).toEqual(collapsed);
+  });
+
+  it("reports nothing when markup is upgraded into a corner that mounts collapsed", async () => {
+    const heard: boolean[] = [];
+    const listen = (event: Event): void => {
+      heard.push((event as CustomEvent<{ maximized: boolean }>).detail.maximized);
+    };
+    document.addEventListener("ag-ui-maximize", listen);
+    const template = document.createElement("template");
+    template.innerHTML = '<ag-ui-chat endpoint="/agent" maximized></ag-ui-chat>';
+    document.body.append(template.content);
+    await settle();
+    document.removeEventListener("ag-ui-maximize", listen);
+    const el = document.querySelector<AgUiChat>(ELEMENT_TAG);
+    expect(el?.collapsed).toBe(true);
+    expect(el?.maximized).toBe(false);
+    expect(heard).toEqual([]);
   });
 });
