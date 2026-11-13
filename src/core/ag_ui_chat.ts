@@ -1757,6 +1757,10 @@ export class AgUiChat extends HTMLElement {
     window.addEventListener("pointerup", endDrag, { signal: this.#connection.signal });
     window.addEventListener("keyup", endDrag, { signal: this.#connection.signal });
     this.#syncDock();
+    // A connect that restored or defaulted to collapsed leaves a state asked for in markup.
+    if (this.collapsed) {
+      this.setMaximized(false);
+    }
     // Under collapse-to="none" the host draws the collapsed state itself, so
     // it has to learn the state the element mounted in -- restored from
     // storage or the placement's default -- without waiting for a change.

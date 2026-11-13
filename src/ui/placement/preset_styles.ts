@@ -6,9 +6,10 @@ export const PRESET_STYLES: string = `
    maximized size on both axes. Set on the box rather than the size aliases, so
    the size the user dragged is not read and the aliases stay the host's. The
    element refuses the state on page, full, embedded and at 600px or less, so
-   no rule here has to. A side column grows its width only, below and in the
-   sidebar module. */
-:host([maximized]:not([placement="side"]):not([placement="sidebar"])) {
+   no rule here has to. A collapsed attribute written straight on, which the
+   element is not told of, still draws the collapsed box. A side column grows
+   its width only, below and in the sidebar module. */
+:host([maximized]:not([collapsed]):not([placement="side"]):not([placement="sidebar"])) {
   width: var(--_maximized-width);
   height: var(--_maximized-height);
 }
@@ -29,7 +30,7 @@ export const PRESET_STYLES: string = `
   --_panel-radius: var(--ag-ui-panel-radius, 0);
 }
 
-:host([placement="side"][maximized]) {
+:host([placement="side"][maximized]:not([collapsed])) {
   width: var(--_maximized-width);
 }
 

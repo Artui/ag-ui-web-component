@@ -309,3 +309,45 @@ describe("where the control is (real browser)", () => {
     expect(control(el)?.getAttribute("aria-label")).not.toBe(launcher);
   });
 });
+
+describe("maximized and a collapse it was not told about (real browser)", () => {
+  function plain(attrs: Record<string, string>): AgUiChat {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent");
+    for (const [name, value] of Object.entries(attrs)) {
+      el.setAttribute(name, value);
+    }
+    document.body.appendChild(el);
+    return el;
+  }
+
+  it("draws the collapsed box when the attribute is written straight on", async () => {
+    const reference = plain({ collapsed: "" });
+    await settle();
+    const collapsed = { width: reference.offsetWidth, height: reference.offsetHeight };
+    reference.remove();
+
+    const el = mount({}, MAXIMIZED);
+    await settle();
+    el.setAttribute("maximized", "");
+    await settle();
+    el.setAttribute("collapsed", "");
+    await settle();
+    expect({ width: el.offsetWidth, height: el.offsetHeight }).toEqual(collapsed);
+  });
+
+  it("mounts collapsed at the launcher's size when markup asks for maximized", async () => {
+    const reference = plain({});
+    await settle();
+    const collapsed = { width: reference.offsetWidth, height: reference.offsetHeight };
+    expect(reference.collapsed).toBe(true);
+    reference.remove();
+
+    const el = plain({ maximized: "" });
+    el.style.cssText = MAXIMIZED;
+    await settle();
+    expect(el.collapsed).toBe(true);
+    expect(el.maximized).toBe(false);
+    expect({ width: el.offsetWidth, height: el.offsetHeight }).toEqual(collapsed);
+  });
+});

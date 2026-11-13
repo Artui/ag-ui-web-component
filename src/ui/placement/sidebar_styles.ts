@@ -16,8 +16,8 @@ export const SIDEBAR_STYLES: string = `
 
 /* Maximized grows the column's width only: the host and the panel pinned
    inside it, which reads its own width. */
-:host([placement="sidebar"][maximized]),
-:host([placement="sidebar"][maximized]) .chat {
+:host([placement="sidebar"][maximized]:not([collapsed])),
+:host([placement="sidebar"][maximized]:not([collapsed])) .chat {
   width: var(--_maximized-width);
 }
 
