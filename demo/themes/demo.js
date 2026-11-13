@@ -373,13 +373,30 @@ $("cfg-collapse-to").addEventListener("change", (event) => {
     chat.setAttribute("collapse-to", target);
   }
   hostBar.hidden = target !== "none";
-  if (value === "none") {
+  const header = value === "none-header" || value === "none-header-left";
+  hostBar.toggleAttribute("data-edge", header);
+  if (header) {
+    hostBar.setAttribute("data-edge", "top");
+  }
+  hostBar.toggleAttribute("data-align", value === "none-header-left");
+  if (value === "none-header-left") {
+    hostBar.setAttribute("data-align", "left");
+  }
+  if (value === "none" || header) {
     chat.setAttribute("anchor", "#host-agent");
   } else {
     chat.removeAttribute("anchor");
   }
   publishChatBar();
   labelHostAgent();
+});
+$("cfg-anchor-side").addEventListener("change", (event) => {
+  const value = event.target.value;
+  if (value === "") {
+    chat.removeAttribute("anchor-side");
+  } else {
+    chat.setAttribute("anchor-side", value);
+  }
 });
 hostAgent.addEventListener("click", () => {
   chat.toggleCollapsed();
@@ -389,7 +406,14 @@ chat.addEventListener("ag-ui-toggle", labelHostAgent);
 // The page's share of the bottom edge: the widget's bar height under bar, and
 // the host toolbar's own under none. The widget never pads the page itself.
 const publishChatBar = () => {
-  const height = hostBar.hidden ? chat.barHeight : hostBar.getBoundingClientRect().height;
+  const atTop = hostBar.hasAttribute("data-edge");
+  const height = hostBar.hidden
+    ? chat.barHeight
+    : atTop
+      ? 0
+      : hostBar.getBoundingClientRect().height;
+  const top = !hostBar.hidden && atTop ? hostBar.getBoundingClientRect().height : 0;
+  document.documentElement.style.setProperty("--chat-header-height", `${Math.ceil(top)}px`);
   document.documentElement.style.setProperty("--chat-bar-height", `${Math.ceil(height)}px`);
 };
 chat.addEventListener("ag-ui-bar-height", publishChatBar);

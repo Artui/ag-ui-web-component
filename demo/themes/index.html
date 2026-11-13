@@ -328,6 +328,7 @@
          host's line, and the README's. */
       body {
         padding-bottom: var(--chat-bar-height, 0px);
+        padding-top: var(--chat-header-height, 0px);
       }
       /* A host's own toolbar for collapse-to="none": fixed to the bottom edge,
          with the button the panel rises from. Under the widget's z-index, so a
@@ -348,6 +349,17 @@
       }
       .host-bar[hidden] {
         display: none;
+      }
+      /* The same toolbar as a header across the top, for anchor-side: auto
+         opens the panel below its button there. The left variant moves the
+         button to the left end, where the panel stops at the left gutter. */
+      .host-bar[data-edge="top"] {
+        inset: 0 0 auto 0;
+        border-top: none;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      .host-bar[data-align="left"] button {
+        order: -1;
       }
       .host-bar .spacer {
         flex: 1;
@@ -434,6 +446,18 @@
           <option value="bar">bar</option>
           <option value="none">none (host bar)</option>
           <option value="none-corner">none (corner)</option>
+          <option value="none-header">none (host header)</option>
+          <option value="none-header-left">none (host header, button left)</option>
+        </select>
+      </label>
+      <!-- Which side of the host's button the panel opens on under none; auto
+           removes the attribute, which takes the side with more room. -->
+      <label
+        >Anchor side
+        <select id="cfg-anchor-side">
+          <option value="" selected>auto</option>
+          <option value="above">above</option>
+          <option value="below">below</option>
         </select>
       </label>
       <!-- The greeting layout is on by default for page and opt-in for embedded;

@@ -9,7 +9,8 @@ export const DOCK_STYLES: string = `
    what it collapses to as data-collapsed-to, and writes where the dock is as
    two private properties: --_dock-bottom, the bar's height or the distance
    from the layout viewport's bottom to the anchor's top, and --_dock-right,
-   the anchor's distance from the right edge. Both are read with a 0px
+   the anchor's distance from the right edge (a third, --_dock-top, for a
+   panel below its anchor). Both are read with a 0px
    fallback, so a panel measured before the bar has laid out stands where a
    bar of no height would put it.
 
@@ -90,6 +91,21 @@ export const DOCK_STYLES: string = `
   --_max-height: var(
     --ag-ui-max-height,
     calc(var(--_viewport-height) - var(--_dock-bottom, 0px) - max(var(--_edge-gutter), var(--_anchor-gap)))
+  );
+}
+
+/* The same, below the anchor, for a host whose control sits in a header: the
+   element stamps the side it resolved from anchor-side as the attribute's
+   value and writes the anchor's bottom as --_dock-top. Keyed on that value
+   rather than on another attribute, so the rule weighs what the one above
+   weighs and the phone block after it still wins by order. --_dock-right is
+   the anchor's right edge unless the panel would then cross the left gutter,
+   on either side. */
+:host([data-collapsed-to="none"][data-dock-anchored="below"]) {
+  --_inset: var(--ag-ui-inset, calc(var(--_dock-top, 0px) + var(--_anchor-gap)) var(--_dock-right, 0px) auto auto);
+  --_max-height: var(
+    --ag-ui-max-height,
+    calc(var(--_viewport-height) - var(--_dock-top, 0px) - max(var(--_edge-gutter), var(--_anchor-gap)))
   );
 }
 `;
