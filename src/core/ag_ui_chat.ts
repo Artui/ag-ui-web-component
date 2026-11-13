@@ -611,7 +611,7 @@ export class AgUiChat extends HTMLElement {
   readonly #themeToggle: HTMLButtonElement;
   /** What the collapsed widget shrinks to: the floating launcher, or the sidebar rail. */
   readonly #launcher: HTMLButtonElement;
-  /** The launcher's unread badge; hidden at zero, and when the host opts out. */
+  /** The launcher's unread badge; hidden at zero, while expanded, and when the host opts out. */
   readonly #badge: HTMLSpanElement;
   /** The rail's vertical caption. Rendered only by the sidebar's edge rail and the bottom bar. */
   readonly #railLabel: HTMLSpanElement = document.createElement("span");

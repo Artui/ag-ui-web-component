@@ -100,7 +100,10 @@ export interface ClientConversationStore {
    * The element calls it when a thread with unseen answers is on screen with
    * the panel expanded, and when an answer finishes there in view. A server
    * store maps it to its read endpoint, and should report the thread with
-   * `unread: false` from {@link listThreads} afterwards.
+   * `unread: false` from {@link listThreads} afterwards. It is called inside the
+   * element's expand and thread-change paths, so it must not throw: a store that
+   * writes to a server sends the request without awaiting it and handles its own
+   * failure, the way a failed save is handled.
    *
    * Optional: a store without it still has its threads counted and cleared in
    * the page; nothing is recorded beyond it.
