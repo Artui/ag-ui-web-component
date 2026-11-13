@@ -336,10 +336,12 @@ export const TOKEN_STYLES: string = `
   --_drag-height: initial;
   /* Where a docked panel stands, written inline the same way by the placement
      code: the bottom bar's height, or the host anchor's distance from the
-     bottom and right edges. Read only by the dock rules, each with a 0px
-     fallback; declared initial so it never inherits either. */
+     bottom and right edges, or from the top to its bottom for a panel opening
+     below it. Read only by the dock rules, each with a 0px fallback; declared
+     initial so it never inherits any of them. */
   --_dock-bottom: initial;
   --_dock-right: initial;
+  --_dock-top: initial;
   /* Where the conversation list stands beside the host's button under
      collapse-to="none", written inline by the element from the button's box.
      Declared initial for the same reason. */
@@ -390,6 +392,13 @@ export const TOKEN_STYLES: string = `
      can put any part of the panel outside the box. */
   --_max-width: var(--ag-ui-max-width, calc(var(--_viewport-width) - var(--_edge-gutter)));
   --_max-height: var(--ag-ui-max-height, calc(var(--_viewport-height) - var(--_edge-gutter)));
+  /* The size the header's maximize control grows the panel to: the cap above
+     unless the host names one. A side column reads the width only. */
+  --_maximized-width: var(--ag-ui-maximized-width, var(--_max-width));
+  --_maximized-height: var(--ag-ui-maximized-height, var(--_max-height));
+  /* The page a side column must leave beside it. A switch, as above: unset, a
+     cap that reads it with no fallback drops out and caps nothing. */
+  --_min-page-width-set: var(--ag-ui-min-page-width);
   /* Reading-column width for placement="page" (full-bleed, centred content). */
   --_content-max-width: var(--ag-ui-content-max-width, 820px);
   /* The greeting over an empty full-page conversation. The size scales with

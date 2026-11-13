@@ -70,6 +70,12 @@ export interface Surface {
    * questions, and a surface with a fixed launcher would answer them apart.
    */
   readonly startsCollapsed: boolean;
+  /**
+   * What the header's maximize control grows: both axes for a corner or docked
+   * panel, the width for a side column, and `null` where there is no control
+   * (a surface that already fills its box, or that the host sized).
+   */
+  readonly maximizes: "both" | "width" | null;
 }
 
 const CORNER: Surface = {
@@ -78,6 +84,7 @@ const CORNER: Surface = {
   panelMovable: true,
   resizeAxis: "both",
   startsCollapsed: true,
+  maximizes: "both",
 };
 
 const DOCKED: Surface = {
@@ -86,6 +93,7 @@ const DOCKED: Surface = {
   panelMovable: false,
   resizeAxis: "width",
   startsCollapsed: false,
+  maximizes: "width",
 };
 
 /**
@@ -107,6 +115,7 @@ const SURFACES: ReadonlyMap<string | null, Surface> = new Map<string | null, Sur
       panelMovable: false,
       resizeAxis: "none",
       startsCollapsed: false,
+      maximizes: null,
     },
   ],
   [
@@ -117,6 +126,7 @@ const SURFACES: ReadonlyMap<string | null, Surface> = new Map<string | null, Sur
       panelMovable: false,
       resizeAxis: "none",
       startsCollapsed: false,
+      maximizes: null,
     },
   ],
   [
@@ -127,6 +137,7 @@ const SURFACES: ReadonlyMap<string | null, Surface> = new Map<string | null, Sur
       panelMovable: false,
       resizeAxis: "both",
       startsCollapsed: false,
+      maximizes: null,
     },
   ],
 ]);
@@ -143,6 +154,7 @@ const UNKNOWN: Surface = {
   panelMovable: false,
   resizeAxis: "both",
   startsCollapsed: false,
+  maximizes: null,
 };
 
 /**

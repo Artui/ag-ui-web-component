@@ -103,9 +103,31 @@ export const VENDORED_BUNDLE = {
   plugins: [zodNamespaceImport],
 };
 
+/**
+ * zod's JSON Schema modules that contribute code to a vendored bundle.
+ *
+ * zod is a peer of the protocol packages this package does not declare, and
+ * from zod 4.2.0 every schema constructor calls into its JSON Schema code, so
+ * a bundle built against zod 4.2 or later carries about 42 KB more. The
+ * published bundle is built from the lock's zod 3, where none of it is
+ * reachable; the build below refuses one that carries any, so a lock refresh
+ * cannot grow it unnoticed. The scheduled unpinned resolve runs the tests,
+ * not this build, and still takes the newest zod 4.
+ *
+ * @param {import("esbuild").Metafile} metafile
+ * @returns {string[]}
+ */
+export function zodJsonSchemaInputs(metafile) {
+  return Object.entries(metafile.outputs)
+    .filter(([path]) => path.endsWith(".bundle.js"))
+    .flatMap(([, output]) => Object.entries(output.inputs))
+    .filter(([path, input]) => input.bytesInOutput > 0 && /[\\/]zod[\\/].*json-schema/.test(path))
+    .map(([path]) => path);
+}
+
 // Build only when run as a script, so the test above can import the options.
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  await Promise.all([
+  const [, vendored] = await Promise.all([
     // Library build — peer deps stay external so npm consumers dedupe @ag-ui/* themselves.
     build({
       ...SHARED,
@@ -113,6 +135,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       outfile: "dist/index.js",
       external: ["@ag-ui/client", "@ag-ui/core"],
     }),
-    build(VENDORED_BUNDLE),
+    build({ ...VENDORED_BUNDLE, metafile: true }),
   ]);
+  const jsonSchema = zodJsonSchemaInputs(vendored.metafile);
+  if (jsonSchema.length > 0) {
+    throw new Error(
+      `the vendored bundle carries zod's JSON Schema code (${jsonSchema.join(", ")}): ` +
+        "it was built against zod 4.2 or later, and the published bundle is built from zod 3",
+    );
+  }
 }

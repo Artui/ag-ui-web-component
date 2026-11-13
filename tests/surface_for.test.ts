@@ -9,22 +9,23 @@ import { surfaceFor } from "../src/ui/placement/surface_for.js";
  * move changed no placement's behaviour.
  */
 describe("surfaceFor", () => {
+  type Axis = "none" | "width" | "both";
   const rows: ReadonlyArray<
-    readonly [string | null, string | null, boolean, "none" | "width" | "both", boolean]
+    readonly [string | null, string | null, boolean, Axis, boolean, "width" | "both" | null]
   > = [
-    // placement, collapseTo, launcherDraggable, resizeAxis, startsCollapsed
-    [null, "launcher", true, "both", true],
-    ["", "launcher", true, "both", true],
-    ["floating", "launcher", true, "both", true],
-    ["bottom-left", "launcher", true, "both", true],
-    ["side", "launcher", false, "width", false],
-    ["sidebar", "rail", false, "width", false],
-    ["full", "launcher", false, "none", false],
-    ["page", null, false, "none", false],
-    ["embedded", "header", false, "both", false],
+    // placement, collapseTo, launcherDraggable, resizeAxis, startsCollapsed, maximizes
+    [null, "launcher", true, "both", true, "both"],
+    ["", "launcher", true, "both", true, "both"],
+    ["floating", "launcher", true, "both", true, "both"],
+    ["bottom-left", "launcher", true, "both", true, "both"],
+    ["side", "launcher", false, "width", false, "width"],
+    ["sidebar", "rail", false, "width", false, "width"],
+    ["full", "launcher", false, "none", false, null],
+    ["page", null, false, "none", false, null],
+    ["embedded", "header", false, "both", false, null],
   ];
 
-  it.each(rows)("describes placement=%j", (placement, collapseTo, draggable, axis, starts) => {
+  it.each(rows)("describes placement=%j", (placement, collapseTo, draggable, axis, starts, max) => {
     expect(surfaceFor(placement)).toEqual({
       collapseTo,
       launcherDraggable: draggable,
@@ -33,6 +34,7 @@ describe("surfaceFor", () => {
       panelMovable: draggable,
       resizeAxis: axis,
       startsCollapsed: starts,
+      maximizes: max,
     });
   });
 
@@ -45,6 +47,7 @@ describe("surfaceFor", () => {
       panelMovable: false,
       resizeAxis: "both",
       startsCollapsed: false,
+      maximizes: null,
     });
   });
 
@@ -66,6 +69,7 @@ describe("surfaceFor", () => {
     expect(surface.collapseTo).toBe(to);
     expect(surface.launcherDraggable).toBe(false);
     expect(surface.panelMovable).toBe(movable);
+    expect(surface.maximizes).toBe(surfaceFor(placement).maximizes);
   });
 
   it("only page has no collapsed state", () => {

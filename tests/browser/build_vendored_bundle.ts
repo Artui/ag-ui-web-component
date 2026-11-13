@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -10,6 +11,8 @@ declare module "vitest" {
     vendoredBundle: string;
     /** Every module that contributes at least one byte to it. */
     vendoredBundleInputs: string[];
+    /** The version of every zod package the bundle draws on, one entry per copy. */
+    vendoredZodVersions: string[];
   }
 }
 
@@ -41,10 +44,31 @@ export default async function setup(project: TestProject): Promise<void> {
     throw new Error("the vendored build wrote no .bundle.js");
   }
   project.provide("vendoredBundle", code.text);
-  project.provide(
-    "vendoredBundleInputs",
-    Object.entries(output[1].inputs)
-      .filter(([, input]) => input.bytesInOutput > 0)
-      .map(([path]) => path),
+  const inputs = Object.entries(output[1].inputs)
+    .filter(([, input]) => input.bytesInOutput > 0)
+    .map(([path]) => path);
+  project.provide("vendoredBundleInputs", inputs);
+  project.provide("vendoredZodVersions", zodVersions(inputs));
+}
+
+/**
+ * Read each bundled zod's version from the `package.json` beside its modules.
+ *
+ * The version is the one the bundle was built from, which is not necessarily
+ * one the repository root can resolve: zod reaches the build only as a peer of
+ * the protocol packages.
+ */
+function zodVersions(inputs: readonly string[]): string[] {
+  const roots = new Set<string>();
+  for (const path of inputs) {
+    const match = /^(.*[\\/]zod)[\\/]/.exec(path);
+    if (match?.[1] !== undefined) {
+      roots.add(match[1]);
+    }
+  }
+  return [...roots].map(
+    (root) =>
+      (JSON.parse(readFileSync(resolve(ROOT, root, "package.json"), "utf8")) as { version: string })
+        .version,
   );
 }

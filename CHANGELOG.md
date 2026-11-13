@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0] — 2026-11-13
+
+### Added
+
+- **`anchor-side` opens a `collapse-to="none"` panel below its anchor.** `above`, `below` or
+  `auto` (the default) picks which side of the host's button the panel stands on. `auto` takes the
+  side with more room and re-decides on a window resize, never mid-drag, so a button in a top
+  header now opens the panel below it instead of as a 0px strip above it. Below, the panel stands
+  `--ag-ui-anchor-gap` under the anchor's bottom, its max height is the room under it, and a drag,
+  a grip and `resetSize()` all stay below the anchor; a dragged spot is kept and held inside the
+  room on whichever side is current. The panel also no longer runs off either window edge for an
+  anchor near it: on either side it keeps the 24px gutter on the left and on the right, so its
+  width cap is the window less two gutters and an anchor within the gutter of the right edge no
+  longer pulls the panel flush against it. No opt-in, but the default moves some panels: under
+  `auto` every anchor with more room below it than above now opens below, not only one in a top
+  header. A bottom-bar anchor still opens above as before; an anchor nearer the
+  top of the window than the bottom, such as a toolbar button partway down the page, now opens
+  below it, and `anchor-side="above"` keeps the old side. A host with a top-header anchor that
+  worked around the collapse with its own `--ag-ui-inset` and `--ag-ui-max-height` can drop both.
+- **A built-in maximize state.** The header gains a maximize control (`maximize-button` part,
+  `icon-maximize` slot, labelled by the new `maximize` and `restore` strings) beside collapse. It
+  grows a corner or docked panel on both axes and a `sidebar` or `side` column in width only, to
+  the new `--ag-ui-maximized-width` / `--ag-ui-maximized-height` (default: the panel's cap). It is
+  the `maximized` attribute and property (reflected), with `setMaximized()`, `toggleMaximized()`,
+  the `ag-ui-maximize` event (`MAXIMIZE_EVENT`, `MaximizeDetail`; a markup `maximized` is
+  announced once at connect, and only if it holds) and a read-only `maximized` in
+  `describeSurface()`. Entering it drops the dragged size without forgetting it and hides the
+  grips; restore and collapse leave it at the placement's own or dragged size. It is not stored.
+  `page`, `full`, `embedded` and any viewport of 600px or less have no control and refuse the
+  state. **No opt-in, and every corner, docked and column panel shows the new control**: a host
+  that built its own expand with `resetSize()` and hides nothing will show both; hide ours with
+  `::part(maximize-button) { display: none }`.
+- **`--ag-ui-min-page-width` caps a `sidebar` or `side` column** at the viewport less that
+  width, whether the width was dragged, set by `--ag-ui-width` or maximized. Opt-in: unset, it
+  caps nothing.
+
+### Changed
+
+- **A vendored bundle built against zod 4.2 or later carries part of zod's JSON Schema code.**
+  zod is a peer of `@ag-ui/core` and `@ag-ui/client` (`^3.25.18 || ^4.0.0` since their 1.0.4)
+  that this package does not declare. From zod 4.2.0 every schema's constructor attaches its
+  Standard JSON Schema method, so `zod/v4/classic/schemas.js` imports `core/to-json-schema.js` and
+  `core/json-schema-processors.js` as live code no build can drop: about 42 KB minified. The
+  published bundle is built from the lock's zod 3.25.76 and does not carry it, and `pnpm build`
+  now refuses a vendored bundle that carries any of that code, so a lock refresh to zod 4 fails
+  the build instead of growing what ships. The bundle test asserts what each zod line carries, so
+  the scheduled unpinned resolve, which runs the tests against the newest zod 4, passes again. No
+  opt-in.
+
 ## [0.52.0] — 2026-11-13
 
 ### Changed
@@ -5384,7 +5433,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.52.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.53.0...HEAD
+[0.53.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.2...v0.51.0
 [0.50.2]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.1...v0.50.2

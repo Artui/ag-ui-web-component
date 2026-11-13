@@ -13,6 +13,7 @@ export {
   INVALIDATE_EVENT,
   LOAD_CAPABILITY_TOOL,
   MAX_TOOL_ROUNDS,
+  MAXIMIZE_EVENT,
   MESSAGE_ACTIONS,
   MESSAGE_ROLE,
   RUN_FINISHED_EVENT,
@@ -68,6 +69,7 @@ export type { CustomAgentDetail } from "./core/events/custom_agent_detail.js";
 export type { DockWidthDetail } from "./core/events/dock_width_detail.js";
 export type { FeedbackDetail } from "./core/events/feedback_detail.js";
 export type { InvalidateDetail } from "./core/events/invalidate_detail.js";
+export type { MaximizeDetail } from "./core/events/maximize_detail.js";
 export type { RunFinishedDetail } from "./core/events/run_finished_detail.js";
 export type { StateDetail } from "./core/events/state_detail.js";
 export type { SubmitDetail } from "./core/events/submit_detail.js";

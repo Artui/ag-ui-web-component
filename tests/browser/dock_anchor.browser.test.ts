@@ -307,3 +307,262 @@ describe("the host's own bar (real browser)", () => {
     warn.mockRestore();
   });
 });
+
+/** A host's fixed header, 56px tall, with its agent button 16px from the right edge. */
+function hostHeader(button: Partial<CSSStyleDeclaration> = {}): HTMLButtonElement {
+  const header = document.createElement("div");
+  header.style.cssText = "position: fixed; left: 0; right: 0; top: 0; height: 56px;";
+  const control = document.createElement("button");
+  control.textContent = "Agent";
+  control.style.cssText = "position: absolute; right: 16px; top: 12px; width: 90px; height: 32px;";
+  Object.assign(control.style, button);
+  header.append(control);
+  document.body.append(header);
+  return control;
+}
+
+describe("anchor-side (real browser)", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(async () => {
+    document.body.innerHTML = "";
+    await page.viewport(1280, 800);
+  });
+
+  it("opens below a header anchor, right-aligned to it, with room to show the chat", async () => {
+    const button = hostHeader({ right: "40px" });
+    const el = mount({ "anchor-side": "below", "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    const anchor = button.getBoundingClientRect();
+    const panel = el.getBoundingClientRect();
+    expect(panel.height).toBeGreaterThan(300);
+    expect(panel.top).toBeCloseTo(anchor.bottom + 8, 0);
+    expect(panel.right).toBeCloseTo(anchor.right, 0);
+    expect(el.getAttribute("data-dock-anchored")).toBe("below");
+  });
+
+  it("keeps a header drag below the anchor's bottom", async () => {
+    const button = hostHeader();
+    const el = mount({ "anchor-side": "below", "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    await dragHeader(el, -200, 100);
+    const anchor = button.getBoundingClientRect();
+    const moved = el.getBoundingClientRect();
+    expect(moved.top).toBeGreaterThanOrEqual(anchor.bottom);
+    await dragHeader(el, 0, -2000);
+    expect(el.getBoundingClientRect().top).toBeCloseTo(anchor.bottom + 8, 0);
+  });
+
+  it("holds the top and right edges through a grip, from the top-right corner", async () => {
+    const button = hostHeader();
+    const el = mount({ "anchor-side": "below", "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    const before = el.getBoundingClientRect();
+    expect(el.getAttribute("data-resize-anchor")).toBe("top-right");
+    await pull(el, "bottom-left", -60, -40);
+    const shrunk = el.getBoundingClientRect();
+    expect(shrunk.width).toBeGreaterThan(before.width + 40);
+    expect(shrunk.top).toBeCloseTo(before.top, 0);
+    expect(shrunk.right).toBeCloseTo(before.right, 0);
+    await pull(el, "bottom-right", 80, 60);
+    const held = el.getBoundingClientRect();
+    expect(held.top).toBeCloseTo(before.top, 0);
+    expect(held.right).toBeCloseTo(before.right, 0);
+    expect(el.getAttribute("data-resize-anchor")).toBe("top-right");
+  });
+
+  it("goes back under the anchor on resetSize after a drag", async () => {
+    const button = hostHeader();
+    const el = mount({ "anchor-side": "below", "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    const dock = el.getBoundingClientRect();
+    await dragHeader(el, -200, 100);
+    el.resetSize();
+    await settle();
+    const panel = el.getBoundingClientRect();
+    expect(panel.top).toBeCloseTo(dock.top, 0);
+    expect(panel.right).toBeCloseTo(dock.right, 0);
+    expect(el.getAttribute("data-resize-anchor")).toBe("top-right");
+  });
+
+  it.each<[string, () => HTMLButtonElement, string]>([
+    ["a header anchor", () => hostHeader(), "below"],
+    ["a bottom-bar anchor", () => hostBar(), "above"],
+  ])("resolves auto to the roomier side for %s", async (_name, make, side) => {
+    const button = make();
+    const el = mount({ "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    expect(el.getAttribute("data-dock-anchored")).toBe(side);
+    const anchor = button.getBoundingClientRect();
+    const panel = el.getBoundingClientRect();
+    if (side === "below") {
+      expect(panel.top).toBeCloseTo(anchor.bottom + 8, 0);
+    } else {
+      expect(panel.bottom).toBeCloseTo(anchor.top - 8, 0);
+    }
+  });
+
+  it("flips side on a window resize that crosses the line, re-clamping a dragged spot", async () => {
+    const button = hostHeader({ top: "300px" });
+    const el = mount({ "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    expect(el.getAttribute("data-dock-anchored")).toBe("below");
+    await dragHeader(el, -200, 2000);
+    const low = el.getBoundingClientRect();
+    expect(low.top).toBeGreaterThan(button.getBoundingClientRect().bottom);
+    await page.viewport(1280, 500);
+    await settle();
+    expect(el.getAttribute("data-dock-anchored")).toBe("above");
+    const anchor = button.getBoundingClientRect();
+    const held = el.getBoundingClientRect();
+    expect(held.bottom).toBeLessThanOrEqual(anchor.top - 8 + 0.5);
+    expect(held.left).toBeCloseTo(low.left, 0);
+    await page.viewport(1280, 800);
+    await settle();
+    expect(el.getAttribute("data-dock-anchored")).toBe("below");
+    expect(el.getBoundingClientRect().top).toBeCloseTo(low.top, 0);
+  });
+
+  it("keeps the side through a gesture, and re-resolves once it ends", async () => {
+    const button = hostHeader({ top: "300px" });
+    const el = mount({ "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    expect(el.getAttribute("data-dock-anchored")).toBe("below");
+    const header = el.shadowRoot?.querySelector(".header") as HTMLElement;
+    const [x, y] = centre(header.getBoundingClientRect());
+    header.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x - 20, clientY: y + 20 }));
+    await page.viewport(1280, 500);
+    await settle();
+    expect(el.getAttribute("data-dock-anchored")).toBe("below");
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x - 20, clientY: y + 20 }));
+    await settle();
+    expect(el.getAttribute("data-dock-anchored")).toBe("above");
+  });
+
+  it.each<[string, () => HTMLButtonElement]>([
+    [
+      "above",
+      () => {
+        const button = hostBar();
+        button.style.right = "";
+        button.style.left = "16px";
+        return button;
+      },
+    ],
+    ["below", () => hostHeader({ right: "", left: "16px" })],
+  ])(
+    "keeps the panel inside the left gutter %s an anchor near the left edge",
+    async (side, make) => {
+      const button = make();
+      const el = mount({ "anchor-side": side, "data-start-open": "" });
+      el.anchor = button;
+      await settle();
+      const panel = el.getBoundingClientRect();
+      expect(panel.left).toBeGreaterThanOrEqual(GUTTER - 0.5);
+      expect(panel.width).toBeGreaterThan(300);
+      expect(el.getAttribute("data-dock-anchored")).toBe(side);
+    },
+  );
+
+  it("holds the left gutter for a panel opened by the host's button after mounting collapsed", async () => {
+    const button = hostHeader({ right: "", left: "16px" });
+    const el = mount({ "anchor-side": "below" });
+    el.anchor = button;
+    await settle();
+    el.setCollapsed(false);
+    await settle();
+    const panel = el.getBoundingClientRect();
+    expect(panel.left).toBeGreaterThanOrEqual(GUTTER - 0.5);
+    expect(panel.top).toBeCloseTo(button.getBoundingClientRect().bottom + 8, 0);
+  });
+
+  it("goes full-bleed on a phone below its anchor", async () => {
+    const button = hostHeader();
+    await page.viewport(375, 812);
+    const el = mount({ "anchor-side": "below", "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    const panel = el.getBoundingClientRect();
+    expect([panel.left, panel.top, panel.width, panel.height]).toEqual([
+      0,
+      0,
+      screenWidth(),
+      screenHeight(),
+    ]);
+  });
+});
+
+describe("the gutter on both window edges, under an anchor (real browser)", () => {
+  beforeAll(() => {
+    defineAgUiChat();
+  });
+
+  afterEach(async () => {
+    document.body.innerHTML = "";
+    await page.viewport(1280, 800);
+  });
+
+  it.each<[string, "above" | "below", boolean, number]>([
+    ["a maximized panel, anchor well inside", "above", true, 120],
+    ["a maximized panel, anchor well inside", "below", true, 120],
+    ["a maximized panel, anchor at the right edge", "above", true, 4],
+    ["a resting panel, anchor at the right edge", "above", false, 4],
+    ["a resting panel, anchor at the right edge", "below", false, 4],
+  ])("holds %s (%s) off both edges", async (_name, side, maximized, inset) => {
+    const button = side === "below" ? hostHeader({ right: `${inset}px` }) : hostBar();
+    if (side === "above") {
+      button.style.right = `${inset}px`;
+    }
+    const el = mount({ "anchor-side": side, "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    if (maximized) {
+      el.setMaximized(true);
+      await settle();
+      expect(el.maximized).toBe(true);
+    }
+    const panel = el.getBoundingClientRect();
+    expect(panel.left).toBeGreaterThanOrEqual(GUTTER - 0.5);
+    expect(panel.right).toBeLessThanOrEqual(screenWidth() - GUTTER + 0.5);
+  });
+
+  it("counts an inset the host reserved on the right as part of the gutter", async () => {
+    const button = hostBar();
+    button.style.right = "4px";
+    const el = mount({ "data-start-open": "" });
+    el.style.setProperty("--ag-ui-viewport-inset-right", "60px");
+    el.anchor = button;
+    await settle();
+    el.setMaximized(true);
+    await settle();
+    const panel = el.getBoundingClientRect();
+    expect(panel.right).toBeLessThanOrEqual(screenWidth() - 60 - GUTTER + 0.5);
+    expect(panel.left).toBeGreaterThanOrEqual(GUTTER - 0.5);
+  });
+
+  it("holds a maximized panel off both edges with the anchor at the left edge", async () => {
+    const button = hostBar();
+    button.style.right = "auto";
+    button.style.left = "4px";
+    const el = mount({ "anchor-side": "above", "data-start-open": "" });
+    el.anchor = button;
+    await settle();
+    el.setMaximized(true);
+    await settle();
+    const panel = el.getBoundingClientRect();
+    expect(panel.left).toBeGreaterThanOrEqual(GUTTER - 0.5);
+    expect(panel.right).toBeLessThanOrEqual(screenWidth() - GUTTER + 0.5);
+  });
+});
