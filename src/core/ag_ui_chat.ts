@@ -638,8 +638,8 @@ export class AgUiChat extends HTMLElement {
   #anchor: Element | null = null;
   /** Whether a missing anchor has been reported; once per anchor given. */
   #anchorWarned = false;
-  // Answers that finished while the widget was collapsed. Expanding clears it.
-  #unread = 0;
+  // Unseen answers per thread: finished while collapsed or off screen.
+  #unreadByThread = new Map<string, number>();
   /** Empty-state region at the top of the message list; hidden once anything renders. */
   readonly #emptyWrap: HTMLDivElement;
   /**
@@ -1014,7 +1014,7 @@ export class AgUiChat extends HTMLElement {
       running: () => this.#running,
       setRunning: (running) => this.#setRunning(running),
       appendMessage: (role, content) => this.appendMessage(role, content),
-      noteUnread: () => this.#noteUnread(),
+      noteUnread: (threadId) => this.#noteUnread(threadId),
     });
     this.#placement = new PanelPlacement({
       element: this,
@@ -1201,7 +1201,11 @@ export class AgUiChat extends HTMLElement {
       resetState: () => this.#resetState(),
       setRunning: (running) => this.#setRunning(running),
       threadChanged: (threadId, reason) => this.#dispatchThread(threadId, reason),
-      threadsListed: (threads) => this.#takeListedTitle(threads),
+      threadsListed: (threads) => {
+        this.#takeListedTitle(threads);
+        this.#takeListedUnread(threads);
+      },
+      threadDeleted: (threadId) => this.#forgetUnread([threadId]),
     });
   }
 
@@ -1738,7 +1742,7 @@ export class AgUiChat extends HTMLElement {
     // it has to learn the state the element mounted in -- restored from
     // storage or the placement's default -- without waiting for a change.
     // Dispatched directly rather than through setCollapsed, which would write
-    // storage and clear the unread count for a state nobody changed.
+    // storage and report the unread count for a state nobody changed.
     if (this.#surface().collapseTo === "none") {
       this.dispatchEvent(
         new CustomEvent<ToggleDetail>(TOGGLE_EVENT, {
@@ -2080,9 +2084,9 @@ export class AgUiChat extends HTMLElement {
     }
     this.#syncDock();
     writeStoredItem(this.#storage.key(COLLAPSED_KEY), collapsed ? "1" : "0");
-    // Expanding is what marks the waiting answers read; collapsing starts a
-    // fresh count. Either way the badge is cleared and the host told.
-    this.#setUnread(0);
+    // Expanding reads the thread on screen; other threads keep their marks.
+    // Reported on every toggle, as before, with the threads it cleared.
+    this.#unreadChanged(this.#markSeen());
     this.dispatchEvent(
       new CustomEvent<ToggleDetail>(TOGGLE_EVENT, {
         detail: { collapsed },
@@ -2093,13 +2097,18 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Answers that finished while the widget was collapsed, and that the user has
-   * therefore not seen. Expanding (or {@link newChat}) clears it. The launcher's
-   * badge renders this; {@link UNREAD_EVENT} announces every change, so a host
-   * chrome can render its own instead.
+   * Answers the user has not seen, totalled across threads: each finished while
+   * the panel was collapsed, and is read once its thread is on screen with the
+   * panel expanded. The launcher's badge renders this; {@link UNREAD_EVENT}
+   * announces every change and the threads it touched, so a host chrome can
+   * render its own instead.
    */
   get unread(): number {
-    return this.#unread;
+    let total = 0;
+    for (const count of this.#unreadByThread.values()) {
+      total += count;
+    }
+    return total;
   }
 
   /**
@@ -2463,7 +2472,8 @@ export class AgUiChat extends HTMLElement {
     this.#input.value = "";
     this.#onInput();
     this.#setRunning(false);
-    this.#setUnread(0);
+    // The previous principal's marks go with their threads, unread: nobody saw them.
+    this.#forgetUnread([...this.#unreadByThread.keys()], true);
     if (!live) {
       return;
     }
@@ -2724,7 +2734,6 @@ export class AgUiChat extends HTMLElement {
     this.#resetState();
     this.#history.startThread();
     this.#setRunning(false);
-    this.#setUnread(0);
     this.#dispatchThread(this.#history.threadId, "new");
     // Whichever control started it: the header's, the history list's (which
     // hands focus back to its opener as it closes, before this runs), or a
@@ -3143,11 +3152,13 @@ export class AgUiChat extends HTMLElement {
    */
   #syncLauncher(): void {
     this.#launcher.setAttribute("aria-expanded", String(!this.collapsed));
-    const unread = this.#unread;
+    const unread = this.unread;
     // Past 9 the exact number stops being information and starts being a
     // layout problem — the badge is a circle, not a field.
     this.#badge.textContent = unread > 9 ? "9+" : String(unread);
-    this.#badge.hidden = unread === 0 || !isUnreadBadgeEnabled(this);
+    // Only on the collapsed launcher: an open panel can now hold another
+    // thread's unseen answers, and the launcher behind it is not where to say so.
+    this.#badge.hidden = unread === 0 || !this.collapsed || !isUnreadBadgeEnabled(this);
     const label =
       !this.collapsed && this.#surface().collapseTo === "bar"
         ? this.#strings.collapse
@@ -3159,18 +3170,18 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Set the unread count, repaint the badge, and tell the host.
+   * Repaint the badge and tell the host the total, naming `threadIds`, the
+   * threads whose marks changed.
    *
    * The count is kept whether or not the badge renders it, so `unread` stays
    * truthful for a host chrome and switching the badge on mid-session doesn't
    * start from a number that was never counted.
    */
-  #setUnread(count: number): void {
-    this.#unread = count;
+  #unreadChanged(threadIds: readonly string[]): void {
     this.#syncLauncher();
     this.dispatchEvent(
       new CustomEvent<UnreadDetail>(UNREAD_EVENT, {
-        detail: { unread: count },
+        detail: { unread: this.unread, threadIds },
         bubbles: true,
         composed: true,
       }),
@@ -3178,14 +3189,68 @@ export class AgUiChat extends HTMLElement {
   }
 
   /**
-   * Count an answer the user cannot have seen: one that finished while the
-   * widget was collapsed. Expanding is what marks them read.
+   * Note an answer that finished on `threadId`: read as it lands when that
+   * thread is on screen in an expanded panel, otherwise one more unseen.
    */
-  #noteUnread(): void {
-    if (!this.collapsed) {
+  #noteUnread(threadId: string): void {
+    if (this.#inView(threadId)) {
+      this.conversationStore.markRead?.(threadId);
       return;
     }
-    this.#setUnread(this.#unread + 1);
+    this.#unreadByThread.set(threadId, (this.#unreadByThread.get(threadId) ?? 0) + 1);
+    this.#unreadChanged([threadId]);
+  }
+
+  /**
+   * Whether `threadId` is in front of the user: drawn on screen, with no switch
+   * away from it in flight, in an expanded panel. On screen while collapsed is
+   * not read.
+   */
+  #inView(threadId: string): boolean {
+    return !this.collapsed && threadId === this.#shownThread && threadId === this.#history.threadId;
+  }
+
+  /** Clear the marks of the thread in view, telling the store; the threads cleared. */
+  #markSeen(): string[] {
+    const threadId = this.#shownThread;
+    if (threadId === null || !this.#inView(threadId) || !this.#unreadByThread.delete(threadId)) {
+      return [];
+    }
+    this.conversationStore.markRead?.(threadId);
+    return [threadId];
+  }
+
+  /**
+   * Drop the marks of `threadIds` without reading them (a deleted thread, a
+   * principal who left). Reported when any had marks, or always when `report`.
+   */
+  #forgetUnread(threadIds: readonly string[], report = false): void {
+    const dropped = threadIds.filter((threadId) => this.#unreadByThread.delete(threadId));
+    if (dropped.length > 0 || report) {
+      this.#unreadChanged(dropped);
+    }
+  }
+
+  /**
+   * Take the threads a store lists as unread that this page has not counted:
+   * one mark each, or read at once when the thread is in view.
+   */
+  #takeListedUnread(threads: readonly ThreadMeta[]): void {
+    const marked: string[] = [];
+    for (const { threadId, unread } of threads) {
+      if (unread !== true || this.#unreadByThread.has(threadId)) {
+        continue;
+      }
+      if (this.#inView(threadId)) {
+        this.conversationStore.markRead?.(threadId);
+      } else {
+        this.#unreadByThread.set(threadId, 1);
+        marked.push(threadId);
+      }
+    }
+    if (marked.length > 0) {
+      this.#unreadChanged(marked);
+    }
   }
 
   /**
@@ -3333,6 +3398,10 @@ export class AgUiChat extends HTMLElement {
   #dispatchThread(threadId: string, reason: ThreadDetail["reason"]): void {
     const detail: ThreadDetail = { threadId, previousThreadId: this.#shownThread, reason };
     this.#shownThread = threadId;
+    const seen = this.#markSeen();
+    if (seen.length > 0) {
+      this.#unreadChanged(seen);
+    }
     // The chip always names the live page, whichever conversation is on screen.
     this.refreshPlace();
     this.#titleMessages = this.#history.restored;

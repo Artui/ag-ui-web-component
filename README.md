@@ -1336,8 +1336,28 @@ the text colour.
 
 A collapsed widget is the one state where an answer can arrive with nothing on screen to say so,
 so the launcher carries a count of the answers that finished while it was closed (capped at `9+`).
-Expanding — or `newChat()` — marks them read. It is the only affordance here that is **on by
-default**; `data-unread-badge="false"` turns the badge off.
+It is the only affordance here that is **on by default**; `data-unread-badge="false"` turns the
+badge off.
+
+**Unseen answers are kept per thread.** Each answer counts against the thread it ran on, and a
+thread is read only when it is on screen **and** the panel is expanded. On screen in a collapsed
+panel is not read. So an answer that finished on thread A while collapsed stays unread across a
+collapsed switch to B, a `newChat()`, or an expand on B, and is read once A is on screen in the
+open panel. `unread` is the total across threads, which is what the badge shows; it shows on the
+collapsed launcher only, so an open panel whose other threads hold unseen answers shows no
+badge. A principal change (a new `user-key`) drops the previous principal's marks, and deleting a
+thread drops its own.
+
+A store can carry read state across pages and devices, through two optional members:
+
+- **`ThreadMeta.unread`** (boolean): a thread `listThreads()` reports as unread, and the page has
+  not counted, counts once.
+- **`markRead(threadId)`**: called when the element reads a thread with unseen answers, and when
+  an answer finishes on the thread in view. A server store maps it to its read endpoint, and
+  should list the thread with `unread: false` afterwards.
+
+A store without either still has its threads counted and cleared in the page. Neither is
+implemented by the default `SessionStorageStore`.
 
 The count is also the launcher's accessible name (`Expand — 2 unread`, from the `expandUnread`
 string), because a coloured dot says nothing to a screen reader.
@@ -1402,8 +1422,9 @@ while arrow keys on the collapsed launcher already move the widget, panel includ
 chat.unread; // 2
 
 // Every change, whether or not the badge renders it — so a host that hides the
-// badge can put the count in its own chrome.
-chat.addEventListener("ag-ui-unread", (e) => setDockBadge(e.detail.unread));
+// badge can put the count in its own chrome. `threadIds` names the threads the
+// change marked or cleared, and is empty for a collapse toggle that touched none.
+chat.addEventListener("ag-ui-unread", (e) => setDockBadge(e.detail.unread, e.detail.threadIds));
 ```
 
 ```css
@@ -3171,7 +3192,7 @@ re-export point. Internal modules import from leaf paths.
 | `BarHeightDetail` | type | `detail` shape of the `ag-ui-bar-height` event (`{ height }`). |
 | `DockWidthDetail` | type | `detail` shape of the `ag-ui-dock-width` event (`{ width, side }`). |
 | `ThreadTitleDetail` | type | `detail` shape of the `ag-ui-thread-title` event (`{ threadId, title }`). |
-| `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
+| `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread, threadIds }`). |
 | `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
 | `StateDetail` | type | `detail` shape of the `ag-ui-state` event (`{ state }`). |
 
@@ -3248,7 +3269,7 @@ re-export point. Internal modules import from leaf paths.
 | `SessionStorageStore` | class | Default per-tab conversation store. |
 | `RemoteConversationStore` | class | Server-backed store over a `data-threads-url` endpoint. |
 | `ClientConversationStore` | type | The persistence seam. |
-| `ThreadMeta` | type | A thread-drawer row (`{ threadId, title, updatedAt, preview }`). |
+| `ThreadMeta` | type | A thread-drawer row (`{ threadId, title, updatedAt, preview, unread? }`). |
 | `NavigationCheckpoint` | type | The pre-reload checkpoint marker. |
 | `RunIndex` | class | Reads a `data-runs-url` run index and derives its resume / fork endpoints. |
 | `RunRow` | type | One run index row (`{ run_id, thread_id, parent_run_id, started_at, continuable, preview? }`). |
