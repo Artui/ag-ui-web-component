@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`anchor-side` opens a `collapse-to="none"` panel below its anchor.** `above`, `below` or
+  `auto` (the default) picks which side of the host's button the panel stands on. `auto` takes the
+  side with more room and re-decides on a window resize, never mid-drag, so a button in a top
+  header now opens the panel below it instead of as a 0px strip above it. Below, the panel stands
+  `--ag-ui-anchor-gap` under the anchor's bottom, its max height is the room under it, and a drag,
+  a grip and `resetSize()` all stay below the anchor; a dragged spot is kept and held inside the
+  room on whichever side is current. The panel also no longer runs off the left edge for an
+  anchor near it: on either side it stops at the 24px gutter. No opt-in, but the default moves
+  some panels: under `auto` every anchor with more room below it than above now opens below, not
+  only one in a top header. A bottom-bar anchor still opens above as before; an anchor nearer the
+  top of the window than the bottom, such as a toolbar button partway down the page, now opens
+  below it, and `anchor-side="above"` keeps the old side. A host with a top-header anchor that
+  worked around the collapse with its own `--ag-ui-inset` and `--ag-ui-max-height` can drop both.
+
 ### Changed
 
 - **A vendored bundle built against zod 4.2 or later carries part of zod's JSON Schema code.**

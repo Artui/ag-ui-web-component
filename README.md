@@ -211,6 +211,7 @@ another origin, add `credentials="include"` too; see
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
 | `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Under either, a corner panel still moves by its header and `moveTo` on a wide viewport, and remembers where it was dragged. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
 | `anchor` | `anchor` | Under `collapse-to="none"`, a selector for the host's element the panel rises from, right-aligned to it. The `anchor` property takes an element instead and wins over the attribute. Live. |
+| `anchor-side` | — | Under `collapse-to="none"` with an anchor, which side of it the panel opens on: `above`, `below`, or `auto` (the default, and any other value), which takes the side with more room and re-decides on a window resize, never during a drag. Live. |
 | `data-dragging` | — | **Written by the element, not by you.** Stamped on whichever handle a gesture is currently using, so the styles can react and so the element knows not to re-place the widget under a drag in progress. Cleared on `pointerup` and on `pointercancel`. |
 | `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
 | `data-greeting` | — | CSS-only: `off` turns the [greeting layout](#the-greeting-on-an-empty-page) off under `placement="page"`, where it is on by default. Any other value turns it on under `placement="embedded"`. No other placement has it. |
@@ -248,7 +249,7 @@ neither camp is `data-launcher-icon-url`: it is read while the element connects,
 below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
-either way: `title-text`, `placement`, `collapse-to`, `anchor`, `data-side`, `data-small-viewport`, `data-threads-search`, `credentials`, `user-key`,
+either way: `title-text`, `placement`, `collapse-to`, `anchor`, `anchor-side`, `data-side`, `data-small-viewport`, `data-threads-search`, `credentials`, `user-key`,
 `user-name`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
@@ -1504,6 +1505,19 @@ ag-ui-chat {
 A gap wider than the gutter is taken off the panel's max height as well, so a tall panel still
 stops at the top of the window.
 
+**A button in a header.** The panel opens on the side of the anchor with more room, so a button
+in a top header opens it below the button and one in a bottom bar opens it above, with no inset
+of your own. `anchor-side="above"` or `"below"` fixes the side; `auto`, the default, decides again
+when the window is resized (never during a drag), so an anchor near the middle of the window can
+change sides. Below the anchor the gap is measured from the button's bottom edge, and the max
+height is the room under it less one gutter. On either side the panel lines up with the anchor's
+right edge unless that would put its left edge inside the 24px gutter on the left of the window,
+where it stops instead.
+
+```html
+<ag-ui-chat endpoint="/agent/" collapse-to="none" anchor="#agent-button" anchor-side="below"></ag-ui-chat>
+```
+
 Under `none` the element dispatches `ag-ui-toggle` once as it connects, with whichever state it
 mounted in, collapsed or open. Under `auto` and `bar` it does not, as before. That event touches
 neither the stored state nor the unread count.
@@ -1565,7 +1579,8 @@ body {
 
 **No inset needed.** Under `bar` and `none` you do not set `--ag-ui-inset` to keep the panel off
 your toolbar: its max height is the viewport less the bar's height (or, under `none`, the
-distance to the anchor's top) and one gutter, and its bottom sits on the bar or the anchor.
+distance to the anchor's top, or below it from the anchor's bottom) and one gutter, and its
+bottom sits on the bar or the anchor (its top, when it opens below).
 
 **Docked, and still movable.** On a wide viewport a docked corner panel (the corner placements
 under `bar`, or under `none` with or without an anchor) moves by its header, and `moveTo` moves
@@ -1574,7 +1589,8 @@ launcher to drag: the bar and your own control stay where they are.
 
 - **Above the dock.** A dragged panel stays inside the viewport and above the bar's top edge, so it
   never covers the bar it minimises to. Under `none` with an anchor it stays above the anchor's
-  top edge the same way, because the anchor is your own way back and has to stay in view;
+  top edge the same way (below its bottom edge, when the panel opens below it), because the
+  anchor is your own way back and has to stay in view;
   `--ag-ui-anchor-gap` no longer applies once the panel is dragged, and the screen-edge margin
   (8px) does. Under `none` with no anchor only the viewport holds it, as for a corner panel.
 - **Remembered like a corner panel.** Minimising and reopening brings it back where it was

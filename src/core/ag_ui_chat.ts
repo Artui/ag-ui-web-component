@@ -1216,6 +1216,7 @@ export class AgUiChat extends HTMLElement {
       "placement",
       "collapse-to",
       "anchor",
+      "anchor-side",
       "data-side",
       "data-small-viewport",
       "data-threads-search",
@@ -1251,7 +1252,7 @@ export class AgUiChat extends HTMLElement {
       this.#syncDock();
       return;
     }
-    if (name === "data-side" || name === "data-small-viewport") {
+    if (name === "anchor-side" || name === "data-side" || name === "data-small-viewport") {
       this.#syncDock();
       return;
     }

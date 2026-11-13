@@ -52,6 +52,10 @@ const DRAG_HEIGHT = "--_drag-height";
  */
 const DOCK_BOTTOM = "--_dock-bottom";
 const DOCK_RIGHT = "--_dock-right";
+const DOCK_TOP = "--_dock-top";
+
+/** The side of its anchor a panel under collapse-to="none" opens on. */
+type AnchorSide = "above" | "below";
 
 /** Per-tab persistence key for a dragged launcher position. */
 const LAUNCHER_KEY = "ag-ui-chat:launcher";
@@ -445,6 +449,13 @@ export class PanelPlacement {
    * syncDock, which runs on every change either can make.
    */
   #dockTop = Number.POSITIVE_INFINITY;
+  /**
+   * The line a panel docked below its anchor stays below: the anchor's bottom.
+   * Negative infinity on every other dock.
+   */
+  #dockFloor = Number.NEGATIVE_INFINITY;
+  /** The side of the anchor the panel last stood on, held while a gesture runs. */
+  #anchorSide: AnchorSide = "above";
   /** The bar's height, as last measured: what a fill takes away when it stamps. */
   #barHeight = 0;
   /**
@@ -897,7 +908,8 @@ export class PanelPlacement {
    *
    * Under the bar it is the strip's border box, which is 0 whenever the strip
    * is not drawn (a phone with the panel open, where the panel is the screen).
-   * Under a host anchor it is the anchor's top and right, measured against the
+   * Under a host anchor it is the anchor's top, or its bottom on the side below,
+   * and its right, measured against the
    * layout viewport a fixed element is placed in; an anchor of null leaves the
    * panel in its placement's own corner. Every other surface carries neither
    * property, so nothing stale is left behind by a live switch.
@@ -906,20 +918,30 @@ export class PanelPlacement {
     const element = this.#host.element;
     const target = this.#surface().collapseTo;
     const height = target === "bar" ? bar.offsetHeight : 0;
+    const rect = target === "none" && anchor !== null ? anchor.getBoundingClientRect() : null;
+    const side = rect === null ? null : this.#resolveSide(rect);
     if (target === "bar") {
       element.style.setProperty(DOCK_BOTTOM, `${height}px`);
-    } else if (target === "none" && anchor !== null) {
-      const rect = anchor.getBoundingClientRect();
-      const screen = this.#screen();
-      element.style.setProperty(DOCK_BOTTOM, `${Math.max(0, screen.height - rect.top)}px`);
-      element.style.setProperty(DOCK_RIGHT, `${Math.max(0, screen.width - rect.right)}px`);
+    } else if (rect !== null && side === "above") {
+      element.style.setProperty(DOCK_BOTTOM, `${Math.max(0, this.#screen().height - rect.top)}px`);
     } else {
       element.style.removeProperty(DOCK_BOTTOM);
     }
-    if (target !== "none" || anchor === null) {
+    if (rect !== null && side === "below") {
+      element.style.setProperty(DOCK_TOP, `${Math.max(0, rect.bottom)}px`);
+    } else {
+      element.style.removeProperty(DOCK_TOP);
+    }
+    if (rect !== null) {
+      element.style.setProperty(DOCK_RIGHT, `${this.#dockRight(rect)}px`);
+    } else {
       element.style.removeProperty(DOCK_RIGHT);
     }
-    element.toggleAttribute("data-dock-anchored", target === "none" && anchor !== null);
+    if (side === null) {
+      element.removeAttribute("data-dock-anchored");
+    } else {
+      element.setAttribute("data-dock-anchored", side);
+    }
     this.#barHeight = height;
     if (target !== "bar") {
       this.#barTaken = null;
@@ -927,9 +949,10 @@ export class PanelPlacement {
     this.#dockTop =
       target === "bar" && height > 0
         ? bar.getBoundingClientRect().top
-        : target === "none" && anchor !== null
-          ? anchor.getBoundingClientRect().top
+        : rect !== null && side === "above"
+          ? rect.top
           : Number.POSITIVE_INFINITY;
+    this.#dockFloor = rect !== null && side === "below" ? rect.bottom : Number.NEGATIVE_INFINITY;
     // Every change the dock can make passes through here -- the bar's height
     // arrives by a ResizeObserver after the first restore, and a bar that grew
     // since the drag would otherwise cover the panel's foot -- so the dragged
@@ -945,8 +968,36 @@ export class PanelPlacement {
    */
   #dockRoom(): ViewportBox {
     const viewport = this.#viewport();
+    const top = Math.max(viewport.top, this.#dockFloor);
     const bottom = Math.min(viewport.top + viewport.height, this.#dockTop);
-    return { ...viewport, height: Math.max(0, bottom - viewport.top) };
+    return { ...viewport, top, height: Math.max(0, bottom - top) };
+  }
+
+  /**
+   * The side of the anchor the panel opens on: the host's anchor-side, or under
+   * auto the side with more of the usable viewport, kept while a gesture runs.
+   */
+  #resolveSide(rect: DOMRect): AnchorSide {
+    const stated = this.#host.element.getAttribute("anchor-side");
+    if (stated === "above" || stated === "below") {
+      this.#anchorSide = stated;
+    } else if (!this.dragging()) {
+      const viewport = this.#viewport();
+      const below = viewport.top + viewport.height - rect.bottom;
+      this.#anchorSide = below > rect.top - viewport.top ? "below" : "above";
+    }
+    return this.#anchorSide;
+  }
+
+  /**
+   * The panel's distance from the right edge: on the anchor's right, unless a
+   * panel that wide would then cross the gutter on the left of the usable box.
+   */
+  #dockRight(rect: DOMRect): number {
+    const screen = this.#screen();
+    const fits =
+      screen.width - this.#viewport().left - EDGE_MARGIN - this.#host.element.offsetWidth;
+    return Math.max(0, Math.min(screen.width - rect.right, fits));
   }
 
   /**

@@ -336,10 +336,12 @@ export const TOKEN_STYLES: string = `
   --_drag-height: initial;
   /* Where a docked panel stands, written inline the same way by the placement
      code: the bottom bar's height, or the host anchor's distance from the
-     bottom and right edges. Read only by the dock rules, each with a 0px
-     fallback; declared initial so it never inherits either. */
+     bottom and right edges, or from the top to its bottom for a panel opening
+     below it. Read only by the dock rules, each with a 0px fallback; declared
+     initial so it never inherits any of them. */
   --_dock-bottom: initial;
   --_dock-right: initial;
+  --_dock-top: initial;
   /* Where the conversation list stands beside the host's button under
      collapse-to="none", written inline by the element from the button's box.
      Declared initial for the same reason. */
