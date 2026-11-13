@@ -16,7 +16,11 @@
  *
  * **What it pins.** Adopting `@ag-ui/client` and `@ag-ui/core` 1.0 grew this
  * bundle by 254 KB, and 155 KB of that was zod code neither package calls: every
- * locale zod ships, and its JSON Schema generator. The build now resolves zod's
+ * locale zod ships, and its JSON Schema generator. zod is a peer of the
+ * protocol packages that this package does not declare, so the zod the bundle
+ * is built from is whatever the install resolved: the lock's 3.25, or the
+ * newest 4.x for the scheduled unpinned resolve. From zod 4.2.0 part of the
+ * JSON Schema code is called by every schema and stays, about 42 KB minified. The build now resolves zod's
  * namespace statically so that code drops (`zodNamespaceImport` says how), which
  * is only safe if everything the protocol packages do call survives -- the
  * decode, the enforcement stage that strips undeclared keys, the schema check
@@ -79,16 +83,50 @@ describe("what the bundle carries", () => {
     expect(customElements.get(bundle.ELEMENT_TAG)).toBe(bundle.AgUiChat);
   });
 
-  it("carries no zod locale but English, and no JSON Schema generator", () => {
-    const zod = inject("vendoredBundleInputs").filter((path) => /[\\/]zod[\\/]/.test(path));
+  it("carries no zod locale but English", () => {
+    const zod = bundledZod();
     // zod is there -- the protocol packages validate with it -- so an empty
     // match below means the code was dropped, not that the path moved.
     expect(zod.length).toBeGreaterThan(0);
     const locales = zod.filter((path) => /[\\/]locales[\\/]/.test(path));
     expect(locales.map((path) => path.replace(/^.*[\\/]/, ""))).toEqual(["en.js"]);
-    expect(zod.filter((path) => /to-json-schema/.test(path))).toEqual([]);
+  });
+
+  it("draws on one zod", () => {
+    // Two copies would mean the protocol packages each resolved their own,
+    // which doubles what is asserted below rather than failing it.
+    expect(inject("vendoredZodVersions")).toHaveLength(1);
+  });
+
+  it("carries only the JSON Schema code zod's own schemas call", () => {
+    const [version = ""] = inject("vendoredZodVersions");
+    const jsonSchema = bundledZod()
+      .filter((path) => /json-schema/.test(path))
+      .map((path) => path.replace(/^.*[\\/]zod[\\/]/, ""))
+      .sort();
+    // From zod 4.2.0 every schema's constructor attaches its Standard JSON
+    // Schema method and its own JSON Schema processor (classic/schemas.js
+    // imports both), so the two modules are live code and no build can drop
+    // them. The generator class and the from-JSON-Schema parser are not, and
+    // still drop. Before 4.2.0 none of it is reachable.
+    expect(jsonSchema).toEqual(
+      zodSchemasCallJsonSchema(version)
+        ? ["v4/core/json-schema-processors.js", "v4/core/to-json-schema.js"]
+        : [],
+    );
   });
 });
+
+/** Every bundled module under a zod package. */
+function bundledZod(): string[] {
+  return inject("vendoredBundleInputs").filter((path) => /[\\/]zod[\\/]/.test(path));
+}
+
+/** Whether a zod version's schema constructors reach its JSON Schema code. */
+function zodSchemasCallJsonSchema(version: string): boolean {
+  const [major = 0, minor = 0] = version.split(".").map(Number);
+  return major > 4 || (major === 4 && minor >= 2);
+}
 
 describe("a recorded run, through the bundle's own HttpAgent", () => {
   it("decodes and renders an ordinary run", async () => {
