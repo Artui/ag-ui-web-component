@@ -1232,7 +1232,10 @@ and `restore` strings), apart from the launcher's and the rail's "Expand", which
   placement's own size back, or the size the user dragged in it.
 - **The API.** `chat.maximized` (reflected as the `maximized` attribute), `setMaximized(bool)`
   and `toggleMaximized()`. Each change emits `ag-ui-maximize` (the `MAXIMIZE_EVENT` constant)
-  with `detail: { maximized }` (typed `MaximizeDetail`). It is not stored: a reload opens at the
+  with `detail: { maximized }` (typed `MaximizeDetail`). It fires only while connected: a
+  markup `maximized` is announced once at connect, and only if it holds (a panel that mounts
+  collapsed announces nothing), and a change made while detached is announced once on reconnect,
+  only if it differs from what listeners last heard. It is not stored: a reload opens at the
   placement's own size. `describeSurface()` reports it, and no agent tool changes it.
 
 ```js
