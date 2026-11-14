@@ -436,6 +436,27 @@
           </optgroup>
         </select>
       </label>
+      <!-- data-side: which edge a sidebar docks to; right removes the attribute. -->
+      <label
+        >Side
+        <select id="cfg-side">
+          <option value="" selected>right</option>
+          <option value="left">left</option>
+        </select>
+      </label>
+      <!-- data-collapse-icon: default removes the attribute so the placement's
+           own mark shows (the panel mark on a sidebar, the chevron down elsewhere). -->
+      <label
+        >Collapse icon
+        <select id="cfg-collapse-icon">
+          <option value="" selected>default (by placement)</option>
+          <option value="panel-close">panel-close</option>
+          <option value="chevron-down">chevron-down</option>
+          <option value="chevron-up">chevron-up</option>
+          <option value="chevron-left">chevron-left</option>
+          <option value="chevron-right">chevron-right</option>
+        </select>
+      </label>
       <!-- auto removes the attribute; none also shows the host bar below and
            anchors the panel to its Agent button; none (corner) shows the bar
            without anchoring, so the panel rises from its own corner. -->
@@ -642,9 +663,13 @@
               to check it stays centred above the on-screen keyboard.
             </li>
             <li>
-              <strong>Collapse.</strong> Hit the header's <em>—</em>: the panel
+              <strong>Collapse.</strong> Hit the header's chevron: the panel
               scales into the round launcher in the corner, and the launcher
-              expands it again. <em>sidebar</em> slides to an edge rail instead;
+              expands it again. <em>sidebar</em> slides to an edge rail instead,
+              and its control draws a panel closing into that edge; set
+              <em>Side</em> to <em>left</em> and the mark turns to point left.
+              <em>Collapse icon</em> picks the mark outright and keeps it through a
+              placement change; <em>default</em> hands it back to the placement.
               <em>embedded</em> and <em>page</em> keep the header bar.
             </li>
             <li>

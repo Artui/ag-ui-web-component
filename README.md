@@ -208,6 +208,7 @@ another origin, add `credentials="include"` too; see
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
 | `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` / `chat` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
 | `data-side` | — | For `placement="sidebar"`: which edge it docks to, `right` (default) / `left`. Styling, and read by script for the side `dockWidth` and `ag-ui-dock-width` report. Live. |
+| `data-collapse-icon` | — | The header collapse control's mark: `panel-close` (a window with its docked pane and an arrow into the edge, mirrored for a sidebar on `data-side="left"`) / `chevron-up` / `chevron-down` / `chevron-left` / `chevron-right`. Absent, or any other value, follows the placement: `panel-close` on `sidebar` (and `side`), `chevron-down` everywhere else. A host icon in `slot="icon-collapse"` wins over it. Live. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
 | `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Under either, a corner panel still moves by its header and `moveTo` on a wide viewport, and remembers where it was dragged. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
@@ -240,6 +241,23 @@ same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 </ag-ui-chat>
 ```
 
+The collapse control's built-in mark follows the placement, because a sidebar hides sideways
+into its edge rather than down: `panel-close` (a window with its docked pane and an arrow into
+the edge) on `sidebar` and `side`, mirrored for a sidebar on `data-side="left"`, and
+`chevron-down` on `floating`, `full`, `embedded` and every other placement. `data-collapse-icon`
+picks one of the built-in marks outright, at any placement and live: `panel-close`,
+`chevron-up`, `chevron-down`, `chevron-left` or `chevron-right`; any other value reads as
+absent. `panel-close` always points into the edge the panel docks to, so it mirrors on a left
+sidebar whether chosen or defaulted; the chevrons do not turn. For a mark of your own, slot it
+into `icon-collapse`, which wins over the attribute and every placement:
+
+```html
+<ag-ui-chat endpoint="/agent/" placement="floating" data-collapse-icon="chevron-right"></ag-ui-chat>
+<ag-ui-chat endpoint="/agent/" placement="sidebar">
+  <svg slot="icon-collapse" width="16" height="16"><!-- ... --></svg>
+</ag-ui-chat>
+```
+
 #### When each attribute is read
 
 The element observes two groups of attributes, and they behave differently once it is in the DOM.
@@ -253,7 +271,7 @@ below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
 either way: `title-text`, `placement`, `collapse-to`, `anchor`, `anchor-side`, `maximized`, `data-side`, `data-small-viewport`, `data-threads-search`, `credentials`, `user-key`,
-`user-name`, `data-tool-group-display`.
+`user-name`, `data-tool-group-display`, `data-collapse-icon`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
 all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;
@@ -1171,7 +1189,8 @@ handler), gate `drag_and_drop` with [`confirmPredicate`](#inline-confirmation-x-
 ## New chat and collapse
 
 The header carries built-in buttons for a new chat (a pencil on a square), maximize (two arrows pointing out) and
-collapse (a chevron down). The
+collapse (a chevron down, or on a sidebar a panel closing into its edge; `data-collapse-icon`
+chooses it). The
 matching JS API:
 
 - `newChat()` — clears the transcript, drops the in-memory run state, and mints a new thread id.
@@ -4032,7 +4051,7 @@ with a matching `slot=`):
 | `launcher` | The collapsed widget's mark — the floating launcher, or the sidebar rail. |
 | `icon-send` / `icon-stop` | The composer button's two glyphs (idle and mid-run). |
 | `icon-attach` / `icon-voice` | The paperclip and mic glyphs. |
-| `icon-history` / `icon-checkpoints` / `icon-new` / `icon-maximize` / `icon-collapse` | The header controls' glyphs. |
+| `icon-history` / `icon-checkpoints` / `icon-new` / `icon-maximize` / `icon-collapse` | The header controls' glyphs. A slotted `icon-collapse` wins over `data-collapse-icon`. |
 
 ```html
 <ag-ui-chat endpoint="/agent/">

@@ -194,6 +194,21 @@ bind("cfg-tools", "data-tool-display");
 // How an opened group draws its calls; read only while Tool cards is grouped.
 bind("cfg-group-tools", "data-tool-group-display");
 
+// Absent is the default for both: a right-docked sidebar, and the collapse
+// mark the placement draws.
+for (const [id, attr] of [
+  ["cfg-side", "data-side"],
+  ["cfg-collapse-icon", "data-collapse-icon"],
+]) {
+  $(id).addEventListener("change", (event) => {
+    if (event.target.value === "") {
+      chat.removeAttribute(attr);
+    } else {
+      chat.setAttribute(attr, event.target.value);
+    }
+  });
+}
+
 // Absent is a value of its own here: it is what leaves the greeting to the
 // placement's default, on for page and off everywhere else.
 $("cfg-greeting").addEventListener("change", (event) => {

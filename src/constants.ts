@@ -503,8 +503,28 @@ export const ICON_MAXIMIZE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden
 /** The maximize control's mark while the panel is maximized; see {@link ICON_MAXIMIZE}. */
 export const ICON_RESTORE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4l-6 6M14 5v5h5M4 20l6-6M5 14h5v5"/></svg>`;
 
-/** The collapse control's mark (a chevron down). */
-export const ICON_COLLAPSE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5l6 6 6-6"/></svg>`;
+/**
+ * The collapse control's marks, chosen by `data-collapse-icon`. The panel mark
+ * is a window with its docked pane and an arrow into the edge it hides into;
+ * its left twin, and the up and left chevrons, are the right and down ones
+ * turned in the path data, so each mark is told apart by its paths alone.
+ */
+export const ICON_PANEL_CLOSE_RIGHT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/><path d="M8 9.5l2.5 2.5L8 14.5"/></svg>`;
+
+/** The panel mark for a panel docked to the left edge; see {@link ICON_PANEL_CLOSE_RIGHT}. */
+export const ICON_PANEL_CLOSE_LEFT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/><path d="M16 9.5L13.5 12l2.5 2.5"/></svg>`;
+
+/** A chevron down, the corner placements' collapse mark; see {@link ICON_PANEL_CLOSE_RIGHT}. */
+export const ICON_CHEVRON_DOWN = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5l6 6 6-6"/></svg>`;
+
+/** A chevron up; see {@link ICON_PANEL_CLOSE_RIGHT}. */
+export const ICON_CHEVRON_UP = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14.5l6-6 6 6"/></svg>`;
+
+/** A chevron right; see {@link ICON_PANEL_CLOSE_RIGHT}. */
+export const ICON_CHEVRON_RIGHT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>`;
+
+/** A chevron left; see {@link ICON_PANEL_CLOSE_RIGHT}. */
+export const ICON_CHEVRON_LEFT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6"/></svg>`;
 
 /** The new-chat control's mark (a pencil on a square). */
 export const ICON_NEW_CHAT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V13"/><path d="M17.5 3.5a2.1 2.1 0 0 1 3 3L12 15l-3.5 1 1-3.5z"/></svg>`;

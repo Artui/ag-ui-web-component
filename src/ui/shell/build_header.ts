@@ -1,6 +1,6 @@
 import {
   ICON_CHECKPOINTS,
-  ICON_COLLAPSE,
+  ICON_CHEVRON_DOWN,
   ICON_HISTORY,
   ICON_MAXIMIZE,
   ICON_NEW_CHAT,
@@ -88,7 +88,8 @@ export function buildHeader(options: HeaderOptions): BuiltHeader {
   const newChat = headerButton("new", strings.newChat, ICON_NEW_CHAT);
   newChat.addEventListener("click", options.onNewChat);
 
-  const collapse = headerButton("collapse", strings.collapse, ICON_COLLAPSE);
+  // The element repaints this mark for its placement and data-collapse-icon.
+  const collapse = headerButton("collapse", strings.collapse, ICON_CHEVRON_DOWN);
   collapse.addEventListener("click", options.onCollapse);
 
   const maximize = headerButton("maximize", strings.maximize, ICON_MAXIMIZE);
