@@ -256,6 +256,18 @@ export const TOOL_STEP_STYLES: string = `
   display: none;
 }
 
+/* A settled card offers the toggle only over something. The card marks
+   non-empty arguments with data-has-args and a non-blank result with
+   data-has-result, and a call with neither has nothing behind it in any
+   mode. Full shows the arguments without the toggle and inline never shows
+   them, so there only a result is worth opening; compact folds both. A
+   step group restates the full and inline half for the calls inside it. */
+.tool-call:not([data-has-args]):not([data-has-result]) .tool-call-toggle,
+:host([data-tool-display="full"]) .tool-call:not([data-has-result]) .tool-call-toggle,
+:host([data-tool-display="inline"]) .tool-call:not([data-has-result]) .tool-call-toggle {
+  display: none;
+}
+
 /* The approval prompt for a gated call, rendered inside that call's own card.
    Empty on every card nobody is being asked about, so it collapses instead of
    adding a gap to each one. */
