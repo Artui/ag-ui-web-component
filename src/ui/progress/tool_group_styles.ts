@@ -66,9 +66,21 @@ ${GROUPED} .tool-group-head {
   cursor: pointer;
 }
 
-${GROUPED} .tool-group-head:hover {
+${GROUPED} .tool-group-head:not(:disabled):hover {
   background: var(--_hover);
   color: var(--_fg);
+}
+
+/* A one-step row with nothing behind it -- a call with no arguments and no
+   result yet, or a blank one -- is a label, not a control: the step group
+   disables it and drops its expanded state, and this drops the pointer and
+   the chevron. Disabled rather than enabled-and-inert, so it takes no focus. */
+${GROUPED} .tool-group-head:disabled {
+  cursor: default;
+}
+
+${GROUPED} .tool-group-head:disabled .tool-group-chevron {
+  display: none;
 }
 
 ${GROUPED} .tool-group-head:focus-visible {
@@ -235,6 +247,13 @@ ${inner("inline")} .tool-call-section--args {
 
 ${inner("minimal")} .tool-call-toggle,
 ${inner("minimal")} .tool-call-body {
+  display: none;
+}
+
+/* The toggle over nothing, as the card modes refuse it: under every inner mode
+   but compact the arguments are not behind the toggle, so a call whose result
+   is missing or blank has nothing for it to open. */
+:host(:where(:not(${CARD_MODES})):not([data-tool-group-display="compact"])) .tool-group-list .tool-call:not([data-has-result]) .tool-call-toggle {
   display: none;
 }
 

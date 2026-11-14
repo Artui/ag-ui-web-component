@@ -2,7 +2,8 @@
 export const THOUGHTS_STYLES: string = `
 /* ── Thoughts region ────────────────────────────────────────────
    A muted, collapsible chain-of-thought at the top of the answer group: open
-   while the model reasons, folded once the answer text starts. */
+   while the model reasons, folded once the answer text starts. A block with
+   no text is a label alone, with no toggle and no body. */
 .thoughts {
   align-self: stretch;
   display: flex;
@@ -30,6 +31,14 @@ export const THOUGHTS_STYLES: string = `
 
 .thoughts-toggle[aria-expanded="false"]::before {
   content: var(--_disclosure-collapsed) " ";
+}
+
+/* The label is the whole header while the reasoning has no text, a plain line
+   with nothing to open; once there is text it sits inside the toggle, which
+   sets the same weight. */
+.thoughts-label {
+  align-self: flex-start;
+  font-weight: 600;
 }
 
 /* A gentle pulse on the label while reasoning is still streaming. */

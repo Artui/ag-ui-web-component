@@ -192,7 +192,7 @@ another origin, add `credentials="include"` too; see
 | `user-name` | `userName` | The signed-in user's display name, for the [greeting](#the-greeting-on-an-empty-page) an empty conversation shows under `placement="page"`. Presentation only: unlike `user-key` it scopes nothing and is never sent. Absent or blank gives the nameless greeting. Live. |
 | `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
 | `data-threads-cache` | — | **On by default.** `="false"` stops mirroring message bodies into `sessionStorage` when `data-threads-url` is set, for a deployment that put history on the server so transcripts stay off the client. Only meaningful alongside `data-threads-url`. |
-| `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's ⭯ *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
+| `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
 | `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's paperclip picker, drag-and-drop, and paste. |
 | `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
 | `data-attachment-max-bytes` | — | Client-side upload size cap in bytes (default 10 MiB; `0` disables). The server stays authoritative. |
@@ -208,6 +208,7 @@ another origin, add `credentials="include"` too; see
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
 | `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` / `chat` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
 | `data-side` | — | For `placement="sidebar"`: which edge it docks to, `right` (default) / `left`. Styling, and read by script for the side `dockWidth` and `ag-ui-dock-width` report. Live. |
+| `data-collapse-icon` | — | The header collapse control's mark: `panel-close` (a window with its docked pane and an arrow into the edge, mirrored on `data-side="left"`) / `chevron-up` / `chevron-down` / `chevron-left` / `chevron-right`. Absent, or any other value, follows the placement: `panel-close` on `sidebar` (and `side`), `chevron-down` everywhere else. A host icon in `slot="icon-collapse"` wins over it. Live. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
 | `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Under either, a corner panel still moves by its header and `moveTo` on a wide viewport, and remembers where it was dragged. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
@@ -229,13 +230,31 @@ another origin, add `credentials="include"` too; see
 | `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded` / `full`. `full` fills the viewport at every width, inside the safe-area insets; the `--ag-ui-inset`, size and `--ag-ui-panel-radius` tokens still apply. |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
-`icon-new`, `icon-maximize`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
-brand `<img>` or `<svg>` rather than only restyling the character. The composer's glyphs work the
+`icon-new`, `icon-maximize`, `icon-collapse` — with the built-in drawn glyph as the fallback, so a host can project a
+brand `<img>` or `<svg>` in its place. The built-in header marks are drawn at
+`--ag-ui-glyph-size`. The composer's glyphs work the
 same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 
 ```html
 <ag-ui-chat endpoint="/agent/">
   <svg slot="icon-new" width="16" height="16"><!-- ... --></svg>
+</ag-ui-chat>
+```
+
+The collapse control's built-in mark follows the placement, because a sidebar hides sideways
+into its edge rather than down: `panel-close` (a window with its docked pane and an arrow into
+the edge) on `sidebar` and `side`, mirrored for either on `data-side="left"`, and
+`chevron-down` on `floating`, `full`, `embedded` and every other placement. `data-collapse-icon`
+picks one of the built-in marks outright, at any placement and live: `panel-close`,
+`chevron-up`, `chevron-down`, `chevron-left` or `chevron-right`; any other value reads as
+absent. `panel-close` always points into the edge the panel docks to, so it mirrors on a left
+docked panel whether chosen or defaulted; the chevrons do not turn. For a mark of your own, slot it
+into `icon-collapse`, which wins over the attribute and every placement:
+
+```html
+<ag-ui-chat endpoint="/agent/" placement="floating" data-collapse-icon="chevron-right"></ag-ui-chat>
+<ag-ui-chat endpoint="/agent/" placement="sidebar">
+  <svg slot="icon-collapse" width="16" height="16"><!-- ... --></svg>
 </ag-ui-chat>
 ```
 
@@ -252,7 +271,7 @@ below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
 either way: `title-text`, `placement`, `collapse-to`, `anchor`, `anchor-side`, `maximized`, `data-side`, `data-small-viewport`, `data-threads-search`, `credentials`, `user-key`,
-`user-name`.
+`user-name`, `data-tool-group-display`, `data-collapse-icon`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
 all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;
@@ -1169,7 +1188,9 @@ handler), gate `drag_and_drop` with [`confirmPredicate`](#inline-confirmation-x-
 
 ## New chat and collapse
 
-The header carries built-in buttons for a new chat (✚), maximize (□) and collapse (—). The
+The header carries built-in buttons for a new chat (a pencil on a square), maximize (two arrows pointing out) and
+collapse (a chevron down, or on a sidebar a panel closing into its edge; `data-collapse-icon`
+chooses it). The
 matching JS API:
 
 - `newChat()` — clears the transcript, drops the in-memory run state, and mints a new thread id.
@@ -1214,8 +1235,8 @@ chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
 
 ### Maximizing the panel
 
-The maximize control (□, `maximize-button` part, `icon-maximize` slot) grows the open panel,
-and pressed again it restores it (❐). It is labelled "Maximize" and "Restore" (the `maximize`
+The maximize control (two arrows pointing out, `maximize-button` part, `icon-maximize` slot) grows the open panel,
+and pressed again it restores it (the arrows point in). It is labelled "Maximize" and "Restore" (the `maximize`
 and `restore` strings), apart from the launcher's and the rail's "Expand", which opens the panel.
 
 - **Where it is offered.** A corner panel (`floating`, `bottom-left`, the default) and a docked
@@ -3080,7 +3101,7 @@ chat.getPlace = () => ({
 
 When the server persists run checkpoints (django-ag-ui's `step_store`), a run
 that stopped part-way can be **continued** rather than restarted. Point the
-component at the run index and a ⭯ button appears in the header:
+component at the run index and a checkpoints button (an arrow turning back) appears in the header:
 
 ```html
 <ag-ui-chat endpoint="/agent/" data-runs-url="/agent/runs/"></ag-ui-chat>
@@ -4030,7 +4051,7 @@ with a matching `slot=`):
 | `launcher` | The collapsed widget's mark — the floating launcher, or the sidebar rail. |
 | `icon-send` / `icon-stop` | The composer button's two glyphs (idle and mid-run). |
 | `icon-attach` / `icon-voice` | The paperclip and mic glyphs. |
-| `icon-history` / `icon-checkpoints` / `icon-new` / `icon-maximize` / `icon-collapse` | The header controls' glyphs. |
+| `icon-history` / `icon-checkpoints` / `icon-new` / `icon-maximize` / `icon-collapse` | The header controls' glyphs. A slotted `icon-collapse` wins over `data-collapse-icon`. |
 
 ```html
 <ag-ui-chat endpoint="/agent/">
@@ -4150,6 +4171,14 @@ while the model reasons and folds away on the answer's first token; the reader c
 web component handles the `REASONING_*` event family (and the retired `THINKING_*`, which
 `@ag-ui/client` still converts onto it, with a console warning, during its deprecation window), so
 no client config is needed — the thoughts appear whenever the server forwards reasoning.
+
+The header is a toggle only once reasoning has text: a provider that opens and closes reasoning
+without sending any (redacted thinking, or summaries off) gets a plain label with no body, and no
+`thoughts-toggle` part. When reasoning ends the header settles to how long it took, string
+`thoughtFor` (`"Thought for {seconds}s"`, the sum of the turn's reasoning rounds); under a second it
+reads `thoughts`. A tool call likewise offers its details only over something: with no arguments
+and a blank result its toggle, and a one-step group's row, are not offered until a result with text
+arrives.
 
 ### The composer
 

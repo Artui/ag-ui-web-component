@@ -1,6 +1,6 @@
 import type { Interrupt } from "@ag-ui/core";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { cdp } from "vitest/browser";
+import { cdp, userEvent } from "vitest/browser";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
@@ -807,6 +807,160 @@ describe("a one-step group's opened list", () => {
     await send(el, "fill the title");
     el.setAttribute("data-tool-group-display", "full");
     expect(labelsShown(el)).toBe(1);
+  });
+});
+
+describe("a step with nothing behind it", () => {
+  it("keeps the arguments behind a Details toggle under inner compact, whatever the result", async () => {
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "fill_field", { field: "title" });
+      emit.toolCall("c2", "select_option", { field: "status" });
+      emit.toolResult("c1", "  \n");
+      emit.toolResult("c2", "picked");
+      emit.runEnd();
+    });
+    el.setAttribute("data-tool-group-display", "compact");
+    await send(el, "fill");
+    part(shadow(el), ".tool-group-head").click();
+    await settle();
+
+    const blank = all(el, ".tool-call")[0];
+    expect(blank?.hasAttribute("data-has-result")).toBe(false);
+    const toggle = part(blank as HTMLElement, ".tool-call-toggle");
+    expect(height(toggle)).toBeGreaterThan(0);
+    toggle.focus();
+    expect(shadow(el).activeElement).toBe(toggle);
+  });
+
+  it("draws a disabled lone row as a label: default cursor, no hover fill", async () => {
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "ping", {});
+      emit.toolResult("c1", "");
+      emit.runEnd();
+    });
+    await send(el, "ping");
+    const head = part(shadow(el), ".tool-group-head");
+    expect(head.hasAttribute("disabled")).toBe(true);
+    expect(getComputedStyle(head).cursor).toBe("default");
+
+    await userEvent.hover(document.body, { position: { x: 1, y: 1 } });
+    expect(head.matches(":hover")).toBe(false);
+    const resting = getComputedStyle(head).backgroundColor;
+    await userEvent.hover(head);
+    expect(head.matches(":hover")).toBe(true);
+    expect(getComputedStyle(head).backgroundColor).toBe(resting);
+  });
+
+  it("keeps the hover fill and the pointer on a row that opens", async () => {
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "fill_field", { field: "title" });
+      emit.toolResult("c1", "ok");
+      emit.runEnd();
+    });
+    await send(el, "fill");
+    const head = part(shadow(el), ".tool-group-head");
+    expect(head.hasAttribute("disabled")).toBe(false);
+    expect(getComputedStyle(head).cursor).toBe("pointer");
+    await userEvent.hover(document.body, { position: { x: 1, y: 1 } });
+    expect(head.matches(":hover")).toBe(false);
+    const resting = getComputedStyle(head).backgroundColor;
+    await userEvent.hover(head);
+    expect(getComputedStyle(head).backgroundColor).not.toBe(resting);
+  });
+});
+
+describe("a lone row follows the inner display for what counts as a detail", () => {
+  const ARGS_ONLY = (emit: Emit): void => {
+    emit.runStart();
+    emit.toolCall("c1", "fetch_page", { host: "x" });
+    emit.toolResult("c1", "");
+    emit.runEnd();
+  };
+
+  function head(el: AgUiChat): HTMLElement {
+    return part(shadow(el), ".tool-group-head");
+  }
+
+  function offered(el: AgUiChat): boolean {
+    const row = head(el) as HTMLButtonElement;
+    row.focus();
+    const focusable = shadow(el).activeElement === row;
+    row.blur();
+    const expandable = !row.disabled && row.hasAttribute("aria-expanded");
+    expect(focusable).toBe(expandable);
+    return expandable;
+  }
+
+  for (const inner of ["inline", "minimal"] as const) {
+    it(`is disabled for arguments alone under inner ${inner}`, async () => {
+      const el = mount(ARGS_ONLY);
+      el.setAttribute("data-tool-group-display", inner);
+      await send(el, "fetch");
+      expect(offered(el)).toBe(false);
+      expect(head(el).hasAttribute("aria-expanded")).toBe(false);
+    });
+  }
+
+  for (const inner of [undefined, "full", "compact"] as const) {
+    it(`is a disclosure for arguments alone under inner ${inner ?? "default"}`, async () => {
+      const el = mount(ARGS_ONLY);
+      if (inner !== undefined) {
+        el.setAttribute("data-tool-group-display", inner);
+      }
+      await send(el, "fetch");
+      expect(offered(el)).toBe(true);
+    });
+  }
+
+  it("becomes a disclosure under inline once a result with text arrives", async () => {
+    const held = gate();
+    const el = mount(async (emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "fetch_page", { host: "x" });
+      await held.wait;
+      emit.toolResult("c1", "ok");
+      emit.runEnd();
+    });
+    el.setAttribute("data-tool-group-display", "inline");
+    await send(el, "fetch");
+    expect(offered(el)).toBe(false);
+    held.open();
+    await settle();
+    expect(offered(el)).toBe(true);
+  });
+
+  it("never offers a settled step under minimal, result or not", async () => {
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "fetch_page", { host: "x" });
+      emit.toolResult("c1", "ok");
+      emit.runEnd();
+    });
+    el.setAttribute("data-tool-group-display", "minimal");
+    await send(el, "fetch");
+    expect(offered(el)).toBe(false);
+  });
+
+  it("re-reads the display when the attribute changes, in both directions", async () => {
+    const el = mount(ARGS_ONLY);
+    el.setAttribute("data-tool-group-display", "minimal");
+    await send(el, "fetch");
+    expect(offered(el)).toBe(false);
+
+    el.setAttribute("data-tool-group-display", "full");
+    expect(offered(el)).toBe(true);
+    head(el).click();
+    expect(part(shadow(el), ".tool-group").getAttribute("data-open")).toBe("true");
+
+    el.toolGroupDisplay = "minimal";
+    expect(offered(el)).toBe(false);
+    expect(part(shadow(el), ".tool-group").getAttribute("data-open")).toBe("false");
+
+    el.removeAttribute("data-tool-group-display");
+    expect(offered(el)).toBe(true);
   });
 });
 

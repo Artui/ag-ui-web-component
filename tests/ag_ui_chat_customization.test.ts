@@ -646,7 +646,7 @@ describe("header control icons", () => {
     expect(slots).toContain("icon-collapse");
     // Existing embeds are untouched: the glyph is the slot's fallback content.
     const history = buttons.find((b) => b.classList.contains("header-btn--history"));
-    expect(history?.querySelector("slot")?.textContent).toBe("☰");
+    expect(history?.querySelector("slot > svg.glyph")).not.toBeNull();
     expect(history?.getAttribute("part")).toBe("header-button history-button");
   });
 });

@@ -436,6 +436,27 @@
           </optgroup>
         </select>
       </label>
+      <!-- data-side: which edge a sidebar docks to; right removes the attribute. -->
+      <label
+        >Side
+        <select id="cfg-side">
+          <option value="" selected>right</option>
+          <option value="left">left</option>
+        </select>
+      </label>
+      <!-- data-collapse-icon: default removes the attribute so the placement's
+           own mark shows (the panel mark on a sidebar, the chevron down elsewhere). -->
+      <label
+        >Collapse icon
+        <select id="cfg-collapse-icon">
+          <option value="" selected>default (by placement)</option>
+          <option value="panel-close">panel-close</option>
+          <option value="chevron-down">chevron-down</option>
+          <option value="chevron-up">chevron-up</option>
+          <option value="chevron-left">chevron-left</option>
+          <option value="chevron-right">chevron-right</option>
+        </select>
+      </label>
       <!-- auto removes the attribute; none also shows the host bar below and
            anchors the panel to its Agent button; none (corner) shows the bar
            without anchoring, so the panel rises from its own corner. -->
@@ -595,6 +616,15 @@
               card settles to an <em>Error</em> region rather than losing the turn.
             </li>
             <li>
+              <strong>Nothing behind it.</strong> Say <em>think silently</em>: the model
+              reasons without sending any text, and the block settles to a plain
+              <em>Thought for 2s</em> label with no toggle and no box under it. Say
+              <em>ping</em>: one call with no arguments returns nothing, so its row has
+              no chevron and nothing to open, in the grouped default and in every card
+              mode. <em>Fill the article</em> still shows a reasoning toggle and rows
+              that open.
+            </li>
+            <li>
               <strong>A question.</strong> Say <em>ask me something</em> to reach the
               built-in <code>ask_user</code> card.
             </li>
@@ -633,9 +663,13 @@
               to check it stays centred above the on-screen keyboard.
             </li>
             <li>
-              <strong>Collapse.</strong> Hit the header's <em>—</em>: the panel
+              <strong>Collapse.</strong> Hit the header's chevron: the panel
               scales into the round launcher in the corner, and the launcher
-              expands it again. <em>sidebar</em> slides to an edge rail instead;
+              expands it again. <em>sidebar</em> slides to an edge rail instead,
+              and its control draws a panel closing into that edge; set
+              <em>Side</em> to <em>left</em> and the mark turns to point left.
+              <em>Collapse icon</em> picks the mark outright and keeps it through a
+              placement change; <em>default</em> hands it back to the placement.
               <em>embedded</em> and <em>page</em> keep the header bar.
             </li>
             <li>
@@ -643,7 +677,7 @@
               <em>floating</em>, collapse, and the launcher becomes a strip along the
               bottom edge with the title, the badge and a running mark; the page pads
               itself by the reported height. Press the strip: the panel rises from its
-              right end with the bar still beneath it. The strip's <em>☰</em> opens the
+              right end with the bar still beneath it. The strip's history button (the clock) opens the
               history as a popover over the bar without expanding. Dragging the header
               does nothing; the free edges still resize. On a phone the open panel is
               full-bleed and the bar is gone until you minimise. <em>none</em> hides the
@@ -651,7 +685,7 @@
               toggles the panel, which rises above it, right-aligned.
             </li>
             <li>
-              <strong>Chat history.</strong> The <em>☰</em> drawer slides in over
+              <strong>Chat history.</strong> The history button's drawer slides in over
               the panel and back out — the same motion tokens drive both.
             </li>
             <li>

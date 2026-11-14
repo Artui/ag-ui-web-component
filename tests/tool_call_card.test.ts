@@ -69,6 +69,35 @@ describe("ToolCallCard", () => {
     expect(section(card, "result")?.hidden).toBe(false);
   });
 
+  it("leaves a blank result out: no marker, no region, no formatter call", () => {
+    const kinds: string[] = [];
+    const settled = (text: string): ToolCallCard => {
+      const card = new ToolCallCard("ping", {}, undefined, undefined, {
+        formatPayload: (payload) => {
+          if (payload.kind === "result") {
+            kinds.push(payload.text);
+          }
+          return null;
+        },
+      });
+      card.settle("done", text);
+      return card;
+    };
+    for (const blank of ["", "  \n"]) {
+      const card = settled(blank);
+      expect(card.settled).toBe(true);
+      expect(card.element.getAttribute("data-status")).toBe("done");
+      expect(card.element.hasAttribute("data-has-result")).toBe(false);
+      expect(section(card, "result")?.hidden).toBe(true);
+    }
+    expect(kinds).toEqual([]);
+
+    const real = settled("42");
+    expect(real.element.hasAttribute("data-has-result")).toBe(true);
+    expect(section(real, "result")?.hidden).toBe(false);
+    expect(kinds).toEqual(["42"]);
+  });
+
   it("renders a status icon element keyed off data-status (themed by CSS)", () => {
     const card = new ToolCallCard("fill_field", {});
     const icon = card.element.querySelector(".tool-call-icon");

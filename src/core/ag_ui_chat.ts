@@ -6,7 +6,9 @@ import {
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
   DOCK_WIDTH_EVENT,
+  ICON_MAXIMIZE,
   ICON_MOON,
+  ICON_RESTORE,
   ICON_SUN,
   MAXIMIZE_EVENT,
   MESSAGE_ROLE,
@@ -70,6 +72,7 @@ import { type ToolDisplayMode, type ToolPayloadFormatter } from "../ui/progress/
 import { adoptStyles } from "../ui/shell/adopt_styles.js";
 import { buildHeader } from "../ui/shell/build_header.js";
 import { buildLauncher } from "../ui/shell/build_launcher.js";
+import { collapseGlyph } from "../ui/shell/collapse_glyph.js";
 import { iconElement } from "../ui/shell/icon_element.js";
 import { isUnreadBadgeEnabled } from "../ui/shell/is_unread_badge_enabled.js";
 import { readLauncherIconUrl } from "../ui/shell/read_launcher_icon_url.js";
@@ -690,6 +693,8 @@ export class AgUiChat extends HTMLElement {
   /** The header's maximize and collapse controls, once rendered. */
   #maximizeControl: { readonly button: HTMLButtonElement; readonly before: HTMLElement } | null =
     null;
+  /** The header's collapse control, once rendered, repainted for its placement. */
+  #collapseControl: HTMLButtonElement | null = null;
   /** What the user has sent this session, newest first, for arrow-key recall. */
   readonly #sentDrafts: string[] = [];
   /** Typed while a run was in flight, oldest first; sent when it settles. */
@@ -988,6 +993,7 @@ export class AgUiChat extends HTMLElement {
       toolSummaries: () => this.toolSummaries,
       serverSummary: (name) => this.#tools.summary(name),
       toolDisplay: () => this.toolDisplay,
+      toolGroupDisplay: () => this.toolGroupDisplay,
       // A thunk over the live property, not the property itself: the card keeps
       // this for the life of the call, and the result region is filled when the
       // tool settles -- which can be long after a host set the hook.
@@ -1236,6 +1242,8 @@ export class AgUiChat extends HTMLElement {
       "credentials",
       "user-key",
       "user-name",
+      "data-tool-group-display",
+      "data-collapse-icon",
       ...CONNECT_TIME_ATTRIBUTES,
     ];
   }
@@ -1255,6 +1263,10 @@ export class AgUiChat extends HTMLElement {
       }
       return;
     }
+    if (name === "data-tool-group-display") {
+      this.#transcript.refreshStepGroups();
+      return;
+    }
     if (name === "data-threads-search") {
       const mode = this.getAttribute("data-threads-search");
       this.#drawer.setSearchMode(mode === "always" || mode === "never" ? mode : "auto");
@@ -1269,7 +1281,12 @@ export class AgUiChat extends HTMLElement {
       this.#applyMaximized(value !== null);
       return;
     }
+    if (name === "data-collapse-icon") {
+      this.#paintCollapseControl();
+      return;
+    }
     if (name === "anchor-side" || name === "data-side" || name === "data-small-viewport") {
+      this.#paintCollapseControl();
       this.#syncDock();
       return;
     }
@@ -1299,6 +1316,7 @@ export class AgUiChat extends HTMLElement {
         this.setCollapsed(false);
       }
       this.#stampCollapseTarget();
+      this.#paintCollapseControl();
       if (name === "collapse-to") {
         // The strip's label and the popover's home both depend on the target,
         // and neither is re-derived by the dock sync.
@@ -2505,7 +2523,24 @@ export class AgUiChat extends HTMLElement {
     button.setAttribute("aria-label", label);
     // The slot's fallback, so a host's own projected icon still wins.
     for (const slot of button.querySelectorAll("slot")) {
-      slot.textContent = this.#maximized ? "❐" : "□";
+      slot.innerHTML = this.#maximized ? ICON_RESTORE : ICON_MAXIMIZE;
+    }
+  }
+
+  /** Draw the collapse mark data-collapse-icon chooses, or the placement's default. */
+  #paintCollapseControl(): void {
+    const button = this.#collapseControl;
+    if (button === null) {
+      return;
+    }
+    const glyph = collapseGlyph(
+      this.getAttribute("data-collapse-icon"),
+      this.getAttribute("placement"),
+      this.getAttribute("data-side"),
+    );
+    // The slot's fallback, so a host's own projected icon still wins.
+    for (const slot of button.querySelectorAll("slot")) {
+      slot.innerHTML = glyph;
     }
   }
 
@@ -2830,7 +2865,7 @@ export class AgUiChat extends HTMLElement {
 
   /**
    * Open the checkpoints panel, or close it if it is already open — what the
-   * built-in ⭯ button does, because a control that opens a panel is read as the
+   * built-in checkpoints button does, because a control that opens a panel is read as the
    * control that also dismisses it. {@link openCheckpoints} stays open-only for a
    * host that means exactly that.
    */
@@ -3094,6 +3129,8 @@ export class AgUiChat extends HTMLElement {
     // A panel is a window and a header is its title bar.
     this.#placement.enablePanelDrag(header);
     this.#maximizeControl = { button: maximize, before: collapse };
+    this.#collapseControl = collapse;
+    this.#paintCollapseControl();
     this.#syncMaximizeControl();
     this.#paintMaximizeControl();
     window

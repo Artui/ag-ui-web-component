@@ -136,4 +136,12 @@ export const FRAME_STYLES: string = `
   opacity: 1;
   background: var(--_header-btn-hover);
 }
+
+/* Every built-in header mark is a drawn glyph at the composer's size; the theme
+   toggle's holder takes that size too, so its moon matches its neighbours. */
+.header-btn .glyph,
+.header-btn .icon-holder {
+  width: var(--_glyph-size);
+  height: var(--_glyph-size);
+}
 `;

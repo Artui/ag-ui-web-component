@@ -1,6 +1,7 @@
 /**
  * Build a header control button: a named slot a host can project markup into,
- * with the built-in glyph as the slot's fallback.
+ * with the built-in glyph (static SVG markup from `constants.ts`) as the slot's
+ * fallback.
  *
  * The slot is what lets a host replace the mark with its own `<img>` or
  * `<svg>` rather than only restyle it through the `part`; the same
@@ -15,7 +16,7 @@ export function headerButton(modifier: string, label: string, glyph: string): HT
   button.setAttribute("aria-label", label);
   const slot = document.createElement("slot");
   slot.name = `icon-${modifier}`;
-  slot.append(document.createTextNode(glyph));
+  slot.innerHTML = glyph;
   button.append(slot);
   return button;
 }

@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0] — 2026-11-14
+
+### Added
+
+- **The collapse control points the way the panel goes, and `data-collapse-icon` chooses it.** A
+  sidebar slides sideways into its edge, but its collapse control drew the same chevron down as
+  a corner panel. With no attribute set, `placement="sidebar"` (and `side`) now draws a panel
+  closing into its edge: a window with its docked pane and an arrow pointing into that edge,
+  mirrored for either on `data-side="left"`. `floating`, `full`, `embedded` and every other
+  placement keep the chevron down. `data-collapse-icon` picks the mark outright: `panel-close`,
+  `chevron-up`, `chevron-down`, `chevron-left` or `chevron-right`, live, and kept through a
+  placement change; any other value reads as absent. A host icon in `slot="icon-collapse"`
+  still wins over both. No opt-in, but a sidebar's collapse control changes on upgrade with
+  nothing set: `data-collapse-icon="chevron-down"` keeps the old mark.
+
+### Fixed
+
+- **A reasoning block with no text is a label, not a toggle over an empty box.** A provider that
+  opens and closes reasoning without sending any of it (redacted thinking, or reasoning with its
+  summaries off) left a **Thoughts** toggle that folded an empty, ruled region. Until reasoning
+  has text its header is now a plain label with no body under it, and the first text turns it into
+  the toggle as before. The header also settles to how long the model reasoned, **Thought for
+  4s**, timed from the start of reasoning to its end, or to whatever came first in its place: the
+  answer's text, a tool call, or the turn ending. Under a second it reads **Thoughts** as before.
+  Later reasoning rounds in the same turn add to the time. No opt-in. The new `thoughtFor` string
+  (`"Thought for {seconds}s"`) is one more key for a translated string table to cover, and a block
+  with no text carries no `thoughts-toggle` part, so a host style on that part does not reach it.
+- **A tool call with nothing to show no longer offers to show it.** A call made with no arguments
+  whose result was missing or blank kept its **Details** toggle, and in the default grouped
+  display its one-step row kept its chevron and hover and opened onto an empty rail. The toggle is
+  now offered only over something: the result in the full and inline displays, the arguments or
+  the result in compact. A one-step row with nothing behind it in the
+  chosen inner display (nothing at all under minimal, and no arguments under inline) is disabled,
+  without a chevron or an expanded state, follows a change of `data-tool-group-display`, and
+  becomes a disclosure once there is something to show. A blank result also
+  no longer draws an empty framed **Result** region, and a `formatToolPayload` hook is no longer
+  asked about one. No opt-in.
+- **The header controls draw their marks rather than type them.** The history, checkpoints,
+  new-chat, collapse, maximize and restore fallbacks were the characters U+2630, U+21BA,
+  U+271A, U+2014, U+25A1 and U+2750, painted by the platform font at its own weight and size, so
+  they never matched the theme toggle's drawn moon beside them. Each is now a stroked
+  `svg.glyph` in the same 24-unit box, stroke and `currentColor` as the moon: a clock with a back
+  arrow, an arrow turning back, a pencil on a square, a chevron down, two arrows pointing out,
+  and two pointing in. Every header glyph, the theme toggle's included, is drawn at
+  `--ag-ui-glyph-size`, so the moon shrinks from the icon size to match its neighbours. The
+  `icon-*` slots still replace any of them; a host styling the characters themselves (a font
+  size on `::part(history-button)`, say) now sizes the glyph with `--ag-ui-glyph-size` instead. No
+  opt-in.
+
 ## [0.53.0] — 2026-11-13
 
 ### Added
@@ -5433,7 +5482,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.53.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.54.0...HEAD
+[0.54.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.2...v0.51.0
