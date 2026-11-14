@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A reasoning block with no text is a label, not a toggle over an empty box.** A provider that
+  opens and closes reasoning without sending any of it (redacted thinking, or reasoning with its
+  summaries off) left a **Thoughts** toggle that folded an empty, ruled region. Until reasoning
+  has text its header is now a plain label with no body under it, and the first text turns it into
+  the toggle as before. The header also settles to how long the model reasoned, **Thought for
+  4s**, timed from the start of reasoning to its end, or to whatever came first in its place: the
+  answer's text, a tool call, or the turn ending. Under a second it reads **Thoughts** as before.
+  Later reasoning rounds in the same turn add to the time. No opt-in. The new `thoughtFor` string
+  (`"Thought for {seconds}s"`) is one more key for a translated string table to cover, and a block
+  with no text carries no `thoughts-toggle` part, so a host style on that part does not reach it.
+- **A tool call with nothing to show no longer offers to show it.** A call made with no arguments
+  whose result was missing or blank kept its **Details** toggle, and in the default grouped
+  display its one-step row kept its chevron and hover and opened onto an empty rail. The toggle is
+  now offered only over something: the result in the full and inline displays, the arguments or
+  the result in compact. A one-step row with nothing behind it is disabled, without a chevron or
+  an expanded state, and becomes a disclosure once a result with text arrives. A blank result also
+  no longer draws an empty framed **Result** region, and a `formatToolPayload` hook is no longer
+  asked about one. No opt-in.
+
 ## [0.53.0] — 2026-11-13
 
 ### Added

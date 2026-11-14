@@ -440,6 +440,25 @@ async function handleAgent(res, body) {
     const parent = id("msg");
     await streamText(res, parent, ["Trying the flaky one…"]);
     emitToolCall(res, id("call"), "break_something", {}, parent);
+  } else if (/\bthink silently\b/i.test(prompt)) {
+    // Reasoning that carries no text, the way a provider sends redacted
+    // thinking or reasoning with its summaries off: a start and an end and
+    // nothing between. The block settles to a plain timed label, not a toggle
+    // over an empty box. Long enough to be timed rather than read as a blink.
+    const reasoning = id("reasoning");
+    emit(res, { type: "REASONING_START", messageId: reasoning });
+    await sleep(2300);
+    emit(res, { type: "REASONING_END", messageId: reasoning });
+    await streamText(res, id("msg"), ["Thought it over ", "without a word."]);
+  } else if (/\bping\b/i.test(prompt)) {
+    // One server-side call with no arguments that returns nothing: the card or
+    // the step row is a plain status line, with nothing to open.
+    const parent = id("msg");
+    const call = id("call");
+    emitToolCall(res, call, "ping", {}, parent);
+    await sleep(600);
+    emitToolResult(res, call, "");
+    await streamText(res, id("msg"), ["Pinged."]);
   } else {
     await streamReasoning(res, id("reasoning"), [
       "The user wants the article filled. ",
