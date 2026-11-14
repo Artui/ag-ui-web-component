@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ELEMENT_TAG, MAXIMIZE_EVENT } from "../src/constants.js";
+import { ELEMENT_TAG, ICON_MAXIMIZE, ICON_RESTORE, MAXIMIZE_EVENT } from "../src/constants.js";
 import type { AgUiChat } from "../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../src/core/define_ag_ui_chat.js";
 import type { MaximizeDetail } from "../src/core/events/maximize_detail.js";
 
 defineAgUiChat();
+
+/** The markup as the DOM serialises it, so a comparison does not hinge on how it was written. */
+function serialised(markup: string): string {
+  const holder = document.createElement("div");
+  holder.innerHTML = markup;
+  return holder.innerHTML;
+}
 
 function create(attrs: Record<string, string> = {}): { el: AgUiChat; seen: boolean[] } {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
@@ -37,13 +44,13 @@ describe("the maximized state", () => {
     expect(el.maximized).toBe(true);
     expect(el.hasAttribute("maximized")).toBe(true);
     expect(button?.getAttribute("aria-label")).toBe("Restore");
-    expect(button?.textContent).toBe("❐");
+    expect(button?.querySelector("slot")?.innerHTML).toBe(serialised(ICON_RESTORE));
     expect(el.describeSurface().maximized).toBe(true);
     el.maximized = true;
     button?.click();
     expect(el.maximized).toBe(false);
     expect(button?.getAttribute("aria-label")).toBe("Maximize");
-    expect(button?.textContent).toBe("□");
+    expect(button?.querySelector("slot")?.innerHTML).toBe(serialised(ICON_MAXIMIZE));
     expect(seen).toEqual([true, false]);
   });
 

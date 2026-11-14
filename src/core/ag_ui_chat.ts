@@ -6,7 +6,9 @@ import {
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
   DOCK_WIDTH_EVENT,
+  ICON_MAXIMIZE,
   ICON_MOON,
+  ICON_RESTORE,
   ICON_SUN,
   MAXIMIZE_EVENT,
   MESSAGE_ROLE,
@@ -2505,7 +2507,7 @@ export class AgUiChat extends HTMLElement {
     button.setAttribute("aria-label", label);
     // The slot's fallback, so a host's own projected icon still wins.
     for (const slot of button.querySelectorAll("slot")) {
-      slot.textContent = this.#maximized ? "❐" : "□";
+      slot.innerHTML = this.#maximized ? ICON_RESTORE : ICON_MAXIMIZE;
     }
   }
 

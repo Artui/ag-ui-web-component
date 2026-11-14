@@ -192,7 +192,7 @@ another origin, add `credentials="include"` too; see
 | `user-name` | `userName` | The signed-in user's display name, for the [greeting](#the-greeting-on-an-empty-page) an empty conversation shows under `placement="page"`. Presentation only: unlike `user-key` it scopes nothing and is never sent. Absent or blank gives the nameless greeting. Live. |
 | `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
 | `data-threads-cache` | — | **On by default.** `="false"` stops mirroring message bodies into `sessionStorage` when `data-threads-url` is set, for a deployment that put history on the server so transcripts stay off the client. Only meaningful alongside `data-threads-url`. |
-| `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's ⭯ *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
+| `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
 | `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's paperclip picker, drag-and-drop, and paste. |
 | `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
 | `data-attachment-max-bytes` | — | Client-side upload size cap in bytes (default 10 MiB; `0` disables). The server stays authoritative. |
@@ -229,8 +229,8 @@ another origin, add `credentials="include"` too; see
 | `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded` / `full`. `full` fills the viewport at every width, inside the safe-area insets; the `--ag-ui-inset`, size and `--ag-ui-panel-radius` tokens still apply. |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
-`icon-new`, `icon-maximize`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
-brand `<img>` or `<svg>` rather than only restyling the character. The composer's glyphs work the
+`icon-new`, `icon-maximize`, `icon-collapse` — with the built-in drawn glyph as the fallback, so a host can project a
+brand `<img>` or `<svg>` in its place. The composer's glyphs work the
 same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 
 ```html
@@ -1214,8 +1214,8 @@ chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
 
 ### Maximizing the panel
 
-The maximize control (□, `maximize-button` part, `icon-maximize` slot) grows the open panel,
-and pressed again it restores it (❐). It is labelled "Maximize" and "Restore" (the `maximize`
+The maximize control (two arrows pointing out, `maximize-button` part, `icon-maximize` slot) grows the open panel,
+and pressed again it restores it (the arrows point in). It is labelled "Maximize" and "Restore" (the `maximize`
 and `restore` strings), apart from the launcher's and the rail's "Expand", which opens the panel.
 
 - **Where it is offered.** A corner panel (`floating`, `bottom-left`, the default) and a docked
