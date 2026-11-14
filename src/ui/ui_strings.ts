@@ -81,8 +81,12 @@ export interface UiStrings {
   /** `aria-label` of the "thinking" pending indicator, and the thoughts region's
    * header while the model is still reasoning. */
   thinking: string;
-  /** The thoughts region's header once reasoning has streamed (collapsed label). */
+  /** The thoughts region's header once reasoning has ended, and its fallback
+   * when the reasoning took under a second, too short to time. */
   thoughts: string;
+  /** The thoughts region's header once reasoning has ended, naming how long it
+   * took in whole seconds. Token: `{seconds}`. */
+  thoughtFor: string;
   /** The muted note after a cancelled run. */
   stopped: string;
   /** Error shown when the stream drops without a terminal AG-UI event. */
@@ -417,6 +421,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   announceFailed: "The response failed",
   thinking: "Assistant is thinking…",
   thoughts: "Thoughts",
+  thoughtFor: "Thought for {seconds}s",
   stopped: "⏹ Stopped",
   connectionLost: "Connection lost",
   noResult: "No result returned.",

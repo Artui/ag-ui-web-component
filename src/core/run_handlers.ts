@@ -239,14 +239,17 @@ export class RunHandlers {
         // The model is thinking: swap the pending dots for a live thoughts
         // region at the top of the turn's answer group.
         this.#host.transcript.hidePending();
-        this.#host.transcript.showThoughts();
+        // A later round in the same turn finds the region already there, and
+        // restarts its clock and its live label.
+        this.#host.transcript.showThoughts().begin();
       },
       onReasoningDelta: (buffer) => {
         this.#host.transcript.showThoughts().stream(buffer);
       },
       onReasoningEnd: () => {
-        // Leave the region expanded until the answer text starts — it collapses
-        // on the first text delta (onTextDelta).
+        // Settle the header to how long it took, but leave the region expanded
+        // until the answer text starts: it collapses on the first text delta.
+        this.#host.transcript.settleThoughts();
       },
       onTextDelta: (buffer) => {
         this.#host.transcript.hidePending();
@@ -291,6 +294,9 @@ export class RunHandlers {
       },
       onToolCall: (call) => {
         this.#host.transcript.hidePending();
+        // A call ends the reasoning before it, whether or not its end arrived,
+        // and a turn of reasoning then calls has no text delta to settle it.
+        this.#host.transcript.settleThoughts();
         // A skill activation is an ordinary `load_capability` tool call — the
         // deferred-capability mechanism pydantic-ai already uses — so it arrives
         // here rather than on a channel of its own. Render it as a notice and

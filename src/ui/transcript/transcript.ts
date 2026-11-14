@@ -189,6 +189,14 @@ export class Transcript {
   }
 
   /**
+   * Stop the reasoning region's clock and settle its header, when reasoning
+   * ends or whatever replaces its end arrives first. A no-op without one.
+   */
+  settleThoughts(): void {
+    this.#thoughts?.settle();
+  }
+
+  /**
    * Close the turn's answer group. Drop it if the turn rendered nothing
    * (e.g. a server-only round that streamed no text/card) so an opted-in
    * well leaves no empty box behind.
@@ -198,6 +206,9 @@ export class Transcript {
       this.#currentGroup.remove();
       this.updateEmptyState();
     }
+    // A turn can end with its reasoning never ended, by a stop, an error or a
+    // server that sent no end, and the live label must not outlive the turn.
+    this.settleThoughts();
     this.#currentGroup = null;
     this.#thoughts = null;
   }

@@ -3086,6 +3086,106 @@ describe("AgUiChat — answer group", () => {
     expect(thoughts?.querySelector(".thoughts-body")?.textContent).toBe("hmm");
   });
 
+  it("settles an empty reasoning block on the tool call that follows it, with no end", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.reasoningStart();
+      emit.toolCall("c1", "ping", {});
+      emit.toolResult("c1", "pong");
+      emit.runEnd();
+    });
+    await send(el, "ping");
+    const thoughts = shadow(el).querySelector(".answer .thoughts");
+    expect(thoughts?.hasAttribute("data-streaming")).toBe(false);
+    expect(thoughts?.querySelector(".thoughts-label")?.textContent).toBe("Thoughts");
+    expect(thoughts?.querySelector("button")).toBeNull();
+  });
+
+  it("settles a reasoning block the turn ended without ending", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.reasoningStart();
+      emit.reasoning("half a thought");
+      emit.runEnd();
+    });
+    await send(el, "think");
+    const thoughts = shadow(el).querySelector(".answer .thoughts");
+    expect(thoughts?.hasAttribute("data-streaming")).toBe(false);
+    expect(thoughts?.querySelector(".thoughts-label")?.textContent).toBe("Thoughts");
+  });
+
+  it("turns an empty first round into a toggle when a later round has text", async () => {
+    const { el } = mountWithAgent((emit) => {
+      emit.runStart();
+      emit.reasoningStart();
+      emit.reasoningEnd();
+      emit.toolCall("c1", "ping", {});
+      emit.toolResult("c1", "");
+      emit.reasoningStart();
+      emit.reasoning("x");
+      emit.reasoningEnd();
+      emit.text("Done.");
+      emit.textEnd("Done.");
+      emit.runEnd();
+    });
+    await send(el, "ping then think");
+    const thoughts = shadow(el).querySelectorAll(".answer .thoughts");
+    expect(thoughts).toHaveLength(1);
+    const toggle = thoughts[0]?.querySelector<HTMLButtonElement>(".thoughts-toggle");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    toggle?.click();
+    expect(thoughts[0]?.querySelector<HTMLElement>(".thoughts-body")?.hidden).toBe(false);
+    expect(thoughts[0]?.querySelector(".thoughts-body")?.textContent).toBe("x");
+  });
+
+  it("names how long the reasoning took, in a string a host can override", async () => {
+    let time = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => time);
+    try {
+      const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+      el.setAttribute("endpoint", "/agent/");
+      el.setAttribute("data-start-open", "");
+      // Strings resolve on mount, so the override goes in before connecting.
+      el.strings = { thoughtFor: "Pensó {seconds} s" };
+      el.agentFactory = () =>
+        makeFakeAgent({
+          script: (emit) => {
+            emit.runStart();
+            emit.reasoningStart();
+            time = 6200;
+            emit.reasoningEnd();
+            time = 20_000;
+            emit.text("Done.");
+            emit.textEnd("Done.");
+            emit.runEnd();
+          },
+        }).agent;
+      document.body.appendChild(el);
+      await send(el, "think");
+      const thoughts = shadow(el).querySelector(".answer .thoughts");
+      expect(thoughts?.querySelector(".thoughts-label")?.textContent).toBe("Pensó 6 s");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("draws no thoughts region for a restored reasoning message, empty or not", async () => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    el.setAttribute("endpoint", "/agent/");
+    const store = new SessionStorageStore();
+    store.saveMessages(store.threadId(), [
+      { id: "u1", role: "user", content: "think" },
+      { id: "r1", role: "reasoning", content: "" } as never,
+      { id: "a1", role: "assistant", content: "answer" },
+    ]);
+    el.conversationStore = store;
+    el.agentFactory = () => makeFakeAgent().agent;
+    document.body.appendChild(el);
+    await flush();
+    expect(shadow(el).querySelector(".answer")?.textContent).toContain("answer");
+    expect(shadow(el).querySelector(".thoughts")).toBeNull();
+  });
+
   it("reconstructs one group per assistant turn when replaying history", async () => {
     const el = document.createElement(ELEMENT_TAG) as AgUiChat;
     el.setAttribute("endpoint", "/agent/");
