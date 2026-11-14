@@ -34,7 +34,7 @@ function open(group: ToolStepGroup): string | null {
 
 describe("ToolStepGroup", () => {
   it("reads a step with no status as settled", () => {
-    const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+    const group = new ToolStepGroup(DEFAULT_UI_STRINGS, () => "full");
     group.add(step(null), "Look up");
     group.add(step(null), "Look up");
 
@@ -46,7 +46,7 @@ describe("ToolStepGroup", () => {
   });
 
   it("falls back to the working line for a sub-agent that gave no name", () => {
-    const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+    const group = new ToolStepGroup(DEFAULT_UI_STRINGS, () => "full");
     const card = step("pending");
     const slot = document.createElement("div");
     slot.className = "tool-call-subagent";
@@ -62,12 +62,15 @@ describe("ToolStepGroup", () => {
   });
 
   it("takes every word from the string table it was built with", () => {
-    const group = new ToolStepGroup({
-      ...DEFAULT_UI_STRINGS,
-      toolGroupWorked: "{count} Schritte erledigt",
-      toolGroupDeclined: "{count} abgelehnt",
-      toolStepRepeat: "#{n}",
-    });
+    const group = new ToolStepGroup(
+      {
+        ...DEFAULT_UI_STRINGS,
+        toolGroupWorked: "{count} Schritte erledigt",
+        toolGroupDeclined: "{count} abgelehnt",
+        toolStepRepeat: "#{n}",
+      },
+      () => "full",
+    );
     const name = (label: string): HTMLElement => {
       const card = step("declined");
       const span = document.createElement("span");
@@ -86,7 +89,7 @@ describe("ToolStepGroup", () => {
 
   describe("opening for a wait", () => {
     it("opens again for a second wait after the user folded the group during the first", async () => {
-      const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+      const group = new ToolStepGroup(DEFAULT_UI_STRINGS, () => "full");
       const first = step("pending");
       group.add(first, "Create event");
       first.setAttribute("data-status", "deferred");
@@ -106,7 +109,7 @@ describe("ToolStepGroup", () => {
     });
 
     it("stays folded when revealed ahead of the observer and then folded by the user", async () => {
-      const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+      const group = new ToolStepGroup(DEFAULT_UI_STRINGS, () => "full");
       const card = step("pending");
       group.add(card, "Create event");
       // What a gated call does: marked deferred and revealed in one task, the
@@ -120,7 +123,7 @@ describe("ToolStepGroup", () => {
     });
 
     it("does not open for a question, which is drawn beside the group", async () => {
-      const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+      const group = new ToolStepGroup(DEFAULT_UI_STRINGS, () => "full");
       const card = step("pending");
       group.add(card, "Ask user");
       card.setAttribute("data-asking", "");
@@ -138,7 +141,7 @@ describe("ToolStepGroup", () => {
       phase: string,
       agent: string | null,
     ): { group: ToolStepGroup; panel: HTMLElement } {
-      const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+      const group = new ToolStepGroup(DEFAULT_UI_STRINGS, () => "full");
       const card = step("pending");
       const slot = document.createElement("div");
       slot.className = "tool-call-subagent";

@@ -990,6 +990,7 @@ export class AgUiChat extends HTMLElement {
       toolSummaries: () => this.toolSummaries,
       serverSummary: (name) => this.#tools.summary(name),
       toolDisplay: () => this.toolDisplay,
+      toolGroupDisplay: () => this.toolGroupDisplay,
       // A thunk over the live property, not the property itself: the card keeps
       // this for the life of the call, and the result region is filled when the
       // tool settles -- which can be long after a host set the hook.
@@ -1238,6 +1239,7 @@ export class AgUiChat extends HTMLElement {
       "credentials",
       "user-key",
       "user-name",
+      "data-tool-group-display",
       ...CONNECT_TIME_ATTRIBUTES,
     ];
   }
@@ -1255,6 +1257,10 @@ export class AgUiChat extends HTMLElement {
             "the browser default and cross-origin cookies will not be sent.",
         );
       }
+      return;
+    }
+    if (name === "data-tool-group-display") {
+      this.#transcript.refreshStepGroups();
       return;
     }
     if (name === "data-threads-search") {

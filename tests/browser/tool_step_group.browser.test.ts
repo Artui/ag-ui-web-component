@@ -872,6 +872,98 @@ describe("a step with nothing behind it", () => {
   });
 });
 
+describe("a lone row follows the inner display for what counts as a detail", () => {
+  const ARGS_ONLY = (emit: Emit): void => {
+    emit.runStart();
+    emit.toolCall("c1", "fetch_page", { host: "x" });
+    emit.toolResult("c1", "");
+    emit.runEnd();
+  };
+
+  function head(el: AgUiChat): HTMLElement {
+    return part(shadow(el), ".tool-group-head");
+  }
+
+  function offered(el: AgUiChat): boolean {
+    const row = head(el) as HTMLButtonElement;
+    row.focus();
+    const focusable = shadow(el).activeElement === row;
+    row.blur();
+    const expandable = !row.disabled && row.hasAttribute("aria-expanded");
+    expect(focusable).toBe(expandable);
+    return expandable;
+  }
+
+  for (const inner of ["inline", "minimal"] as const) {
+    it(`is disabled for arguments alone under inner ${inner}`, async () => {
+      const el = mount(ARGS_ONLY);
+      el.setAttribute("data-tool-group-display", inner);
+      await send(el, "fetch");
+      expect(offered(el)).toBe(false);
+      expect(head(el).hasAttribute("aria-expanded")).toBe(false);
+    });
+  }
+
+  for (const inner of [undefined, "full", "compact"] as const) {
+    it(`is a disclosure for arguments alone under inner ${inner ?? "default"}`, async () => {
+      const el = mount(ARGS_ONLY);
+      if (inner !== undefined) {
+        el.setAttribute("data-tool-group-display", inner);
+      }
+      await send(el, "fetch");
+      expect(offered(el)).toBe(true);
+    });
+  }
+
+  it("becomes a disclosure under inline once a result with text arrives", async () => {
+    const held = gate();
+    const el = mount(async (emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "fetch_page", { host: "x" });
+      await held.wait;
+      emit.toolResult("c1", "ok");
+      emit.runEnd();
+    });
+    el.setAttribute("data-tool-group-display", "inline");
+    await send(el, "fetch");
+    expect(offered(el)).toBe(false);
+    held.open();
+    await settle();
+    expect(offered(el)).toBe(true);
+  });
+
+  it("never offers a settled step under minimal, result or not", async () => {
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "fetch_page", { host: "x" });
+      emit.toolResult("c1", "ok");
+      emit.runEnd();
+    });
+    el.setAttribute("data-tool-group-display", "minimal");
+    await send(el, "fetch");
+    expect(offered(el)).toBe(false);
+  });
+
+  it("re-reads the display when the attribute changes, in both directions", async () => {
+    const el = mount(ARGS_ONLY);
+    el.setAttribute("data-tool-group-display", "minimal");
+    await send(el, "fetch");
+    expect(offered(el)).toBe(false);
+
+    el.setAttribute("data-tool-group-display", "full");
+    expect(offered(el)).toBe(true);
+    head(el).click();
+    expect(part(shadow(el), ".tool-group").getAttribute("data-open")).toBe("true");
+
+    el.toolGroupDisplay = "minimal";
+    expect(offered(el)).toBe(false);
+    expect(part(shadow(el), ".tool-group").getAttribute("data-open")).toBe("false");
+
+    el.removeAttribute("data-tool-group-display");
+    expect(offered(el)).toBe(true);
+  });
+});
+
 describe("client tool rounds", () => {
   it("join one group across the pending dots between them", async () => {
     let round = 0;

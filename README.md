@@ -253,7 +253,7 @@ below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
 either way: `title-text`, `placement`, `collapse-to`, `anchor`, `anchor-side`, `maximized`, `data-side`, `data-small-viewport`, `data-threads-search`, `credentials`, `user-key`,
-`user-name`.
+`user-name`, `data-tool-group-display`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
 all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;

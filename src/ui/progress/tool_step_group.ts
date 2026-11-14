@@ -1,4 +1,9 @@
-import { SUBAGENT_PHASE, TOOL_CALL_STATUS } from "../../constants.js";
+import {
+  SUBAGENT_PHASE,
+  TOOL_CALL_STATUS,
+  TOOL_GROUP_DISPLAY,
+  type ToolGroupDisplayMode,
+} from "../../constants.js";
 import { fillUiString } from "../fill_ui_string.js";
 import type { UiStrings } from "../ui_strings.js";
 
@@ -49,12 +54,16 @@ const WATCHED_ATTRIBUTES: readonly string[] = [
 /**
  * Whether a lone step's card has anything to show under the row, which hides
  * the card's own head: arguments, a result with text, an approval prompt (drawn
- * while the call is deferred) or a sub-agent's progress.
+ * while the call is deferred) or a sub-agent's progress. Which of the first two
+ * the inner display draws decides which count: inline draws no arguments, and
+ * minimal draws neither, so a call is not offered over what it would not show.
  */
-function hasDetails(card: HTMLElement): boolean {
+function hasDetails(card: HTMLElement, display: ToolGroupDisplayMode): boolean {
+  const minimal = display === TOOL_GROUP_DISPLAY.MINIMAL;
+  const args = !minimal && display !== TOOL_GROUP_DISPLAY.INLINE;
   return (
-    card.hasAttribute("data-has-args") ||
-    card.hasAttribute("data-has-result") ||
+    (args && card.hasAttribute("data-has-args")) ||
+    (!minimal && card.hasAttribute("data-has-result")) ||
     card.getAttribute("data-status") === TOOL_CALL_STATUS.DEFERRED ||
     card.querySelector(".tool-call-subagent > *") !== null
   );
@@ -78,6 +87,7 @@ function hasDetails(card: HTMLElement): boolean {
 export class ToolStepGroup {
   readonly element: HTMLDivElement;
   readonly #strings: UiStrings;
+  readonly #display: () => ToolGroupDisplayMode;
   readonly #list: HTMLDivElement;
   readonly #head: HTMLButtonElement;
   readonly #label: HTMLSpanElement;
@@ -87,8 +97,9 @@ export class ToolStepGroup {
   /** Whether the group has already opened itself for the current wait. */
   #openedForWait = false;
 
-  constructor(strings: UiStrings) {
+  constructor(strings: UiStrings, display: () => ToolGroupDisplayMode) {
     this.#strings = strings;
+    this.#display = display;
     this.element = document.createElement("div");
     this.element.className = "tool-group";
     this.element.setAttribute("part", "tool-group");
@@ -129,7 +140,7 @@ export class ToolStepGroup {
     this.element.append(this.#head, this.#list);
 
     new MutationObserver(() => {
-      this.#refresh();
+      this.refresh();
     }).observe(this.#list, {
       attributes: true,
       attributeFilter: [...WATCHED_ATTRIBUTES],
@@ -160,7 +171,7 @@ export class ToolStepGroup {
     }
     this.#steps.push({ element: card, name, label });
     this.#list.append(card);
-    this.#refresh();
+    this.refresh();
   }
 
   /** Show or hide the per-step cards. */
@@ -222,7 +233,8 @@ export class ToolStepGroup {
     return null;
   }
 
-  #refresh(): void {
+  /** Redraw the row from the cards, for a change the cards do not announce. */
+  refresh(): void {
     const strings = this.#strings;
     const steps = this.#steps;
     const statuses = steps.map((step) => step.element.getAttribute("data-status") ?? "");
@@ -263,7 +275,7 @@ export class ToolStepGroup {
     this.element.setAttribute("data-count", String(total));
 
     const only = total === 1 ? steps[0] : undefined;
-    this.#setExpandable(only === undefined || hasDetails(only.element));
+    this.#setExpandable(only === undefined || hasDetails(only.element, this.#display()));
     if (only !== undefined) {
       this.#label.textContent = only.label;
     } else {
