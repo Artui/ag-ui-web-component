@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0] — 2026-11-14
+
 ### Added
 
 - **The collapse control points the way the panel goes, and `data-collapse-icon` chooses it.** A
@@ -20,7 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still wins over both. No opt-in, but a sidebar's collapse control changes on upgrade with
   nothing set: `data-collapse-icon="chevron-down"` keeps the old mark.
 
-## [0.53.1] — 2026-11-14
 
 ### Fixed
 
@@ -5482,8 +5483,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.53.1...HEAD
-[0.53.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.53.0...v0.53.1
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.54.0...HEAD
+[0.54.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.50.2...v0.51.0
