@@ -70,7 +70,7 @@ describe("the collapse control's mark (real browser)", () => {
     [{ placement: "sidebar" }, PANEL_RIGHT],
     [{ placement: "sidebar", "data-side": "right" }, PANEL_RIGHT],
     [{ placement: "sidebar", "data-side": "left" }, PANEL_LEFT],
-    // The undocumented docked column has no left variant: it always docks right.
+    // The undocumented docked column mirrors on a left side like a sidebar.
     [{ placement: "side" }, PANEL_RIGHT],
     [{ placement: "side", "data-side": "left" }, PANEL_LEFT],
     [{ placement: "sidebar", "collapse-to": "none" }, PANEL_RIGHT],
