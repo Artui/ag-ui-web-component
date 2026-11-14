@@ -111,6 +111,40 @@ describe("header control icons (real browser)", () => {
     expect(shown(control)).toBe(shape(ICON_MAXIMIZE));
   });
 
+  it.each([
+    ["the markup at connect", (el: AgUiChat) => el.setAttribute("maximized", "")],
+    ["setMaximized()", (el: AgUiChat) => el.setMaximized(true)],
+    [
+      "the property",
+      (el: AgUiChat) => {
+        el.maximized = true;
+      },
+    ],
+  ] as const)("shows the restore mark and label when maximized by %s", (route, enter) => {
+    const el = document.createElement(ELEMENT_TAG) as AgUiChat;
+    if (route === "the markup at connect") {
+      enter(el);
+    }
+    el.setAttribute("endpoint", "/agent/");
+    el.setAttribute("placement", "floating");
+    el.setAttribute("data-start-open", "");
+    document.body.appendChild(el);
+    if (route !== "the markup at connect") {
+      enter(el);
+    }
+    const control = button(el, "maximize");
+
+    expect(el.maximized).toBe(true);
+    expect(shown(control)).toBe(shape(ICON_RESTORE));
+    expect(control.getAttribute("aria-label")).toBe("Restore");
+    expect(control.title).toBe("Restore");
+
+    el.setMaximized(false);
+    expect(shown(control)).toBe(shape(ICON_MAXIMIZE));
+    expect(control.getAttribute("aria-label")).toBe("Maximize");
+    expect(control.title).toBe("Maximize");
+  });
+
   it("lets a host's slotted icon replace the built-in one, through a maximize swap", () => {
     const maximize = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     maximize.setAttribute("slot", "icon-maximize");
