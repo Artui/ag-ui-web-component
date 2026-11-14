@@ -104,6 +104,10 @@ describe("the collapse control's mark (real browser)", () => {
     expect(inner.top).toBeGreaterThanOrEqual(outer.top);
     expect(inner.bottom).toBeLessThanOrEqual(outer.bottom);
     expect(control.querySelectorAll("svg")).toHaveLength(1);
+    // A rect fills black by default; the glyph rule must reach it as it does a path.
+    const paint = getComputedStyle(rect as SVGRectElement);
+    expect(paint.fill).toBe("none");
+    expect(paint.stroke).toBe(getComputedStyle(control).color);
   });
 
   it("follows a placement and side change live", () => {
