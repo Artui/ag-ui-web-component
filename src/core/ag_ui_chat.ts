@@ -2832,7 +2832,7 @@ export class AgUiChat extends HTMLElement {
 
   /**
    * Open the checkpoints panel, or close it if it is already open — what the
-   * built-in ⭯ button does, because a control that opens a panel is read as the
+   * built-in checkpoints button does, because a control that opens a panel is read as the
    * control that also dismisses it. {@link openCheckpoints} stays open-only for a
    * host that means exactly that.
    */

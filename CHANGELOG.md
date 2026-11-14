@@ -23,8 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose result was missing or blank kept its **Details** toggle, and in the default grouped
   display its one-step row kept its chevron and hover and opened onto an empty rail. The toggle is
   now offered only over something: the result in the full and inline displays, the arguments or
-  the result in compact. A one-step row with nothing behind it is disabled, without a chevron or
-  an expanded state, and becomes a disclosure once a result with text arrives. A blank result also
+  the result in compact. In the full and compact inner displays of a group, a one-step row with
+  nothing behind it is disabled, without a chevron or an expanded state, and becomes a
+  disclosure once a result with text arrives. A blank result also
   no longer draws an empty framed **Result** region, and a `formatToolPayload` hook is no longer
   asked about one. No opt-in.
 - **The header controls draw their marks rather than type them.** The history, checkpoints,
@@ -36,7 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and two pointing in. Every header glyph, the theme toggle's included, is drawn at
   `--ag-ui-glyph-size`, so the moon shrinks from the icon size to match its neighbours. The
   `icon-*` slots still replace any of them; a host styling the characters themselves (a font
-  size on `::part(history-button)`, say) now sizes the glyph with `--ag-ui-glyph-size` instead.
+  size on `::part(history-button)`, say) now sizes the glyph with `--ag-ui-glyph-size` instead. No
+  opt-in.
 
 ## [0.53.0] — 2026-11-13
 

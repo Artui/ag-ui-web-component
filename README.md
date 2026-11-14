@@ -230,7 +230,8 @@ another origin, add `credentials="include"` too; see
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
 `icon-new`, `icon-maximize`, `icon-collapse` — with the built-in drawn glyph as the fallback, so a host can project a
-brand `<img>` or `<svg>` in its place. The composer's glyphs work the
+brand `<img>` or `<svg>` in its place. The built-in header marks are drawn at
+`--ag-ui-glyph-size`. The composer's glyphs work the
 same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 
 ```html
@@ -1169,7 +1170,8 @@ handler), gate `drag_and_drop` with [`confirmPredicate`](#inline-confirmation-x-
 
 ## New chat and collapse
 
-The header carries built-in buttons for a new chat (✚), maximize (□) and collapse (—). The
+The header carries built-in buttons for a new chat (a pencil on a square), maximize (two arrows pointing out) and
+collapse (a chevron down). The
 matching JS API:
 
 - `newChat()` — clears the transcript, drops the in-memory run state, and mints a new thread id.
@@ -3080,7 +3082,7 @@ chat.getPlace = () => ({
 
 When the server persists run checkpoints (django-ag-ui's `step_store`), a run
 that stopped part-way can be **continued** rather than restarted. Point the
-component at the run index and a ⭯ button appears in the header:
+component at the run index and a checkpoints button (an arrow turning back) appears in the header:
 
 ```html
 <ag-ui-chat endpoint="/agent/" data-runs-url="/agent/runs/"></ag-ui-chat>
