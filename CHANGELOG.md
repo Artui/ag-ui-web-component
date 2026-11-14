@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an expanded state, and becomes a disclosure once a result with text arrives. A blank result also
   no longer draws an empty framed **Result** region, and a `formatToolPayload` hook is no longer
   asked about one. No opt-in.
+- **The header controls draw their marks rather than type them.** The history, checkpoints,
+  new-chat, collapse, maximize and restore fallbacks were the characters U+2630, U+21BA,
+  U+271A, U+2014, U+25A1 and U+2750, painted by the platform font at its own weight and size, so
+  they never matched the theme toggle's drawn moon beside them. Each is now a stroked
+  `svg.glyph` in the same 24-unit box, stroke and `currentColor` as the moon: a clock with a back
+  arrow, an arrow turning back, a pencil on a square, a chevron down, two arrows pointing out,
+  and two pointing in. Every header glyph, the theme toggle's included, is drawn at
+  `--ag-ui-glyph-size`, so the moon shrinks from the icon size to match its neighbours. The
+  `icon-*` slots still replace any of them; a host styling the characters themselves (a font
+  size on `::part(history-button)`, say) now sizes the glyph with `--ag-ui-glyph-size` instead.
 
 ## [0.53.0] — 2026-11-13
 

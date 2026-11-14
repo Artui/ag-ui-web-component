@@ -1,3 +1,10 @@
+import {
+  ICON_CHECKPOINTS,
+  ICON_COLLAPSE,
+  ICON_HISTORY,
+  ICON_MAXIMIZE,
+  ICON_NEW_CHAT,
+} from "../../constants.js";
 import type { UiStrings } from "../ui_strings.js";
 import { headerButton } from "./header_button.js";
 import { iconElement } from "./icon_element.js";
@@ -72,22 +79,19 @@ export function buildHeader(options: HeaderOptions): BuiltHeader {
   controls.className = "header-controls";
   controls.setAttribute("part", "header-controls");
 
-  const history = headerButton("history", strings.chatHistory, "☰");
+  const history = headerButton("history", strings.chatHistory, ICON_HISTORY);
   history.addEventListener("click", options.onHistory);
 
-  // ↺ rather than ⭯: the same idea in a glyph that has a font behind it in
-  // every browser. The obscure one rendered as an unreadable mark at 14px, and a
-  // header control nobody can name is one nobody presses.
-  const checkpoints = headerButton("checkpoints", strings.checkpoints, "↺");
+  const checkpoints = headerButton("checkpoints", strings.checkpoints, ICON_CHECKPOINTS);
   checkpoints.addEventListener("click", options.onCheckpoints);
 
-  const newChat = headerButton("new", strings.newChat, "✚");
+  const newChat = headerButton("new", strings.newChat, ICON_NEW_CHAT);
   newChat.addEventListener("click", options.onNewChat);
 
-  const collapse = headerButton("collapse", strings.collapse, "—");
+  const collapse = headerButton("collapse", strings.collapse, ICON_COLLAPSE);
   collapse.addEventListener("click", options.onCollapse);
 
-  const maximize = headerButton("maximize", strings.maximize, "□");
+  const maximize = headerButton("maximize", strings.maximize, ICON_MAXIMIZE);
   maximize.addEventListener("click", options.onMaximize);
 
   // Only offered when the server actually indexes runs — without
