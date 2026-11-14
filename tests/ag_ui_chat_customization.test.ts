@@ -646,7 +646,7 @@ describe("header control icons", () => {
     expect(slots).toContain("icon-collapse");
     // Existing embeds are untouched: the glyph is the slot's fallback content.
     const history = buttons.find((b) => b.classList.contains("header-btn--history"));
-    expect(history?.querySelector("slot")?.textContent).toBe("☰");
+    expect(history?.querySelector("slot > svg.glyph")).not.toBeNull();
     expect(history?.getAttribute("part")).toBe("header-button history-button");
   });
 });
@@ -756,7 +756,11 @@ describe("panel resize", () => {
     // ⚠ The cascade cannot arbitrate this. An inline custom property outranks
     // a `:host([placement=…])` rule setting the same property, so a height
     // dragged while floating capped a docked sidebar that had asked for 100vh.
-    sessionStorage.setItem(SIZE_KEY, JSON.stringify({ width: 640, height: 700 }));
+    const size = { width: 640, height: 700 };
+    sessionStorage.setItem(
+      SIZE_KEY,
+      JSON.stringify({ v: 2, placements: { side: size, full: size } }),
+    );
 
     const docked = mount({ placement: "side" });
     expect(docked.style.getPropertyValue("--_drag-width")).toBe("640px");
@@ -767,20 +771,78 @@ describe("panel resize", () => {
     expect(bleed.style.getPropertyValue("--_drag-height")).toBe("");
   });
 
-  it("hands the owned axes back when the placement changes", () => {
-    // Otherwise a size dragged under the old placement survives the switch and
-    // silently overrides the new one.
-    sessionStorage.removeItem(SIZE_KEY);
+  it("swaps in the new placement's own size when the placement changes", () => {
+    // A size belongs to its placement: one dragged floating never sizes another.
+    sessionStorage.setItem(
+      SIZE_KEY,
+      JSON.stringify({
+        v: 2,
+        placements: { floating: { width: 640, height: 700 }, side: { width: 500, height: 600 } },
+      }),
+    );
     const el = mount();
-    el.style.setProperty("--_drag-width", "640px");
-    el.style.setProperty("--_drag-height", "700px");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("640px");
+    expect(el.style.getPropertyValue("--_drag-height")).toBe("700px");
 
     el.setAttribute("placement", "side");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("500px");
     expect(el.style.getPropertyValue("--_drag-height")).toBe("");
-    expect(el.style.getPropertyValue("--_drag-width")).toBe("640px");
 
     el.setAttribute("placement", "full");
     expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+
+    el.setAttribute("placement", "bottom-left");
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+    sessionStorage.removeItem(SIZE_KEY);
+  });
+
+  it.each([
+    ["an empty placement reads floating's size", { placement: "" }, { floating: { width: 640 } }],
+    [
+      "a left and a right sidebar share one size",
+      { placement: "sidebar", "data-side": "left" },
+      { sidebar: { width: 500 } },
+    ],
+  ])("%s", (_name, attrs, placements) => {
+    const width = Object.values(placements)[0]?.width;
+    sessionStorage.setItem(SIZE_KEY, JSON.stringify({ v: 2, placements }));
+    const el = mount(attrs);
+    expect(el.style.getPropertyValue("--_drag-width")).toBe(`${width}px`);
+  });
+
+  it("drops an inline size on a reconnect that finds none stored", () => {
+    sessionStorage.setItem(
+      SIZE_KEY,
+      JSON.stringify({ v: 2, placements: { floating: { width: 640 } } }),
+    );
+    const el = mount();
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("640px");
+    el.remove();
+    sessionStorage.removeItem(SIZE_KEY);
+    document.body.appendChild(el);
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+  });
+
+  it("reads a record with no placements as no size", () => {
+    sessionStorage.setItem(SIZE_KEY, JSON.stringify({ v: 2, placements: null }));
+    const el = mount();
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+  });
+
+  it("reads no size for a placement set before connect from another namespace", () => {
+    // Before connect the store is not scoped yet, so its unscoped key is another element's.
+    sessionStorage.setItem(
+      SIZE_KEY,
+      JSON.stringify({ v: 2, placements: { sidebar: { width: 999 } } }),
+    );
+    const scoped = `${SIZE_KEY}:scoped-size`;
+    sessionStorage.setItem(
+      scoped,
+      JSON.stringify({ v: 2, placements: { floating: { width: 640 } } }),
+    );
+    const el = mount({ id: "scoped-size", placement: "sidebar" });
+    expect(el.style.getPropertyValue("--_drag-width")).toBe("");
+    sessionStorage.removeItem(scoped);
   });
 
   it("does nothing at all where the placement is full-bleed", () => {

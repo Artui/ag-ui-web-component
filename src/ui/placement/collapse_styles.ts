@@ -1,6 +1,7 @@
 // Collapsing and expanding: the animation toward the launcher, the in-flow
 // and page placements that collapse differently or not at all, and the two
-// collapse-to targets: the bottom bar, and the host's own (hidden here).
+// collapse-to targets: the bottom bar, and the host's own (hidden here, with
+// the conversation list beside the host's button).
 export const COLLAPSE_STYLES: string = `
 /* ── Collapse ───────────────────────────────────────────────────────────────
    Collapsing shrinks the widget to the round floating launcher: the panel
@@ -157,7 +158,8 @@ export const COLLAPSE_STYLES: string = `
   display: contents;
 }
 
-.bar-history {
+.bar-history,
+.bar-place {
   display: none;
 }
 
@@ -241,6 +243,39 @@ export const COLLAPSE_STYLES: string = `
   font-weight: 600;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The place beside the title, secondary text that truncates first so the
+   history button never leaves the strip. Its shrink factor is large so that
+   it gives way before the title does, which is the strip's first word.
+   Withheld places keep the chip's
+   dashed, struck-through look: the bar must not claim the page is sent. */
+:host([data-collapsed-to="bar"]) .bar-place {
+  display: inline-flex;
+  flex: 0 100 auto;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 0;
+  border-bottom: 1px solid transparent;
+  color: var(--_muted);
+  font-size: 0.85em;
+  line-height: 1.2;
+}
+
+:host([data-collapsed-to="bar"]) .bar-place[hidden],
+:host([data-collapsed-to="bar"]) .bar-place .place-detail[hidden] {
+  display: none;
+}
+
+:host([data-collapsed-to="bar"]) .bar-place[data-excluded] {
+  border-bottom-style: dashed;
+  border-bottom-color: var(--_border);
+}
+
+:host([data-collapsed-to="bar"]) .bar-place[data-excluded] .place-label,
+:host([data-collapsed-to="bar"]) .bar-place[data-excluded] .place-detail {
+  text-decoration: line-through;
 }
 
 :host([data-collapsed-to="bar"]) .launcher-badge {
@@ -387,5 +422,51 @@ export const COLLAPSE_STYLES: string = `
 
 :host([data-collapsed-to="none"][collapsed][placement="embedded"]) {
   display: none;
+}
+
+/* The conversation list from the host's button: the panel's own drawer, moved
+   out of the hidden panel and stood beside the button, below one in the top half
+   of the viewport and above one in the bottom half. The element writes where,
+   from the button's box. No backdrop: a press outside closes it, as Escape does.
+   The wrapper draws no box; the host stops taking presses while collapsed, so
+   the list takes its own back. A phone keeps a narrow margin on both sides. */
+.threads-popover {
+  display: contents;
+}
+
+:host([data-collapsed-to="none"]) .threads-popover > .drawer {
+  position: fixed;
+  inset: var(--_threads-top, auto) var(--_threads-right, 8px) var(--_threads-bottom, auto) auto;
+  width: min(320px, calc(var(--_viewport-width) - 16px));
+  height: min(440px, var(--_threads-room, 440px));
+  border-radius: var(--_panel-radius);
+  box-shadow: var(--_shadow);
+  overflow: hidden;
+  pointer-events: auto;
+  transition: none;
+}
+
+:host([data-collapsed-to="none"]) .threads-popover > .drawer[hidden] {
+  pointer-events: none;
+}
+
+@media (max-width: 600px) {
+  :host([data-collapsed-to="none"]:not([data-small-viewport="off"])) .threads-popover > .drawer {
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+}
+
+:host([data-collapsed-to="none"]) .threads-popover > .drawer .drawer-backdrop {
+  display: none;
+}
+
+:host([data-collapsed-to="none"]) .threads-popover > .drawer .drawer-panel {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--_border);
+  border-radius: inherit;
+  box-shadow: none;
 }
 `;

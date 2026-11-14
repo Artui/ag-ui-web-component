@@ -6,12 +6,14 @@ export {
   CHART_ACTIVITY_TYPE,
   COMPACTION_ACTIVITY_TYPE,
   CUSTOM_AGENT_EVENT,
+  DOCK_WIDTH_EVENT,
   ELEMENT_TAG,
   FEEDBACK_EVENT,
   INVALIDATE_CUSTOM_NAME,
   INVALIDATE_EVENT,
   LOAD_CAPABILITY_TOOL,
   MAX_TOOL_ROUNDS,
+  MAXIMIZE_EVENT,
   MESSAGE_ACTIONS,
   MESSAGE_ROLE,
   RUN_FINISHED_EVENT,
@@ -19,6 +21,7 @@ export {
   SUBMIT_EVENT,
   SUGGESTIONS_ACTIVITY_TYPE,
   THREAD_EVENT,
+  THREAD_TITLE_EVENT,
   TOGGLE_EVENT,
   TOOL_CALL_STATUS,
   TOOL_DISPLAY,
@@ -63,12 +66,15 @@ export { defineAgUiChat } from "./core/define_ag_ui_chat.js";
 export type { AttachmentsDetail } from "./core/events/attachments_detail.js";
 export type { BarHeightDetail } from "./core/events/bar_height_detail.js";
 export type { CustomAgentDetail } from "./core/events/custom_agent_detail.js";
+export type { DockWidthDetail } from "./core/events/dock_width_detail.js";
 export type { FeedbackDetail } from "./core/events/feedback_detail.js";
 export type { InvalidateDetail } from "./core/events/invalidate_detail.js";
+export type { MaximizeDetail } from "./core/events/maximize_detail.js";
 export type { RunFinishedDetail } from "./core/events/run_finished_detail.js";
 export type { StateDetail } from "./core/events/state_detail.js";
 export type { SubmitDetail } from "./core/events/submit_detail.js";
 export type { ThreadDetail } from "./core/events/thread_detail.js";
+export type { ThreadTitleDetail } from "./core/events/thread_title_detail.js";
 export type { ToggleDetail } from "./core/events/toggle_detail.js";
 export type { ToolRun } from "./core/events/tool_run.js";
 export type { UnreadDetail } from "./core/events/unread_detail.js";
@@ -198,6 +204,7 @@ export {
   type QuestionRequest,
   requestQuestion,
 } from "./ui/interrupts/question_card.js";
+export type { Place } from "./ui/place/place.js";
 export { prettifyToolName } from "./ui/progress/prettify_tool_name.js";
 export {
   type SettledStatus,

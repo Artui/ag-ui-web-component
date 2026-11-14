@@ -25,6 +25,12 @@ export interface UiStrings {
   removeQueued: string;
   /** Shown when a filter matches nothing, unlike having no conversations. */
   noMatches: string;
+  /** Heading over the conversations last active today. */
+  threadsToday: string;
+  /** Heading over the conversations last active in the seven days before today. */
+  threadsPreviousWeek: string;
+  /** Heading over every older conversation, and any with no readable date. */
+  threadsOlder: string;
   /** Notice text when the agent moved its own panel out of the way. */
   chatMoved: string;
   /** Notice text when the agent collapsed its own panel. */
@@ -37,6 +43,10 @@ export interface UiStrings {
   collapse: string;
   /** Expand affordance (the launcher, and the sidebar rail). */
   expand: string;
+  /** Header control that grows the open panel; apart from {@link expand}, which opens it. */
+  maximize: string;
+  /** The same control while the panel is maximized. */
+  restore: string;
   /**
    * The launcher's label while unread answers wait behind it. Token: `{count}`.
    * Replaces {@link expand} rather than appending to it, so a translation can
@@ -71,8 +81,12 @@ export interface UiStrings {
   /** `aria-label` of the "thinking" pending indicator, and the thoughts region's
    * header while the model is still reasoning. */
   thinking: string;
-  /** The thoughts region's header once reasoning has streamed (collapsed label). */
+  /** The thoughts region's header once reasoning has ended, and its fallback
+   * when the reasoning took under a second, too short to time. */
   thoughts: string;
+  /** The thoughts region's header once reasoning has ended, naming how long it
+   * took in whole seconds. Token: `{seconds}`. */
+  thoughtFor: string;
   /** The muted note after a cancelled run. */
   stopped: string;
   /** Error shown when the stream drops without a terminal AG-UI event. */
@@ -151,6 +165,14 @@ export interface UiStrings {
    * reporting a loss. Token: `{n}` (the cap, in minutes).
    */
   recordingLimit: string;
+  /** The place chip's tooltip while the place is sent. Token: `{label}`. */
+  placeShared: string;
+  /** The place chip's tooltip while the user withholds it. Token: `{label}`. */
+  placeWithheld: string;
+  /** The place toggle while the place is sent: pressing it withholds it. */
+  placeStopSharing: string;
+  /** The place toggle while the place is withheld: pressing it sends it again. */
+  placeShareAgain: string;
 
   // ── Tool-call card ──────────────────────────────────────────────────────────
   /** Status pill while the call runs. */
@@ -366,12 +388,17 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   queued: "Waiting to send",
   removeQueued: 'Do not send "{text}"',
   noMatches: "No conversations match that.",
+  threadsToday: "Today",
+  threadsPreviousWeek: "Previous 7 days",
+  threadsOlder: "Older",
   chatMoved: "Moved this panel out of the way",
   chatMinimised: "Minimised this panel",
   undo: "Undo",
   newChat: "New chat",
   collapse: "Collapse",
   expand: "Expand",
+  maximize: "Maximize",
+  restore: "Restore",
   expandUnread: "Expand — {count} unread",
   toggleTheme: "Toggle theme",
   copyCode: "Copy",
@@ -394,6 +421,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   announceFailed: "The response failed",
   thinking: "Assistant is thinking…",
   thoughts: "Thoughts",
+  thoughtFor: "Thought for {seconds}s",
   stopped: "⏹ Stopped",
   connectionLost: "Connection lost",
   noResult: "No result returned.",
@@ -429,6 +457,10 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   transcribing: "Transcribing…",
   transcriptionFailed: "Transcription failed",
   recordingLimit: "Stopped at the {n}-minute limit — transcribing what was recorded.",
+  placeShared: "The agent is told you are on {label}",
+  placeWithheld: "{label} is not sent with your next message",
+  placeStopSharing: "Stop sharing this page",
+  placeShareAgain: "Share this page again",
 
   toolRunning: "running…",
   toolDeferred: "waiting for you",

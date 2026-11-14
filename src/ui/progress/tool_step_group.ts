@@ -1,4 +1,9 @@
-import { SUBAGENT_PHASE, TOOL_CALL_STATUS } from "../../constants.js";
+import {
+  SUBAGENT_PHASE,
+  TOOL_CALL_STATUS,
+  TOOL_GROUP_DISPLAY,
+  type ToolGroupDisplayMode,
+} from "../../constants.js";
 import { fillUiString } from "../fill_ui_string.js";
 import type { UiStrings } from "../ui_strings.js";
 
@@ -32,18 +37,37 @@ interface Step {
 
 /**
  * The attributes the row is drawn from: each card's `data-status`, its
- * `data-asking` while a question or a confirmation is open on it, and the
- * `data-phase` and `data-agent` a sub-agent panel stamps on itself inside the
- * card that delegated to it. Watched rather than told, so a step settled,
- * asked about or delegated by any path updates the row without the group being
- * called.
+ * `data-asking` while a question or a confirmation is open on it, its
+ * `data-has-result` once a result with text arrived, and the `data-phase` and
+ * `data-agent` a sub-agent panel stamps on itself inside the card that
+ * delegated to it. Watched rather than told, so a step settled, asked about or
+ * delegated by any path updates the row without the group being called.
  */
 const WATCHED_ATTRIBUTES: readonly string[] = [
   "data-status",
   "data-asking",
+  "data-has-result",
   "data-phase",
   "data-agent",
 ];
+
+/**
+ * Whether a lone step's card has anything to show under the row, which hides
+ * the card's own head: arguments, a result with text, an approval prompt (drawn
+ * while the call is deferred) or a sub-agent's progress. Which of the first two
+ * the inner display draws decides which count: inline draws no arguments, and
+ * minimal draws neither, so a call is not offered over what it would not show.
+ */
+function hasDetails(card: HTMLElement, display: ToolGroupDisplayMode): boolean {
+  const minimal = display === TOOL_GROUP_DISPLAY.MINIMAL;
+  const args = !minimal && display !== TOOL_GROUP_DISPLAY.INLINE;
+  return (
+    (args && card.hasAttribute("data-has-args")) ||
+    (!minimal && card.hasAttribute("data-has-result")) ||
+    card.getAttribute("data-status") === TOOL_CALL_STATUS.DEFERRED ||
+    card.querySelector(".tool-call-subagent > *") !== null
+  );
+}
 
 /**
  * Consecutive tool calls folded into one quiet row, "Worked through 5 steps",
@@ -63,6 +87,7 @@ const WATCHED_ATTRIBUTES: readonly string[] = [
 export class ToolStepGroup {
   readonly element: HTMLDivElement;
   readonly #strings: UiStrings;
+  readonly #display: () => ToolGroupDisplayMode;
   readonly #list: HTMLDivElement;
   readonly #head: HTMLButtonElement;
   readonly #label: HTMLSpanElement;
@@ -72,8 +97,9 @@ export class ToolStepGroup {
   /** Whether the group has already opened itself for the current wait. */
   #openedForWait = false;
 
-  constructor(strings: UiStrings) {
+  constructor(strings: UiStrings, display: () => ToolGroupDisplayMode) {
     this.#strings = strings;
+    this.#display = display;
     this.element = document.createElement("div");
     this.element.className = "tool-group";
     this.element.setAttribute("part", "tool-group");
@@ -114,7 +140,7 @@ export class ToolStepGroup {
     this.element.append(this.#head, this.#list);
 
     new MutationObserver(() => {
-      this.#refresh();
+      this.refresh();
     }).observe(this.#list, {
       attributes: true,
       attributeFilter: [...WATCHED_ATTRIBUTES],
@@ -145,13 +171,30 @@ export class ToolStepGroup {
     }
     this.#steps.push({ element: card, name, label });
     this.#list.append(card);
-    this.#refresh();
+    this.refresh();
   }
 
   /** Show or hide the per-step cards. */
   setOpen(open: boolean): void {
     this.element.setAttribute("data-open", String(open));
     this.#head.setAttribute("aria-expanded", String(open));
+  }
+
+  /**
+   * Offer the row as a disclosure only while something is behind it. Several
+   * steps always are, since each shows its own head; a lone step's head is not
+   * drawn in the group, so the row is a label until its card has details. A
+   * row that loses them, a gated call with no arguments once it is answered,
+   * folds as it goes.
+   */
+  #setExpandable(expandable: boolean): void {
+    this.#head.disabled = !expandable;
+    if (expandable) {
+      this.#head.setAttribute("aria-expanded", this.element.getAttribute("data-open") as string);
+      return;
+    }
+    this.element.setAttribute("data-open", "false");
+    this.#head.removeAttribute("aria-expanded");
   }
 
   /**
@@ -190,7 +233,8 @@ export class ToolStepGroup {
     return null;
   }
 
-  #refresh(): void {
+  /** Redraw the row from the cards, for a change the cards do not announce. */
+  refresh(): void {
     const strings = this.#strings;
     const steps = this.#steps;
     const statuses = steps.map((step) => step.element.getAttribute("data-status") ?? "");
@@ -231,6 +275,7 @@ export class ToolStepGroup {
     this.element.setAttribute("data-count", String(total));
 
     const only = total === 1 ? steps[0] : undefined;
+    this.#setExpandable(only === undefined || hasDetails(only.element, this.#display()));
     if (only !== undefined) {
       this.#label.textContent = only.label;
     } else {

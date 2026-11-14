@@ -328,6 +328,7 @@
          host's line, and the README's. */
       body {
         padding-bottom: var(--chat-bar-height, 0px);
+        padding-top: var(--chat-header-height, 0px);
       }
       /* A host's own toolbar for collapse-to="none": fixed to the bottom edge,
          with the button the panel rises from. Under the widget's z-index, so a
@@ -348,6 +349,17 @@
       }
       .host-bar[hidden] {
         display: none;
+      }
+      /* The same toolbar as a header across the top, for anchor-side: auto
+         opens the panel below its button there. The left variant moves the
+         button to the left end, where the panel stops at the left gutter. */
+      .host-bar[data-edge="top"] {
+        inset: 0 0 auto 0;
+        border-top: none;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      .host-bar[data-align="left"] button {
+        order: -1;
       }
       .host-bar .spacer {
         flex: 1;
@@ -424,6 +436,27 @@
           </optgroup>
         </select>
       </label>
+      <!-- data-side: which edge a sidebar docks to; right removes the attribute. -->
+      <label
+        >Side
+        <select id="cfg-side">
+          <option value="" selected>right</option>
+          <option value="left">left</option>
+        </select>
+      </label>
+      <!-- data-collapse-icon: default removes the attribute so the placement's
+           own mark shows (the panel mark on a sidebar, the chevron down elsewhere). -->
+      <label
+        >Collapse icon
+        <select id="cfg-collapse-icon">
+          <option value="" selected>default (by placement)</option>
+          <option value="panel-close">panel-close</option>
+          <option value="chevron-down">chevron-down</option>
+          <option value="chevron-up">chevron-up</option>
+          <option value="chevron-left">chevron-left</option>
+          <option value="chevron-right">chevron-right</option>
+        </select>
+      </label>
       <!-- auto removes the attribute; none also shows the host bar below and
            anchors the panel to its Agent button; none (corner) shows the bar
            without anchoring, so the panel rises from its own corner. -->
@@ -434,8 +467,32 @@
           <option value="bar">bar</option>
           <option value="none">none (host bar)</option>
           <option value="none-corner">none (corner)</option>
+          <option value="none-header">none (host header)</option>
+          <option value="none-header-left">none (host header, button left)</option>
         </select>
       </label>
+      <!-- Which side of the host's button the panel opens on under none; auto
+           removes the attribute, which takes the side with more room. -->
+      <label
+        >Anchor side
+        <select id="cfg-anchor-side">
+          <option value="" selected>auto</option>
+          <option value="above">above</option>
+          <option value="below">below</option>
+        </select>
+      </label>
+      <!-- The page a sidebar or side column must leave beside it, dragged,
+           token or maximized; unset caps nothing. The header's maximize
+           control is the state itself; the readout shows the event. -->
+      <label
+        >Min page width
+        <select id="cfg-min-page">
+          <option value="" selected>unset</option>
+          <option value="480px">480px</option>
+          <option value="800px">800px</option>
+        </select>
+      </label>
+      <output id="cfg-maximized">maximized: false</output>
       <!-- The greeting layout is on by default for page and opt-in for embedded;
            "default" removes the attribute so the placement's own default shows. -->
       <label
@@ -559,6 +616,15 @@
               card settles to an <em>Error</em> region rather than losing the turn.
             </li>
             <li>
+              <strong>Nothing behind it.</strong> Say <em>think silently</em>: the model
+              reasons without sending any text, and the block settles to a plain
+              <em>Thought for 2s</em> label with no toggle and no box under it. Say
+              <em>ping</em>: one call with no arguments returns nothing, so its row has
+              no chevron and nothing to open, in the grouped default and in every card
+              mode. <em>Fill the article</em> still shows a reasoning toggle and rows
+              that open.
+            </li>
+            <li>
               <strong>A question.</strong> Say <em>ask me something</em> to reach the
               built-in <code>ask_user</code> card.
             </li>
@@ -597,9 +663,13 @@
               to check it stays centred above the on-screen keyboard.
             </li>
             <li>
-              <strong>Collapse.</strong> Hit the header's <em>—</em>: the panel
+              <strong>Collapse.</strong> Hit the header's chevron: the panel
               scales into the round launcher in the corner, and the launcher
-              expands it again. <em>sidebar</em> slides to an edge rail instead;
+              expands it again. <em>sidebar</em> slides to an edge rail instead,
+              and its control draws a panel closing into that edge; set
+              <em>Side</em> to <em>left</em> and the mark turns to point left.
+              <em>Collapse icon</em> picks the mark outright and keeps it through a
+              placement change; <em>default</em> hands it back to the placement.
               <em>embedded</em> and <em>page</em> keep the header bar.
             </li>
             <li>
@@ -607,7 +677,7 @@
               <em>floating</em>, collapse, and the launcher becomes a strip along the
               bottom edge with the title, the badge and a running mark; the page pads
               itself by the reported height. Press the strip: the panel rises from its
-              right end with the bar still beneath it. The strip's <em>☰</em> opens the
+              right end with the bar still beneath it. The strip's history button (the clock) opens the
               history as a popover over the bar without expanding. Dragging the header
               does nothing; the free edges still resize. On a phone the open panel is
               full-bleed and the bar is gone until you minimise. <em>none</em> hides the
@@ -615,7 +685,7 @@
               toggles the panel, which rises above it, right-aligned.
             </li>
             <li>
-              <strong>Chat history.</strong> The <em>☰</em> drawer slides in over
+              <strong>Chat history.</strong> The history button's drawer slides in over
               the panel and back out — the same motion tokens drive both.
             </li>
             <li>
@@ -699,6 +769,32 @@
               <code>slot="above-composer"</code></label
             >
             <output id="cfg-above-out">empty</output>
+          </div>
+        </section>
+
+        <section id="add-place">
+          <h3>The place chip</h3>
+          <p>
+            <code>getPlace</code> names where the user is; the chip in the composer's tool
+            row draws it and the next round sends it as a <code>place</code> context entry.
+            Pick a place, then <em>Where am I?</em>: the mock agent quotes the entry it
+            received. The eye on the chip withholds it (dashed, struck through), which
+            also withholds the page map. <em>A long one</em> shows the label truncating
+            before Send; <em>None</em> shows the chip taking no space.
+          </p>
+          <div class="row">
+            <label
+              >getPlace(
+              <select id="cfg-place">
+                <option value="article" selected>Create Article</option>
+                <option value="billing">Billing settings</option>
+                <option value="long">A long one</option>
+                <option value="none">None (null)</option>
+              </select>
+              )</label
+            >
+            <button type="button" id="cfg-place-ask">Where am I?</button>
+            <output id="cfg-place-out">-</output>
           </div>
         </section>
 

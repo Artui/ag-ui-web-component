@@ -1,3 +1,10 @@
+import {
+  ICON_CHECKPOINTS,
+  ICON_CHEVRON_DOWN,
+  ICON_HISTORY,
+  ICON_MAXIMIZE,
+  ICON_NEW_CHAT,
+} from "../../constants.js";
 import type { UiStrings } from "../ui_strings.js";
 import { headerButton } from "./header_button.js";
 import { iconElement } from "./icon_element.js";
@@ -20,6 +27,7 @@ export interface HeaderOptions {
   readonly onCheckpoints: () => void;
   readonly onNewChat: () => void;
   readonly onCollapse: () => void;
+  readonly onMaximize: () => void;
   readonly onToggleTheme: () => void;
 }
 
@@ -31,6 +39,10 @@ export interface BuiltHeader {
    * handler for the checkpoints popover has to exclude it either way.
    */
   readonly checkpoints: HTMLButtonElement;
+  /** The maximize control, built detached: the element adds it where a placement offers it. */
+  readonly maximize: HTMLButtonElement;
+  /** The collapse control, which the maximize control is placed before. */
+  readonly collapse: HTMLButtonElement;
 }
 
 /**
@@ -67,20 +79,21 @@ export function buildHeader(options: HeaderOptions): BuiltHeader {
   controls.className = "header-controls";
   controls.setAttribute("part", "header-controls");
 
-  const history = headerButton("history", strings.chatHistory, "☰");
+  const history = headerButton("history", strings.chatHistory, ICON_HISTORY);
   history.addEventListener("click", options.onHistory);
 
-  // ↺ rather than ⭯: the same idea in a glyph that has a font behind it in
-  // every browser. The obscure one rendered as an unreadable mark at 14px, and a
-  // header control nobody can name is one nobody presses.
-  const checkpoints = headerButton("checkpoints", strings.checkpoints, "↺");
+  const checkpoints = headerButton("checkpoints", strings.checkpoints, ICON_CHECKPOINTS);
   checkpoints.addEventListener("click", options.onCheckpoints);
 
-  const newChat = headerButton("new", strings.newChat, "✚");
+  const newChat = headerButton("new", strings.newChat, ICON_NEW_CHAT);
   newChat.addEventListener("click", options.onNewChat);
 
-  const collapse = headerButton("collapse", strings.collapse, "—");
+  // The element repaints this mark for its placement and data-collapse-icon.
+  const collapse = headerButton("collapse", strings.collapse, ICON_CHEVRON_DOWN);
   collapse.addEventListener("click", options.onCollapse);
+
+  const maximize = headerButton("maximize", strings.maximize, ICON_MAXIMIZE);
+  maximize.addEventListener("click", options.onMaximize);
 
   // Only offered when the server actually indexes runs — without
   // `data-runs-url` there is nothing to continue and the button would open
@@ -104,5 +117,5 @@ export function buildHeader(options: HeaderOptions): BuiltHeader {
   }
   controls.append(collapse);
   header.append(title, headerActions, controls);
-  return { header, checkpoints };
+  return { header, checkpoints, maximize, collapse };
 }

@@ -8,6 +8,7 @@ import type { ClientSeed } from "../../core/client_seed.js";
 import type {
   ClientConversationStore,
   NavigationCheckpoint,
+  ThreadMeta,
 } from "../../core/conversation_store.js";
 import type { ThreadDetail } from "../../core/events/thread_detail.js";
 import type { MessageRole } from "../../core/message_role.js";
@@ -125,6 +126,10 @@ export interface ConversationHistoryHost {
    * The element fills in the thread it replaced, which it last reported.
    */
   readonly threadChanged: (threadId: string, reason: ThreadDetail["reason"]) => void;
+  /** Hear the rows the conversation list was just given, for the title on screen. */
+  readonly threadsListed: (threads: readonly ThreadMeta[]) => void;
+  /** A thread was deleted, so whatever the element kept about it goes too. */
+  readonly threadDeleted: (threadId: string) => void;
 }
 
 /**
@@ -398,6 +403,7 @@ export class ConversationHistory {
       this.#host.cancelRun();
     }
     this.#host.conversationStore().clear(threadId);
+    this.#host.threadDeleted(threadId);
     if (wasActive) {
       this.#host.resetState();
       this.adoptActiveThread();
@@ -411,10 +417,9 @@ export class ConversationHistory {
   /** Reload the drawer's thread list, marking the active thread. */
   async refreshDrawer(): Promise<void> {
     this.#host.drawer.setRelativeTimeFormatter(this.#host.formatRelativeTime());
-    this.#host.drawer.setThreads(
-      await this.#host.conversationStore().listThreads(),
-      this.#threadId,
-    );
+    const threads = await this.#host.conversationStore().listThreads();
+    this.#host.drawer.setThreads(threads, this.#threadId);
+    this.#host.threadsListed(threads);
   }
 
   /** Load the checkpoint panel with the runs that can actually be continued. */

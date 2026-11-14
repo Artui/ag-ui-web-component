@@ -1,4 +1,4 @@
-import { MESSAGE_ROLE, X_SUMMARY_KEY } from "../../constants.js";
+import { MESSAGE_ROLE, type ToolGroupDisplayMode, X_SUMMARY_KEY } from "../../constants.js";
 import type { AgUiToolCall } from "../../core/agui_client.js";
 import type { MessageRole } from "../../core/message_role.js";
 import { skillNameFrom } from "../../skills/skill_name_from.js";
@@ -43,6 +43,8 @@ export interface TranscriptHost {
   readonly formatToolPayload: (payload: ToolPayload) => Node | string | null;
   /** The element's `toolDisplay`, read per card: it decides whether calls fold into a step group. */
   readonly toolDisplay: () => ToolDisplayMode;
+  /** The element's `toolGroupDisplay`, read per row: it decides what a lone step offers. */
+  readonly toolGroupDisplay: () => ToolGroupDisplayMode;
 }
 
 /**
@@ -189,6 +191,14 @@ export class Transcript {
   }
 
   /**
+   * Stop the reasoning region's clock and settle its header, when reasoning
+   * ends or whatever replaces its end arrives first. A no-op without one.
+   */
+  settleThoughts(): void {
+    this.#thoughts?.settle();
+  }
+
+  /**
    * Close the turn's answer group. Drop it if the turn rendered nothing
    * (e.g. a server-only round that streamed no text/card) so an opted-in
    * well leaves no empty box behind.
@@ -198,6 +208,9 @@ export class Transcript {
       this.#currentGroup.remove();
       this.updateEmptyState();
     }
+    // A turn can end with its reasoning never ended, by a stop, an error or a
+    // server that sent no end, and the live label must not outlive the turn.
+    this.settleThoughts();
     this.#currentGroup = null;
     this.#thoughts = null;
   }
@@ -496,6 +509,13 @@ export class Transcript {
     return card;
   }
 
+  /** Redraw every step group's row, for a change of the inner display, which no card announces. */
+  refreshStepGroups(): void {
+    for (const element of this.#host.messages.querySelectorAll(".tool-group")) {
+      this.#stepGroups.get(element)?.refresh();
+    }
+  }
+
   /**
    * Open the step group ``card`` sits in, at once, ahead of a prompt about to be
    * drawn inside it. A no-op for a card drawn in a card display mode, which has
@@ -523,7 +543,7 @@ export class Transcript {
     if (existing !== undefined) {
       return existing;
     }
-    const group = new ToolStepGroup(this.#host.strings());
+    const group = new ToolStepGroup(this.#host.strings(), this.#host.toolGroupDisplay);
     this.#stepGroups.set(group.element, group);
     if (last === null) {
       answer.prepend(group.element);

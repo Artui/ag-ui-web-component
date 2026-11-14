@@ -194,6 +194,21 @@ bind("cfg-tools", "data-tool-display");
 // How an opened group draws its calls; read only while Tool cards is grouped.
 bind("cfg-group-tools", "data-tool-group-display");
 
+// Absent is the default for both: a right-docked sidebar, and the collapse
+// mark the placement draws.
+for (const [id, attr] of [
+  ["cfg-side", "data-side"],
+  ["cfg-collapse-icon", "data-collapse-icon"],
+]) {
+  $(id).addEventListener("change", (event) => {
+    if (event.target.value === "") {
+      chat.removeAttribute(attr);
+    } else {
+      chat.setAttribute(attr, event.target.value);
+    }
+  });
+}
+
 // Absent is a value of its own here: it is what leaves the greeting to the
 // placement's default, on for page and off everywhere else.
 $("cfg-greeting").addEventListener("change", (event) => {
@@ -373,13 +388,41 @@ $("cfg-collapse-to").addEventListener("change", (event) => {
     chat.setAttribute("collapse-to", target);
   }
   hostBar.hidden = target !== "none";
-  if (value === "none") {
+  const header = value === "none-header" || value === "none-header-left";
+  hostBar.toggleAttribute("data-edge", header);
+  if (header) {
+    hostBar.setAttribute("data-edge", "top");
+  }
+  hostBar.toggleAttribute("data-align", value === "none-header-left");
+  if (value === "none-header-left") {
+    hostBar.setAttribute("data-align", "left");
+  }
+  if (value === "none" || header) {
     chat.setAttribute("anchor", "#host-agent");
   } else {
     chat.removeAttribute("anchor");
   }
   publishChatBar();
   labelHostAgent();
+});
+$("cfg-anchor-side").addEventListener("change", (event) => {
+  const value = event.target.value;
+  if (value === "") {
+    chat.removeAttribute("anchor-side");
+  } else {
+    chat.setAttribute("anchor-side", value);
+  }
+});
+$("cfg-min-page").addEventListener("change", (event) => {
+  const value = event.target.value;
+  if (value === "") {
+    chat.style.removeProperty("--ag-ui-min-page-width");
+  } else {
+    chat.style.setProperty("--ag-ui-min-page-width", value);
+  }
+});
+chat.addEventListener("ag-ui-maximize", (event) => {
+  $("cfg-maximized").textContent = `maximized: ${event.detail.maximized}`;
 });
 hostAgent.addEventListener("click", () => {
   chat.toggleCollapsed();
@@ -389,7 +432,14 @@ chat.addEventListener("ag-ui-toggle", labelHostAgent);
 // The page's share of the bottom edge: the widget's bar height under bar, and
 // the host toolbar's own under none. The widget never pads the page itself.
 const publishChatBar = () => {
-  const height = hostBar.hidden ? chat.barHeight : hostBar.getBoundingClientRect().height;
+  const atTop = hostBar.hasAttribute("data-edge");
+  const height = hostBar.hidden
+    ? chat.barHeight
+    : atTop
+      ? 0
+      : hostBar.getBoundingClientRect().height;
+  const top = !hostBar.hidden && atTop ? hostBar.getBoundingClientRect().height : 0;
+  document.documentElement.style.setProperty("--chat-header-height", `${Math.ceil(top)}px`);
   document.documentElement.style.setProperty("--chat-bar-height", `${Math.ceil(height)}px`);
 };
 chat.addEventListener("ag-ui-bar-height", publishChatBar);
@@ -474,6 +524,38 @@ $("cfg-above").addEventListener("change", (event) => {
     $("cfg-above-out").textContent = "empty";
   }
 });
+
+// The place chip. The select stands in for the host's router: changing it
+// changes what getPlace returns and calls refreshPlace(), as an app would
+// after a pushState. A page map rides too, so withholding the place can be
+// seen to withhold the page in the mock agent's answer.
+const PLACES = {
+  article: { label: "Create Article", detail: "Articles", href: "/articles/add/" },
+  billing: { label: "Billing settings", detail: "Account", href: "/settings/billing/" },
+  long: {
+    label:
+      "Purchase order #48213 for Northwind Traders International Holdings, shipping to Rotterdam",
+    detail: "Procurement, awaiting approval",
+    href: "/procurement/orders/48213/",
+  },
+  none: null,
+};
+chat.getPlace = () => PLACES[$("cfg-place").value] ?? null;
+chat.getPageMap = () => ({ form: "article", fields: ["title", "slug", "status", "featured"] });
+const syncPlaceReadout = () => {
+  const place = chat.getPlace();
+  $("cfg-place-out").textContent = place === null ? "no chip" : place.label;
+};
+$("cfg-place").addEventListener("change", () => {
+  chat.refreshPlace();
+  syncPlaceReadout();
+});
+$("cfg-place-ask").addEventListener("click", () => {
+  void chat.sendMessage("Where am I?");
+});
+// Set after the element connected, so the first read is asked for here.
+chat.refreshPlace();
+syncPlaceReadout();
 
 // The thread API. threadId and running are read off the element on every
 // event and on a short tick (running changes with no thread event), the

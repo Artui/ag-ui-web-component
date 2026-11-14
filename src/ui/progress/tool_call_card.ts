@@ -234,8 +234,12 @@ export class ToolCallCard {
       { kind: "arguments", toolName: name, args },
       JSON.stringify(args, null, 2),
     );
-    // Drop the region rather than frame an empty object.
-    argsSection.root.hidden = Object.keys(args).length === 0;
+    // Drop the region rather than frame an empty object. The marker is what
+    // the shadow CSS reads to tell whether the toggle has anything to open:
+    // in compact the arguments are behind it too.
+    const hasArgs = Object.keys(args).length > 0;
+    argsSection.root.hidden = !hasArgs;
+    this.element.toggleAttribute("data-has-args", hasArgs);
 
     const resultSection = this.#section("result", strings.resultLabel);
     this.#resultSection = resultSection.root;
@@ -314,6 +318,11 @@ export class ToolCallCard {
   /**
    * Flip the status pill to `status` and fill in the result region, whose
    * heading names the outcome (result / error / declined).
+   *
+   * A blank `text` leaves the region out, as the constructor does for empty
+   * arguments: the call settled with nothing to show, so the card stays a
+   * status row and its toggle is not offered. The formatter is not asked about
+   * a result that is not there.
    */
   settle(status: SettledStatus, text: string): void {
     // Idempotent: a duplicate `TOOL_CALL_RESULT`, or a replayed tool message
@@ -323,6 +332,9 @@ export class ToolCallCard {
     }
     this.#settled = true;
     this.#setStatus(status);
+    if (text.trim() === "") {
+      return;
+    }
     this.#resultLabel.textContent = resultLabels(this.#strings)[status];
     this.#renderPayload(
       this.#resultBody,
@@ -330,6 +342,9 @@ export class ToolCallCard {
       formatPayload(text),
     );
     this.#resultSection.hidden = false;
+    // Read by the shadow CSS, which offers the toggle only over something, and
+    // by a step group, which offers its row on the same terms.
+    this.element.setAttribute("data-has-result", "");
   }
 
   /**

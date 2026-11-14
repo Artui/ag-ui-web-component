@@ -62,7 +62,10 @@ const BLOCKS: Record<
     selector: ".thoughts-body",
     run: (emit) => {
       emit.reasoningStart();
+      // Two deltas: the client hands over the buffer as it stood before each,
+      // and a block with no text yet draws no body at all.
       emit.reasoning("Weighing the two options.");
+      emit.reasoning(" Then a third.");
     },
   },
 };

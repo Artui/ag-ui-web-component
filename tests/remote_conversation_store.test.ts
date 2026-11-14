@@ -293,6 +293,73 @@ describe("RemoteConversationStore", () => {
     store.saveCheckpoint("t9", { toolCallId: "c1" });
     expect(store.loadCheckpoint("t9")).toEqual({ toolCallId: "c1" });
   });
+  describe("the thread on screen before the server lists it", () => {
+    function bodiless(): RemoteConversationStore {
+      return new RemoteConversationStore(
+        "https://x/threads/",
+        () => ({}),
+        new SessionStorageStore(),
+        () => undefined,
+        false,
+      );
+    }
+
+    it("lists it with its own title, ahead of the server rows", async () => {
+      const store = bodiless();
+      const id = store.threadId();
+      store.saveMessages(id, [{ id: "m", role: "user", content: "/summarize_draw" }] as never);
+      fetchMock.mockResolvedValue(
+        ok({ threads: [{ thread_id: "old", title: "Old", updated_at: null, preview: "" }] }),
+      );
+      const metas = await store.listThreads();
+      expect(metas.map((meta) => [meta.threadId, meta.title, meta.preview])).toEqual([
+        [id, "Summarize draw", ""],
+        ["old", "Old", ""],
+      ]);
+      expect(metas[0]?.updatedAt).toBeGreaterThan(0);
+    });
+
+    it("names a thread with no user text yet as a new conversation", async () => {
+      const store = bodiless();
+      const id = store.threadId();
+      store.saveMessages(id, [{ id: "m", role: "assistant", content: "hello" }] as never);
+      fetchMock.mockResolvedValue(ok({ threads: [] }));
+      expect((await store.listThreads()).map((meta) => meta.title)).toEqual(["New conversation"]);
+    });
+
+    it("gives way to the server row once the server lists it", async () => {
+      const store = bodiless();
+      const id = store.threadId();
+      store.saveMessages(id, [{ id: "m", role: "user", content: "book a flight" }] as never);
+      fetchMock.mockResolvedValue(
+        ok({ threads: [{ thread_id: id, title: "Flights", updated_at: null, preview: "p" }] }),
+      );
+      expect((await store.listThreads()).map((meta) => meta.title)).toEqual(["Flights"]);
+    });
+
+    it("carries a rename made before the server lists it", async () => {
+      const store = bodiless();
+      const id = store.threadId();
+      store.saveMessages(id, [{ id: "m", role: "user", content: "book a flight" }] as never);
+      fetchMock.mockResolvedValue(ok({ threads: [] }));
+      store.renameThread(id, "Trip");
+      expect((await store.listThreads()).map((meta) => meta.title)).toEqual(["Trip"]);
+    });
+
+    it("lists nothing for a thread not on screen, unsent or deleted", async () => {
+      const store = bodiless();
+      const left = store.threadId();
+      store.saveMessages(left, [{ id: "m", role: "user", content: "left" }] as never);
+      store.newThread();
+      fetchMock.mockResolvedValue(ok({ threads: [] }));
+      expect(await store.listThreads()).toEqual([]);
+
+      store.setActiveThread(left);
+      store.clear(left);
+      expect(await store.listThreads()).toEqual([]);
+    });
+  });
+
   describe("the local message cache", () => {
     /** Every key and value in `sessionStorage`, as one string. */
     function dumpStorage(): string {

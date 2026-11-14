@@ -24,8 +24,14 @@ import {
 } from "./resize_handle.js";
 import { type Surface, surfaceFor } from "./surface_for.js";
 
-/** Per-tab persistence key for a dragged panel size. */
+/** Persistence key for the dragged panel sizes, one per placement in one record. */
 const SIZE_KEY = "ag-ui-chat:size";
+
+/** The stored record: a dragged size per placement attribute value. */
+interface StoredSizes {
+  readonly v: 2;
+  readonly placements: Readonly<Record<string, ResizeSize>>;
+}
 
 /**
  * The private properties a dragged size lives in. They are not the public
@@ -46,6 +52,10 @@ const DRAG_HEIGHT = "--_drag-height";
  */
 const DOCK_BOTTOM = "--_dock-bottom";
 const DOCK_RIGHT = "--_dock-right";
+const DOCK_TOP = "--_dock-top";
+
+/** The side of its anchor a panel under collapse-to="none" opens on. */
+type AnchorSide = "above" | "below";
 
 /** Per-tab persistence key for a dragged launcher position. */
 const LAUNCHER_KEY = "ag-ui-chat:launcher";
@@ -87,6 +97,14 @@ function asPoint(value: unknown): { readonly left: number; readonly top: number 
  */
 function coversViewport(box: Extent, viewport: Extent): boolean {
   return box.width >= viewport.width - 1 && box.height >= viewport.height - 1;
+}
+
+/** One edge the host reserved, read off the probe's padding. */
+function reservedEdge(style: CSSStyleDeclaration, name: string): number {
+  const value = Number.parseFloat(style.getPropertyValue(name));
+  // A detached or not-yet-rendered probe resolves to nothing at all, and
+  // reserving NaN is worse than reserving zero in every case.
+  return Number.isFinite(value) ? value : 0;
 }
 
 /**
@@ -262,14 +280,38 @@ export class PanelPlacement {
     this.#focusableGrip();
   }
 
-  /** Restore a dragged size before the panel paints. */
+  /** Restore the current placement's dragged size before the panel paints. */
   restoreSize(): void {
+    // A reconnect may find the stored size gone, and a size kept inline would outlive it.
+    this.#host.element.style.removeProperty(DRAG_WIDTH);
+    this.#host.element.style.removeProperty(DRAG_HEIGHT);
     this.#applySize(this.#readSize());
   }
 
   /**
-   * Drop the dragged size and its stored copy, so the placement's own size and
-   * the host's tokens apply again. For a host entering a sized state of its
+   * Swap the dragged size for the one stored under the placement just set, so a
+   * floating drag never sizes a sidebar. Between two corner placements a stated
+   * spot moves with the size, as on resetSize, so the launcher keeps its corner.
+   * Before connect the namespace is unclaimed, and connect restores the size.
+   */
+  switchPlacement(previous: string | null): void {
+    const element = this.#host.element;
+    const sized = element.getBoundingClientRect();
+    element.style.removeProperty(DRAG_WIDTH);
+    element.style.removeProperty(DRAG_HEIGHT);
+    if (!this.#host.connected()) {
+      return;
+    }
+    this.#applySize(this.#readSize());
+    if (surfaceFor(previous, element.getAttribute("collapse-to")).launcherDraggable) {
+      this.#carrySpotWithSize(sized);
+    }
+  }
+
+  /**
+   * Drop the current placement's dragged size and its stored copy, so the
+   * placement's own size and the host's tokens apply again; other placements
+   * keep theirs. For a host entering a sized state of its
    * own, which a user's drag would otherwise outrank.
    *
    * A docked panel the user dragged off its dock goes back to it as well, and
@@ -281,7 +323,7 @@ export class PanelPlacement {
     const sized = this.#host.element.getBoundingClientRect();
     this.#host.element.style.removeProperty(DRAG_WIDTH);
     this.#host.element.style.removeProperty(DRAG_HEIGHT);
-    this.#host.clearPreference(SIZE_KEY);
+    this.#writeSizes(this.#bucket(), null);
     if (this.#docked()) {
       if (this.#dockPos !== null) {
         this.#host.element.style.removeProperty("--ag-ui-inset");
@@ -296,6 +338,32 @@ export class PanelPlacement {
     }
     // The anchor was measured against the dragged box; the resting one may
     // pin different edges.
+    this.syncResizeAnchor();
+  }
+
+  /**
+   * Stand the larger panel back on the screen once the element has stamped the
+   * maximized state, whose rules size the box outright, over any dragged size
+   * still held inline. The stored size and every stored spot are kept: restore
+   * puts them back.
+   */
+  enterMaximized(): void {
+    this.#replace();
+  }
+
+  /** Put the stored size back once the element has left the maximized state. */
+  leaveMaximized(): void {
+    this.restoreSize();
+    this.#replace();
+  }
+
+  /** Re-place the panel from the record after its size changed under it. */
+  #replace(): void {
+    if (this.#docked()) {
+      this.#placeDocked();
+    } else {
+      this.restoreLauncherPosition();
+    }
     this.syncResizeAnchor();
   }
 
@@ -415,6 +483,13 @@ export class PanelPlacement {
    * syncDock, which runs on every change either can make.
    */
   #dockTop = Number.POSITIVE_INFINITY;
+  /**
+   * The line a panel docked below its anchor stays below: the anchor's bottom.
+   * Negative infinity on every other dock.
+   */
+  #dockFloor = Number.NEGATIVE_INFINITY;
+  /** The side of the anchor the panel last stood on, held while a gesture runs. */
+  #anchorSide: AnchorSide = "above";
   /** The bar's height, as last measured: what a fill takes away when it stamps. */
   #barHeight = 0;
   /**
@@ -507,6 +582,7 @@ export class PanelPlacement {
       collapseTo: this.#surface().collapseTo,
       collapsed: this.#host.collapsed(),
       collapsible: this.#host.collapsible(),
+      maximized: this.#host.element.hasAttribute("maximized"),
       movable: this.#panelMovable() && !fullBleed,
       // The page's setting alone: true for every placement unless the host set
       // `data-launcher-drag="false"`. Whether this panel moves is `movable`,
@@ -667,7 +743,8 @@ export class PanelPlacement {
    * per interaction, because `placement` is a live attribute.
    */
   #resizeAxis(): ResizeAxis {
-    return this.#surface().resizeAxis;
+    // Refused while maximized, so restore always lands on the size stored before it.
+    return this.#host.element.hasAttribute("maximized") ? "none" : this.#surface().resizeAxis;
   }
 
   /**
@@ -867,7 +944,8 @@ export class PanelPlacement {
    *
    * Under the bar it is the strip's border box, which is 0 whenever the strip
    * is not drawn (a phone with the panel open, where the panel is the screen).
-   * Under a host anchor it is the anchor's top and right, measured against the
+   * Under a host anchor it is the anchor's top, or its bottom on the side below,
+   * and its right, measured against the
    * layout viewport a fixed element is placed in; an anchor of null leaves the
    * panel in its placement's own corner. Every other surface carries neither
    * property, so nothing stale is left behind by a live switch.
@@ -876,20 +954,30 @@ export class PanelPlacement {
     const element = this.#host.element;
     const target = this.#surface().collapseTo;
     const height = target === "bar" ? bar.offsetHeight : 0;
+    const rect = target === "none" && anchor !== null ? anchor.getBoundingClientRect() : null;
+    const side = rect === null ? null : this.#resolveSide(rect);
     if (target === "bar") {
       element.style.setProperty(DOCK_BOTTOM, `${height}px`);
-    } else if (target === "none" && anchor !== null) {
-      const rect = anchor.getBoundingClientRect();
-      const screen = this.#screen();
-      element.style.setProperty(DOCK_BOTTOM, `${Math.max(0, screen.height - rect.top)}px`);
-      element.style.setProperty(DOCK_RIGHT, `${Math.max(0, screen.width - rect.right)}px`);
+    } else if (rect !== null && side === "above") {
+      element.style.setProperty(DOCK_BOTTOM, `${Math.max(0, this.#screen().height - rect.top)}px`);
     } else {
       element.style.removeProperty(DOCK_BOTTOM);
     }
-    if (target !== "none" || anchor === null) {
+    if (rect !== null && side === "below") {
+      element.style.setProperty(DOCK_TOP, `${Math.max(0, rect.bottom)}px`);
+    } else {
+      element.style.removeProperty(DOCK_TOP);
+    }
+    if (rect !== null) {
+      element.style.setProperty(DOCK_RIGHT, `${this.#dockRight(rect)}px`);
+    } else {
       element.style.removeProperty(DOCK_RIGHT);
     }
-    element.toggleAttribute("data-dock-anchored", target === "none" && anchor !== null);
+    if (side === null) {
+      element.removeAttribute("data-dock-anchored");
+    } else {
+      element.setAttribute("data-dock-anchored", side);
+    }
     this.#barHeight = height;
     if (target !== "bar") {
       this.#barTaken = null;
@@ -897,9 +985,10 @@ export class PanelPlacement {
     this.#dockTop =
       target === "bar" && height > 0
         ? bar.getBoundingClientRect().top
-        : target === "none" && anchor !== null
-          ? anchor.getBoundingClientRect().top
+        : rect !== null && side === "above"
+          ? rect.top
           : Number.POSITIVE_INFINITY;
+    this.#dockFloor = rect !== null && side === "below" ? rect.bottom : Number.NEGATIVE_INFINITY;
     // Every change the dock can make passes through here -- the bar's height
     // arrives by a ResizeObserver after the first restore, and a bar that grew
     // since the drag would otherwise cover the panel's foot -- so the dragged
@@ -915,8 +1004,38 @@ export class PanelPlacement {
    */
   #dockRoom(): ViewportBox {
     const viewport = this.#viewport();
+    const top = Math.max(viewport.top, this.#dockFloor);
     const bottom = Math.min(viewport.top + viewport.height, this.#dockTop);
-    return { ...viewport, height: Math.max(0, bottom - viewport.top) };
+    return { ...viewport, top, height: Math.max(0, bottom - top) };
+  }
+
+  /**
+   * The side of the anchor the panel opens on: the host's anchor-side, or under
+   * auto the side with more of the usable viewport, kept while a gesture runs.
+   */
+  #resolveSide(rect: DOMRect): AnchorSide {
+    const stated = this.#host.element.getAttribute("anchor-side");
+    if (stated === "above" || stated === "below") {
+      this.#anchorSide = stated;
+    } else if (!this.dragging()) {
+      const viewport = this.#viewport();
+      const below = viewport.top + viewport.height - rect.bottom;
+      this.#anchorSide = below > rect.top - viewport.top ? "below" : "above";
+    }
+    return this.#anchorSide;
+  }
+
+  /**
+   * The panel's distance from the right edge: on the anchor's right, unless a
+   * panel that wide would then cross the gutter on the left of the usable box,
+   * and never inside the gutter on the right of it.
+   */
+  #dockRight(rect: DOMRect): number {
+    const screen = this.#screen();
+    const fits =
+      screen.width - this.#viewport().left - EDGE_MARGIN - this.#host.element.offsetWidth;
+    const floor = EDGE_MARGIN + reservedEdge(getComputedStyle(this.probe), "padding-right");
+    return Math.max(floor, Math.min(screen.width - rect.right, fits));
   }
 
   /**
@@ -1116,19 +1235,13 @@ export class PanelPlacement {
     // of what the token's own documentation recommends -- parses as NaN and
     // takes the panel's whole inset down with it.
     const style = getComputedStyle(this.probe);
-    const edge = (name: string): number => {
-      const value = Number.parseFloat(style.getPropertyValue(name));
-      // A detached or not-yet-rendered probe resolves to nothing at all, and
-      // reserving NaN is worse than reserving zero in every case.
-      return Number.isFinite(value) ? value : 0;
-    };
-    const left = edge("padding-left");
-    const top = edge("padding-top");
+    const left = reservedEdge(style, "padding-left");
+    const top = reservedEdge(style, "padding-top");
     return {
       left,
       top,
-      width: Math.max(0, width - left - edge("padding-right")),
-      height: Math.max(0, height - top - edge("padding-bottom")),
+      width: Math.max(0, width - left - reservedEdge(style, "padding-right")),
+      height: Math.max(0, height - top - reservedEdge(style, "padding-bottom")),
     };
   }
 
@@ -1819,21 +1932,61 @@ export class PanelPlacement {
     }
   }
 
-  /** Persist a dragged size per tab, alongside the collapsed/theme preferences. */
+  /**
+   * The stored-size bucket for the live placement: its attribute value, with
+   * absent and empty read as floating, as the stylesheet treats them.
+   */
+  #bucket(): string {
+    const placement = this.#host.element.getAttribute("placement");
+    return placement === null || placement === "" ? "floating" : placement;
+  }
+
+  /** Persist a dragged size under the current placement, keeping the others. */
   #persistSize(size: ResizeSize): void {
-    const stored = { ...this.#readSize(), ...size };
+    this.#writeSizes(this.#bucket(), { ...this.#readSize(), ...size });
+  }
+
+  /** Store one placement's size, or drop it with null, clearing an emptied record. */
+  #writeSizes(bucket: string, size: ResizeSize | null): void {
+    const placements: Record<string, ResizeSize> = { ...this.#readSizes() };
+    if (size === null) {
+      delete placements[bucket];
+    } else {
+      placements[bucket] = size;
+    }
+    if (Object.keys(placements).length === 0) {
+      this.#host.clearPreference(SIZE_KEY);
+      return;
+    }
+    const stored: StoredSizes = { v: 2, placements };
     this.#host.writePreference(SIZE_KEY, JSON.stringify(stored));
   }
 
-  /** The persisted size for this instance, or an empty record. */
+  /** The persisted size for the current placement, or an empty record. */
   #readSize(): ResizeSize {
+    return this.#readSizes()[this.#bucket()] ?? {};
+  }
+
+  /**
+   * Every persisted size by placement. A record from before sizes were kept per
+   * placement is one flat size, read as floating's, which is where it was
+   * nearly always dragged.
+   */
+  #readSizes(): Readonly<Record<string, ResizeSize>> {
     const raw = this.#host.readPreference(SIZE_KEY);
     if (raw === null) {
       return {};
     }
     try {
       const parsed: unknown = JSON.parse(raw);
-      return typeof parsed === "object" && parsed !== null ? (parsed as ResizeSize) : {};
+      if (typeof parsed !== "object" || parsed === null) {
+        return {};
+      }
+      const record = parsed as Partial<StoredSizes>;
+      if (record.v === 2 && typeof record.placements === "object" && record.placements !== null) {
+        return record.placements;
+      }
+      return { floating: parsed as ResizeSize };
     } catch {
       // A corrupt entry is not worth failing a mount over; fall back to the
       // placement's own size.

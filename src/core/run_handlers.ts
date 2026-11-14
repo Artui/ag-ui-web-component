@@ -47,8 +47,8 @@ export interface RunHandlersHost {
   readonly setRunning: (running: boolean) => void;
   /** The element's `appendMessage`, which a failed run's bubble opens through. */
   readonly appendMessage: (role: MessageRole, content: string) => HTMLDivElement;
-  /** Count an answer that finished while the widget was collapsed. */
-  readonly noteUnread: () => void;
+  /** Note an assistant answer finished on `threadId`, which may be unseen. */
+  readonly noteUnread: (threadId: string) => void;
 }
 
 /**
@@ -99,6 +99,8 @@ interface RunLedger {
    * than silence.
    */
   announcedOutcome: boolean;
+  /** How the interaction ended so far; read and reset when the run-finished event fires. */
+  outcome: RunFinishedDetail["outcome"];
 }
 
 /** An empty ledger, for a conversation nothing has run in yet. */
@@ -108,6 +110,7 @@ function emptyLedger(): RunLedger {
     serverSettled: new Set<string>(),
     invalidated: new Set<string>(),
     announcedOutcome: false,
+    outcome: "completed",
   };
 }
 
@@ -185,9 +188,20 @@ export class RunHandlers {
   forClient(threadId: string): AgUiClientHandlers {
     const ledger = this.#ledger;
     const attached = (): boolean => ledger === this.#ledger;
-    const { onSettled, ...drawing } = this.#tableFor(ledger);
+    const { onSettled, onError, onCancelled, ...drawing } = this.#tableFor(ledger, threadId);
+    const guarded = whileAttached({ onError, onCancelled }, attached);
     return {
       ...whileAttached(drawing, attached),
+      // Recorded outside the check, like the settle: a detached run's ending is
+      // still true, and the ledger is the only place it can be kept for the report.
+      onError: (message) => {
+        ledger.outcome = "failed";
+        guarded.onError(message);
+      },
+      onCancelled: () => {
+        ledger.outcome = "stopped";
+        guarded.onCancelled();
+      },
       onSettled: () => {
         if (attached()) {
           onSettled();
@@ -202,9 +216,10 @@ export class RunHandlers {
 
   /**
    * The handler table itself, recording into `ledger`. {@link forClient}
-   * decides how much of it still runs once the table is detached.
+   * decides how much of it still runs once the table is detached. An answer is
+   * attributed to `threadId`, the thread the client was built for.
    */
-  #tableFor(ledger: RunLedger): AgUiClientHandlers {
+  #tableFor(ledger: RunLedger, threadId: string): AgUiClientHandlers {
     return {
       onRunStart: () => {
         // Per *round*, so guard on the turn: a run that calls three tools fires
@@ -224,14 +239,17 @@ export class RunHandlers {
         // The model is thinking: swap the pending dots for a live thoughts
         // region at the top of the turn's answer group.
         this.#host.transcript.hidePending();
-        this.#host.transcript.showThoughts();
+        // A later round in the same turn finds the region already there, and
+        // restarts its clock and its live label.
+        this.#host.transcript.showThoughts().begin();
       },
       onReasoningDelta: (buffer) => {
         this.#host.transcript.showThoughts().stream(buffer);
       },
       onReasoningEnd: () => {
-        // Leave the region expanded until the answer text starts — it collapses
-        // on the first text delta (onTextDelta).
+        // Settle the header to how long it took, but leave the region expanded
+        // until the answer text starts: it collapses on the first text delta.
+        this.#host.transcript.settleThoughts();
       },
       onTextDelta: (buffer) => {
         this.#host.transcript.hidePending();
@@ -272,10 +290,13 @@ export class RunHandlers {
         attachCopyButtons(bubble, this.#host.strings());
         this.#host.actions.attach(bubble, message);
         this.#host.stream.end();
-        this.#host.noteUnread();
+        this.#host.noteUnread(threadId);
       },
       onToolCall: (call) => {
         this.#host.transcript.hidePending();
+        // A call ends the reasoning before it, whether or not its end arrived,
+        // and a turn of reasoning then calls has no text delta to settle it.
+        this.#host.transcript.settleThoughts();
         // A skill activation is an ordinary `load_capability` tool call — the
         // deferred-capability mechanism pydantic-ai already uses — so it arrives
         // here rather than on a channel of its own. Render it as a notice and
@@ -458,9 +479,11 @@ export class RunHandlers {
     ledger.tools.length = 0;
     ledger.serverSettled.clear();
     ledger.invalidated.clear();
+    const outcome = ledger.outcome;
+    ledger.outcome = "completed";
     this.#host.element.dispatchEvent(
       new CustomEvent<RunFinishedDetail>(RUN_FINISHED_EVENT, {
-        detail: { threadId, tools, invalidated },
+        detail: { threadId, tools, invalidated, outcome },
         bubbles: true,
         composed: true,
       }),

@@ -47,6 +47,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
   - [DOM-driver and animation primitives](#dom-driver-and-animation-primitives)
   - [Page-action tools](#page-action-tools)
 - [New chat and collapse](#new-chat-and-collapse)
+  - [Maximizing the panel](#maximizing-the-panel)
   - [Collapsing to the launcher](#collapsing-to-the-launcher)
   - [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar)
 - [Tool-call display modes](#tool-call-display-modes)
@@ -63,6 +64,7 @@ No framework, no Django, no admin specifics live here. Downstream consumers (e.g
   - [Who the stored conversation belongs to (`user-key`)](#who-the-stored-conversation-belongs-to-user-key)
   - [Mounting more than one chat on a page](#mounting-more-than-one-chat-on-a-page)
 - [Host seams: the SPA story](#host-seams-the-spa-story)
+  - [Where the user is: the place chip](#where-the-user-is-the-place-chip)
 - [Public API surface](#public-api-surface)
 - [Theming, density, and placement](#theming-density-and-placement)
   - [Themes](#themes)
@@ -177,7 +179,7 @@ another origin, add `credentials="include"` too; see
 | --- | --- | --- |
 | `endpoint` | `endpoint` | The AG-UI endpoint URL. Required to send: without it a send is refused with a `console.error` naming the missing attribute and a `not-connected` run notice in the transcript. Reflecting getter + setter. |
 | `credentials` | `credentials` | Cookie policy for every request the element makes: `omit` / `same-origin` / `include`. Unset means the browser default (`same-origin`), which sends no cookies cross-origin. See [Authenticating requests](#authenticating-requests). |
-| `title-text` | — | Header label; defaults to `"Assistant"`. Live: writing it after the element connects re-labels the header. See [When each attribute is read](#when-each-attribute-is-read). |
+| `title-text` | — | Header label; defaults to `"Assistant"`. `"auto"` makes the header, the rail and the bar label follow the thread on screen (`threadTitle`), falling back to the strings table's `title` while it has none. Live: writing it after the element connects re-labels the header. See [When each attribute is read](#when-each-attribute-is-read). |
 | `data-tool-display` | `toolDisplay` | How tool calls are drawn: `grouped` (the default: a run's consecutive calls fold into one row) / `inline` / `minimal` / `compact` / `full` (per-call cards; `full` was the default before `grouped`). An unknown value reads as `grouped`. See [Tool-call display modes](#tool-call-display-modes). |
 | `data-tool-group-display` | `toolGroupDisplay` | How an opened step group draws its calls under `grouped`: `full` (the default) / `compact` / `minimal` / `inline`. Ignored under the four card modes. An absent or unknown value reads as `full`. See [Choosing how a group draws its calls](#choosing-how-a-group-draws-its-calls). |
 | `data-text-animation` | — | Incoming-text reveal: `none` (default) / `fade` / `word`. |
@@ -190,7 +192,7 @@ another origin, add `credentials="include"` too; see
 | `user-name` | `userName` | The signed-in user's display name, for the [greeting](#the-greeting-on-an-empty-page) an empty conversation shows under `placement="page"`. Presentation only: unlike `user-key` it scopes nothing and is never sent. Absent or blank gives the nameless greeting. Live. |
 | `data-threads-url` | — | URL of a server thread index (django-ag-ui's `ThreadsView`); enables durable, cross-device chat history. |
 | `data-threads-cache` | — | **On by default.** `="false"` stops mirroring message bodies into `sessionStorage` when `data-threads-url` is set, for a deployment that put history on the server so transcripts stay off the client. Only meaningful alongside `data-threads-url`. |
-| `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's ⭯ *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
+| `data-runs-url` | — | URL of a server run index (django-ag-ui's `RunsView`); reveals the header's *Continue a run* panel. See [Resuming a run](#resuming-a-run). |
 | `data-attachments-url` | — | URL of the file-upload endpoint (django-ag-ui's `AttachmentsView`); reveals the composer's paperclip picker, drag-and-drop, and paste. |
 | `data-attachment-accept` | — | `<input accept>` list for client-side type filtering (e.g. `image/*,.pdf`). The server stays authoritative. |
 | `data-attachment-max-bytes` | — | Client-side upload size cap in bytes (default 10 MiB; `0` disables). The server stays authoritative. |
@@ -205,27 +207,32 @@ another origin, add `credentials="include"` too; see
 | `data-message-actions` | — | **Copy and retry by default; feedback is opt-in.** A comma list of the actions a finished answer keeps: `copy` / `retry` / `feedback` (e.g. `"copy,retry,feedback"` to add the rating pair, which needs an `ag-ui-feedback` listener). `="false"` removes the row entirely. See [Message actions](#message-actions-copy-retry-feedback). |
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
 | `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` / `chat` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
-| `data-side` | — | CSS-only, for `placement="sidebar"`: which edge it docks to — `right` (default) / `left`. |
+| `data-side` | — | For `placement="sidebar"`: which edge it docks to, `right` (default) / `left`. Styling, and read by script for the side `dockWidth` and `ag-ui-dock-width` report. Live. |
+| `data-collapse-icon` | — | The header collapse control's mark: `panel-close` (a window with its docked pane and an arrow into the edge, mirrored on `data-side="left"`) / `chevron-up` / `chevron-down` / `chevron-left` / `chevron-right`. Absent, or any other value, follows the placement: `panel-close` on `sidebar` (and `side`), `chevron-down` everywhere else. A host icon in `slot="icon-collapse"` wins over it. Live. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
 | `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Under either, a corner panel still moves by its header and `moveTo` on a wide viewport, and remembers where it was dragged. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
 | `anchor` | `anchor` | Under `collapse-to="none"`, a selector for the host's element the panel rises from, right-aligned to it. The `anchor` property takes an element instead and wins over the attribute. Live. |
+| `maximized` | `maximized` | Reflected boolean; grows the open panel to its [maximized size](#maximizing-the-panel). Refused on `page`, `full` and `embedded`, at 600px or less, and while collapsed; a collapse leaves it. Not persisted. Live. |
+| `anchor-side` | — | Under `collapse-to="none"` with an anchor, which side of it the panel opens on: `above`, `below`, or `auto` (the default, and any other value), which takes the side with more room and re-decides on a window resize, never during a drag. Live. |
 | `data-dragging` | — | **Written by the element, not by you.** Stamped on whichever handle a gesture is currently using, so the styles can react and so the element knows not to re-place the widget under a drag in progress. Cleared on `pointerup` and on `pointercancel`. |
 | `data-expand-corner` | — | **Written by the element, not by you.** It stamps the corner a dragged or agent-moved panel opens from, so the collapse animation starts where the panel actually is. Listed because the element reads its own stamp back; setting it yourself is overwritten on the next move. |
 | `data-greeting` | — | CSS-only: `off` turns the [greeting layout](#the-greeting-on-an-empty-page) off under `placement="page"`, where it is on by default. Any other value turns it on under `placement="embedded"`. No other placement has it. |
 | `data-empty` | — | **Written by the element, not by you.** Present while the conversation has nothing in it, which is when the greeting shows. Public as a styling hook, so the chrome around a full-page chat can react to the same state, e.g. `ag-ui-chat[data-empty] ~ .page-footer { display: none }`. |
 | `data-running` | — | **Written by the element, not by you.** Present while an interaction is in flight, the same state that shows the Stop button (see the `running` property). Public as a styling hook, as `data-empty` is, so the chrome around the chat can react to it, e.g. `ag-ui-chat[data-running] ~ .toolbar button { pointer-events: none }`. |
-| `data-small-viewport` | — | CSS-only: `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
+| `data-threads-search` | — | When the conversation list shows its search box: `auto` (absent, or any other value) from eight conversations, `always` over any list, `never` not at all. Live. See [The conversation list](#the-conversation-list). |
+| `data-small-viewport` | — | `off` keeps the desktop layout at every width, opting out of the [small-viewport override](#small-viewports). Styling, and read by script for the width `dockWidth` reports on a phone. Live. Everything that override sets is a token you can re-state; its trigger is a media query, which is the one thing you cannot. |
 | `data-paste-attach` | — | When to turn a long text paste into an attachment instead of composer text: absent for the 5000-character default, `off` to never, or a positive number of characters. Only acts where `data-attachments-url` (or a custom `uploadHandler`) gives it somewhere to go. |
 | `data-starters` | — | JSON array of prompts offered on an empty transcript, e.g. `'["Summarise this page"]'`. Fallback content for `slot="empty"`, so slotting your own replaces them. Shares the four-prompt and 120-character limits with the suggestion chips a run pushes. Read once at connect. |
 | `data-start-open` | — | Mount the panel open on a first visit. The corner placements otherwise rest at their launcher, the way every corner chat does; a stored choice wins over both. The placements that place themselves are unaffected. |
 | `theme` | — | CSS-only: an optional theme name (`quiet` (default) / `soft` / `ledger` / `classic`, or a word of your own) and an optional scheme (`light` (default) / `dark` / `auto`), in any order, e.g. `soft dark`. See [Themes](#themes). |
 | `density` | — | CSS-only: `comfortable` (default) / `compact`. |
-| `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded`. |
+| `placement` | — | CSS-only: `floating` (default) / `sidebar` / `page` / `embedded` / `full`. `full` fills the viewport at every width, inside the safe-area insets; the `--ag-ui-inset`, size and `--ag-ui-panel-radius` tokens still apply. |
 
 Each header control also takes its own icon slot — `icon-history`, `icon-checkpoints`,
-`icon-new`, `icon-collapse` — with the built-in glyph as the fallback, so a host can project a
-brand `<img>` or `<svg>` rather than only restyling the character. The composer's glyphs work the
+`icon-new`, `icon-maximize`, `icon-collapse` — with the built-in drawn glyph as the fallback, so a host can project a
+brand `<img>` or `<svg>` in its place. The built-in header marks are drawn at
+`--ag-ui-glyph-size`. The composer's glyphs work the
 same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 
 ```html
@@ -234,10 +241,27 @@ same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 </ag-ui-chat>
 ```
 
+The collapse control's built-in mark follows the placement, because a sidebar hides sideways
+into its edge rather than down: `panel-close` (a window with its docked pane and an arrow into
+the edge) on `sidebar` and `side`, mirrored for either on `data-side="left"`, and
+`chevron-down` on `floating`, `full`, `embedded` and every other placement. `data-collapse-icon`
+picks one of the built-in marks outright, at any placement and live: `panel-close`,
+`chevron-up`, `chevron-down`, `chevron-left` or `chevron-right`; any other value reads as
+absent. `panel-close` always points into the edge the panel docks to, so it mirrors on a left
+docked panel whether chosen or defaulted; the chevrons do not turn. For a mark of your own, slot it
+into `icon-collapse`, which wins over the attribute and every placement:
+
+```html
+<ag-ui-chat endpoint="/agent/" placement="floating" data-collapse-icon="chevron-right"></ag-ui-chat>
+<ag-ui-chat endpoint="/agent/" placement="sidebar">
+  <svg slot="icon-collapse" width="16" height="16"><!-- ... --></svg>
+</ag-ui-chat>
+```
+
 #### When each attribute is read
 
 The element observes two groups of attributes, and they behave differently once it is in the DOM.
-Nothing outside those groups is observed: a CSS-only attribute (`theme`, `density`, `data-side`,
+Nothing outside those groups is observed: a CSS-only attribute (`theme`, `density`,
 `data-answer-well`, `data-tool-group-display`) is read by the stylesheet rather than by script, and `endpoint`,
 `data-tool-display`, `data-text-animation`, `data-runs-url`, `data-page-actions`,
 `data-message-actions`, `data-max-tool-rounds`, `data-unread-badge`, `data-launcher-drag` and
@@ -246,7 +270,8 @@ neither camp is `data-launcher-icon-url`: it is read while the element connects,
 below, but is not observed, so a late write is inert and says nothing.
 
 **Live attributes.** Written at any time, before or after the element connects, and acted on
-either way: `title-text`, `placement`, `collapse-to`, `anchor`, `credentials`, `user-key`, `user-name`.
+either way: `title-text`, `placement`, `collapse-to`, `anchor`, `anchor-side`, `maximized`, `data-side`, `data-small-viewport`, `data-threads-search`, `credentials`, `user-key`,
+`user-name`, `data-tool-group-display`, `data-collapse-icon`.
 
 **Connect-time attributes.** Read once, while the element connects, to decide what chrome exists at
 all — the tray, the mic, the skills menu, the header mark. Writing one afterwards has **no effect**;
@@ -267,11 +292,11 @@ element after the fact.
 **Properties** (JS only, not attributes): `headers`, `getHeaders`, `trustedOrigins`, `allowImages`,
 `autoConfirm`, `confirmPredicate`, `askUser`, `askUserRenderer`, `approvalRenderer`,
 `approveWithEdits`, `agentFactory`, `getTools`, `getContext`, `routeMap`, `navigate`, `getPageMap`,
-`autoInjectPageMap`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
+`autoInjectPageMap`, `getPlace`, `conversationStore`, `uploadHandler`, `transcribeHandler`, `navigationResult`,
 `skillContext`, `toolSummaries`, `formatToolPayload`, `formatRelativeTime`, `strings`,
-`resolvePageTarget`, `sharedState`, `anchor` (an element, which wins over the attribute's selector), `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `running` and `barHeight`, and
+`resolvePageTarget`, `sharedState`, `anchor` (an element, which wins over the attribute's selector), `extraStyles` ([unstable](#d-extrastyles-the-last-mile)), plus the read-only `unread`, `unhandledActivityTypes`, `threadId`, `threadTitle`, `running`, `barHeight` and `dockWidth`, and
 the attribute mirrors `endpoint` / `userKey` / `userName` / `toolDisplay` / `toolGroupDisplay` / `collapsed` /
-`credentials`.
+`maximized` / `credentials`.
 
 `headers` and `getHeaders` authenticate **every** request the element makes, not only the agent
 run; `getHeaders` is the one to use for a credential that rotates. See
@@ -303,9 +328,9 @@ the `copyCode` / `copied` / `copyFailed` strings.
 
 **Methods**: `registerTool`, `registerPageState`, `registerActivityRenderer`, `setSkills`,
 `sendMessage`, `attachFile`, `appendMessage`, `retryLastTurn`, `quote`, `offerQuoteInPage`,
-`enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `describeSurface`, `moveTo`,
-`resetSize`, `toggleTheme`, `openThreads`, `closeThreads`, `switchThread`, `deleteThread`,
-`openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `reload`, and the deprecated
+`enableCharts`, `newChat`, `setCollapsed`, `toggleCollapsed`, `setMaximized`, `toggleMaximized`,
+`describeSurface`, `moveTo`, `resetSize`, `toggleTheme`, `openThreads`, `closeThreads`, `switchThread`, `deleteThread`,
+`openCheckpoints`, `closeCheckpoints`, `toggleCheckpoints`, `refreshPlace`, `reload`, and the deprecated
 `registerStateHook` (renamed to `registerPageState`).
 
 ### Sending from your own UI
@@ -1163,7 +1188,9 @@ handler), gate `drag_and_drop` with [`confirmPredicate`](#inline-confirmation-x-
 
 ## New chat and collapse
 
-The header carries two built-in buttons: a new-chat (✚) button and a collapse (—) toggle. The
+The header carries built-in buttons for a new chat (a pencil on a square), maximize (two arrows pointing out) and
+collapse (a chevron down, or on a sidebar a panel closing into its edge; `data-collapse-icon`
+chooses it). The
 matching JS API:
 
 - `newChat()` — clears the transcript, drops the in-memory run state, and mints a new thread id.
@@ -1178,16 +1205,18 @@ matching JS API:
   it is out of the document), it waits: `threadId` stays `null` and nothing fires until the
   element connects, which then starts the new chat, so the one `ag-ui-thread` event is a `new`.
 - `describeSurface()` — where the panel is and what can be done to it: placement, collapsed,
-  what it collapses to (`collapseTo`), whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
+  `maximized` (read-only), what it collapses to (`collapseTo`), whether it can be moved, whether it fills the screen, its box and the viewport. `movable` folds
   the two reasons a move can fail into the one answer a caller needs.
 - `moveTo(corner)` — send the panel to `top-left` / `top-right` / `bottom-left` / `bottom-right`,
   returning whether it went. It takes the axes the same way a user drag does, so the launcher
   travels with it and switching placement hands them back. Returns `false` rather than pretending
   when the placement owns its position or the panel fills the screen. Under `collapse-to="bar"`
   or `"none"` it moves the panel within the room above the bar or the anchor.
-- `resetSize()` — drop a size the user dragged, and its stored copy, so the placement's own
-  size and your `--ag-ui-width` / `--ag-ui-height` apply again. For a host that enters a sized
-  state of its own (an expanded mode): a user's drag outranks host tokens, so call this first.
+- `resetSize()` — drop the size the user dragged in the current placement, and its stored copy,
+  so the placement's own size and your `--ag-ui-width` / `--ag-ui-height` apply again; sizes
+  dragged in other placements are kept. For a host that enters a sized state of its own (an
+  expanded mode) instead of the built-in [maximize](#maximizing-the-panel): a user's drag
+  outranks host tokens, so call this first.
   Under `collapse-to="bar"` or `"none"` it also returns a panel the user dragged off its dock to
   the dock and forgets the stored spot; a corner panel under `auto` keeps its dragged position.
 - `setCollapsed(collapsed)` / `toggleCollapsed()` — collapse or expand the widget. The state is
@@ -1203,6 +1232,53 @@ chat.newChat();
 chat.toggleCollapsed();
 chat.addEventListener("ag-ui-toggle", (e) => console.log(e.detail.collapsed));
 ```
+
+### Maximizing the panel
+
+The maximize control (two arrows pointing out, `maximize-button` part, `icon-maximize` slot) grows the open panel,
+and pressed again it restores it (the arrows point in). It is labelled "Maximize" and "Restore" (the `maximize`
+and `restore` strings), apart from the launcher's and the rail's "Expand", which opens the panel.
+
+- **Where it is offered.** A corner panel (`floating`, `bottom-left`, the default) and a docked
+  one (`collapse-to="bar"` or `"none"`) grow on both axes; `sidebar` and `side` grow in width
+  only. `page`, `full` and `embedded` have no control, and neither does any viewport of 600px or
+  less, `data-small-viewport="off"` included. The control is absent from the header there, not
+  hidden, and the state is refused: a panel maximized when its placement switches to one of
+  these, or when the window narrows to 600px, leaves it.
+- **What it grows to.** `--ag-ui-maximized-width` and `--ag-ui-maximized-height`, which default
+  to the panel's cap (`--ag-ui-max-width` / `--ag-ui-max-height`, the room the host left less
+  one gutter). A side column reads the width only.
+- **The drag.** Entering it takes the dragged size off without forgetting it, and the resize
+  grips are hidden while it lasts. Restoring, and collapsing (which leaves the state), put the
+  placement's own size back, or the size the user dragged in it.
+- **The API.** `chat.maximized` (reflected as the `maximized` attribute), `setMaximized(bool)`
+  and `toggleMaximized()`. Each change emits `ag-ui-maximize` (the `MAXIMIZE_EVENT` constant)
+  with `detail: { maximized }` (typed `MaximizeDetail`). It fires only while connected: a
+  markup `maximized` is announced once at connect, and only if it holds (a panel that mounts
+  collapsed announces nothing), and a change made while detached is announced once on reconnect,
+  only if it differs from what listeners last heard. It is not stored: a reload opens at the
+  placement's own size. `describeSurface()` reports it, and no agent tool changes it.
+
+```js
+chat.addEventListener("ag-ui-maximize", (e) => console.log(e.detail.maximized));
+```
+
+```css
+ag-ui-chat { --ag-ui-maximized-width: 960px; --ag-ui-maximized-height: 85vh; }
+```
+
+`--ag-ui-min-page-width` keeps that much of the page beside a `sidebar` or `side` column: it caps
+the column's width at the viewport less it, whether the width was dragged, set by
+`--ag-ui-width`, or maximized. It is unset by default, which caps nothing.
+
+```css
+ag-ui-chat[placement="sidebar"] { --ag-ui-min-page-width: 480px; }
+```
+
+A host that wants its own sized state can still build it: hide the control
+(`ag-ui-chat::part(maximize-button) { display: none }`), slot a button into `header-actions`, set
+its own `--ag-ui-width` / `--ag-ui-height` in a class, and call `resetSize()` as it enters, so a
+dragged size does not outrank its tokens.
 
 ### Driving the conversation from your own chrome
 
@@ -1223,6 +1299,14 @@ one on screen with the drawer's own paths:
 - `threadId` *(read-only)* — the thread on screen, `null` before the element first connects.
   It only reads. `conversationStore.threadId()` mints and stores a thread when the store points
   at none, so asking it which conversation is showing can start one.
+- `threadTitle` *(read-only)* — the title of the thread on screen, `""` while nothing has been
+  sent in it. A title renamed here, or one the conversation list shows that the messages do not
+  derive (a server's own), wins; otherwise it is the first user message, and a first message that
+  is exactly a skill's `/token` reads as that skill's catalog `title`, else as the token in words
+  (`/summarize_draw` reads "Summarize draw"). It is set on the first send, before the server lists
+  the thread. Every change fires one **`ag-ui-thread-title`** event (`THREAD_TITLE_EVENT`, detail
+  `{ threadId, title }`, typed `ThreadTitleDetail`), after the `ag-ui-thread` event of the change
+  that caused it. `title-text="auto"` draws it without a listener.
 - `running` *(read-only)* — whether an interaction is in flight: the composer's own state, the
   one it shows Stop for, across every tool round, a Retry and a checkpoint continuation as well
   as a send. Reflected on the element as the `data-running` attribute, written by the element
@@ -1324,8 +1408,31 @@ the text colour.
 
 A collapsed widget is the one state where an answer can arrive with nothing on screen to say so,
 so the launcher carries a count of the answers that finished while it was closed (capped at `9+`).
-Expanding — or `newChat()` — marks them read. It is the only affordance here that is **on by
-default**; `data-unread-badge="false"` turns the badge off.
+It is the only affordance here that is **on by default**; `data-unread-badge="false"` turns the
+badge off.
+
+**Unseen answers are kept per thread.** Each answer counts against the thread it ran on, and a
+thread is read only when it is on screen **and** the panel is expanded. On screen in a collapsed
+panel is not read. So an answer that finished on thread A while collapsed stays unread across a
+collapsed switch to B, a `newChat()`, or an expand on B, and is read once A is on screen in the
+open panel. `unread` is the total across threads, which is what the badge shows; it shows on the
+collapsed launcher only, so an open panel whose other threads hold unseen answers shows no
+badge. A principal change (a new `user-key`) drops the previous principal's marks, and deleting a
+thread drops its own.
+
+A store can carry read state across pages and devices, through two optional members. The element
+fetches the thread list when the drawer opens or a thread switches, not at page load, so a
+store's `unread` rows are counted from that fetch on: a page that never opens the drawer shows
+no badge for answers that finished elsewhere.
+
+- **`ThreadMeta.unread`** (boolean): a thread `listThreads()` reports as unread, and the page has
+  not counted, counts once, when the list is fetched.
+- **`markRead(threadId)`**: called when the element reads a thread with unseen answers, and when
+  an answer finishes on the thread in view. A server store maps it to its read endpoint, and
+  should list the thread with `unread: false` afterwards.
+
+A store without either still has its threads counted and cleared in the page. Neither is
+implemented by the default `SessionStorageStore`.
 
 The count is also the launcher's accessible name (`Expand — 2 unread`, from the `expandUnread`
 string), because a coloured dot says nothing to a screen reader.
@@ -1390,8 +1497,9 @@ while arrow keys on the collapsed launcher already move the widget, panel includ
 chat.unread; // 2
 
 // Every change, whether or not the badge renders it — so a host that hides the
-// badge can put the count in its own chrome.
-chat.addEventListener("ag-ui-unread", (e) => setDockBadge(e.detail.unread));
+// badge can put the count in its own chrome. `threadIds` names the threads the
+// change marked or cleared, and is empty for a collapse toggle that touched none.
+chat.addEventListener("ag-ui-unread", (e) => setDockBadge(e.detail.unread, e.detail.threadIds));
 ```
 
 ```css
@@ -1424,6 +1532,16 @@ sections above describe. It is live, like `placement`.
   API](#driving-the-conversation-from-your-own-chrome) (`collapsed`, `toggleCollapsed()`), and
   `anchor` names the element the panel rises from, right-aligned to it. An anchor that resolves
   to nothing opens the panel from the placement's own corner, with one console warning.
+  While collapsed, `openThreads()` opens the conversation list as a popover beside the anchor,
+  or beside the element you pass as `openThreads({ anchor })`, which wins over the attribute and
+  property for that call. It opens below a button in the top half of the viewport and above one
+  in the bottom half, right-aligned to it and held inside the window (full width less 8px on a
+  phone). Picking a conversation switches to it and closes the list, and leaves the panel
+  collapsed: you get `ag-ui-thread` and decide whether to expand. Escape, a press outside,
+  `closeThreads()` and expanding the panel close it; a press on the button itself does not, so
+  your button can toggle the list. With no anchor at all, `openThreads()` warns once per call
+  and draws nothing. `embedded` hides the whole element while collapsed under `none`, so it has
+  no popover.
 
 ```html
 <nav class="toolbar">
@@ -1458,6 +1576,19 @@ ag-ui-chat {
 A gap wider than the gutter is taken off the panel's max height as well, so a tall panel still
 stops at the top of the window.
 
+**A button in a header.** The panel opens on the side of the anchor with more room, so a button
+in a top header opens it below the button and one in a bottom bar opens it above, with no inset
+of your own. `anchor-side="above"` or `"below"` fixes the side; `auto`, the default, decides again
+when the window is resized (never during a drag), so an anchor near the middle of the window can
+change sides. Below the anchor the gap is measured from the button's bottom edge, and the max
+height is the room under it less one gutter. On either side the panel lines up with the anchor's
+right edge unless that would put either edge inside the 24px gutter of the window, where it stops
+instead; its width cap is the window less two gutters, maximized included.
+
+```html
+<ag-ui-chat endpoint="/agent/" collapse-to="none" anchor="#agent-button" anchor-side="below"></ag-ui-chat>
+```
+
 Under `none` the element dispatches `ag-ui-toggle` once as it connects, with whichever state it
 mounted in, collapsed or open. Under `auto` and `bar` it does not, as before. That event touches
 neither the stored state nor the unread count.
@@ -1488,9 +1619,39 @@ body {
 }
 ```
 
+**A fixed sidebar pushes your page the same way.** A docked `placement="sidebar"` (or `"side"`)
+is fixed over the page, so `dockWidth` (CSS px, read-only) and an `ag-ui-dock-width` event (the
+`DOCK_WIDTH_EVENT` constant, detail `{ width, side }`, `side` being `"left"` or `"right"`, as
+`data-side` says) hand you the width it covers at rest: the panel's width while open, the rail's
+(`--ag-ui-rail-width`, 52 by default) while collapsed to it, and `0` under `collapse-to="none"` or
+a launcher, under every other placement, on a phone while the panel is open, and under
+`--ag-ui-position: static`, where your own layout already makes room. The event fires once per
+change of the resting value, never per frame of the width transition, and once at the end of a
+resize drag.
+
+```js
+const chat = document.querySelector("ag-ui-chat");
+const push = () => {
+  const { dockWidth: width } = chat;
+  const side = document.querySelector("ag-ui-chat").getAttribute("data-side") ?? "right";
+  document.documentElement.style.setProperty("--chat-dock-left", side === "left" ? `${width}px` : "0px");
+  document.documentElement.style.setProperty("--chat-dock-right", side === "left" ? "0px" : `${width}px`);
+};
+chat.addEventListener("ag-ui-dock-width", push);
+push();
+```
+
+```css
+body {
+  padding-left: var(--chat-dock-left, 0px);
+  padding-right: var(--chat-dock-right, 0px);
+}
+```
+
 **No inset needed.** Under `bar` and `none` you do not set `--ag-ui-inset` to keep the panel off
 your toolbar: its max height is the viewport less the bar's height (or, under `none`, the
-distance to the anchor's top) and one gutter, and its bottom sits on the bar or the anchor.
+distance to the anchor's top, or below it from the anchor's bottom) and one gutter, and its
+bottom sits on the bar or the anchor (its top, when it opens below).
 
 **Docked, and still movable.** On a wide viewport a docked corner panel (the corner placements
 under `bar`, or under `none` with or without an anchor) moves by its header, and `moveTo` moves
@@ -1499,7 +1660,8 @@ launcher to drag: the bar and your own control stay where they are.
 
 - **Above the dock.** A dragged panel stays inside the viewport and above the bar's top edge, so it
   never covers the bar it minimises to. Under `none` with an anchor it stays above the anchor's
-  top edge the same way, because the anchor is your own way back and has to stay in view;
+  top edge the same way (below its bottom edge, when the panel opens below it), because the
+  anchor is your own way back and has to stay in view;
   `--ag-ui-anchor-gap` no longer applies once the panel is dragged, and the screen-edge margin
   (8px) does. Under `none` with no anchor only the viewport holds it, as for a corner panel.
 - **Remembered like a corner panel.** Minimising and reopening brings it back where it was
@@ -1509,7 +1671,7 @@ launcher to drag: the bar and your own control stay where they are.
   and comes back whole when there is room again.
 - **Resizing.** A panel standing on its dock keeps the edges on the bar or the anchor still and the
   free ones follow the grip. Once dragged off, every edge follows its grip, as on a corner panel.
-- **Back to the dock.** `resetSize()` drops the dragged size and returns the panel to its dock,
+- **Back to the dock.** `resetSize()` drops the placement's dragged size and returns the panel to its dock,
   forgetting the stored spot, so a reload opens it there too.
 - **Keeping it fixed.** `data-launcher-drag="false"` turns the header drag and `moveTo` off here as
   everywhere else, and the panel stays on its dock.
@@ -1529,9 +1691,18 @@ minimise control is the way back; the bar shows only while collapsed, so no seco
 at the bottom edge while the keyboard is up. The panel does not move there, and a spot dragged on
 a wide viewport does not apply: it comes back when the window is wide again.
 
-The bar is styled through the parts `bar` (the strip's wrapper, holding the launcher and the
-history button) and `bar-history`, and the launcher's own parts (`launcher`, `rail-label`,
+The bar is styled through the parts `bar` (the strip's wrapper, holding the launcher, the place and
+the history button) and `bar-history`, and the launcher's own parts (`launcher`, `rail-label`,
 `launcher-badge`) inside it.
+
+**The place in the bar.** When [`getPlace`](#where-the-user-is-the-place-chip) (or the route map
+standing in for it) names a place, the strip shows it beside the title as quiet secondary text: the
+`bar-place` part holding `place-label` and `place-detail`, the parts the chip uses. It comes from
+the chip's one read, so `refreshPlace()`, `popstate` and a withheld place update it as they update
+the chip. A long place truncates with an ellipsis before the history button leaves the strip, and
+no place draws nothing. A place the user withheld stays in the strip dashed and struck through
+(`data-excluded` on `bar-place`), because the bar must not claim the page is sent. The phone strip,
+shown while collapsed, carries it too.
 
 
 ---
@@ -1784,6 +1955,12 @@ steps and `data-open` whether the cards are showing; the head is a button with `
   a card, so they are in view without it opening; the row still reads `waiting` ("1 waiting for
   you") while one is open, as the card carries a `data-asking` flag for the group to read, and its
   `data-status` stays `pending`.
+- **A one-step group is named after its call, and the card's head is not repeated inside.** A turn
+  with exactly one call reads as that call's label ("Fill field"), and the opened list shows the
+  card without its own `tool-card-head` (the row's state mark and notes carry the status). The
+  Details toggle and arguments stay, except under `data-tool-group-display="minimal"`, where the
+  card is only its head: there the row draws no chevron, though it still opens for an approval. A
+  card display mode keeps the head. A run that grows to two calls brings both heads back.
 - **A running sub-agent does not open it.** The row keeps its spinner and names the delegation
   instead, "Delegated to researcher" (the `subAgentDelegatedTo` string).
 - **Repeated labels are told apart.** Two "Fill field" steps read "Fill field" and "Fill field
@@ -1986,10 +2163,17 @@ is:
 
 - **Above 600px**, the dragged size beats a host's `--ag-ui-width` /
   `--ag-ui-height`, `!important` included, so a user who resized the panel keeps
-  their size. A host that enters a sized state of its own (an "expanded" class,
-  a mode switch) calls `resetSize()` when it does, which drops the dragged size
-  and its stored copy and hands control back to the host tokens. A host with no
-  such state needs nothing.
+  their size. A host that enters a sized state of its own (an "expanded" class)
+  calls `resetSize()` when it does, which drops the current placement's dragged
+  size and its stored copy and hands control back to the host tokens. A host
+  with no such state needs nothing.
+- **Per placement.** A dragged size belongs to the `placement` it was dragged in
+  and is stored under it: absent and `floating` share one, and `bottom-left`,
+  `sidebar`, `side` and `embedded` each keep their own (`data-side` is not a
+  placement, so a left and a right sidebar share one). Switching `placement`
+  swaps in the new placement's size, or its default when it has none, so a
+  placement switch needs no `resetSize()`. A `collapse-to` change keeps the size.
+  A size stored by a release before this one is read as floating's.
 - **At 600px or less**, the small-viewport shape ignores the dragged size
   entirely, for the placements that block covers (`floating`, `bottom-left`,
   `sidebar`, `side` and the default): the panel is full-bleed whatever was
@@ -2660,7 +2844,10 @@ agent's tool call arrives — the user clicks a link, or presses back. Calls lan
 are **refused** with a result telling the agent to call `read_page` and retry. Most would have
 missed anyway; the guard exists for the case where a same-named control on the new page matches and
 the agent would otherwise act on the wrong page without either side noticing. `read_page` and tools
-marked `x-navigates` are exempt, and the guard is inert when no `getPageMap` is set.
+marked `x-navigates` are exempt. The guard runs in any round that offered `read_page`, including
+one you registered yourself, and is inert in a round that did not (no `getPageMap`, or a
+[place the user withheld](#where-the-user-is-the-place-chip)), since its result would name a tool
+the agent does not have.
 
 **`registerPageState({ name, read, write?, schema? })`** — ergonomic sugar over `registerTool` for
 SPA app state (Redux/Zustand/signals). It auto-generates a `read_<name>` (read-only) tool and, when
@@ -2727,10 +2914,12 @@ chat.navigate = (path) => router.push(path); // SPA: in-page, no reload
 Route map + `navigate()` and the reload model are the same feature seen from two ends.
 
 **`ag-ui-run-finished`** *(event)* — an interaction has ended, and here is what ran in it.
-`detail: { threadId, tools: readonly ToolRun[], invalidated }` (typed `RunFinishedDetail`), where
-each `ToolRun` is `{ name, side: "server" | "client" }` in settle order. `threadId` is the thread
-the run belonged to, which is not always the one on screen: a run that a new chat or a thread
-switch stopped still reports once its request closes.
+`detail: { threadId, tools: readonly ToolRun[], invalidated, outcome }` (typed `RunFinishedDetail`),
+where each `ToolRun` is `{ name, side: "server" | "client" }` in settle order. `threadId` is the
+thread the run belonged to, which is not always the one on screen: a run that a new chat or a
+thread switch stopped still reports once its request closes. `outcome` is how the interaction
+ended: `"completed"`, `"stopped"` (Stop, a new chat or a thread switch cut it off) or `"failed"`
+(the agent reported an error). Ignore an `outcome` you do not know: more may be added.
 
 **This is the seam for a host that renders data the agent can change.** A server-side tool writes
 without your page's knowledge: nothing else the element dispatches implies "something may have moved
@@ -2750,6 +2939,34 @@ chat.addEventListener("ag-ui-run-finished", (e) => {
 It fires **once per interaction**, not once per tool round, and it fires on completion, error and
 cancellation alike — a partial write is still a write. A capability load (an agent skill activating)
 is not counted: it moves nothing a host renders.
+
+A run a switch stopped reports `outcome: "stopped"` whichever thread is on screen when it does,
+so a listener that marks attention or counts completions tells a cancelled run's late event from a
+finished one by `outcome`, not by `threadId`.
+
+**Deferring a switch until the run is over** keys on `running` and `data-running`, never on this
+event: it fires for a stopped run too, late, and a stale one can arrive while the next run is live.
+`data-running` toggles only for the live run, and there is no running-change event, so watch the
+attribute:
+
+```js
+let queued = null;
+const release = () => {
+  if (!chat.running && queued !== null) {
+    const id = queued;
+    queued = null;
+    void chat.switchThread(id);
+  }
+};
+new MutationObserver(release).observe(chat, { attributes: true, attributeFilter: ["data-running"] });
+myBar.onPick = (id) => {
+  if (chat.running) {
+    queued = id;
+  } else {
+    void chat.switchThread(id);
+  }
+};
+```
 
 `sharedState` above is the richer channel and this is not a replacement for it — but it is not a
 substitute the other way round either, because shared state requires the *agent* to emit
@@ -2833,11 +3050,58 @@ across repos with independent release cadences.
 **Note:** it reaches **the page that started the run**, during the run. There is one
 response stream per run and no channel to anybody else's browser.
 
+### Where the user is: the place chip
+
+The composer can say where in your app the user is writing from: a chip in its tool row, between the
+attach and voice controls and Send, naming the page, tab or record on screen. The same read is sent
+to the agent as one context entry, so the place the user sees is the place the agent is told.
+
+**`getPlace: () => Place | null`** returns a `Place`: `{ label, detail?, icon?, href? }`. The chip
+draws the label, the detail after a dot, and the icon (an image URL; a pin when absent). The agent
+gets a `place` context entry whose value is the JSON of the label, detail and href; the icon is
+never sent. The href identifies the place; without one, the label and detail do.
+
+```js
+chat.getPlace = () => ({
+  label: `Order #${order.number}`,
+  detail: "Orders",
+  href: location.pathname,
+});
+```
+
+- **With no `getPlace`, a route map stands in.** The `routeMap` route whose path matches
+  `location.pathname` names the place: its `title` (else its `id`) as the label, its `group` as the
+  detail, and the path as the href. A host with a route map gets the chip without writing anything.
+  With neither, no chip is drawn and nothing is sent; set `getPlace = () => null` to opt a
+  route-mapped host out.
+- **When it is read.** Before every tool round, so an agent that navigates mid-run is told the new
+  page on its next round; and on connect, on expand, when the composer gains focus, on `popstate`
+  and `hashchange`, and when the conversation on screen changes (`switchThread`, the drawer,
+  `newChat`): the chip always names the live page, never the page a thread started on. Between runs
+  it shows the last read. A single-page app calls **`refreshPlace()`** after its router moves,
+  since `pushState` fires no event.
+- **The entry rides after your `getContext`.** It is appended to whatever `getContext` returns, so a
+  host that replaces `getContext` still sends it.
+- **The eye toggle withholds it.** Pressing it leaves the chip in place, dashed and struck through
+  (`data-excluded` on the `place` part), and the next round sends no `place` entry. It withholds the
+  page too: that round also drops the `page_map` entry, whatever `getContext` returned, and does not
+  offer `read_page`. Tools you register yourself, such as `registerPageState`'s, stay as you
+  registered them. The choice holds while the same place is read, lapses when a different place is
+  read, is not persisted, and cannot be lifted by the host.
+- **Placement.** The same position in every placement, on a phone and in the greeting layout; the
+  label truncates with an ellipsis before it can push Send off the row, and the chip's title
+  carries it in full. Nothing shows while the panel is collapsed. The chip is separate from the
+  `above-composer` slot, and filling the slot never hides it.
+- **Styling and words.** Parts `place`, `place-icon`, `place-label`, `place-detail` and
+  `place-toggle`; the colours come from the existing tokens. The tooltip and the toggle's labels are
+  the `placeShared` and `placeWithheld` (token `{label}`), `placeStopSharing` and `placeShareAgain`
+  strings.
+
 ## Resuming a run
 
 When the server persists run checkpoints (django-ag-ui's `step_store`), a run
 that stopped part-way can be **continued** rather than restarted. Point the
-component at the run index and a ⭯ button appears in the header:
+component at the run index and a checkpoints button (an arrow turning back) appears in the header:
 
 ```html
 <ag-ui-chat endpoint="/agent/" data-runs-url="/agent/runs/"></ag-ui-chat>
@@ -3015,8 +3279,11 @@ re-export point. Internal modules import from leaf paths.
 | `SubmitDetail` | type | `detail` shape of the submit event. |
 | `ThreadDetail` | type | `detail` shape of the `ag-ui-thread` event (`{ threadId, previousThreadId, reason }`). |
 | `ToggleDetail` | type | `detail` shape of the `ag-ui-toggle` event (`{ collapsed }`). |
+| `MaximizeDetail` | type | `detail` shape of the `ag-ui-maximize` event (`{ maximized }`). |
 | `BarHeightDetail` | type | `detail` shape of the `ag-ui-bar-height` event (`{ height }`). |
-| `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread }`). |
+| `DockWidthDetail` | type | `detail` shape of the `ag-ui-dock-width` event (`{ width, side }`). |
+| `ThreadTitleDetail` | type | `detail` shape of the `ag-ui-thread-title` event (`{ threadId, title }`). |
+| `UnreadDetail` | type | `detail` shape of the `ag-ui-unread` event (`{ unread, threadIds }`). |
 | `AttachmentsDetail` | type | `detail` shape of the `ag-ui-attachments` event (`{ attachments, pending }`). |
 | `StateDetail` | type | `detail` shape of the `ag-ui-state` event (`{ state }`). |
 
@@ -3067,10 +3334,11 @@ re-export point. Internal modules import from leaf paths.
 | `RouteWithParams` | type | A route resolved with `:param` path segments + leftover query params. |
 | `createPageMapContext(...)` | function | Build the per-run `page_map` context entry. |
 | `PageMap` | type | The compact page-surface shape. |
+| `Place` | type | Where the user is: what `getPlace` returns and the chip draws. |
 | `createPageStateTools(binding)` | function | Build `read_<name>` / `set_<name>` tools. |
 | `PageState` | type | A page-state binding declaration. |
 | `Skill` | type | A launchable prompt (chip / `/`-command). |
-| `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, and which side ran them. |
+| `RunFinishedDetail` / `ToolRun` | type | `ag-ui-run-finished` detail: the tools an interaction ran, which side ran them, and how it ended. |
 | `CustomAgentDetail` | type | `ag-ui-custom` detail: an AG-UI `CUSTOM` event's `name` and `value`, verbatim. |
 | `InvalidateDetail` | type | `ag-ui-invalidate` detail: the resource `keys` that moved, and the `reason`. |
 | `FeedbackDetail` | type | `ag-ui-feedback` detail: the rated message's `messageId`, its `threadId`, the `runId` that streamed it (live only), its `content` and the `rating`. See [Storing a rating](#storing-a-rating). |
@@ -3092,7 +3360,7 @@ re-export point. Internal modules import from leaf paths.
 | `SessionStorageStore` | class | Default per-tab conversation store. |
 | `RemoteConversationStore` | class | Server-backed store over a `data-threads-url` endpoint. |
 | `ClientConversationStore` | type | The persistence seam. |
-| `ThreadMeta` | type | A thread-drawer row (`{ threadId, title, updatedAt, preview }`). |
+| `ThreadMeta` | type | A thread-drawer row (`{ threadId, title, updatedAt, preview, unread? }`). |
 | `NavigationCheckpoint` | type | The pre-reload checkpoint marker. |
 | `RunIndex` | class | Reads a `data-runs-url` run index and derives its resume / fork endpoints. |
 | `RunRow` | type | One run index row (`{ run_id, thread_id, parent_run_id, started_at, continuable, preview? }`). |
@@ -3166,8 +3434,11 @@ re-export point. Internal modules import from leaf paths.
 | `ELEMENT_TAG` | The registered tag name (`ag-ui-chat`). |
 | `SUBMIT_EVENT` | The submit CustomEvent name. |
 | `THREAD_EVENT` | The conversation-changed CustomEvent name (`ag-ui-thread`). |
+| `THREAD_TITLE_EVENT` | The thread-title CustomEvent name (`ag-ui-thread-title`). |
 | `TOGGLE_EVENT` | The collapse-toggle CustomEvent name (`ag-ui-toggle`). |
+| `MAXIMIZE_EVENT` | The maximized-state CustomEvent name (`ag-ui-maximize`). |
 | `BAR_HEIGHT_EVENT` | The bottom bar's height CustomEvent name (`ag-ui-bar-height`). |
+| `DOCK_WIDTH_EVENT` | The docked panel's width CustomEvent name (`ag-ui-dock-width`). |
 | `UNREAD_EVENT` | The unread-count CustomEvent name (`ag-ui-unread`). |
 | `RUN_FINISHED_EVENT` | The interaction-finished CustomEvent name (`ag-ui-run-finished`). |
 | `CUSTOM_AGENT_EVENT` | The agent-`CUSTOM` CustomEvent name (`ag-ui-custom`). |
@@ -3468,6 +3739,36 @@ That exists because the *trigger* is the one part of this you cannot reach: ever
 value the override sets is a `--ag-ui-*` token you can re-state, but a media
 query cannot read a custom property, so the breakpoint itself is a literal.
 
+**A size or inset token set at every width restates the phone shape too.** The phone
+block reads `--ag-ui-inset`, `--ag-ui-width`, `--ag-ui-height` and `--ag-ui-max-height`
+before it falls back to the full-bleed values, so a host rule such as the one below keeps
+its 420x640 panel with a 24px margin on a phone, and the panel runs off the screen's left
+edge. Put the desktop sizes above the breakpoint and the phone shape needs nothing:
+
+```css
+/* Wrong on a phone: the tokens apply at every width. */
+ag-ui-chat {
+  --ag-ui-inset: auto 24px 24px auto;
+  --ag-ui-width: 420px;
+  --ag-ui-height: 640px;
+  --ag-ui-max-height: 80vh;
+}
+
+/* Right: desktop only. At 600px and below the panel is full-bleed with no reset. */
+@media (min-width: 601px) {
+  ag-ui-chat {
+    --ag-ui-inset: auto 24px 24px auto;
+    --ag-ui-width: 420px;
+    --ag-ui-height: 640px;
+    --ag-ui-max-height: 80vh;
+  }
+}
+```
+
+Setting the tokens at every width stays right for a host that wants a non-full-bleed phone
+panel, a bottom sheet for example. The size a user dragged is a separate matter; see
+[Sizes, keyboard, and parts](#sizes-keyboard-and-parts) for its precedence.
+
 The breakpoint is a width rather than a pointer test, and that is on purpose: a
 touch laptop is coarse-pointered and wide, a narrow desktop window is
 fine-pointered and small. Width decides the layout; the pointer decides which
@@ -3489,7 +3790,17 @@ used on a list you can already read in one glance. It matches the title **and**
 the preview, because the title is often the model's one-line summary and the
 phrase you remember is as likely to be inside the conversation as on it, and it
 filters what the drawer already holds rather than going back to the server for a
-list that is already in memory.
+list that is already in memory. `data-threads-search="always"` shows it over any
+list and `"never"` hides it, for a host whose lists are always short or always long.
+
+The rows are grouped by when they were last active: **Today**, **Previous 7 days**
+and **Older**, counted from local midnight. A group with no rows is not drawn,
+and a list that falls in one group draws no heading at all. A conversation with no
+readable date goes under Older. A filtered list keeps its groups. The headings
+are not in the Tab order, are styled as `::part(drawer-group-label)`, and take
+their text from the `threadsToday`, `threadsPreviousWeek` and `threadsOlder`
+strings. Every drawer has them: the slide-over, the bar's popover and the popover
+beside your own button.
 
 ### Reserving the space your own chrome occupies
 
@@ -3680,8 +3991,8 @@ component sets, so a new one cannot ship undocumented.
 | Feature | Parts |
 | --- | --- |
 | Shell | `panel`, `header`, `title`, `icon`, `header-controls`, `messages`, `empty`, `greeting`, `pending`, `stopped`, `jump-latest`, and one per resize grip: `resize-handle` plus `resize-handle-top`, `resize-handle-bottom`, `resize-handle-left`, `resize-handle-right`, `resize-handle-top-left`, `resize-handle-top-right`, `resize-handle-bottom-left`, `resize-handle-bottom-right` |
-| Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `collapse-button`, `theme-toggle` |
-| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label`, `bar` (the [bottom bar](#collapsing-to-a-bottom-bar)'s wrapper, around the launcher), `bar-history` |
+| Header buttons | `header-button` on each, plus `history-button`, `checkpoints-button`, `new-button`, `maximize-button`, `collapse-button`, `theme-toggle` |
+| Collapsed widget | `launcher`, `launcher-icon`, `launcher-badge`, `rail-label`, `bar` (the [bottom bar](#collapsing-to-a-bottom-bar)'s wrapper, around the launcher), `bar-place` (the place beside the bar's title; its text carries `place-label` and `place-detail`), `bar-history` |
 | Answers | `answer` (the per-turn group), `message` (plus `message-user`, `message-assistant`), `code-copy` |
 | Reasoning | `thoughts`, `thoughts-toggle`, `thoughts-body`, `thoughts-label` |
 | Follow-up suggestions | `suggestions`, `suggestion-chip` |
@@ -3695,9 +4006,10 @@ component sets, so a new one cannot ship undocumented.
 | Server-side approval | `approval`, `approval-body`, `approval-actions`, `approval-button` (plus `approval-approve`, `approval-deny`), `approval-edit`, `approval-args`, `approval-error` |
 | Typed question | `question`, `question-body`, `question-options`, `question-choice`, `question-choice-text`, `question-radio`, `question-input`, `question-actions`, `question-button` |
 | Composer | `composer`, `composer-surface`, `composer-tools`, `input`, `send`, `attach-button`, `voice-button` |
+| Place chip | `place` (carries `data-excluded` while the user withholds the place), `place-icon`, `place-label`, `place-detail`, `place-toggle` |
 | Attachments | `attachment-tray`, `attachment-chips` (the read-only chips on sent bubbles), and the shared chip parts `attachment-chip`, `attachment-chip-icon`, `attachment-chip-name`, `attachment-chip-size`, `attachment-chip-bar`, `attachment-chip-bar-fill`, `attachment-chip-retry`, `attachment-chip-remove` |
 | Skills | `skill-chips`, `skill-chip`, `skill-palette`, `skill-item`, `skill-item-title`, `skill-item-desc`, `skill-item-token`, `skill-hint` (the composer hint: a skill’s missing placeholders, and a run continuation picked with nothing typed or while a run is in flight) |
-| Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-close`, `drawer-filter`, `drawer-list`, `drawer-empty`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
+| Thread drawer | `drawer`, `drawer-backdrop`, `drawer-panel`, `drawer-header`, `drawer-title`, `drawer-new`, `drawer-close`, `drawer-filter`, `drawer-list`, `drawer-empty`, `drawer-group-label`, `drawer-row`, `drawer-row-select`, `drawer-row-title`, `drawer-row-time`, `drawer-row-preview`, `drawer-row-actions`, `drawer-row-rename`, `drawer-row-delete`, `drawer-rename-input`, `drawer-confirm`, `drawer-confirm-label`, `drawer-confirm-yes`, `drawer-confirm-no` |
 | Charts | `chart-block`, `chart-title`, `chart-legend` |
 | Checkpoints panel | `checkpoints`, `checkpoints-header`, `checkpoints-title`, `checkpoints-list`, `checkpoints-empty`, `checkpoint-row`, `checkpoint-label`, `checkpoint-time`, `checkpoint-id`, `checkpoint-branch`, `checkpoint-action` (plus `checkpoint-resume`, `checkpoint-fork`) |
 
@@ -3720,6 +4032,10 @@ component sets, so a new one cannot ship undocumented.
 >
 > The built-in buttons call exactly these methods, so the two routes cannot drift. If you only want
 > to restyle the header, prefer `::part(header)` styling or the `header-actions` slot over hiding it.
+>
+> To drop single controls instead, hide their parts:
+> `ag-ui-chat::part(history-button), ag-ui-chat::part(new-button) { display: none }`.
+> `display: none` removes them from the accessibility tree and the tab order as well.
 
 Coarse **slots** let you replace whole regions with your own markup (project light-DOM children
 with a matching `slot=`):
@@ -3735,7 +4051,7 @@ with a matching `slot=`):
 | `launcher` | The collapsed widget's mark — the floating launcher, or the sidebar rail. |
 | `icon-send` / `icon-stop` | The composer button's two glyphs (idle and mid-run). |
 | `icon-attach` / `icon-voice` | The paperclip and mic glyphs. |
-| `icon-history` / `icon-checkpoints` / `icon-new` / `icon-collapse` | The header controls' glyphs. |
+| `icon-history` / `icon-checkpoints` / `icon-new` / `icon-maximize` / `icon-collapse` | The header controls' glyphs. A slotted `icon-collapse` wins over `data-collapse-icon`. |
 
 ```html
 <ag-ui-chat endpoint="/agent/">
@@ -3855,6 +4171,14 @@ while the model reasons and folds away on the answer's first token; the reader c
 web component handles the `REASONING_*` event family (and the retired `THINKING_*`, which
 `@ag-ui/client` still converts onto it, with a console warning, during its deprecation window), so
 no client config is needed — the thoughts appear whenever the server forwards reasoning.
+
+The header is a toggle only once reasoning has text: a provider that opens and closes reasoning
+without sending any (redacted thinking, or summaries off) gets a plain label with no body, and no
+`thoughts-toggle` part. When reasoning ends the header settles to how long it took, string
+`thoughtFor` (`"Thought for {seconds}s"`, the sum of the turn's reasoning rounds); under a second it
+reads `thoughts`. A tool call likewise offers its details only over something: with no arguments
+and a blank result its toggle, and a one-step group's row, are not offered until a result with text
+arrives.
 
 ### The composer
 

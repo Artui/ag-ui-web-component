@@ -187,6 +187,23 @@ async function handleAgent(res, body) {
       `Added ${approved.length} of ${resume.length}`,
       approved.length === resume.length ? " — all of them." : ", and left the rest alone.",
     ]);
+  } else if (/\bwhere am i\b/i.test(prompt)) {
+    // The place chip's other half: quote the place entry this round carried,
+    // so the chip and what the agent was told can be compared side by side.
+    // Withholding the place drops the page map too, which the answer says.
+    const context = Array.isArray(input.context) ? input.context : [];
+    const entry = context.find((item) => item.description === "place");
+    const page = context.some((item) => item.description === "page_map");
+    const place = entry === undefined ? null : JSON.parse(entry.value);
+    const where =
+      place === null
+        ? "I was not told where you are"
+        : `You are on **${place.label}**${place.detail ? ` (${place.detail})` : ""}` +
+          (place.href ? `, at \`${place.href}\`` : "");
+    await streamText(res, id("msg"), [
+      `${where}. `,
+      page ? "I was given the page map too." : "I was not given the page map.",
+    ]);
   } else if (/\becho\b/i.test(prompt)) {
     // A plain answer and nothing else, which is the shape most turns have and
     // the one every other branch here dresses up. Sending, the queue behind a
@@ -423,6 +440,25 @@ async function handleAgent(res, body) {
     const parent = id("msg");
     await streamText(res, parent, ["Trying the flaky one…"]);
     emitToolCall(res, id("call"), "break_something", {}, parent);
+  } else if (/\bthink silently\b/i.test(prompt)) {
+    // Reasoning that carries no text, the way a provider sends redacted
+    // thinking or reasoning with its summaries off: a start and an end and
+    // nothing between. The block settles to a plain timed label, not a toggle
+    // over an empty box. Long enough to be timed rather than read as a blink.
+    const reasoning = id("reasoning");
+    emit(res, { type: "REASONING_START", messageId: reasoning });
+    await sleep(2300);
+    emit(res, { type: "REASONING_END", messageId: reasoning });
+    await streamText(res, id("msg"), ["Thought it over ", "without a word."]);
+  } else if (/\bping\b/i.test(prompt)) {
+    // One server-side call with no arguments that returns nothing: the card or
+    // the step row is a plain status line, with nothing to open.
+    const parent = id("msg");
+    const call = id("call");
+    emitToolCall(res, call, "ping", {}, parent);
+    await sleep(600);
+    emitToolResult(res, call, "");
+    await streamText(res, id("msg"), ["Pinged."]);
   } else {
     await streamReasoning(res, id("reasoning"), [
       "The user wants the article filled. ",

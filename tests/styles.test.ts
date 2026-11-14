@@ -395,6 +395,11 @@ describe("STYLES token indirection", () => {
             "--_drag-height: initial",
             "--_dock-bottom: initial",
             "--_dock-right: initial",
+            "--_dock-top: initial",
+            "--_threads-top: initial",
+            "--_threads-bottom: initial",
+            "--_threads-right: initial",
+            "--_threads-room: initial",
           ].includes(declaration)
         ) {
           return false;

@@ -26,6 +26,8 @@ export interface ToolCatalogHost {
   readonly navigate: () => ((path: string) => void) | null;
   /** The element's `getPageMap`, read per call. */
   readonly getPageMap: () => (() => PageMap) | null;
+  /** Whether the user withheld the place, which withholds the page with it. */
+  readonly pageWithheld: () => boolean;
   /** The element's `resolvePageTarget`, called per target. */
   readonly resolvePageTarget: (target: string) => HTMLElement | null;
   /** The element's `getTools`, which a host may have replaced. */
@@ -183,12 +185,13 @@ export class ToolCatalog {
 
   /**
    * The built-in `read_page` tool, present only when a `getPageMap`
-   * provider is set. A *pull* the agent can call mid-turn to see the page after
-   * it has acted (the auto-injected context is a send-time snapshot).
+   * provider is set and the user has not withheld the place. A *pull* the
+   * agent can call mid-turn to see the page after it has acted (the
+   * auto-injected context is a send-time snapshot).
    */
   #pageTools(): ClientTool[] {
     const getPageMap = this.#host.getPageMap();
-    if (getPageMap === null) {
+    if (getPageMap === null || this.#host.pageWithheld()) {
       return [];
     }
     return [

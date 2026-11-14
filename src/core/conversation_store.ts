@@ -1,5 +1,6 @@
 import { randomUUID } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
+import { prettifyToolName } from "../ui/progress/prettify_tool_name.js";
 
 /**
  * A checkpoint recorded just before a navigating tool reloads the page.
@@ -24,6 +25,12 @@ export interface ThreadMeta {
   readonly title: string;
   readonly updatedAt: number;
   readonly preview: string;
+  /**
+   * Whether the thread holds an answer the user has not seen, as a server store
+   * knows it (from a last-read timestamp). Optional: a store that cannot tell
+   * leaves it out, and the element counts only what finishes in this page.
+   */
+  readonly unread?: boolean;
 }
 
 /**
@@ -87,6 +94,21 @@ export interface ClientConversationStore {
    * still fetched.
    */
   isUnsent?(threadId: string): boolean;
+  /**
+   * Record that the user has seen `threadId`'s answers.
+   *
+   * The element calls it when a thread with unseen answers is on screen with
+   * the panel expanded, and when an answer finishes there in view. A server
+   * store maps it to its read endpoint, and should report the thread with
+   * `unread: false` from {@link listThreads} afterwards. It is called inside the
+   * element's expand and thread-change paths, so it must not throw: a store that
+   * writes to a server sends the request without awaiting it and handles its own
+   * failure, the way a failed save is handled.
+   *
+   * Optional: a store without it still has its threads counted and cleared in
+   * the page; nothing is recorded beyond it.
+   */
+  markRead?(threadId: string): void;
 }
 
 const KEY_ROOT = "ag-ui-chat";
@@ -101,6 +123,8 @@ const MINTED_SUFFIX = "minted:";
 const TITLE_LIMIT = 60;
 const PREVIEW_LIMIT = 100;
 const DEFAULT_TITLE = "New conversation";
+// A message that is one skill's name and nothing else, as a server-resolved skill sends.
+const SKILL_TOKEN = /^\/([A-Za-z0-9][\w.-]*)$/;
 
 // One warning per page, not one per write. The condition is origin-wide and
 // persistent — a full quota stays full — so a message per persisted turn (or,
@@ -393,17 +417,35 @@ function isOwnedSuffix(suffix: string): boolean {
   );
 }
 
-/** The thread title: the first user message, collapsed + truncated. */
+/** The stored title: {@link threadTitleFrom}, or a placeholder for a thread with no user text. */
 function deriveTitle(messages: readonly Message[]): string {
+  const title = threadTitleFrom(messages);
+  return title === "" ? DEFAULT_TITLE : title;
+}
+
+/**
+ * A thread's title from its first user message, collapsed and truncated, or `""`
+ * when no user message has text.
+ *
+ * A first message that is exactly a skill's `/token` is named rather than
+ * quoted: `skillTitle(token)` when it knows the skill, else the token in words
+ * (`/summarize_draw` reads "Summarize draw").
+ */
+export function threadTitleFrom(
+  messages: readonly Message[],
+  skillTitle: (name: string) => string | undefined = () => undefined,
+): string {
   for (const message of messages) {
     if (message.role === "user") {
       const text = cleanText(message.content);
       if (text !== "") {
-        return truncate(text, TITLE_LIMIT);
+        const token = SKILL_TOKEN.exec(text)?.[1];
+        const named = token === undefined ? text : (skillTitle(token) ?? prettifyToolName(token));
+        return truncate(named, TITLE_LIMIT);
       }
     }
   }
-  return DEFAULT_TITLE;
+  return "";
 }
 
 /** A one-line preview: the latest message with text, collapsed + truncated. */

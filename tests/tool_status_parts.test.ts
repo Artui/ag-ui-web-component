@@ -79,7 +79,7 @@ describe("tool step group state parts", () => {
     ["running", [TOOL_CALL_STATUS.PENDING]],
     ["waiting", [TOOL_CALL_STATUS.DEFERRED]],
   ])("names a %s group by its state", (state, statuses) => {
-    const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+    const group = new ToolStepGroup(DEFAULT_UI_STRINGS, () => "full");
     for (const status of statuses) {
       const card = new ToolCallCard("lookup", {});
       if (status === TOOL_CALL_STATUS.PENDING) {
@@ -96,7 +96,7 @@ describe("tool step group state parts", () => {
   });
 
   it("replaces the old state modifier when a step settles", async () => {
-    const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+    const group = new ToolStepGroup(DEFAULT_UI_STRINGS, () => "full");
     const card = new ToolCallCard("lookup", {});
     group.add(card.element, "lookup");
     expect(group.element.getAttribute("part")).toBe("tool-group tool-group-running");
@@ -106,7 +106,7 @@ describe("tool step group state parts", () => {
   });
 
   it("carries the base part before any step joins", () => {
-    const group = new ToolStepGroup(DEFAULT_UI_STRINGS);
+    const group = new ToolStepGroup(DEFAULT_UI_STRINGS, () => "full");
     expect(group.element.getAttribute("part")).toBe("tool-group");
   });
 });

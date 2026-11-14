@@ -66,9 +66,21 @@ ${GROUPED} .tool-group-head {
   cursor: pointer;
 }
 
-${GROUPED} .tool-group-head:hover {
+${GROUPED} .tool-group-head:not(:disabled):hover {
   background: var(--_hover);
   color: var(--_fg);
+}
+
+/* A one-step row with nothing behind it -- a call with no arguments and no
+   result yet, or a blank one -- is a label, not a control: the step group
+   disables it and drops its expanded state, and this drops the pointer and
+   the chevron. Disabled rather than enabled-and-inert, so it takes no focus. */
+${GROUPED} .tool-group-head:disabled {
+  cursor: default;
+}
+
+${GROUPED} .tool-group-head:disabled .tool-group-chevron {
+  display: none;
 }
 
 ${GROUPED} .tool-group-head:focus-visible {
@@ -238,6 +250,13 @@ ${inner("minimal")} .tool-call-body {
   display: none;
 }
 
+/* The toggle over nothing, as the card modes refuse it: under every inner mode
+   but compact the arguments are not behind the toggle, so a call whose result
+   is missing or blank has nothing for it to open. */
+:host(:where(:not(${CARD_MODES})):not([data-tool-group-display="compact"])) .tool-group-list .tool-call:not([data-has-result]) .tool-call-toggle {
+  display: none;
+}
+
 /* A call waiting on an approval shows its arguments in every inner mode, as it
    does in every card mode, and for the same reason: the arguments are what
    tell three gated calls of one tool apart. These come after the hides above,
@@ -253,6 +272,18 @@ ${inner("minimal")}[data-status="deferred"] .tool-call-body {
 ${inner("compact")}[data-status="deferred"] .tool-call-section--args:not([hidden]),
 ${inner("inline")}[data-status="deferred"] .tool-call-section--args:not([hidden]) {
   display: flex;
+}
+
+/* A one-step group already names its call in the row, so the card's own head
+   is not drawn inside it. Under the minimal inner mode a card is only its head,
+   so the row has nothing to open onto and draws no chevron. Grouped-only, so a
+   card mode keeps the head. data-count is rewritten live as a run grows. */
+${GROUPED} .tool-group[data-count="1"] .tool-call-head {
+  display: none;
+}
+
+:host(:where(:not(${CARD_MODES}))[data-tool-group-display="minimal"]) .tool-group[data-count="1"] .tool-group-chevron {
+  display: none;
 }
 
 /* Grouping is decided as each card is built, so a card mode set afterwards

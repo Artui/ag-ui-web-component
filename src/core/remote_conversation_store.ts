@@ -4,6 +4,7 @@ import {
   type NavigationCheckpoint,
   SessionStorageStore,
   type ThreadMeta,
+  threadTitleFrom,
 } from "./conversation_store.js";
 import { mintThread, withCredentials } from "./utils.js";
 
@@ -14,6 +15,8 @@ interface ServerThreadRow {
   readonly updated_at: string | null;
   readonly preview: string;
 }
+
+const PROVISIONAL_TITLE = "New conversation";
 
 /** Live header source, read per request so rotated tokens / CSRF reach the server. */
 type HeadersProvider = () => Record<string, string>;
@@ -52,6 +55,14 @@ export class RemoteConversationStore implements ClientConversationStore {
   readonly #cacheMessages: boolean;
   readonly #dropped = new Set<string>();
   readonly #renamed = new Map<string, string>();
+  /**
+   * The row each thread saved here would have, held in memory until the server
+   * lists it. Derived from what was sent rather than read from the local store,
+   * which holds no body (and so no title) when `cacheMessages` is off.
+   */
+  readonly #provisional = new Map<string, ThreadMeta>();
+  /** The active id as last read or set through this store; listing must not mint one. */
+  #active: string | null = null;
 
   /**
    * @param cacheMessages Whether to mirror message bodies into the local store.
@@ -87,11 +98,13 @@ export class RemoteConversationStore implements ClientConversationStore {
   }
 
   threadId(): string {
-    return this.#local.threadId();
+    this.#active = this.#local.threadId();
+    return this.#active;
   }
 
   setActiveThread(threadId: string): void {
     this.#local.setActiveThread(threadId);
+    this.#active = threadId;
   }
 
   /**
@@ -100,7 +113,8 @@ export class RemoteConversationStore implements ClientConversationStore {
    * persisted, so an abandoned new chat costs no round-trip and leaves no row.
    */
   newThread(): string {
-    return mintThread(this.#local);
+    this.#active = mintThread(this.#local);
+    return this.#active;
   }
 
   /** Delegated, so wrapping a store does not lose what it knows about its own ids. */
@@ -119,6 +133,12 @@ export class RemoteConversationStore implements ClientConversationStore {
     // unreachable after a reload. Saving an empty list records that the thread
     // is real without recording a word of what was said in it.
     this.#local.saveMessages(threadId, this.#cacheMessages ? messages : []);
+    this.#provisional.set(threadId, {
+      threadId,
+      title: threadTitleFrom(messages) || PROVISIONAL_TITLE,
+      updatedAt: Date.now(),
+      preview: "",
+    });
   }
 
   loadCheckpoint(threadId: string): NavigationCheckpoint | null {
@@ -138,6 +158,7 @@ export class RemoteConversationStore implements ClientConversationStore {
   clear(threadId: string): void {
     this.#local.clear(threadId);
     this.#dropped.add(threadId);
+    this.#provisional.delete(threadId);
     void this.#mutate(threadId, "DELETE");
   }
 
@@ -146,7 +167,27 @@ export class RemoteConversationStore implements ClientConversationStore {
     if (rows === null) {
       return this.#local.listThreads();
     }
-    return rows.filter((row) => !this.#dropped.has(row.thread_id)).map((row) => this.#toMeta(row));
+    const metas = rows
+      .filter((row) => !this.#dropped.has(row.thread_id))
+      .map((row) => this.#toMeta(row));
+    const pending = this.#pendingRow(rows);
+    return pending === null ? metas : [pending, ...metas];
+  }
+
+  /**
+   * The thread on screen as a provisional row, while the server's index does
+   * not have it yet: sent from here, not deleted since, and not yet listed.
+   * Once the server lists a thread, its row is the only one.
+   */
+  #pendingRow(rows: readonly ServerThreadRow[]): ThreadMeta | null {
+    for (const listed of rows) {
+      this.#provisional.delete(listed.thread_id);
+    }
+    const row = this.#active === null ? undefined : this.#provisional.get(this.#active);
+    if (row === undefined) {
+      return null;
+    }
+    return { ...row, title: this.#renamed.get(row.threadId) ?? row.title };
   }
 
   async loadMessages(threadId: string): Promise<readonly Message[] | null> {

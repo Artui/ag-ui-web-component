@@ -22,10 +22,24 @@ export const SUBMIT_EVENT = "ag-ui-submit";
 export const TOGGLE_EVENT = "ag-ui-toggle";
 
 /**
+ * Maximized state changed, via the built-in header control, the `maximized`
+ * property or attribute, or on leaving it for a collapse, a placement without
+ * the control, or a viewport of 600px or less. `detail` is {@link MaximizeDetail}.
+ */
+export const MAXIMIZE_EVENT = "ag-ui-maximize";
+
+/**
  * The bottom bar's height changed (`collapse-to="bar"`): the host pads its
  * page by it. `detail` is {@link BarHeightDetail}; 0 when no bar is drawn.
  */
 export const BAR_HEIGHT_EVENT = "ag-ui-bar-height";
+
+/**
+ * The width a docked panel covers at rest changed (`placement="sidebar"` or
+ * `"side"`): the host pushes its page by it. `detail` is {@link DockWidthDetail};
+ * 0 when the panel covers none of the page.
+ */
+export const DOCK_WIDTH_EVENT = "ag-ui-dock-width";
 
 /**
  * The count of answers that arrived while collapsed changed. `detail` is
@@ -78,6 +92,14 @@ export const RUN_FINISHED_EVENT = "ag-ui-run-finished";
  * own chrome marks the active one from here rather than watching attributes.
  */
 export const THREAD_EVENT = "ag-ui-thread";
+
+/**
+ * The title of the thread on screen changed: its first send, a rename, a
+ * switch, a new chat or a delete, or a title the conversation list brought in.
+ * `detail` is {@link ThreadTitleDetail}. `title-text="auto"` draws it in the
+ * header without a listener; a host drawing its own chrome listens.
+ */
+export const THREAD_TITLE_EVENT = "ag-ui-thread-title";
 
 /**
  * The agent sent an AG-UI `CUSTOM` event. `detail` is {@link CustomAgentDetail}.
@@ -248,6 +270,15 @@ export const X_NAVIGATES_KEY = "x-navigates";
  * it: refusing the one call that would refresh the agent's view deadlocks.
  */
 export const READ_PAGE_TOOL = "read_page";
+
+/** The description of the context entry carrying the page map. */
+export const PAGE_MAP_CONTEXT = "page_map";
+
+/**
+ * The description of the context entry carrying the place the chip shows. Its
+ * value is the place as JSON: the label, and the detail and href when set.
+ */
+export const PLACE_CONTEXT = "place";
 
 /**
  * Default upper bound on frontend tool-call → re-run rounds within one send.
@@ -433,6 +464,15 @@ export const ICON_ATTACH = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="
 /** The voice-input glyph (a microphone on its stand). */
 export const ICON_VOICE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3z"/><path d="M5 11v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v3"/></svg>`;
 
+/** The place chip's mark when the place brings no icon of its own (a map pin). */
+export const ICON_PLACE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>`;
+
+/** The place toggle while the place is sent (an open eye). */
+export const ICON_PLACE_SHARED = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg>`;
+
+/** The place toggle while the place is withheld (the eye struck through). */
+export const ICON_PLACE_WITHHELD = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6.5 9.5-6.5c2 0 3.7.7 5.1 1.7M21.5 12s-3.5 6.5-9.5 6.5c-2 0-3.7-.7-5.1-1.7"/><path d="M4 20 20 4"/></svg>`;
+
 /**
  * The theme toggle's two marks, drawn rather than typed.
  *
@@ -451,6 +491,49 @@ export const ICON_MOON = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="tr
 
 /** The other half of the pair; see {@link ICON_MOON}. */
 export const ICON_SUN = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
+
+/**
+ * The header controls' marks, drawn for the reason the theme pair is: typed
+ * glyphs (U+2630, U+21BA, U+271A, U+2014, U+25A1, U+2750) were painted by the
+ * platform font at its own weight and size, so they never matched the moon
+ * beside them. Maximize points outward, restore inward.
+ */
+export const ICON_MAXIMIZE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 10l6-6M15 4h5v5M10 14l-6 6M4 15v5h5"/></svg>`;
+
+/** The maximize control's mark while the panel is maximized; see {@link ICON_MAXIMIZE}. */
+export const ICON_RESTORE = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4l-6 6M14 5v5h5M4 20l6-6M5 14h5v5"/></svg>`;
+
+/**
+ * The collapse control's marks, chosen by `data-collapse-icon`. The panel mark
+ * is a window with its docked pane and an arrow into the edge it hides into;
+ * its left twin, and the up and left chevrons, are the right and down ones
+ * turned in the path data, so each mark is told apart by its paths alone.
+ */
+export const ICON_PANEL_CLOSE_RIGHT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/><path d="M8 9.5l2.5 2.5L8 14.5"/></svg>`;
+
+/** The panel mark for a panel docked to the left edge; see {@link ICON_PANEL_CLOSE_RIGHT}. */
+export const ICON_PANEL_CLOSE_LEFT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/><path d="M16 9.5L13.5 12l2.5 2.5"/></svg>`;
+
+/** A chevron down, the corner placements' collapse mark; see {@link ICON_PANEL_CLOSE_RIGHT}. */
+export const ICON_CHEVRON_DOWN = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5l6 6 6-6"/></svg>`;
+
+/** A chevron up; see {@link ICON_PANEL_CLOSE_RIGHT}. */
+export const ICON_CHEVRON_UP = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14.5l6-6 6 6"/></svg>`;
+
+/** A chevron right; see {@link ICON_PANEL_CLOSE_RIGHT}. */
+export const ICON_CHEVRON_RIGHT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>`;
+
+/** A chevron left; see {@link ICON_PANEL_CLOSE_RIGHT}. */
+export const ICON_CHEVRON_LEFT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6"/></svg>`;
+
+/** The new-chat control's mark (a pencil on a square). */
+export const ICON_NEW_CHAT = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V13"/><path d="M17.5 3.5a2.1 2.1 0 0 1 3 3L12 15l-3.5 1 1-3.5z"/></svg>`;
+
+/** The history control's mark (a clock with a back arrow). */
+export const ICON_HISTORY = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12A8.5 8.5 0 1 0 6 6L3.5 8.5"/><path d="M3.5 4v4.5H8"/><path d="M12 7.5V12l3 2"/></svg>`;
+
+/** The checkpoints control's mark (an arrow turning back, counter-clockwise). */
+export const ICON_CHECKPOINTS = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>`;
 
 /** The default launcher mark (a speech bubble), shown when the host slots none. */
 export const ICON_LAUNCHER = `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-5 4z"/></svg>`;

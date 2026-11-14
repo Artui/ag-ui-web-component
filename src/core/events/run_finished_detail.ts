@@ -25,4 +25,12 @@ export interface RunFinishedDetail {
    * client fall through to the coarse refetch that shipped before either.
    */
   readonly invalidated: readonly string[];
+  /**
+   * How the interaction ended: `"completed"` when it ran to its end, `"stopped"`
+   * when Stop, a new chat or a thread switch cut it off, `"failed"` when the
+   * agent reported an error. Reported for a run the conversation has left
+   * behind too, so a host can tell a cancelled run's late event from the live
+   * run's own. A host should ignore a value it does not know.
+   */
+  readonly outcome: "completed" | "stopped" | "failed";
 }
