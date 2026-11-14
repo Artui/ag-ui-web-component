@@ -3087,18 +3087,27 @@ describe("AgUiChat — answer group", () => {
   });
 
   it("settles an empty reasoning block on the tool call that follows it, with no end", async () => {
-    const { el } = mountWithAgent((emit) => {
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { el } = mountWithAgent(async (emit) => {
       emit.runStart();
       emit.reasoningStart();
       emit.toolCall("c1", "ping", {});
+      await held;
       emit.toolResult("c1", "pong");
       emit.runEnd();
     });
-    await send(el, "ping");
+    sendNoWait(el, "ping");
+    await flush();
+    // The run is still open: only the tool call can have ended the reasoning.
     const thoughts = shadow(el).querySelector(".answer .thoughts");
     expect(thoughts?.hasAttribute("data-streaming")).toBe(false);
     expect(thoughts?.querySelector(".thoughts-label")?.textContent).toBe("Thoughts");
     expect(thoughts?.querySelector("button")).toBeNull();
+    release();
+    await flush();
   });
 
   it("settles a reasoning block the turn ended without ending", async () => {
@@ -3136,6 +3145,49 @@ describe("AgUiChat — answer group", () => {
     toggle?.click();
     expect(thoughts[0]?.querySelector<HTMLElement>(".thoughts-body")?.hidden).toBe(false);
     expect(thoughts[0]?.querySelector(".thoughts-body")?.textContent).toBe("x");
+  });
+
+  it("restarts the clock and the live label for a second reasoning round after a tool call", async () => {
+    let time = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => time);
+    const releases: Array<() => void> = [];
+    const hold = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        releases.push(resolve);
+      });
+    try {
+      const { el } = mountWithAgent(async (emit) => {
+        emit.runStart();
+        emit.reasoningStart();
+        time = 2000;
+        emit.reasoningEnd();
+        emit.toolCall("c1", "ping", {});
+        emit.toolResult("c1", "pong");
+        await hold();
+        time = 10_000;
+        emit.reasoningStart();
+        await hold();
+        time = 13_000;
+        emit.reasoningEnd();
+        emit.runEnd();
+      });
+      sendNoWait(el, "think twice");
+      await flush();
+      const thoughts = shadow(el).querySelector(".answer .thoughts");
+      const label = (): string | null | undefined =>
+        thoughts?.querySelector(".thoughts-label")?.textContent;
+      expect(label()).toBe("Thought for 2s");
+      releases[0]?.();
+      await flush();
+      expect(thoughts?.hasAttribute("data-streaming")).toBe(true);
+      expect(label()).toBe("Assistant is thinking…");
+      releases[1]?.();
+      await flush();
+      expect(thoughts?.hasAttribute("data-streaming")).toBe(false);
+      expect(label()).toBe("Thought for 5s");
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("names how long the reasoning took, in a string a host can override", async () => {

@@ -152,6 +152,28 @@ describe("ThoughtsBlock", () => {
     expect(label(block)).toBe("Thought for 5s");
   });
 
+  it("rounds the seconds to the nearest, not down", () => {
+    const time = clock();
+    const block = new ThoughtsBlock(DEFAULT_UI_STRINGS, time.now);
+    time.at(1500);
+    block.settle();
+    expect(label(block)).toBe("Thought for 2s");
+  });
+
+  it("does not restart a clock that is already running", () => {
+    const time = clock();
+    const block = new ThoughtsBlock(DEFAULT_UI_STRINGS, time.now);
+    time.at(2000);
+    block.settle();
+    time.at(10_000);
+    block.begin();
+    time.at(11_000);
+    block.begin();
+    time.at(13_000);
+    block.settle();
+    expect(label(block)).toBe("Thought for 5s");
+  });
+
   it("draws its labels from the string table", () => {
     const strings = mergeUiStrings({
       thinking: "denkt nach…",
