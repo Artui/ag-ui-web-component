@@ -16,7 +16,7 @@ describe("collapseGlyph", () => {
     [null, "embedded", null, ICON_CHEVRON_DOWN],
     [null, "sidebar", null, ICON_PANEL_CLOSE_RIGHT],
     [null, "sidebar", "left", ICON_PANEL_CLOSE_LEFT],
-    [null, "side", "left", ICON_PANEL_CLOSE_RIGHT],
+    [null, "side", "left", ICON_PANEL_CLOSE_LEFT],
     ["unknown", "sidebar", "left", ICON_PANEL_CLOSE_LEFT],
     ["unknown", "floating", null, ICON_CHEVRON_DOWN],
     ["panel-close", "floating", "left", ICON_PANEL_CLOSE_RIGHT],

@@ -15,13 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sidebar slides sideways into its edge, but its collapse control drew the same chevron down as
   a corner panel. With no attribute set, `placement="sidebar"` (and `side`) now draws a panel
   closing into its edge: a window with its docked pane and an arrow pointing into that edge,
-  mirrored for a sidebar on `data-side="left"`. `floating`, `full`, `embedded` and every other
+  mirrored for either on `data-side="left"`. `floating`, `full`, `embedded` and every other
   placement keep the chevron down. `data-collapse-icon` picks the mark outright: `panel-close`,
   `chevron-up`, `chevron-down`, `chevron-left` or `chevron-right`, live, and kept through a
   placement change; any other value reads as absent. A host icon in `slot="icon-collapse"`
   still wins over both. No opt-in, but a sidebar's collapse control changes on upgrade with
   nothing set: `data-collapse-icon="chevron-down"` keeps the old mark.
-
 
 ### Fixed
 

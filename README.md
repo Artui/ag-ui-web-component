@@ -208,7 +208,7 @@ another origin, add `credentials="include"` too; see
 | `data-max-tool-rounds` | — | Upper bound on frontend tool-call → re-run rounds within one send (default 10; a value below 1 is ignored). Raise it for a page-driving agent whose turn takes many small steps. See [The run loop](#the-run-loop-and-the-ag-ui-client). |
 | `data-page-actions` | — | Opt-in built-in page-action tools: a comma list of `scroll` / `drag` / `chat` (e.g. `"scroll,drag"`). See [Page-action tools](#page-action-tools). |
 | `data-side` | — | For `placement="sidebar"`: which edge it docks to, `right` (default) / `left`. Styling, and read by script for the side `dockWidth` and `ag-ui-dock-width` report. Live. |
-| `data-collapse-icon` | — | The header collapse control's mark: `panel-close` (a window with its docked pane and an arrow into the edge, mirrored for a sidebar on `data-side="left"`) / `chevron-up` / `chevron-down` / `chevron-left` / `chevron-right`. Absent, or any other value, follows the placement: `panel-close` on `sidebar` (and `side`), `chevron-down` everywhere else. A host icon in `slot="icon-collapse"` wins over it. Live. |
+| `data-collapse-icon` | — | The header collapse control's mark: `panel-close` (a window with its docked pane and an arrow into the edge, mirrored on `data-side="left"`) / `chevron-up` / `chevron-down` / `chevron-left` / `chevron-right`. Absent, or any other value, follows the placement: `panel-close` on `sidebar` (and `side`), `chevron-down` everywhere else. A host icon in `slot="icon-collapse"` wins over it. Live. |
 | `data-answer-well` | — | CSS-only boolean: box each assistant turn (its text, tool cards, and thinking) in one bordered "well". Off by default. See [The answer well](#the-answer-well). |
 | `collapsed` | `collapsed` | Reflected boolean; collapses the widget to its [launcher](#collapsing-to-the-launcher) (a rail under `placement="sidebar"`, the header bar under `embedded`). Persisted per tab. `placement="page"` has no collapsed state and ignores it. |
 | `collapse-to` | — | What the panel collapses to: `auto` (the default; absent or any other value reads the same) leaves every placement as it is, `bar` draws a strip along the bottom edge in place of the round launcher, `none` hides the collapsed widget so the host's own control brings it back. Under either, a corner panel still moves by its header and `moveTo` on a wide viewport, and remembers where it was dragged. Live. See [Collapsing to a bottom bar](#collapsing-to-a-bottom-bar). |
@@ -243,12 +243,12 @@ same way: `icon-send`, `icon-stop`, `icon-attach`, `icon-voice`.
 
 The collapse control's built-in mark follows the placement, because a sidebar hides sideways
 into its edge rather than down: `panel-close` (a window with its docked pane and an arrow into
-the edge) on `sidebar` and `side`, mirrored for a sidebar on `data-side="left"`, and
+the edge) on `sidebar` and `side`, mirrored for either on `data-side="left"`, and
 `chevron-down` on `floating`, `full`, `embedded` and every other placement. `data-collapse-icon`
 picks one of the built-in marks outright, at any placement and live: `panel-close`,
 `chevron-up`, `chevron-down`, `chevron-left` or `chevron-right`; any other value reads as
 absent. `panel-close` always points into the edge the panel docks to, so it mirrors on a left
-sidebar whether chosen or defaulted; the chevrons do not turn. For a mark of your own, slot it
+docked panel whether chosen or defaulted; the chevrons do not turn. For a mark of your own, slot it
 into `icon-collapse`, which wins over the attribute and every placement:
 
 ```html

@@ -15,9 +15,9 @@ import {
  * (`sidebar`, and the undocumented `side`) hides sideways into its edge, so it
  * takes the panel mark, and everything else -- the corners, `full`,
  * `embedded`, an unknown placement -- keeps the chevron down. The panel mark
- * points into the edge the panel docks to, so it is mirrored for a sidebar on
- * `data-side="left"`, whether it was chosen or defaulted; `side` has no left
- * variant, so it always takes the right one. The chevrons are absolute.
+ * points into the edge the panel docks to, so it is mirrored for either docked
+ * placement on `data-side="left"`, whether it was chosen or defaulted. The
+ * chevrons are absolute.
  */
 export function collapseGlyph(
   choice: string | null,
@@ -38,7 +38,5 @@ export function collapseGlyph(
   if (choice !== "panel-close" && !docked) {
     return ICON_CHEVRON_DOWN;
   }
-  return placement === "sidebar" && side === "left"
-    ? ICON_PANEL_CLOSE_LEFT
-    : ICON_PANEL_CLOSE_RIGHT;
+  return docked && side === "left" ? ICON_PANEL_CLOSE_LEFT : ICON_PANEL_CLOSE_RIGHT;
 }
