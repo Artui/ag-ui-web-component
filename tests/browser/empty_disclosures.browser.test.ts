@@ -1,8 +1,9 @@
+import type { Interrupt } from "@ag-ui/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ELEMENT_TAG } from "../../src/constants.js";
 import type { AgUiChat } from "../../src/core/ag_ui_chat.js";
 import { defineAgUiChat } from "../../src/core/define_ag_ui_chat.js";
-import { type Emit, makeFakeAgent } from "../helpers/fake_agent.js";
+import { type Emit, type FakeRunParams, makeFakeAgent } from "../helpers/fake_agent.js";
 
 /**
  * A control is a disclosure only when something is behind it.
@@ -18,7 +19,10 @@ import { type Emit, makeFakeAgent } from "../helpers/fake_agent.js";
  * both measure zero there. Driven through the element and a scripted run.
  */
 
-function mount(script: (emit: Emit) => void | Promise<void>, display?: string): AgUiChat {
+function mount(
+  script: (emit: Emit, params: FakeRunParams) => void | Promise<void>,
+  display?: string,
+): AgUiChat {
   const el = document.createElement(ELEMENT_TAG) as AgUiChat;
   el.setAttribute("endpoint", "/agent/");
   el.setAttribute("placement", "embedded");
@@ -221,4 +225,120 @@ describe("a tool call with no arguments", () => {
       expect(focusable(el, row(blank))).toEqual([]);
     });
   }
+});
+
+describe("a tool call with arguments and a blank result", () => {
+  for (const display of ["full", "inline"]) {
+    it(`offers no toggle under ${display}, where the arguments are not behind it`, async () => {
+      const el = mount((emit) => {
+        emit.runStart();
+        emit.toolCall("c1", "ping", { host: "x" });
+        emit.toolResult("c1", "");
+        emit.runEnd();
+      }, display);
+      await send(el, "ping");
+      const card = find(shadow(el), ".tool-call");
+      expect(card.getAttribute("data-status")).toBe("done");
+      expect(focusable(el, card)).toEqual([]);
+    });
+  }
+
+  it("opens the grouped row onto the arguments, with no toggle under them", async () => {
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "ping", { host: "x" });
+      emit.toolResult("c1", "");
+      emit.runEnd();
+    }, "grouped");
+    await send(el, "ping");
+    const group = find(shadow(el), ".tool-group");
+    const head = find(group, ".tool-group-head");
+    expect(focusable(el, group)).toEqual([head]);
+    head.click();
+    await tick();
+    expect(find(group, ".tool-call-args").checkVisibility()).toBe(true);
+    expect(focusable(el, group)).toEqual([head]);
+  });
+
+  it("keeps the compact toggle, which folds the arguments", async () => {
+    const el = mount((emit) => {
+      emit.runStart();
+      emit.toolCall("c1", "ping", { host: "x" });
+      emit.toolResult("c1", "");
+      emit.runEnd();
+    }, "compact");
+    await send(el, "ping");
+    const card = find(shadow(el), ".tool-call");
+    const toggle = find(card, ".tool-call-toggle");
+    expect(focusable(el, card)).toEqual([toggle]);
+    const args = find(card, ".tool-call-args");
+    expect(args.checkVisibility()).toBe(false);
+    toggle.click();
+    expect(args.checkVisibility()).toBe(true);
+    expect(find(card, ".tool-call-section--result").checkVisibility()).toBe(false);
+  });
+});
+
+describe("a lone grouped call with no arguments that has something else to show", () => {
+  it("keeps its row open over an approval prompt, and folds it once answered", async () => {
+    const el = mount((emit, params) => {
+      emit.runStart();
+      if (params.resume === undefined) {
+        emit.toolCall("e1", "create_event", {});
+        emit.interrupt([
+          { id: "int-e1", reason: "tool_call", toolCallId: "e1", message: "Go?" } as Interrupt,
+        ]);
+        return;
+      }
+      emit.toolResult("e1", "");
+      emit.runEnd();
+    }, "grouped");
+    await send(el, "add it");
+
+    const group = find(shadow(el), ".tool-group");
+    const head = find(group, ".tool-group-head") as HTMLButtonElement;
+    expect(group.getAttribute("data-open")).toBe("true");
+    expect(head.disabled).toBe(false);
+    expect(head.getAttribute("aria-expanded")).toBe("true");
+    const approve = find(group, ".approval-btn--approve");
+    expect(approve.checkVisibility()).toBe(true);
+
+    approve.click();
+    await tick();
+    await tick();
+    expect(find(group, ".tool-call").getAttribute("data-status")).toBe("done");
+    expect(head.disabled).toBe(true);
+    expect(head.hasAttribute("aria-expanded")).toBe(false);
+    expect(group.getAttribute("data-open")).toBe("false");
+    expect(focusable(el, group)).toEqual([]);
+  });
+
+  it("becomes a disclosure when the call delegates to a sub-agent", async () => {
+    const started = gate();
+    const finished = gate();
+    const el = mount(async (emit) => {
+      emit.runStart();
+      emit.toolCall("s1", "delegate_task", {});
+      await started.wait;
+      emit.subAgentStarted("sub-1", "researcher", "s1");
+      // Held, so the call is still running: a turn's end settles it with text.
+      await finished.wait;
+      emit.runEnd();
+    }, "grouped");
+    await send(el, "go");
+
+    const group = find(shadow(el), ".tool-group");
+    const head = find(group, ".tool-group-head") as HTMLButtonElement;
+    expect(head.disabled).toBe(true);
+
+    started.open();
+    await tick();
+    expect(head.disabled).toBe(false);
+    expect(head.getAttribute("aria-expanded")).toBe("false");
+    expect(find(group, ".tool-call").getAttribute("data-status")).toBe("pending");
+    head.click();
+    await tick();
+    expect(find(group, ".subagent").checkVisibility()).toBe(true);
+    finished.open();
+  });
 });
