@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.1] — 2026-11-16
+
+### Changed
+
+- **Tombstone: this package is succeeded by `@artooi/agents-web-components`.** The code is
+  identical to 0.54.0; only the version string and the README banner change. No more changes
+  will be made here. To move, follow
+  [Moving from `@artooi/ag-ui-web-component`](https://github.com/Artui/agents-web-components#moving-from-artooiag-ui-web-component).
+
 ## [0.54.0] — 2026-11-14
 
 ### Added
@@ -5482,7 +5491,8 @@ hosts that both arrange the page the way it expects.
 ### Notes
 - First release — exercising the automated npm OIDC publish pipeline end-to-end.
 
-[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.54.0...HEAD
+[Unreleased]: https://github.com/Artui/ag-ui-web-component/compare/v0.54.1...HEAD
+[0.54.1]: https://github.com/Artui/ag-ui-web-component/compare/v0.54.0...v0.54.1
 [0.54.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/Artui/ag-ui-web-component/compare/v0.51.0...v0.52.0

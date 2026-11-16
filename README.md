@@ -1,5 +1,9 @@
 # @artooi/ag-ui-web-component
 
+> **This package is succeeded by [`@artooi/agents-web-components`](https://www.npmjs.com/package/@artooi/agents-web-components) and takes no more changes.**
+> Version 0.54.1 is code-identical to 0.54.0. To move, follow
+> [Moving from `@artooi/ag-ui-web-component`](https://github.com/Artui/agents-web-components#moving-from-artooiag-ui-web-component).
+
 [![CI](https://github.com/Artui/ag-ui-web-component/workflows/tests/badge.svg)](https://github.com/Artui/ag-ui-web-component/actions/workflows/tests.yml)
 [![npm](https://img.shields.io/npm/v/@artooi/ag-ui-web-component.svg)](https://www.npmjs.com/package/@artooi/ag-ui-web-component)
 [![License](https://img.shields.io/npm/l/@artooi/ag-ui-web-component.svg)](https://github.com/Artui/ag-ui-web-component/blob/main/LICENSE)
